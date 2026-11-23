@@ -10,7 +10,7 @@ const SHEET = `#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 o;
-uniform sampler2D uH, uW, uLut;
+uniform sampler2D uH, uW, uLut, uL;
 uniform vec2 uRes, uOrg;
 uniform float uPx, uDpr, uFrame, uRelief;
 uniform vec4 uLabA[${MAX_LABELS}];
@@ -89,19 +89,34 @@ void main() {
   float fib = vnoise(px / uDpr * vec2(0.9, 0.22)) * 0.6 + vnoise(px / uDpr * 0.45) * 0.4;
   land *= 0.97 + 0.05 * fib;
 
-  /* water */
+  /* water: the sea and the lakes */
   // Pixels from the coast, by the first-order distance h / |grad h|.
   float coastPx = h / max(gpx, 1e-5);
   float landA = smoothstep(-0.75, 0.75, coastPx / uDpr);
   float wetA = smoothstep(0.08, 0.3, wetS);
-  float waterA = wetA * (1.0 - landA);
-  vec3 sea = tint(h);
+  float seaA = wetA * (1.0 - landA);
+  // A lake: its level over each cell and the pale edge of rising water.
+  vec2 lk = texture(uL, (p + 0.5) / NN).rg;
+  float near = step(-5000.0, lk.r);
+  float dL = lk.r - h;
+  float shorePx = dL / max(gpx, 1e-5);
+  float lakeA = near * smoothstep(-0.75, 0.75, shorePx / uDpr);
+  float isLake = step(seaA, lakeA);
+  float waterA = max(seaA, lakeA);
+  // Depth under the surface, and CSS pixels out from the shore.
+  float depth = mix(-h, dL, isLake);
+  float dist = mix(-coastPx, shorePx, isLake) / uDpr;
+  vec3 sea = tint(-max(depth, 0.01));
   // A soft swell of light on the water, fixed in place.
   sea *= 0.96 + 0.06 * vnoise(px / uDpr * 0.05 + 3.0);
-  // The new water: a pale front that clears as it settles.
-  float fresh = 1.0 - smoothstep(0.35, 1.0, wetS);
-  float foam = fresh * (0.55 + 0.45 * vnoise(px / uDpr * 0.35 + uFrame * 0.0));
-  sea = mix(sea, vec3(0.78, 0.9, 0.96), clamp(foam * 0.7, 0.0, 0.7));
+  float grain = 0.55 + 0.45 * vnoise(px / uDpr * 0.35);
+  // The new sea: a pale front that clears as it settles.
+  float fresh = (1.0 - smoothstep(0.35, 1.0, wetS)) * (1.0 - isLake);
+  // A rising lake: a pale band at its shore and a lighter skin of new water.
+  float rise = lk.g * isLake;
+  float edge = rise * (1.0 - smoothstep(0.5, 6.0, dist)) * (0.6 + 0.4 * vnoise(px / uDpr * 0.6 + uFrame * 0.07));
+  float foam = max(fresh * grain, edge);
+  sea = mix(sea, vec3(0.8, 0.91, 0.96), clamp(foam * 0.75 + rise * 0.12, 0.0, 0.8));
 
   vec3 col = mix(land, sea, waterA);
 
@@ -128,23 +143,23 @@ void main() {
   float la = max(thin * 0.62, idx * 0.9) * onLand * keep;
   col = mix(col, brown * (0.75 + 0.25 * fib), la);
 
-  /* lines in the sea */
+  /* lines in the water */
   vec3 blue = vec3(0.04, 0.2, 0.42);
   // Depth lines every 50 m, faint.
-  float depthL = lineA(h, 50.0, gpx, 0.4 * uDpr) * smoothstep(2.5 * uDpr, 5.0 * uDpr, 50.0 / max(gpx, 1e-5));
-  // Water-lines follow the coast at growing gaps, as on old survey sheets.
-  float dist = -coastPx / uDpr;
+  float depthL = lineA(depth, 50.0, gpx, 0.4 * uDpr) * smoothstep(2.5 * uDpr, 5.0 * uDpr, 50.0 / max(gpx, 1e-5));
+  // Water-lines follow the shore at growing gaps, as on old survey sheets.
   float wl = 0.0;
   wl = max(wl, (1.0 - smoothstep(0.35, 0.95, abs(dist - 3.6))) * 0.55);
   wl = max(wl, (1.0 - smoothstep(0.35, 0.95, abs(dist - 8.2))) * 0.36);
   wl = max(wl, (1.0 - smoothstep(0.35, 0.95, abs(dist - 14.5))) * 0.2);
   // The first-order distance holds only near a clear slope.
-  wl *= smoothstep(0.0, 0.004, gpx / max(abs(h), 1.0)) * step(dist, 18.0);
-  float sa = max(depthL * 0.32, wl) * waterA * keep * (1.0 - fresh * 0.8);
+  wl *= smoothstep(0.0, 0.004, gpx / max(depth, 1.0)) * step(dist, 18.0);
+  float sa = max(depthL * 0.32, wl) * waterA * keep * (1.0 - foam * 0.8);
   col = mix(col, blue, sa);
-  // The coastline: a dark blue line where the water meets the land.
-  float coast = (1.0 - smoothstep(0.55 * uDpr - 0.6, 0.55 * uDpr + 0.6, abs(coastPx))) * wetA;
-  col = mix(col, blue * 0.8, coast * 0.92);
+  // The shore: a dark blue line where the water meets the land.
+  float seaLine = (1.0 - smoothstep(0.55 * uDpr - 0.6, 0.55 * uDpr + 0.6, abs(coastPx))) * wetA;
+  float lakeLine = (1.0 - smoothstep(0.55 * uDpr - 0.6, 0.55 * uDpr + 0.6, abs(shorePx))) * near;
+  col = mix(col, blue * 0.8, max(seaLine, lakeLine) * 0.92);
 
   /* the sheet's edge falls into the dark stage */
   col *= 1.0 - 0.55 * pow(clamp(dot(v * vec2(1.05, 1.2), v * vec2(1.05, 1.2)) * 1.9, 0.0, 1.0), 1.6);
@@ -167,6 +182,9 @@ export async function makeRenderer(gl) {
   const hTex = tex(gl.R16F, N, N, gl.LINEAR);
   const wTex = tex(gl.R8, N, N, gl.LINEAR);
   const lutTex = tex(gl.RGBA8, 256, 2, gl.LINEAR);
+  // Lakes: the level and the rising edge, as half floats.
+  const lTex = tex(gl.RG16F, N, N, gl.LINEAR);
+  const lhalf = new Uint16Array(N * N * 2);
   const half = new Uint16Array(N * N);
   // Float to half float, round to nearest.
   const f32 = new Float32Array(1), u32 = new Uint32Array(f32.buffer);
@@ -198,6 +216,20 @@ export async function makeRenderer(gl) {
       gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
       gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     },
+    // Uploads the box of lake levels that changed.
+    upLakes(lv, fm, box) {
+      if (!box) return;
+      const [x0, y0, x1, y1] = box, w = x1 - x0 + 1;
+      for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) { const c = y * N + x; lhalf[2 * c] = toHalf(lv[c]); lhalf[2 * c + 1] = toHalf(fm[c]); }
+      gl.bindTexture(gl.TEXTURE_2D, lTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 2);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, N);
+      gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, x0);
+      gl.pixelStorei(gl.UNPACK_SKIP_ROWS, y0);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, x0, y0, w, y1 - y0 + 1, gl.RG, gl.HALF_FLOAT, lhalf);
+      gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0); gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0); gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    },
     upWet(wet, box) {
       if (!box) return;
       const [x0, y0, x1, y1] = box;
@@ -226,6 +258,7 @@ export async function makeRenderer(gl) {
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hTex); gl.uniform1i(p.u.uH, 0);
       gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, wTex); gl.uniform1i(p.u.uW, 1);
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, lutTex); gl.uniform1i(p.u.uLut, 2);
+      gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, lTex); gl.uniform1i(p.u.uL, 3);
       gl.uniform2f(p.u.uRes, W, H);
       gl.uniform2f(p.u.uOrg, org[0], org[1]);
       gl.uniform1f(p.u.uPx, px);

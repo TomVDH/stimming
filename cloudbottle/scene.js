@@ -4,7 +4,8 @@
 import { TRI_VS, program, linked, target, free, bind, tri } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
 import { GRADE } from '../shared/grade.js';
-import { JUG, NOISE_N, makeNoise } from './jug.js';
+import { JUG, PROFILE, NOISE_N, makeNoise } from './jug.js';
+import { ATLAS, fluidPrograms, makeFluid } from './fluid.js';
 
 const HEAD = `#version 300 es
 precision highp float;
@@ -21,9 +22,7 @@ uniform vec4 uStop;
 uniform vec4 uBulb;
 uniform vec3 uHose[13];
 uniform vec3 uKey;
-const float R = ${JUG.R.toFixed(4)}, BODY = ${JUG.BODY.toFixed(4)}, SH = ${JUG.SH.toFixed(4)};
-const float RN = ${JUG.RN.toFixed(4)}, TOP = ${JUG.TOP.toFixed(4)}, TH = ${JUG.TH.toFixed(4)};
-const float WATER = ${JUG.WATER.toFixed(4)};
+${PROFILE}
 const vec3 BULB = vec3(${JUG.BULB.map(v => v.toFixed(4)).join(', ')});
 in vec2 vUv;
 out vec4 o;
@@ -32,22 +31,6 @@ vec3 camRay(vec2 uv) {
   vec2 s = uv * 2.0 - 1.0;
   s.y -= uLens.z;
   return normalize(uCamRot * vec3(s.x * uLens.x, s.y * uLens.y, -1.0));
-}
-float smin(float a, float b, float k) { float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
-// The outer jug as a solid, in the profile plane (radius, height).
-float jug2(vec2 q) {
-  // The body runs 2 cm into the shoulder, so its top corners hide in it.
-  float hb = (BODY + 0.02) * 0.5;
-  vec2 d = abs(q - vec2(0.0, hb)) - vec2(R - 0.02, hb - 0.02);
-  float body = length(max(d, 0.0)) + min(max(d.x, d.y), 0.0) - 0.02;
-  vec2 e = (q - vec2(0.0, BODY)) / vec2(R, SH);
-  float k = length(e);
-  float sh = (k - 1.0) * k / max(length(e / vec2(R, SH)), 1e-4);
-  vec2 nd = abs(q - vec2(0.0, 0.5 * (BODY + TOP))) - vec2(RN, 0.5 * (TOP - BODY));
-  float neck = length(max(nd, 0.0)) + min(max(nd.x, nd.y), 0.0);
-  float s = smin(min(body, sh), neck, 0.022);
-  float lip = length(q - vec2(RN + 0.0012, TOP - 0.006)) - 0.0058;
-  return smin(s, lip, 0.004);
 }
 float jugOuter(vec3 p) { return jug2(vec2(length(p.xz), p.y)); }
 // The glass shell, open at the mouth.
@@ -58,8 +41,6 @@ float jugShell(vec3 p) {
   float hole = max(q.x - (RN - TH), BODY + 0.06 - q.y);
   return max(s, -hole);
 }
-// Below zero inside the jug's air and water.
-float jugInner(vec3 p) { return jug2(vec2(length(p.xz), p.y)) + TH; }
 // The stopper: a rubber cone, lifted and tilted when it pops.
 vec3 stopLocal(vec3 p) {
   p -= vec3(0.0, TOP + 0.002 + uStop.x, 0.0);
@@ -119,43 +100,29 @@ vec3 env(vec3 d) {
 
 /* ---------- fog: the cloud in the jug and the wisp at the mouth ---------- */
 const FOG = `${COMMON}
+${ATLAS}
 uniform sampler3D uNoise;
+uniform sampler2D tDye, tVel;
 uniform vec2 uRes;
-uniform float uFog, uForm, uSpin, uT, uPlume, uPlumeT, uAge, uRoll, uFrame;
+uniform float uFog, uForm, uT, uPlume, uPlumeT, uFrame;
 const float SIG = 11.0;
-// The fog turns round the axis; each height leads or lags a little.
-vec3 spun(vec3 p) {
-  float r = length(p.xz);
-  float a = uSpin + 0.25 * sin(p.y * 14.0 + uT * 0.2) + 0.2 * uRoll * (r / R - 0.5);
-  float c = cos(a), s = sin(a);
-  vec3 q = vec3(c * p.x - s * p.z, p.y, s * p.x + c * p.z);
-  // A slow roll: up at the axis, down at the walls.
-  q.y -= uT * 0.004 * (0.6 - r / R);
-  return q;
-}
-// The cloud texture: puffy cells eroded by fine noise, carried round the axis.
-float cloud(vec3 p) {
-  vec3 q = spun(p);
-  // A warp that drifts in time turns the cells into rolls and eddies.
-  vec3 w = vec3(texture(uNoise, q * 1.6 + vec3(uT * 0.03, 0.0, 0.0)).r, texture(uNoise, q * 1.6 + vec3(0.37, uT * 0.025, 0.71)).g, texture(uNoise, q * 1.6 + vec3(0.61, 0.13, uT * 0.02)).r) - 0.5;
-  q += w * (0.035 + 0.05 * uRoll);
-  float puff = texture(uNoise, q * 3.4 + vec3(0.0, uT * 0.004, 0.0)).g;
-  float big = texture(uNoise, q * 1.3 + vec3(0.3, 0.0, uT * 0.002)).r;
-  float fine = texture(uNoise, q * 9.5 - vec3(uT * 0.006, 0.0, 0.0)).r;
-  return clamp(puff * 0.6 + big * 0.45 + fine * 0.3 - 0.3, 0.0, 1.0);
-}
 float dens(vec3 p, out float plume) {
   plume = 0.0;
   float d = 0.0;
   float m = jugInner(p);
   if (m < 0.0 && p.y > WATER) {
-    float b = cloud(p);
+    // Fire's split: the fluid grid gives the body, fine noise cuts its edges.
+    vec3 c = (p - BMIN) / CELL;
+    float body = S(tDye, c).r;
+    // The flow carries the fine noise, so the edges streak with it.
+    vec3 q = p - S(tVel, c).xyz * 0.12 + vec3(0.0, -uT * 0.003, 0.0);
+    float fine = texture(uNoise, q * 9.5).r;
+    float b = sqrt(max(body - 0.18, 0.0) / 1.9);
     // Formation: the densest nuclei light first, then the whole jug fills.
     float th = 1.15 - uForm * 1.0;
-    float cover = smoothstep(th, th + 0.28, b + 0.12);
-    // Older fog sinks a little toward the water.
-    float strat = 1.0 + uAge * 0.5 * (0.45 - (p.y - WATER) / (TOP - WATER));
-    d = uFog * cover * strat * (0.18 + 1.9 * b * b) * smoothstep(0.0, 0.0015, -m);
+    float cover = smoothstep(th, th + 0.28, b + 0.12 + (fine - 0.5) * 0.3);
+    float ero = smoothstep(0.15, 0.6, fine * 0.55 + min(body, 1.0) * 0.45);
+    d = uFog * cover * body * (0.45 + 0.75 * ero) * smoothstep(0.0, 0.0015, -m);
   }
   if (uPlume > 0.0 && p.y > TOP - 0.01) {
     // The wisp rises out of the mouth, spreads and thins.
@@ -170,12 +137,10 @@ float dens(vec3 p, out float plume) {
   }
   return d;
 }
-// The light taps read a cheaper field: no warp and no fine cells.
+// The light taps read the fluid grid alone.
 float densLite(vec3 p) {
   if (jugInner(p) > 0.0 || p.y < WATER) return 0.0;
-  vec3 q = spun(p);
-  float b = clamp(texture(uNoise, q * 3.4).g * 0.6 + texture(uNoise, q * 1.3 + vec3(0.3, 0.0, 0.0)).r * 0.45 - 0.15, 0.0, 1.0);
-  return uFog * (0.18 + 1.9 * b * b) * smoothstep(0.0, 0.3, uForm);
+  return uFog * S(tDye, (p - BMIN) / CELL).r * smoothstep(0.0, 0.3, uForm);
 }
 /* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
 // A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
@@ -210,7 +175,7 @@ void main() {
   float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uFrame * 0.618034);
   float t = t0 + dt * j;
   float T = 1.0;
-  vec3 S = vec3(0.0);
+  vec3 acc = vec3(0.0);
   // The view and the key: the camera looks into the light, so the fog backlights.
   float ph = hg(dot(-rd, uKey) * -1.0, G_HG) * 12.56637;
   vec3 key = vec3(1.4, 1.45, 1.53);
@@ -227,11 +192,11 @@ void main() {
     // A faint warm fill from the right strip, a cool room floor.
     Li += vec3(0.05, 0.034, 0.022) * (0.5 + 0.5 * p.x / R) + vec3(0.012, 0.014, 0.018);
     float al = 1.0 - exp(-max(d, 0.0) * SIG * dt);
-    S += T * al * Li;
+    acc += T * al * Li;
     T *= 1.0 - al;
     if (T < 0.01) break;
   }
-  o = vec4(S, T);
+  o = vec4(acc, T);
 }`;
 
 // A three-tap blur along one axis: it hides the march dither, as in Fire.
@@ -460,6 +425,7 @@ export async function makeScene(gl) {
     bench: program(gl, TRI_VS, BENCH),
     scene: program(gl, TRI_VS, SCENE),
     final: program(gl, TRI_VS, FINAL),
+    ...fluidPrograms(gl),
   });
   const empty = gl.createVertexArray();
   const bloom = bloomChain(gl, { max: 5 });
@@ -471,6 +437,7 @@ export async function makeScene(gl) {
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
   gl.bindTexture(gl.TEXTURE_3D, null);
+  const fluid = makeFluid(gl, P, empty, noise);
 
   let fogT = null, fogB = null, benchT = null, hdr = null, W = 0, H = 0, FW = 0, FH = 0, fogScale = 2;
   function resize(w, h, half = 2) {
@@ -507,14 +474,13 @@ export async function makeScene(gl) {
     gl.uniform1i(f.u.uNoise, 0);
     gl.uniform2f(f.u.uRes, FW, FH);
     const g = v.fog;
+    bind(gl, f, 'tDye', 1, fluid.dye());
+    bind(gl, f, 'tVel', 2, fluid.vel());
     gl.uniform1f(f.u.uFog, g.dens);
     gl.uniform1f(f.u.uForm, g.form);
-    gl.uniform1f(f.u.uSpin, g.spin);
-    gl.uniform1f(f.u.uRoll, g.roll);
     gl.uniform1f(f.u.uT, g.t);
     gl.uniform1f(f.u.uPlume, g.plume);
     gl.uniform1f(f.u.uPlumeT, g.plumeT);
-    gl.uniform1f(f.u.uAge, g.age);
     gl.uniform1f(f.u.uFrame, frameNo % 64);
     tri(gl, fogT, empty);
     gl.bindTexture(gl.TEXTURE_3D, null);
@@ -549,5 +515,6 @@ export async function makeScene(gl) {
     tri(gl, null, empty);
   }
 
-  return { resize, frame };
+  // One fluid time step; see makeFluid for the fields.
+  return { resize, frame, sim: s => fluid.step(s) };
 }

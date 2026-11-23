@@ -20,7 +20,7 @@ Overlaps to tell Tom: Railgun has an open menu icon bean (stimming-yrcx, waits o
 
 ## Chunks
 - [x] 1 lava eyes shadyos chamber ink frietkot railgun trainride motorway kintsugi (stimming-0h67)
-- [ ] 2 crossing observatory nvg, then 7 of the main shelf with a round
+- [x] 2 crossing observatory nvg morpher pop domino pins galaxy kaleido ferro (stimming-ij6k, df8c2427)
 - [ ] 3 to 7 the rest of the main shelf, then the Lab with no round
 - [ ] 8 to 14 the Lab
 - [ ] 15 the last of the Lab; ask Tom about Prism, Fidget board and Heat putty
@@ -29,3 +29,8 @@ Overlaps to tell Tom: Railgun has an open menu icon bean (stimming-yrcx, waits o
 ## Sheet: all rounds (Tom, 2026-11-23)
 
 Tom: "can we get the sheet with ALL logos per toy we've had so far". The sheet opens on All rounds: every card of every gallery per toy (`icons/rounds.json`, 154 galleries for 101 toys, plus `GALLERY`), newest round first; `?latest` keeps the A and D view. Chunk 2 moved to one side session per toy, five at a time.
+
+## Sheet: earlier menu tiles (Tom, 2026-11-23)
+
+Tom: the old menu icons did not come through. The early galleries never held a Current card; old menu tiles lived only in the git history of `index.html`. A headless pass loaded the last commit of each tile version from git history and took the tile at rest: 217 stills for 90 toys in `icons/history/` (WebP, 700 KB), listed in `icons/history/menu.json`. The All view shows them under each toy's rounds as "menu, earlier", newest first, markable (`<toy>-menu<n>@menu`). Stills, not live: the hover of that day is gone. Six retired toys (Morph set, Ribbon, Keys, Ripple, Jelly, Bench) have no menu row, so their old tiles are not shown.
+- [x] Earlier menu tiles on the sheet

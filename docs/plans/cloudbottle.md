@@ -1,6 +1,6 @@
 # Cloud in a bottle (`cloudbottle`)
 
-Status: built as an MVP, 2026-11-22; waits on Tom. Bean `stimming-ec87`. Toy doc: `docs/toys/cloudbottle.md`. Idea 129, group A: "Pump, then release; a cloud snaps into being."
+Status: built as an MVP, 2026-11-22; Fire's fluid ported, 2026-11-23; waits on Tom. Bean `stimming-ec87`. Toy doc: `docs/toys/cloudbottle.md`. Idea 129, group A: "Pump, then release; a cloud snaps into being."
 
 ## The hero moment
 
@@ -16,6 +16,7 @@ The fog rolls and swirls in the side light. Squeeze again: the stopper goes home
 | Space | 3D, a fixed camera a little above the jug, three-quarter light | The fog is a volume; only 3D shows it fill the round jug and catch the light from the side. |
 | Renderer | Raw WebGL2 on `shared/gl.js`: a fog pass at half size and its blur, a bench pass, a scene pass, bloom from `shared/glow.js`, the grade from `shared/grade.js` | Small programs link fast on D3D11. Signed distances draw the jug, stopper, hose and bulb. |
 | Fog shading | Fire's smoke shading (`shared/fire.js`), copied as `K3 lighting` | Tom, 2026-11-22: "fire toy smoke shader -- always". |
+| Fog motion | Fire's fluid, ported to raw WebGL2 in `fluid.js` | Tom, 2026-11-23: yes to the port. |
 | Vessel | A large round glass jug with a short neck | The classic lecture demonstration (reference). Glass gives crisp edge light that frames the fog. |
 | Pump | A rubber squeeze bulb on the bench, on a hose to the stopper | A pump in frame makes each stroke visible; a bulb is one bold shape, no prop. |
 | Light | Black room; one cool key from the back left, a faint warm rim from the right | Fog scatters forward: a back side light makes it glow white on black, as in lecture photos. |
@@ -33,6 +34,7 @@ The fog rolls and swirls in the side light. Squeeze again: the stopper goes home
 - Each squeeze adds about 0.045 bar. Past 0.55 to 0.65 bar the stopper pops by itself.
 - On release the gas expands; the fog fraction follows the pressure drop: a small drop gives a faint haze.
 - Fog density = fraction x smoke. It forms over 0.2 s, then thins with tau 40 s as the walls warm the air.
+- The fluid: the warm glass drives a slow roll, up the walls and down the middle; warm gas under the shoulder clears the top first. A pop pulls the gas up the neck; a squeeze jets air down it.
 - Each squeeze on a sealed jug multiplies the fog by 0.5: three or four squeezes clear it.
 
 ## Bar v3

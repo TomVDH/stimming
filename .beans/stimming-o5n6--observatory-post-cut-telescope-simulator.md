@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T11:01:56Z
-updated_at: 2026-11-22T20:16:30Z
+updated_at: 2026-11-23T17:01:42Z
 parent: stimming-wqq9
 ---
 
@@ -13,11 +13,11 @@ After the pick cuts, a telescope simulator: the player drives the tube and the e
 
 ## Checklist
 
-- [ ] observatory/src/sim/ optics maths (tube pose, eyepieces, projection)
-- [ ] observatory/src/sim/main.ts: entry, Canvas 2D eyepiece view, controls
-- [ ] observatory/sim.html workbench page (noindex)
-- [ ] tools/build.mjs: sim/main in the observatory extras (one line)
-- [ ] npm run check: 0 errors
+- [x] observatory/src/sim/ optics maths (tube pose, eyepieces, projection)
+- [x] observatory/src/sim/main.ts: entry, Canvas 2D eyepiece view, controls
+- [x] observatory/sim.html workbench page (noindex)
+- [x] tools/build.mjs: sim/main in the observatory extras (one line)
+- [x] npm run check: 0 errors
 - [x] npm run build: dist/sim/main.js written
 - [ ] Browser pane: sky renders; tube controls move the view
 - [x] Commit on claude/obs-sim-5faa06 with tools/commit.sh --no-push
@@ -119,3 +119,6 @@ Tom: integrate it into the toy for now; an overview with a sweeping scene, a sle
 - [x] Tom keeps the pan, not an orbit round the summit (2026-11-23)
 - [ ] Open: what "medium fidelity" trims from the sim
 - [ ] Open: optics.ts still says a 41 cm refractor; at the main dome's scale 3.64 the hero glass is about 1 m
+
+Merged to main on 2026-11-22 (5e9c4a6a, 7937852b).
+Round 7 merged to main on 2026-11-23 with the selector and cuts chain (claude/obs-sim-integrate).

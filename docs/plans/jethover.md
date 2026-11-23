@@ -20,21 +20,22 @@ The heat carries the shot: the plumes glow, the air over the pad shimmers and be
 
 | Question | Default | Why |
 |---|---|---|
-| 3D or flat | 3D, three.js 0.170 (Scene type). One fixed low camera at three-quarter front, a diorama with no orbit. | Heat shimmer needs depth: hot air between the craft and a far horizon. A flat elevation shows the plume but not the air it bends. |
-| Setting | An open plain, a damp concrete pad, a low far ridge and a row of far lights. No buildings, no props. | The far lights and the horizon are what the shimmer bends. The damp pad takes the glow. The Look rule: few shapes, light and haze carry it. |
-| Time of day | Blue hour, just after sunset. The camera looks toward the last light. | The exhaust is the brightest thing in the scene, and it lights the underside warm. The sky still parts the dark craft from the ground, with a cool rim. |
+| 3D or flat | 3D. Since 2026-11-23: three.js 0.186.1 WebGPU (Compute type) and one fixed long-lens shot from 150 m at eye height, after Villeneuve. Before: three.js 0.170 and a close three-quarter camera. | Heat shimmer needs depth: hot air between the craft and a far horizon. A flat elevation shows the plume but not the air it bends. |
+| Setting | A wet concrete apron, an open plain, three far ranges at 2.6, 7 and 18 km in haze, a row of far lights. No buildings, no props. | The far lights and the horizon are what the shimmer bends. The damp pad takes the glow. The Look rule: few shapes, light and haze carry it. |
+| Time of day | Four, from the Bar: Dawn, Day, Dusk, Night (Tom, 2026-11-23). Dusk is the default: blue hour, just after sunset. The camera looks toward the last light. | The exhaust is the brightest thing in the scene, and it lights the underside warm. The sky still parts the dark craft from the ground, with a cool rim. |
 | The craft | A generic twin-engine VTOL: a blended body, a delta wing, two canted fins, two swivel nozzles under the rear body, a lift-fan door behind the canopy, gear down. Plain dark grey, no markings. | Hard rule 11. It reads as a jet in the hover without any real aircraft's shape or livery. |
 | The hand | Throttle. Hold for full reheat, drag to drift and yaw, release to settle. Slider: Throttle, the hover setting. | The throttle drives every part of the show: glow, diamonds, shimmer, steam, sound. Drift is the one extra motion, and only while you hold. |
 | Sound | Turbine whine and roar while the hand works the throttle, and through the spool-down after. Then it fades and the context sleeps. | An office toy: a jet that roars for a minute after one click is too much. The sound has a visible cause, the throttle. |
 
 ## Renderer
 
-- three.js 0.170 with small ShaderMaterials. Each program stays small, for the Windows D3D11 link.
-- Passes: the scene (MSAA, half float), jet-core heat and craft depth at half size, the gas step and its volume at half size, a refraction and composite pass, bloom with a threshold, a grade.
-- The craft: a few extruded shapes, MeshStandardMaterial, a sky environment from PMREM. Two warm point lights at the nozzles and one on the pad light it from below.
+- three.js 0.186.1 WebGPU with TSL, WebGPU backend only (Tom, 2026-11-23: "truster will become webgpu").
+- Passes: the scene; the gas volume and a heat volume at half size; the heat bend; the gas over the scene; bloom; ACES; a grade after Railgun's Villeneuve print.
+- The craft: a few extruded shapes and standard materials. Two warm point lights at the nozzles and one on the apron light it from below.
 - The plumes: view-facing ribbons along each nozzle axis. A core, a sheath, and shock diamonds as bright cells along the axis that fade one by one.
-- The pad: a shader with damp concrete, a hot glow pool and a scorch under each plume, and a fake wet reflection of the plumes.
-- Steam, smoke and heat: K3, Fire's volume fluid, ported to WebGL2 (`fluid.js`). The jets drive a 3D gas grid; a half-size ray march lights the steam from the hot pools and sums the heat that bends the background. Tom asked for this pass on 2026-11-22 ("consult the fire toy fire shader").
+- The apron: wet concrete, a hot glow pool and a scorch under each plume, a mirror of the far country and the plumes, then haze.
+- Steam, smoke, exhaust and heat: Fire's fluid and volume (`shared/fire.js`), copied into `gas.js` with jets, a solid floor and steam added (Tom, 2026-11-23: "fire shader for smoke and exhaust").
+- The first build (2026-11-22) ported Fire's fluid to WebGL2 by hand; the WebGPU build replaces it.
 
 ## Physical details (the pizazz)
 

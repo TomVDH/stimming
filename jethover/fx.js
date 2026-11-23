@@ -1,163 +1,139 @@
-// Jet hover effects: the plumes, the jet-core heat and the post passes.
-// Each program stays small, so the Windows D3D11 link stays fast.
-import * as THREE from 'three';
+// Jet hover effects: the plume ribbons and the post chain.
+// three.js 0.186 WebGPU; every shader is TSL.
+import * as THREE from 'three/webgpu';
+import {
+  Fn, vec2, vec3, vec4, float, uniform, uv, pass, screenUV, screenCoordinate, mx_noise_float, renderOutput,
+  mix, smoothstep, exp, abs, floor, max, min, dot, fract, sin, perspectiveDepthToViewZ, cameraNear, cameraFar,
+} from 'three/tsl';
+import { bloom } from 'three/addons/tsl/display/BloomNode.js';
+import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
 
-const NOISE = /* glsl */`
-float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float vn(vec2 p) {
-  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
-}`;
+const n2 = p => mx_noise_float(p).mul(0.5).add(0.5);
 
 /* ---------- plume ribbons: view-facing strips along each nozzle axis ---------- */
-// x across in metres, t along the axis in metres.
-const RIBBON_VS = /* glsl */`
-uniform vec3 uN, uAxis;
-uniform float uLen, uR, uSpread, uWide;
-varying vec2 vUV;
-varying float vR;
-void main() {
-  float v = position.y + 0.5;
-  float t = v * uLen;
-  vec3 P = uN + uAxis * t;
-  vec3 side = normalize(cross(uAxis, normalize(cameraPosition - P)));
-  float r = uR * (1.0 + t * uSpread);
-  float w = r * uWide;
-  P += side * position.x * w;
-  vUV = vec2(position.x * w, t);
-  vR = r;
-  gl_Position = projectionMatrix * viewMatrix * vec4(P, 1.0);
-}`;
-
-const PLUME_FS = /* glsl */`
-${NOISE}
-uniform float uThr, uTime, uLen, uSeed, uWide, uCold;
-varying vec2 vUV;
-varying float vR;
-void main() {
-  float t = vUV.y, xn = vUV.x / vR, thr = uThr;
-  float edge = 1.0 - smoothstep(0.7, 1.0, abs(xn) / uWide);
-  float flow = t * 1.2 - uTime * (5.0 + 9.0 * thr);
-  float tb = vn(vec2(xn * 1.6 + uSeed, flow)) * 0.6 + vn(vec2(xn * 3.7 - uSeed, flow * 2.2)) * 0.4;
-  float flame = 1.6 + 3.6 * thr;
-  float along = exp(-t / flame);
-  float core = exp(-xn * xn * 2.6);
-  float body = exp(-xn * xn * 1.1) * (0.55 + 0.9 * tb);
-  // Shock diamonds: rhombs along the axis, each dimmer than the last.
-  float S = vR * 2.0 * (0.7 + 0.55 * thr);
-  float k = t / S - 0.55, kc = floor(k + 0.5), f = k - kc;
-  float dsh = 1.0 - abs(f) * 2.6 - abs(xn) * 2.3;
-  float dia = smoothstep(0.0, 0.7, dsh) * step(-0.5, kc) * exp(-max(kc, 0.0) * (0.85 - 0.4 * thr));
-  dia *= smoothstep(0.1, 0.55, thr) * (0.75 + 0.5 * tb);
-  float mouth = exp(-t * 3.2) * core;
-  // Hot yellow at the throat, orange, then violet blue down the jet.
-  vec3 cMouth = vec3(1.0, 0.55, 0.2), cDia = vec3(1.0, 0.55, 0.28);
-  vec3 cBody = mix(vec3(1.0, 0.36, 0.1), vec3(0.75, 0.22, 0.5), smoothstep(0.3, 1.4, t));
-  cBody = mix(cBody, vec3(0.3, 0.26, 0.95), smoothstep(1.2, 3.2, t));
-  vec3 col = cMouth * mouth * (0.8 + 1.4 * thr);
-  col += cBody * body * along * (0.45 + 1.3 * thr);
-  col += cDia * dia * (0.55 + 1.9 * thr);
-  // A wide warm halo where the haze holds the glow.
-  col += vec3(1.0, 0.32, 0.08) * exp(-xn * xn * 0.1) * 0.05 * (0.3 + thr) * exp(-t / (flame * 1.6));
-  // The cold lift-fan jet shows only as a faint grey sheet.
-  col = mix(col, vec3(0.05, 0.06, 0.08) * body * (0.3 + 0.7 * thr) * 0.25, uCold);
-  col *= edge * smoothstep(uLen + 0.05, uLen - 0.7, t);
-  gl_FragColor = vec4(col, 1.0);
-}`;
-
-const HEAT_RIBBON_FS = /* glsl */`
-uniform float uThr, uLen, uWide, uCold;
-varying vec2 vUV;
-varying float vR;
-void main() {
-  float t = vUV.y, xn = vUV.x / vR;
-  float edge = 1.0 - smoothstep(0.6, 1.0, abs(xn) / uWide);
-  float s = exp(-xn * xn * 0.35) * smoothstep(0.0, 0.8, t) * (0.35 + 0.65 * uThr) * mix(1.0, 0.35, uCold);
-  // Strongest near the ground, where the jet turns.
-  s *= 0.7 + 0.6 * smoothstep(uLen * 0.4, uLen, t);
-  gl_FragColor = vec4(s * edge, 0.0, 0.0, 1.0);
-}`;
-
-export function makePlumes(count) {
-  const geo = new THREE.PlaneGeometry(2, 1, 1, 56);
-  const plumes = [], heats = [];
-  for (let i = 0; i < count; i++) {
-    const U = {
-      uN: { value: new THREE.Vector3() }, uAxis: { value: new THREE.Vector3(0, -1, 0) },
-      uLen: { value: 4 }, uR: { value: 0.4 }, uSpread: { value: 0.11 }, uWide: { value: 4.5 },
-      uThr: { value: 0.5 }, uTime: { value: 0 }, uSeed: { value: i * 17.3 }, uCold: { value: 0 },
-    };
-    const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-      vertexShader: RIBBON_VS, fragmentShader: PLUME_FS, uniforms: U,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    }));
-    m.frustumCulled = false;
-    m.renderOrder = 2;
-    plumes.push(m);
-    const hU = { ...U, uWide: { value: 3.0 } };
-    const h = new THREE.Mesh(geo, new THREE.ShaderMaterial({
-      vertexShader: RIBBON_VS, fragmentShader: HEAT_RIBBON_FS, uniforms: hU,
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    }));
-    h.frustumCulled = false;
-    heats.push(h);
-  }
-  return { plumes, heats };
+// The CPU lays each strip toward the eye; uv x runs across in core radii, uv y is metres down the jet.
+const SEG = 56;
+function plumeMaterial(U) {
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  m.colorNode = Fn(() => {
+    const q = uv();
+    const t = q.y, xn = q.x, thr = U.thr;
+    const edge = float(1.0).sub(smoothstep(0.7, 1.0, abs(xn).div(U.wide)));
+    const flow = t.mul(1.2).sub(U.time.mul(thr.mul(9.0).add(5.0)));
+    const tb = n2(vec2(xn.mul(1.6).add(U.seed), flow)).mul(0.6).add(n2(vec2(xn.mul(3.7).sub(U.seed), flow.mul(2.2))).mul(0.4));
+    const flame = thr.mul(3.6).add(1.6);
+    const along = exp(t.div(flame).negate());
+    const core = exp(xn.mul(xn).mul(-2.6));
+    const body = exp(xn.mul(xn).mul(-1.1)).mul(tb.mul(0.9).add(0.55));
+    // Shock diamonds: rhombs along the axis, each dimmer than the last.
+    const r = U.r.mul(t.mul(U.spread).add(1.0));
+    const S = r.mul(2.0).mul(thr.mul(0.55).add(0.7));
+    const k = t.div(S).sub(0.55), kc = floor(k.add(0.5)), f = k.sub(kc);
+    const dsh = float(1.0).sub(abs(f).mul(2.6)).sub(abs(xn).mul(2.3));
+    const dia = smoothstep(0.0, 0.7, dsh).mul(smoothstep(-0.51, -0.49, kc)).mul(exp(max(kc, 0.0).mul(thr.mul(0.4).sub(0.85))))
+      .mul(smoothstep(0.1, 0.55, thr)).mul(tb.mul(0.5).add(0.75));
+    const mouth = exp(t.mul(-3.2)).mul(core);
+    // Hot yellow at the throat, orange, then violet blue down the jet.
+    const cBody = mix(mix(vec3(1.0, 0.36, 0.1), vec3(0.75, 0.22, 0.5), smoothstep(0.3, 1.4, t)), vec3(0.3, 0.26, 0.95), smoothstep(1.2, 3.2, t));
+    const col = vec3(1.0, 0.55, 0.2).mul(mouth).mul(thr.mul(1.4).add(0.8))
+      .add(cBody.mul(body).mul(along).mul(thr.mul(1.3).add(0.45)))
+      .add(vec3(1.0, 0.55, 0.28).mul(dia).mul(thr.mul(1.9).add(0.55)))
+      .add(vec3(1.0, 0.32, 0.08).mul(exp(xn.mul(xn).mul(-0.1))).mul(0.05).mul(thr.add(0.3)).mul(exp(t.div(flame.mul(1.6)).negate())));
+    // The cold lift-fan jet shows only as a faint grey sheet.
+    const cold = vec3(0.05, 0.06, 0.08).mul(body).mul(thr.mul(0.7).add(0.3)).mul(0.25);
+    return mix(col, cold, U.cold).mul(edge).mul(U.gain).mul(float(1.0).sub(smoothstep(U.len.sub(0.7), U.len.add(0.05), t)));
+  })();
+  return m;
 }
 
-/* ---------- post: heat refraction and the gas, then the grade ---------- */
-export const REFRACT = {
-  uniforms: {
-    tDiffuse: { value: null }, tHeat: { value: null }, tVol: { value: null }, tVolHeat: { value: null },
-    uRes: { value: new THREE.Vector2(1, 1) }, uTime: { value: 0 }, uAmp: { value: 1 }, uBend: { value: 45 },
-  },
-  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: /* glsl */`
-    ${NOISE}
-    uniform sampler2D tDiffuse, tHeat, tVol, tVolHeat;
-    uniform vec2 uRes;
-    uniform float uTime, uAmp, uBend;
-    varying vec2 vUv;
-    void main() {
-      vec2 uv = vUv;
-      // The hot gas in the volume: light bends along the gradient of its shimmer.
-      vec2 px = 2.0 / uRes;
-      float hx = texture2D(tVolHeat, vUv + vec2(px.x, 0.0)).g - texture2D(tVolHeat, vUv - vec2(px.x, 0.0)).g;
-      float hy = texture2D(tVolHeat, vUv + vec2(0.0, px.y)).g - texture2D(tVolHeat, vUv - vec2(0.0, px.y)).g;
-      vec2 off = vec2(hx, hy) * uBend * uAmp;
-      // A long grazing path over the pad must not tear the frame.
-      off *= min(1.0, 4.0 * uAmp / max(length(off), 1e-4));
-      uv += off / uRes;
-      // The jet cores: fine cells along each plume.
-      float s = texture2D(tHeat, vUv).r;
-      if (s > 0.002) {
-        vec2 q = vUv * uRes / (12.0 * uAmp);
-        vec2 o = vec2(vn(q + vec2(0.0, uTime * 6.0)) - 0.5, vn(q * 1.3 + vec2(7.1, uTime * 7.0)) - 0.5);
-        uv += o * min(s, 1.0) * 2.5 * uAmp / uRes;
+export function makePlumes(count) {
+  const plumes = [];
+  const side = new THREE.Vector3(), P = new THREE.Vector3(), V = new THREE.Vector3();
+  for (let i = 0; i < count; i++) {
+    const U = {
+      len: uniform(4), r: uniform(0.4), spread: uniform(0.11), wide: uniform(4.5),
+      thr: uniform(0.5), time: uniform(0), seed: uniform(i * 17.3), cold: uniform(0), gain: uniform(1),
+    };
+    const geo = new THREE.BufferGeometry();
+    const pos = new THREE.BufferAttribute(new Float32Array((SEG + 1) * 2 * 3), 3);
+    const tuv = new THREE.BufferAttribute(new Float32Array((SEG + 1) * 2 * 2), 2);
+    pos.setUsage(THREE.DynamicDrawUsage); tuv.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('position', pos);
+    geo.setAttribute('uv', tuv);
+    const idx = [];
+    for (let s = 0; s < SEG; s++) { const a = s * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
+    geo.setIndex(idx);
+    const mesh = new THREE.Mesh(geo, plumeMaterial(U));
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 2;
+    // Lays the strip from the nozzle n along axis a, facing the eye.
+    const lay = (n, a, len, eye) => {
+      U.len.value = len;
+      for (let s = 0; s <= SEG; s++) {
+        const t = (s / SEG) * len;
+        P.copy(n).addScaledVector(a, t);
+        side.crossVectors(a, V.copy(eye).sub(P).normalize()).normalize();
+        const w = U.r.value * (1 + t * U.spread.value) * U.wide.value;
+        for (let e = 0; e < 2; e++) {
+          const sg = e ? 1 : -1, k = s * 2 + e;
+          pos.setXYZ(k, P.x + side.x * w * sg, P.y + side.y * w * sg, P.z + side.z * w * sg);
+          tuv.setXY(k, sg * U.wide.value, t);
+        }
       }
-      vec3 c = texture2D(tDiffuse, uv).rgb;
-      // The lit gas lies over the bent scene.
-      vec4 g = texture2D(tVol, uv);
-      gl_FragColor = vec4(c * (1.0 - g.a) + g.rgb, 1.0);
-    }`,
-};
+      pos.needsUpdate = true; tuv.needsUpdate = true;
+    };
+    plumes.push({ mesh, U, lay });
+  }
+  return plumes;
+}
 
-export const GRADE = {
-  uniforms: { tDiffuse: { value: null }, uGrain: { value: 0 }, uAsp: { value: 1 } },
-  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse;
-    uniform float uGrain, uAsp;
-    varying vec2 vUv;
-    float h(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-    void main() {
-      vec3 c = texture2D(tDiffuse, vUv).rgb;
-      // Cool shadows, warm highlights, a soft vignette.
-      float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-      c += vec3(-0.002, 0.0, 0.006) * (1.0 - smoothstep(0.0, 0.2, l));
-      vec2 q = (vUv - 0.5) * vec2(uAsp, 1.0);
-      c *= 1.0 - 0.32 * dot(q, q);
-      c += (h(vUv * 917.0 + uGrain) - 0.5) * 0.006 * (0.25 + c);
-      gl_FragColor = vec4(max(c, 0.0), 1.0);
-    }`,
-};
+/* ---------- post: heat bend, the gas over the scene, bloom, the grade ---------- */
+// sceneZ is the scene's view z at a pixel; the gas volume uses it to hide behind the craft.
+export function makePost({ renderer, scene, camera, volScene, heatScene }) {
+  const pipe = new THREE.RenderPipeline(renderer);
+  pipe.outputColorTransform = false;
+  const scenePass = pass(scene, camera);
+  const depth = scenePass.getTextureNode('depth');
+  const sceneZ = () => perspectiveDepthToViewZ(depth.sample(screenUV).x, cameraNear, cameraFar);
+  const volPass = pass(volScene, camera);
+  volPass.setResolutionScale(0.5);
+  const heatPass = pass(heatScene, camera);
+  heatPass.setResolutionScale(0.5);
+  const U = {
+    res: uniform(new THREE.Vector2(1, 1)), amp: uniform(1), bend: uniform(45), time: uniform(0),
+    vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3),
+    key: uniform(new THREE.Color(0.8, 0.9, 1.06)), pull: uniform(0.3),
+  };
+  const heat = heatPass.getTextureNode();
+  const blurred = gaussianBlur(volPass, 0.6, 1);
+  // The hot gas bends the frame along the gradient of its summed shimmer.
+  const bentUV = Fn(() => {
+    // The gradient taps widen with the zoom, so the bend stays smooth.
+    const px = vec2(U.tap).div(U.res);
+    const hx = heat.sample(screenUV.add(vec2(px.x, 0.0))).r.sub(heat.sample(screenUV.sub(vec2(px.x, 0.0))).r);
+    const hy = heat.sample(screenUV.add(vec2(0.0, px.y))).r.sub(heat.sample(screenUV.sub(vec2(0.0, px.y))).r);
+    const off = vec2(hx, hy).mul(U.bend).mul(U.amp).toVar();
+    // A long path through hot gas must not tear the frame: the bend caps at cap px.
+    off.mulAssign(min(1.0, U.amp.mul(U.cap).div(max(off.length(), 1e-4))));
+    return screenUV.add(off.div(U.res));
+  })();
+  const sceneCol = scenePass.getTextureNode().sample(bentUV);
+  const gasCol = blurred.getTextureNode().sample(bentUV).mul(U.vol);
+  // The lit gas adds over the bent scene.
+  const lit = vec4(sceneCol.rgb.add(gasCol.rgb), 1.0);
+  const glow = bloom(lit, 0.55, 0.6, 0.85);
+  const tone = renderOutput(lit.add(glow));
+  // The Villeneuve grade: colour falls toward one cool key; highs go to cream.
+  pipe.outputNode = Fn(() => {
+    const c = tone.rgb;
+    const l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+    const keyed = mix(c, vec3(l).mul(mix(U.key, vec3(1.0, 0.97, 0.9), smoothstep(0.5, 1.0, l).mul(0.7))), U.pull);
+    const q = screenUV.sub(0.5).mul(vec2(U.asp, 1.0));
+    const vig = float(1.0).sub(dot(q, q).mul(0.42));
+    const g = fract(sin(dot(screenCoordinate.xy.add(U.seed), vec2(12.9898, 78.233))).mul(43758.5453)).sub(0.5);
+    const out = keyed.mul(vig).add(g.mul(0.018).mul(U.grain).mul(keyed.add(0.15)));
+    // Milky blacks: the print never reaches full black.
+    return vec4(out.mul(0.985).add(vec3(0.008, 0.01, 0.014)), 1.0);
+  })();
+  return { pipe, U, sceneZ, glow, volPass, heatPass };
+}

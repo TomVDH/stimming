@@ -1,11 +1,12 @@
-// Solar loop: the sun's edge in extreme-ultraviolet light.
-// Loops rise, brighten and drain; a tap flares a region; a drag turns the sun.
+// Solar loop: a star's edge at a vast scale, graded like film.
+// Loops rise and drain; giant prominences stand over the limb.
+// A tap flares a region or lifts a prominence off; a drag turns the sun.
 // Plan: docs/plans/solarloop.md. Toy doc: docs/toys/solarloop.md.
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, BANDS, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE } from './sun.js';
+import { R, STARS, bodySize, BODIES, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -20,10 +21,10 @@ const store = {
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 
 /* ---------- state ---------- */
-const savedBand = store.get('band');
+const savedStar = store.get('star');
 const savedAct = Number(store.get('activity'));
 const st = {
-  band: BANDS[savedBand] ? savedBand : 'gold',
+  star: STARS[savedStar] ? savedStar : 'sun',
   activity: savedAct >= 0 && savedAct <= 100 && store.get('activity') !== null ? savedAct : 60,
   // The ambient clock: it runs while the toy drifts and stops asleep.
   time: 34,
@@ -36,18 +37,48 @@ let gl = null, ren = null, raf = 0, timer = 0, visible = true, last = 0, frameNo
 let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 
 /* ---------- the view: a telescope, so an orthographic projection ---------- */
-const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1 };
+const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
+// Two framings: the wide dome, and a long lens on a quarter of the limb.
+const fit = { wide: { cx: 0, cy: R, hw: 520 }, long: { cx: 0, cy: R, hw: 280, psi: 0.5 } };
+// The long lens is the default (Tom, 2026-11-23).
+const lens = { long: store.get('lens') !== 'wide', k: 0 };
+lens.k = lens.long ? 1 : 0;
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
   const narrow = asp < 0.8;
-  view.hw = narrow ? 112 : asp < 1.2 ? 165 : 215;
-  view.hh = view.hw / asp;
+  view.asp = asp;
+  // Wide enough that the limb reads as a dome and the prominences tower.
+  const hw = narrow ? 260 : asp < 1.2 ? 380 : 520;
+  const hh = hw / asp;
   const free = Math.max(0.4 * h, h - top - bottom);
-  const m = 2 * view.hh / h;
-  // The limb stands a third of the way up the free part of the stage.
-  const yb = bottom + (narrow ? 0.34 : 0.3) * free;
-  view.cx = 0;
-  view.cy = R + view.hh - yb * m;
+  // The limb stands about a quarter of the way up the free part of the stage.
+  const yb = bottom + (narrow ? 0.3 : 0.26) * free;
+  fit.wide = { cx: 0, cy: R + hh - yb * 2 * hh / h, hw };
+  // The long lens: the limb cuts off the bottom left quarter; space fills the rest.
+  // The arc runs from the foot's middle to the left side's middle.
+  const hwL = narrow ? 150 : asp < 1.2 ? 210 : 280;
+  const hhL = hwL / asp;
+  // On a tall phone the corner cut is too steep; a fixed angle keeps the arc low.
+  const psi = narrow ? 0.6 : Math.atan2(hhL, hwL);
+  const nx = Math.sin(psi), ny = Math.cos(psi);
+  const d = 0.5 * (hwL * nx + hhL * ny);
+  fit.long = { cx: (R + d) * nx, cy: (R + d) * ny - (bottom - top) * hhL / h, hw: hwL, psi };
+  applyView();
+}
+// Eases between the framings; the width moves on a log scale, as a zoom does.
+function applyView() {
+  const k = lens.k * lens.k * (3 - 2 * lens.k);
+  const a = fit.wide, b = fit.long;
+  view.cx = a.cx + (b.cx - a.cx) * k;
+  view.cy = a.cy + (b.cy - a.cy) * k;
+  view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
+  view.hh = view.hw / view.asp;
+}
+function toggleLens() {
+  lens.long = !lens.long;
+  store.set('lens', lens.long ? 'long' : 'wide');
+  if (!started || calm) { lens.k = lens.long ? 1 : 0; applyView(); }
+  poke();
 }
 // Rotation, sun frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -70,29 +101,33 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, flare: i => flareAt(sun.regions[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, lens, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
   choice: {
-    label: 'Band',
-    value: st.band,
+    label: 'Star',
+    value: st.star,
     options: [
-      { value: 'gold', label: 'Gold', dot: 'oklch(0.8 0.15 80)', key: '1' },
-      { value: 'teal', label: 'Teal', dot: 'oklch(0.78 0.12 195)', key: '2' },
-      { value: 'red', label: 'Red', dot: 'oklch(0.66 0.2 35)', key: '3' },
+      { value: 'sun', label: 'Sun', dot: 'oklch(0.82 0.15 80)', key: '1' },
+      { value: 'proxima', label: 'Proxima', dot: 'oklch(0.62 0.19 35)', key: '2' },
+      { value: 'rigel', label: 'Rigel', dot: 'oklch(0.8 0.1 240)', key: '3' },
+      { value: 'betelgeuse', label: 'Betelgeuse', dot: 'oklch(0.68 0.18 45)', key: '4' },
+      { value: 'vycma', label: 'VY CMa', dot: 'oklch(0.5 0.17 28)', key: '5' },
     ],
-    onPick: v => { if (!BANDS[v]) return; st.band = v; store.set('band', v); poke(); },
+    onPick: v => { if (!STARS[v]) return; st.star = v; store.set('star', v); poke(); },
   },
   actions: [
     { verb: 'flare', key: 'Space', onPress: () => flareNext() },
+    { verb: 'lens', label: 'Lens', key: 'L', onPress: () => toggleLens() },
   ],
   slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
   quality: true,
-  keys: [['click', 'flare'], ['drag', 'turn']],
+  keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'wide or long lens']],
   help: [
-    ['click', 'Tap a region to flare it'],
-    ['drag', 'Drag to turn the sun'],
+    ['click', 'Tap a region to flare it, or a prominence to lift it off'],
+    ['drag', 'Drag to turn the star'],
+    ['L', 'Switch between the wide view and a long lens on a quarter of the limb'],
   ],
 } });
 const introDone = playIntro({ ready: pageReady() });
@@ -126,7 +161,7 @@ function flareAt(rg) {
   if (!rg) return;
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
   const p = regionPoint(rg);
-  snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.band, fl.k);
+  snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
   fl.snapped = 0;
   poke();
 }
@@ -141,14 +176,29 @@ function flareNext() {
     return;
   }
 }
+// A tap on a giant prominence lifts it off into space.
+function eruptAt(p) {
+  if (!p || p.erupt >= 0) return;
+  startEruption(p);
+  snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.star, calm ? 0.7 : 1);
+  poke();
+}
 function flareNear(x, y) {
-  let best = null, bd = Infinity;
+  let best = null, bd = Infinity, prom = false;
   for (const rg of sun.regions) {
     const [px, py] = toCss(regionPoint(rg).v);
     const d = Math.hypot(px - x, py - y);
-    if (d < bd) { bd = d; best = rg; }
+    if (d < bd) { bd = d; best = rg; prom = false; }
   }
-  flareAt(best);
+  for (const p of sun.proms) {
+    const v = toView(promApex(p));
+    if (hidden(v) || p.erupt >= 0) continue;
+    const [px, py] = toCss(v);
+    // A prominence is large: it wins a tap anywhere near its body.
+    const d = Math.hypot(px - x, py - y) * 0.6;
+    if (d < bd) { bd = d; best = p; prom = true; }
+  }
+  if (prom) eruptAt(best); else flareAt(best);
 }
 
 /* ---------- frame state for the renderer ---------- */
@@ -156,6 +206,7 @@ const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
   regs: new Float32Array(20), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
 };
 function makeFrame() {
   const f = frameState;
@@ -171,7 +222,7 @@ function makeFrame() {
   });
   f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
-    const fv = flareView(fl, st.band);
+    const fv = flareView(fl, st.star);
     f.fl.set([...toView(fv.c), 0], k * 4);
     f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
@@ -184,12 +235,35 @@ function makeFrame() {
     f.sat.set([sx, sy, calm ? S * 0.6 : S, 0], k * 4);
   });
   f.time = st.time;
-  f.band = BANDS[st.band];
-  f.count = strands(sun, st.time, { band: st.band, activity: act }, ren.data);
+  const star = STARS[st.star];
+  f.band = star;
+  f.count = strands(sun, st.time, { star: st.star, activity: act }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
   f.sc = Math.max(1, view.H / 900);
+  // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
+  f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
+  // Scale bodies at true size: one beside the limb, one in transit on the long lens.
+  const ppm = view.H / (2 * view.hh);
+  const px = (x, y) => [((x - view.cx) / view.hw * 0.5 + 0.5) * view.W, ((y - view.cy) / view.hh * 0.5 + 0.5) * view.H];
+  const w = fit.wide, wh = w.hw / view.asp;
+  const [ax, ay] = px(w.cx + w.hw * 0.42, R + (w.cy + wh - R) * 0.24);
+  f.bodyA.set([ax, ay, bodySize(star, star.wide) * 0.5 * ppm, 1 - lens.k]);
+  const L = fit.long, lh = L.hw / view.asp;
+  const tx = Math.cos(L.psi), ty = -Math.sin(L.psi);
+  // The transit runs along a chord just inside the limb, over about five minutes.
+  const span = 2.4 * Math.hypot(L.hw, lh);
+  const s0 = ((st.time * 1.5 + span * 0.53) % span) - span / 2;
+  const depth = R - 0.16 * lh;
+  // It climbs away from the foot of the frame.
+  const bx = depth * Math.sin(L.psi) - tx * s0, by = depth * Math.cos(L.psi) - ty * s0;
+  const [qx, qy] = px(bx, by);
+  const on = Math.min(1, Math.max(0, (R - Math.hypot(bx, by)) / 6));
+  f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, lens.k * on]);
+  f.bodyK.set([BODIES[star.wide].bright ? 1 : 0, BODIES[star.long].bright ? 1 : 0]);
+  f.lens = lens.k;
+  f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
   return f;
 }
 function draw() {
@@ -210,12 +284,22 @@ function frame(now) {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
+    // The lens zooms over about two seconds.
+    const lt = lens.long ? 1 : 0;
+    const zooming = lens.k !== lt;
+    if (zooming) {
+      lens.k += (lt - lens.k) * (1 - Math.exp(-dt / 0.45));
+      if (Math.abs(lt - lens.k) < 0.002) lens.k = lt;
+      applyView();
+    }
     stepFlares(sun, dt * (calm ? 0.8 : 1));
+    stepProms(sun, dt * (calm ? 0.8 : 1));
     for (const fl of sun.flares) cueArcade(fl);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = sun.flares.length > 0 || pointer.drag;
+    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    if (drifting > 0) snd.hum(st.star);
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
@@ -226,7 +310,7 @@ function frame(now) {
 function cueArcade(fl) {
   while (fl.snapped < ARCADE && fl.t >= flareCurve.born(fl.snapped)) {
     const p = regionPoint(fl.rg);
-    snd.snap(fl.snapped, clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.band);
+    snd.snap(fl.snapped, clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star);
     fl.snapped++;
   }
 }

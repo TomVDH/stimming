@@ -1,158 +1,227 @@
-// Jet hover scene: the sky, the pad, the craft and its lights.
+// Jet hover scene: the sky, the far ranges, the apron, the craft and its lights.
 // Units are metres. The pad centre is the origin; y points up.
-import * as THREE from 'three';
+// three.js 0.186 WebGPU; every shader is TSL.
+import * as THREE from 'three/webgpu';
+import { HOURS } from '../shared/daytime.js';
+import {
+  Fn, vec2, vec3, float, uniform, positionWorld, positionLocal, positionWorldDirection, cameraPosition,
+  normalize, mix, smoothstep, exp, max, min, abs, fract, floor, sin, cos, dot, atan, fwidth, mx_noise_float, reflect,
+} from 'three/tsl';
 
-// The last light lies behind the craft, low in the west (-z).
+// The dusk sun lies behind the craft, low in the west (-z).
 export const SUN = new THREE.Vector3(0.18, -0.05, -1).normalize();
-export const PAD_R = 15;
 
-/* ---------- GLSL: the sky, shared by the dome and the pad ---------- */
-export const SKY = /* glsl */`
-const vec3 SUN = vec3(${SUN.x.toFixed(4)}, ${SUN.y.toFixed(4)}, ${SUN.z.toFixed(4)});
-float h11(float p) { return fract(sin(p * 127.1) * 43758.5453); }
-float vn1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(h11(i), h11(i + 1.0), f); }
-// Blue hour: a deep zenith, a cold band, the last warm light toward the sun.
-vec3 skyCol(vec3 d) {
-  float el = d.y;
-  vec2 sx = normalize(SUN.xz);
-  float ca = dot(normalize(d.xz + 1e-5), sx) * 0.5 + 0.5;
-  float up = clamp(el, 0.0, 1.0);
-  vec3 c = mix(vec3(0.020, 0.036, 0.080), vec3(0.004, 0.008, 0.026), pow(up, 0.5));
-  c += vec3(0.42, 0.15, 0.045) * exp(-max(el, 0.0) / 0.045) * pow(ca, 5.0);
-  c += vec3(0.07, 0.04, 0.07) * exp(-max(el, 0.0) / 0.16) * pow(ca, 2.0);
-  c += vec3(0.012, 0.02, 0.04) * exp(-max(el, 0.0) / 0.07);
+/* ---------- four times of day ---------- */
+// Each key sets the sky, the ranges, the apron light, the lights, the grade and the gas.
+// sun: the key light's direction; at night it is the moon.
+// zen, hor, low: the sky from zenith to the horizon. glow, wide, halo: light round the sun.
+// flank, crest: a range's foot and top. lights: far lights. E, sunE: apron sky and sun light.
+const TOD = {
+  dawn: {
+    sun: [-0.12, 0.03, -1], zen: [0.025, 0.04, 0.085], hor: [0.09, 0.08, 0.1], low: [0.04, 0.045, 0.07],
+    glow: [0.5, 0.22, 0.08], glowW: 0.03, wide: [0.08, 0.05, 0.06], halo: 0.9, stars: 0,
+    flank: [0.015, 0.018, 0.03], crest: [0.06, 0.045, 0.05], lights: 0.35,
+    E: [0.06, 0.065, 0.09], sunE: [2.0, 1.2, 0.7], haze: 0.0045,
+    hemiSky: [0.54, 0.56, 0.69], hemiGround: [0.13, 0.11, 0.11], hemiI: 1.1, rimCol: [1.0, 0.72, 0.56], rimI: 2.0,
+    expo: 0.85, key: [0.95, 0.92, 1.0], pull: 0.25, smoke: [0.1, 0.1, 0.13], plume: 0.9,
+  },
+  day: {
+    sun: [-0.45, 0.62, -0.65], zen: [0.22, 0.32, 0.5], hor: [0.62, 0.56, 0.48], low: [0.1, 0.09, 0.07],
+    glow: [0.25, 0.2, 0.12], glowW: 0.08, wide: [0.15, 0.12, 0.08], halo: 0, stars: 0,
+    flank: [0.18, 0.17, 0.17], crest: [0.32, 0.29, 0.26], lights: 0,
+    E: [0.55, 0.6, 0.7], sunE: [1.6, 1.45, 1.2], haze: 0.004,
+    hemiSky: [0.72, 0.77, 0.85], hemiGround: [0.35, 0.31, 0.28], hemiI: 1.4, rimCol: [1.0, 0.94, 0.86], rimI: 3.0,
+    expo: 0.75, key: [1.04, 0.99, 0.9], pull: 0.22, smoke: [0.5, 0.49, 0.47], plume: 0.75,
+  },
+  dusk: {
+    sun: [0.18, -0.05, -1], zen: [0.003, 0.006, 0.02], hor: [0.016, 0.026, 0.052], low: [0.012, 0.02, 0.036],
+    glow: [0.16, 0.06, 0.02], glowW: 0.02, wide: [0.03, 0.026, 0.04], halo: 0, stars: 0,
+    flank: [0.006, 0.008, 0.014], crest: [0.03, 0.022, 0.03], lights: 1,
+    E: [0.02, 0.028, 0.052], sunE: [0, 0, 0], haze: 0.0026,
+    hemiSky: [0.23, 0.3, 0.47], hemiGround: [0.05, 0.04, 0.04], hemiI: 0.95, rimCol: [1.0, 0.71, 0.54], rimI: 1.4,
+    expo: 0.9, key: [0.8, 0.9, 1.06], pull: 0.3, smoke: [0.035, 0.05, 0.09], plume: 1,
+  },
+  night: {
+    sun: [0.5, 0.45, -0.75], zen: [0.001, 0.0015, 0.004], hor: [0.006, 0.008, 0.014], low: [0.006, 0.007, 0.01],
+    glow: [0.02, 0.014, 0.01], glowW: 0.03, wide: [0.004, 0.005, 0.008], halo: 0, stars: 1,
+    flank: [0.002, 0.0025, 0.004], crest: [0.006, 0.007, 0.011], lights: 1.6,
+    E: [0.006, 0.008, 0.014], sunE: [0.03, 0.035, 0.05], haze: 0.0022,
+    hemiSky: [0.11, 0.15, 0.25], hemiGround: [0.02, 0.02, 0.02], hemiI: 0.5, rimCol: [0.62, 0.7, 0.88], rimI: 0.6,
+    expo: 1.0, key: [0.75, 0.88, 1.1], pull: 0.4, smoke: [0.01, 0.014, 0.024], plume: 1.1,
+  },
+};
+export const TIMES = /** @type {const} */ (['dawn', 'day', 'dusk', 'night']);
+const KEYS = TIMES.map(n => ({ h: HOURS[n], ...TOD[n] }));
+const v3 = a => new THREE.Vector3(...a);
+const c3 = a => new THREE.Color(...a);
+// The shaders read these; tod() writes them.
+const T = {
+  sun: uniform(SUN.clone()), zen: uniform(c3(TOD.dusk.zen)), hor: uniform(c3(TOD.dusk.hor)), low: uniform(c3(TOD.dusk.low)),
+  glow: uniform(c3(TOD.dusk.glow)), glowW: uniform(TOD.dusk.glowW), wide: uniform(c3(TOD.dusk.wide)), halo: uniform(0), stars: uniform(0),
+  flank: uniform(c3(TOD.dusk.flank)), crest: uniform(c3(TOD.dusk.crest)), lights: uniform(1),
+  E: uniform(c3(TOD.dusk.E)), sunE: uniform(c3(TOD.dusk.sunE)),
+};
+// Blends the two keys round the hour, on the 24-hour circle.
+export function blendTod(hour) {
+  let i = KEYS.length - 1;
+  for (let k = 0; k < KEYS.length; k++) if (KEYS[k].h <= hour) i = k;
+  const a = KEYS[i], b = KEYS[(i + 1) % KEYS.length];
+  const span = (b.h - a.h + 24) % 24 || 24;
+  const t = ((hour - a.h + 24) % 24) / span;
+  const f = t * t * (3 - 2 * t);
+  const out = {};
+  for (const k of Object.keys(a)) {
+    const x = a[k], y = b[k];
+    out[k] = Array.isArray(x) ? x.map((v, j) => v + (y[j] - v) * f) : x + (y - x) * f;
+  }
+  return out;
+}
+// The apron: wet concrete slabs round the pad, out to this radius.
+export const APRON_R = 260;
+
+/* ---------- the sky, shared by the background and the apron ---------- */
+const h11 = p => fract(sin(p.mul(127.1)).mul(43758.5453));
+const h21 = p => fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453));
+const n2 = p => mx_noise_float(p).mul(0.5).add(0.5);
+
+// The sky: a zenith over a horizon, a warm band toward the sun, stars at night.
+export const skyCol = Fn(([d]) => {
+  const el = d.y;
+  const ca = dot(normalize(d.xz.add(1e-5)), normalize(T.sun.xz.add(1e-5))).mul(0.5).add(0.5);
+  const e0 = max(el, 0.0);
+  const c = mix(T.hor, T.zen, e0.clamp(0.0, 1.0).sqrt()).toVar();
+  // A thin band toward the sun under a wide glow.
+  c.addAssign(T.glow.mul(exp(e0.div(T.glowW).negate())).mul(ca.pow(6.0)));
+  c.addAssign(T.wide.mul(exp(e0.div(-0.12))).mul(ca.pow(2.0)));
+  c.addAssign(T.low.mul(exp(e0.div(-0.06))));
+  // A halo round a sun below the ranges.
+  const cs = dot(d, T.sun);
+  c.addAssign(T.glow.mul(exp(float(1.0).sub(cs).mul(-300.0)).mul(2.0).add(exp(float(1.0).sub(cs).mul(-30.0)).mul(0.5))).mul(T.halo));
+  // Stars: one point in a few cells, faint near the horizon.
+  const sc = vec2(atan(d.x, d.z.negate()), el).mul(900.0);
+  const ci = floor(sc), fp = fract(sc).sub(0.5);
+  const star = smoothstep(0.99, 0.993, h21(ci)).mul(exp(dot(fp, fp).mul(-30.0))).mul(h21(ci.add(3.0)).mul(0.5).add(0.1));
+  c.addAssign(vec3(0.8, 0.85, 1.0).mul(star).mul(T.stars).mul(smoothstep(0.02, 0.12, el)));
   return c;
-}
+});
 // The haze colour at the horizon in a direction.
-vec3 hazeCol(vec3 d) { return skyCol(normalize(vec3(d.x, 0.006, d.z))) * 0.7; }
-`;
+export const hazeCol = Fn(([d]) => skyCol(normalize(vec3(d.x, 0.004, d.z))).mul(0.78));
 
-/* ---------- sky dome: gradient, far ridge, far lights ---------- */
-const SKY_VS = /* glsl */`
-varying vec3 vD;
-void main() {
-  vD = position;
-  vec4 p = projectionMatrix * mat4(mat3(viewMatrix)) * vec4(position, 1.0);
-  gl_Position = p.xyww;
-}`;
-const SKY_FS = /* glsl */`
-${SKY}
-varying vec3 vD;
-void main() {
-  vec3 d = normalize(vD);
-  float az = atan(d.x, -d.z), el = d.y;
-  vec3 c = skyCol(d);
-  // A low far ridge, a little lighter than the ground for the haze.
-  float ridge = 0.008 + 0.007 * vn1(az * 5.0 + 3.0) + 0.003 * vn1(az * 21.0);
-  float px = max(fwidth(el), 1e-5);
-  float on = smoothstep(px, -px, el - ridge);
-  c = mix(c, hazeCol(d) * 0.42, on);
-  // Far lights on the plain: a sparse row at the ridge foot.
-  float cell = az / 0.0045, ci = floor(cell);
-  float has = step(0.62, h11(ci + 7.0));
-  float lx = (fract(cell) - 0.5 - (h11(ci + 3.0) - 0.5) * 0.6) * 0.0045;
-  float ly = el - (0.0006 + h11(ci + 11.0) * 0.0022);
-  float pa = max(fwidth(az), 1e-5);
-  float dot2 = (lx * lx) / (pa * pa) + (ly * ly) / (px * px);
-  vec3 lc = mix(vec3(1.0, 0.62, 0.28), vec3(0.85, 0.9, 1.0), step(0.7, h11(ci + 5.0)));
-  c += lc * has * exp(-dot2 * 0.9) * (1.5 + 3.0 * h11(ci + 9.0));
-  gl_FragColor = vec4(c, 1.0);
-}`;
+// A ridge line along the azimuth, 0 to 1: broad masses, a few crests, fine wear.
+// mesa flattens the tops into tables, as wind-cut desert rock.
+const ridge = (az, f, seed, mesa) => {
+  const a = n2(vec2(az.mul(f), seed));
+  const b = float(1.0).sub(abs(mx_noise_float(vec2(az.mul(f * 3.1), seed + 7.1))));
+  const c = n2(vec2(az.mul(f * 11.0), seed + 3.3));
+  const mass = mesa ? smoothstep(0.42, 0.58, a) : a;
+  return mass.mul(0.8).add(b.mul(b).mul(0.14)).add(c.mul(0.06));
+};
 
-/* ---------- the pad: damp concrete, glow pools, wet reflections ---------- */
-const PAD_VS = /* glsl */`
-varying vec3 vP;
-void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  vP = w.xyz;
-  gl_Position = projectionMatrix * viewMatrix * w;
-}`;
-const PAD_FS = /* glsl */`
-${SKY}
-uniform vec4 uHot[3];
-uniform vec4 uNoz[3];
-uniform vec3 uHotCol;
-uniform float uPadR;
-varying vec3 vP;
-float h21(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float vn(vec2 p) {
-  vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1, 0)), f.x), mix(h21(i + vec2(0, 1)), h21(i + vec2(1, 1)), f.x), f.y);
+// Far country: three ranges at true scale, each sunk in its own depth of haze.
+// [distance m, base height m, relief m, frequency per radian, seed, haze per km, mesa]
+const RANGES = [
+  [18000, 250, 700, 7, 1.7, 0.19, false],
+  [7000, 20, 240, 16, 9.3, 0.17, true],
+  [2600, 4, 30, 34, 4.1, 0.17, false],
+];
+// Eye height, metres: the camera stands as a person on the apron.
+export const EYE = 1.7;
+export const farCountry = Fn(([d]) => {
+  const az = atan(d.x, d.z.negate());
+  const el = d.y;
+  const px = max(fwidth(el), 1e-6);
+  const c = skyCol(d).toVar();
+  const hz = hazeCol(d);
+  // The plain below the ranges: dark, and the haze takes it at the horizon.
+  const plainOn = float(1.0).sub(smoothstep(px.negate(), px, el));
+  c.assign(mix(c, hz.mul(0.9), plainOn));
+  for (const [D, base, amp, f, seed, k, mesa] of RANGES) {
+    // Earth curvature sinks a far range a little.
+    const top = ridge(az, f, seed, mesa).mul(amp).add(base).sub(EYE).div(D).sub(D / 12.74e6);
+    const on = float(1.0).sub(smoothstep(px.negate(), px, el.sub(top)));
+    const haze = 1 - Math.exp((-D / 1000) * k);
+    // The flank darkens toward its foot; the crest takes the last light.
+    const flank = smoothstep(top.sub(0.004), top, el);
+    const col = mix(T.flank, T.crest, flank).mul(1 - haze).add(hz.mul(haze));
+    c.assign(mix(c, col, on));
+  }
+  // Far lights at the foot of the near range: a sparse row of sodium and white.
+  const cell = az.div(0.0035), ci = floor(cell);
+  const has = smoothstep(0.66, 0.67, h11(ci.add(7.0)));
+  const lx = fract(cell).sub(0.5).sub(h11(ci.add(3.0)).sub(0.5).mul(0.6)).mul(0.0035);
+  const ly = el.sub(h11(ci.add(11.0)).mul(2.2).add(0.6).sub(EYE).div(2600));
+  const pa = max(fwidth(az), 1e-6);
+  const dd = lx.mul(lx).div(pa.mul(pa)).add(ly.mul(ly).div(px.mul(px)));
+  const lc = mix(vec3(1.0, 0.6, 0.26), vec3(0.85, 0.9, 1.0), smoothstep(0.69, 0.71, h11(ci.add(5.0))));
+  c.addAssign(lc.mul(has).mul(exp(dd.mul(-0.8))).mul(h11(ci.add(9.0)).mul(2.5).add(1.2)).mul(T.lights));
+  return c;
+});
+
+/* ---------- the apron: wet concrete, glow pools, a mirror of the far country ---------- */
+function apronMaterial(U) {
+  const m = new THREE.MeshBasicNodeMaterial({ fog: false });
+  m.colorNode = Fn(() => {
+    const P = positionWorld;
+    const p = P.xz;
+    const r = p.length();
+    const Vr = P.sub(cameraPosition);
+    const dist = Vr.length();
+    const V = Vr.div(dist);
+    const apron = float(1.0).sub(smoothstep(APRON_R - 20, APRON_R, r));
+    // Slabs: joints every five metres; they fade where a pixel spans a slab.
+    const g = abs(fract(p.div(5.0).add(0.5)).sub(0.5)).mul(5.0);
+    const fw = fwidth(p);
+    const jw = max(fw.x.add(fw.y), 0.02);
+    const joint = float(1.0).sub(smoothstep(0.0, jw, min(g.x, g.y))).mul(apron).mul(float(1.0).sub(smoothstep(0.4, 1.6, jw)));
+    const grain = n2(p.mul(3.1)).mul(0.5).add(n2(p.mul(0.7)).mul(0.5));
+    const slab = h21(floor(p.div(5.0))).mul(0.25).add(0.85);
+    const alb = mix(vec3(0.045, 0.045, 0.04).mul(n2(p.mul(0.05)).mul(0.6).add(0.7)), vec3(0.15, 0.148, 0.14).mul(grain.mul(0.3).add(0.85)).mul(slab), apron).toVar();
+    alb.mulAssign(float(1.0).sub(joint.mul(0.55)));
+    // Scorch and soot under the nozzles.
+    const soot = float(0.0).toVar();
+    for (let i = 0; i < 2; i++) { const q = p.sub(U.hot[i].xz); soot.addAssign(exp(dot(q, q).div(-2.4))); }
+    alb.mulAssign(float(1.0).sub(soot.clamp(0.0, 1.0).mul(0.6).mul(apron)));
+    // Light: the sky above, then the nozzles and the hot pools.
+    const E = T.E.add(T.sunE.mul(max(T.sun.y, 0.0))).toVar();
+    const hot = vec3(0.0).toVar();
+    for (let i = 0; i < 3; i++) {
+      const L = U.noz[i].xyz.sub(P);
+      const d2 = dot(L, L);
+      E.addAssign(U.hotCol.mul(U.noz[i].w).mul(L.y.div(d2.sqrt())).div(d2));
+      const q = p.sub(U.hot[i].xz);
+      const q2 = dot(q, q);
+      hot.addAssign(U.hotCol.mul(U.hot[i].w).mul(exp(q2.div(-0.5)).mul(2.2).add(float(0.5).div(q2.div(2.0).add(1.0)))));
+    }
+    const c = alb.mul(E).add(hot.mul(apron.mul(0.65).add(0.35)).mul(alb.mul(4.0).add(0.25))).toVar();
+    // Damp patches: a mirror for the far country and the plumes.
+    const wet = smoothstep(0.55, 0.85, n2(p.mul(0.03).add(4.0)).mul(0.6).add(n2(p.mul(0.3)).mul(0.25)).add(n2(p.mul(1.7)).mul(0.15))).mul(apron);
+    const cosv = max(V.y.negate(), 0.0);
+    const fres = float(1.0).sub(cosv).pow(5.0).mul(0.98).add(0.02);
+    const R = reflect(V, vec3(0, 1, 0));
+    // Rough concrete blurs the mirror; wet patches keep it sharp.
+    const refl = farCountry(normalize(R.add(vec3(0, float(0.006).mul(float(1.0).sub(wet)), 0)))).mul(fres).mul(wet.mul(0.75).add(0.12)).toVar();
+    // Each plume mirrors as a soft streak toward the eye.
+    for (let i = 0; i < 2; i++) {
+      const a = U.hot[i].xyz;
+      const rd = normalize(R.xz.add(1e-5));
+      const to = a.xz.sub(p);
+      const along = max(dot(to, rd), 0.0);
+      const side = to.sub(rd.mul(along)).length();
+      const hgt = along.mul(R.y).div(max(R.xz.length(), 1e-3));
+      const span = U.noz[i].y;
+      const w = along.mul(float(1.0).sub(wet)).mul(0.02).add(0.35);
+      const mk = exp(side.mul(side).div(w.mul(w)).negate()).mul(float(1.0).sub(smoothstep(span.mul(0.6), span.add(0.5), hgt)));
+      refl.addAssign(U.hotCol.mul(U.hot[i].w).mul(mk).mul(wet.mul(1.6).add(0.3)).mul(fres.add(0.15)));
+    }
+    c.addAssign(refl);
+    // Haze thickens with distance toward the horizon colour.
+    const f = float(1.0).sub(exp(dist.mul(U.haze).negate()));
+    return mix(c, hazeCol(V), f);
+  })();
+  return m;
 }
-void main() {
-  vec2 p = vP.xz;
-  float r = length(p);
-  vec3 V = vP - cameraPosition;
-  float dist = length(V);
-  V /= dist;
-  float pad = smoothstep(uPadR + 0.3, uPadR - 0.3, r);
-  // Slabs: joints every five metres, softened with distance.
-  vec2 g = abs(fract(p / 5.0 + 0.5) - 0.5) * 5.0;
-  float jw = max(0.03, dist * 0.0016);
-  float joint = (1.0 - smoothstep(0.0, jw, min(g.x, g.y))) * pad;
-  float grain = vn(p * 3.1) * 0.5 + vn(p * 0.7) * 0.5;
-  vec3 alb = mix(vec3(0.05, 0.05, 0.045) * (0.7 + 0.6 * vn(p * 0.4)), vec3(0.17, 0.165, 0.155) * (0.85 + 0.3 * grain), pad);
-  alb *= 1.0 - 0.55 * joint;
-  // Scorch and soot under the nozzles.
-  float soot = 0.0;
-  for (int i = 0; i < 2; i++) soot += exp(-dot(p - uHot[i].xz, p - uHot[i].xz) / 2.4);
-  alb *= 1.0 - 0.6 * clamp(soot, 0.0, 1.0) * pad;
-  // Light: the sky above, then the nozzles and the hot pools.
-  vec3 E = vec3(0.020, 0.028, 0.055) + vec3(0.04, 0.02, 0.012) * 0.5;
-  vec3 hot = vec3(0.0);
-  for (int i = 0; i < 3; i++) {
-    vec3 L = uNoz[i].xyz - vP;
-    float d2 = dot(L, L);
-    E += uHotCol * uNoz[i].w * (L.y / sqrt(d2)) / d2;
-    vec2 q = p - uHot[i].xz;
-    float q2 = dot(q, q);
-    hot += uHotCol * uHot[i].w * (exp(-q2 / 0.5) * 2.2 + 0.5 / (1.0 + q2 / 2.0));
-  }
-  vec3 c = alb * E + hot * (0.35 + 0.65 * pad) * (0.25 + alb * 4.0);
-  // Damp patches: a mirror for the sky and the plumes.
-  float wet = smoothstep(0.3, 0.9, vn(p * 0.18 + 4.0) * 0.75 + vn(p * 0.9) * 0.25) * pad;
-  float cosv = max(-V.y, 0.0);
-  float fres = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
-  vec3 R = reflect(V, vec3(0, 1, 0));
-  vec3 refl = skyCol(R) * fres * (0.6 + 0.4 * wet);
-  // Each plume mirrors as a soft streak toward the eye.
-  for (int i = 0; i < 2; i++) {
-    vec3 a = uHot[i].xyz;
-    vec2 rd = normalize(R.xz + 1e-5);
-    vec2 to = a.xz - p;
-    float along = max(dot(to, rd), 0.0);
-    float side = length(to - rd * along);
-    float hgt = along * R.y / max(length(R.xz), 1e-3);
-    float span = uNoz[i].y;
-    float w = 0.35 + 0.25 * along * (1.0 - wet);
-    float m = exp(-side * side / (w * w)) * smoothstep(span + 0.5, span * 0.6, hgt);
-    refl += uHotCol * uHot[i].w * m * (0.3 + 1.6 * wet) * (0.15 + fres);
-  }
-  c += refl;
-  // Haze thickens with distance toward the horizon colour.
-  float f = 1.0 - exp(-dist * 0.0016);
-  c = mix(c, hazeCol(V), f);
-  gl_FragColor = vec4(c, 1.0);
-}`;
 
 /* ---------- the craft ---------- */
-// The nozzle throat: hot petals round a white-hot centre.
-const GLOW_VS = /* glsl */`
-varying vec2 vQ;
-void main() {
-  vQ = position.xz / ${(0.4 * 0.97).toFixed(3)};
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-}`;
-const GLOW_FS = /* glsl */`
-uniform float uGlow;
-varying vec2 vQ;
-void main() {
-  float r = length(vQ), a = atan(vQ.y, vQ.x);
-  float pet = 0.75 + 0.25 * cos(a * 14.0);
-  vec3 c = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.78, 0.45), smoothstep(0.85, 0.2, r));
-  c *= (0.6 + 2.4 * exp(-r * r * 3.0)) * mix(pet, 1.0, smoothstep(0.7, 0.4, r));
-  gl_FragColor = vec4(c * uGlow, 1.0);
-}`;
 // A loft through superellipse rings: [x, half width, top, bottom, centre y].
 function loft(rings, seg = 28, n = 2.6) {
   const pos = [], idx = [];
@@ -191,11 +260,11 @@ export const NOZ = [new THREE.Vector3(-3.25, -1.62, 0.8), new THREE.Vector3(-3.2
 export const FAN = new THREE.Vector3(2.1, -0.78, 0);
 export const NOZ_R = 0.4;
 
-export function buildCraft(env) {
+export function buildCraft() {
   const grp = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.48, metalness: 0.3, envMap: env, envMapIntensity: 0.9 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.7, metalness: 0.2, envMap: env, envMapIntensity: 0.5 });
-  const glass = new THREE.MeshStandardMaterial({ color: 0x0a0d12, roughness: 0.06, metalness: 0.9, envMap: env, envMapIntensity: 1.6 });
+  const paint = new THREE.MeshStandardMaterial({ color: 0x4a5058, roughness: 0.48, metalness: 0.3 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.7, metalness: 0.2 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x0a0d12, roughness: 0.06, metalness: 0.9 });
   const body = loft([
     [7.2, 0.01, 0.01, 0.01, 0.02],
     [6.4, 0.24, 0.22, 0.2, 0.04],
@@ -245,8 +314,16 @@ export function buildCraft(env) {
   // The swivel nozzles: short ducts bent straight down.
   const duct = new THREE.CylinderGeometry(NOZ_R * 1.12, NOZ_R * 1.3, 0.9, 28, 1, true);
   const petals = new THREE.CylinderGeometry(NOZ_R, NOZ_R * 1.1, 0.4, 28, 1, true);
-  const glowU = { uGlow: { value: 1 } };
-  const glowMat = new THREE.ShaderMaterial({ vertexShader: GLOW_VS, fragmentShader: GLOW_FS, uniforms: glowU, side: THREE.DoubleSide });
+  // The hot throat: petals glow round a white-hot centre.
+  const uGlow = uniform(1.0);
+  const glowMat = new THREE.MeshBasicNodeMaterial({ side: THREE.DoubleSide, fog: false });
+  glowMat.colorNode = Fn(() => {
+    const q = positionLocal.xz.div(NOZ_R * 0.97);
+    const r = q.length(), a = atan(q.y, q.x);
+    const pet = cos(a.mul(14.0)).mul(0.25).add(0.75);
+    const c = mix(vec3(1.0, 0.3, 0.06), vec3(1.0, 0.78, 0.45), float(1.0).sub(smoothstep(0.2, 0.85, r)));
+    return c.mul(exp(r.mul(r).mul(-3.0)).mul(2.4).add(0.6)).mul(mix(pet, 1.0, float(1.0).sub(smoothstep(0.4, 0.7, r)))).mul(uGlow);
+  })();
   const mouth = new THREE.CircleGeometry(NOZ_R * 0.97, 32);
   mouth.rotateX(Math.PI / 2);
   for (const n of NOZ) {
@@ -256,7 +333,6 @@ export function buildCraft(env) {
     const p = new THREE.Mesh(petals, dark);
     p.position.set(n.x, n.y + 0.2, n.z);
     grp.add(p);
-    // The hot throat: seen from below it glows through the petals.
     const g = new THREE.Mesh(mouth, glowMat);
     g.position.set(n.x, n.y + 0.3, n.z);
     grp.add(g);
@@ -275,9 +351,9 @@ export function buildCraft(env) {
     grp.add(w);
   }
   // Wingtip lights: red to port, green to starboard.
-  const dot = new THREE.SphereGeometry(0.045, 8, 6);
+  const dot3 = new THREE.SphereGeometry(0.06, 8, 6);
   for (const [z, col] of [[-5.72, 0xff2a1a], [5.72, 0x2aff6a]]) {
-    const m = new THREE.Mesh(dot, new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(1.3) }));
+    const m = new THREE.Mesh(dot3, new THREE.MeshBasicMaterial({ color: new THREE.Color(col).multiplyScalar(2.0), fog: false }));
     m.position.set(-3.9, -0.04, z);
     grp.add(m);
   }
@@ -286,41 +362,24 @@ export function buildCraft(env) {
   door.position.set(0.3, 1.05, 0);
   door.rotation.z = -1.05;
   grp.add(door);
-  return { grp, glowU, mats: [paint, dark, glass, glowMat] };
+  return { grp, uGlow };
 }
 
 /* ---------- the whole scene ---------- */
-export function buildScene(renderer) {
+export function buildScene() {
   const scene = new THREE.Scene();
-  const skyMat = new THREE.ShaderMaterial({ vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, fog: false });
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), skyMat);
-  sky.renderOrder = -10;
-  sky.frustumCulled = false;
-  scene.add(sky);
-
-  // The environment for the craft: the same sky over a dark ground.
-  const envScene = new THREE.Scene();
-  envScene.add(new THREE.Mesh(new THREE.SphereGeometry(10, 48, 24), skyMat));
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 24), new THREE.MeshBasicMaterial({ color: 0x07080a }));
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.y = -1;
-  envScene.add(floor);
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const env = pmrem.fromScene(envScene, 0, 0.1, 100).texture;
-  pmrem.dispose();
-
-  const padU = {
-    uHot: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
-    uNoz: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
-    uHotCol: { value: new THREE.Color(1.0, 0.42, 0.12) },
-    uPadR: { value: PAD_R },
+  scene.backgroundNode = farCountry(positionWorldDirection);
+  const U = {
+    hot: [0, 1, 2].map(() => uniform(new THREE.Vector4())),
+    noz: [0, 1, 2].map(() => uniform(new THREE.Vector4())),
+    hotCol: uniform(new THREE.Color(1.0, 0.42, 0.12)),
+    haze: uniform(0.0026),
   };
-  const padMat = new THREE.ShaderMaterial({ vertexShader: PAD_VS, fragmentShader: PAD_FS, uniforms: padU, fog: false, extensions: { derivatives: true } });
-  const pad = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), padMat);
-  pad.rotation.x = -Math.PI / 2;
-  scene.add(pad);
+  const apron = new THREE.Mesh(new THREE.PlaneGeometry(6000, 6000), apronMaterial(U));
+  apron.rotation.x = -Math.PI / 2;
+  scene.add(apron);
 
-  const craft = buildCraft(env);
+  const craft = buildCraft();
   scene.add(craft.grp);
 
   // Light: the sky dome, a cool rim from the last light, warm light from below.
@@ -334,5 +393,20 @@ export function buildScene(renderer) {
     scene.add(l);
     return l;
   });
-  return { scene, sky, skyMat, env, pad, padU, craft, lamps, hemi, rim };
+  // Sets the sky, the light and the haze for an hour; returns the blend for main.
+  const tod = hour => {
+    const k = blendTod(hour);
+    const sun = v3(k.sun).normalize();
+    T.sun.value.copy(sun);
+    for (const n of ['zen', 'hor', 'low', 'glow', 'wide', 'flank', 'crest', 'E', 'sunE']) T[n].value.setRGB(...k[n]);
+    T.glowW.value = k.glowW; T.halo.value = k.halo; T.stars.value = k.stars; T.lights.value = k.lights;
+    U.haze.value = k.haze;
+    // Light colours are sRGB, as the hex values were.
+    hemi.color.setRGB(...k.hemiSky, THREE.SRGBColorSpace); hemi.groundColor.setRGB(...k.hemiGround, THREE.SRGBColorSpace);
+    hemi.intensity = k.hemiI;
+    rim.color.setRGB(...k.rimCol, THREE.SRGBColorSpace); rim.intensity = k.rimI;
+    rim.position.set(sun.x * 30, Math.max(sun.y * 30, 4), sun.z * 30);
+    return k;
+  };
+  return { scene, apron, U, craft, lamps, hemi, rim, tod };
 }

@@ -19,6 +19,7 @@ Build Cloud in a bottle (idea 129, group A) as a Lab toy: an MVP at high fidelit
 - [x] Icon round spike-cloudbottle-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/cloudbottle.md
+- [x] Fire's fluid ported to raw WebGL2 (fluid.js), Tom's yes 2026-11-23; QA rerun
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
 

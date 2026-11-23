@@ -20,6 +20,9 @@ Build Solar loop (idea 238, group C, a cinematic diorama) as a Lab toy: an MVP a
 - [x] Icon round spike-solarloop-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/solarloop.md
+- [x] Cinema pass (Tom, 2026-11-23): film grades, cosmic scale, giant prominences, light rays, lens, hum and blast
+- [x] Long lens (Tom, 2026-11-23): the arc cuts the bottom left quarter, Mercury in transit, layered haze
+- [x] Stars replace the colour bands (Tom, 2026-11-23): Sun, Proxima, Rigel, Betelgeuse, VY CMa, with scale bodies
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
 
@@ -35,6 +38,21 @@ Stack type: Shader, raw WebGL2 (shared/gl.js, bloom from shared/glow.js). No sha
 - Bar v3: Band choice Gold (default), Teal, Red (1 to 3); Flare (Space); Activity slider. Tap flares the nearest region; drag turns the sun.
 - Icon: no pick existed. Round solarloop-1 (Current, A, D); A is on the menu; the intro emblem is A's emblem.
 - Draft Dutch name: Zonnelus /ˈzɔnəlʏs/. Accent oklch(0.8 0.15 80).
+
+## Cinema pass (Tom's words: Sunshine with a spritz of Villeneuve)
+
+- A wide frame: the limb is a dome; half the frame is black sky.
+- Giant prominences: a hedgerow (80 threads, 165 units), an arch (18 twisted threads, 205 units) and a tall curtain (46 threads, 240 units); a tap lifts any of them off into space; each forms again by 46 s.
+- Two light channels (hot, cool); a film tone curve; a colour ramp per channel per star.
+- Light rays and shafts, heat shimmer, colour split, halation, an anamorphic streak and lens ghosts on a flare, film grain.
+- Disk: boiling granules, slow swirls, dark filaments. Sound: a deep hum while awake; a low brass blast on flares and eruptions.
+
+## Long lens and stars (Tom's words: a long lens, the bottom left quarter for the arc cut, Mercury in transit, creepy scale; instead of colours, more stars, like VY Canis Majoris)
+
+- The long lens is the default (Tom chose it). Lens (L) zooms over about two seconds between it and the wide view. The limb runs from the middle of the foot to the middle of the left side. Darker, harder tones, a deeper vignette, three haze layers.
+- A body crosses the disk at true size: Mercury on the sun, a planet on Proxima, our sun on Rigel, Betelgeuse and VY CMa.
+- Star choice (1 to 5) replaces Band. The model runs in star units, so the scale body carries the scale: the earth is a seventh of Proxima's width; our sun is a speck one pixel wide beside VY CMa.
+- The giants: a handful of giant cells, strong limb darkening, a dust envelope, dim loops.
 
 ## Reference
 
@@ -58,3 +76,5 @@ TRACE 171, loops over the eastern limb, 6 November 1999: fans of fine threads, b
 
 - 7826b742: the toy, toys.json entry, plan, toy doc, QA captures, intro emblem, favicon, bean.
 - a9d61361: menu Lab tile and hook, icon round solarloop-1, emblems, sheet row.
+- 69ca056c: the cinema pass.
+- be04ba72: five stars and the long lens.

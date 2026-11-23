@@ -1,6 +1,6 @@
 # Solar loop (`solarloop`)
 
-Status: done as an MVP, 2026-11-23; waits on Tom. Bean `stimming-e35i`. Toy doc: `docs/toys/solarloop.md`. Idea 238, group C: "Plasma loops rise off the sun's edge; tap for a flare."
+Status: done as an MVP, 2026-11-23; the cinema pass, the long lens and the stars (below) done the same day; waits on Tom. Bean `stimming-e35i`. Toy doc: `docs/toys/solarloop.md`. Idea 238, group C: "Plasma loops rise off the sun's edge; tap for a flare."
 
 ## The hero moment
 
@@ -43,6 +43,31 @@ Choice Band (Gold, Teal, Red; keys 1 to 3). Slider Activity. Action Flare (Space
 - TRACE, 171, coronal loops over the eastern limb, 6 November 1999: fans of fine threads, bright feet at the limb, a dark mottled disk.
 - SDO, 131, 171 and 304, the limb flare of May 2013: a saturated core with a diagonal diffraction cross and a vertical bleed line; the colour tables of the three bands.
 - Papers on flare-driven coronal rain: rain shows best in 304; in 171 it shows as knots and dark strands.
+
+## The cinema pass (Tom, 2026-11-23)
+
+Tom's words: inspired by Danny Boyle's *Sunshine* with a spritz of Villeneuve; better shaders, better LUTs, better effects, far more cosmic scale and feeling for the prominences.
+
+| | Was | Now |
+|---|---|---|
+| Frame | 430 Mm across, a gentle arc | 1040 Mm across: the limb is a dome, half the frame is black sky |
+| Prominences | None; only loops and the flare's rope | A hedgerow 165 Mm tall and an arch 205 Mm high, both tappable: each erupts and forms again |
+| Scale | None | The earth at true size under the arch |
+| Image | One intensity channel, log stretch, a detector's colour table | Two channels (hot, cool), a film tone curve, a colour ramp per channel per band |
+| Effects | Bloom; a diffraction cross and a bleed line | Bloom, light rays and shafts, heat shimmer, colour split, halation, an anamorphic streak, lens ghosts, film grain |
+| Disk | EUV mottle | Boiling granules, slow swirls, dark filaments |
+| Sound | Crack, rush, roar, notes, rain | Plus a deep hum while awake and a low brass blast on each flare and eruption |
+
+## The long lens and the stars (Tom, 2026-11-23)
+
+Tom's words: a long lens, a tight frame of the quarter arc (crop of its top half), Mercury loosely visible in transit, layering, haze, creepy how massive the scale is; the bottom left quarter for the arc cut. And instead of colours of the star, a couple more varieties, including some that convey scale, like VY Canis Majoris.
+
+| | Choice |
+|---|---|
+| Lens | The long lens is the default (Tom, 2026-11-23). An action, Lens (L), as in Jet hover, opens the wide view. The long lens is about half the wide view's width; the limb runs from the middle of the foot to the middle of the left side. A darker, harder tone curve, a deeper vignette, three haze layers at three speeds |
+| Transit | A body crosses the disk on a chord just inside the limb, at true size, climbing away from the Bar |
+| Stars | The Band choice becomes a Star choice: Sun, Proxima, Rigel, Betelgeuse, VY CMa. The model runs in star units, so a scale body's size carries the scale: the earth beside the sun and Proxima, our sun beside the giants |
+| Giants | Few giant convection cells, strong limb darkening, a dust envelope (arcs, knots, patches over the disk), dimmer loops |
 
 ## Tasks
 
