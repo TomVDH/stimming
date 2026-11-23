@@ -224,6 +224,8 @@ export function createFire({
     ambient: uniform(new THREE.Color(0, 0, 0)),
     // Jet hover: how fast flame light fades with age, per second.
     glowAge: uniform(2.0),
+    // Jet hover: how much smoke above shades the sky light; 0 gives flat light.
+    skyShadow: uniform(0.0),
     // Jet hover: scale of the summed heat that bends the frame.
     heatGain: uniform(100.0),
     // Jet hover: what each jet core feeds per unit of heat: heat, smoke.
@@ -652,7 +654,10 @@ export function createFire({
       // Jet hover: a flat gain, and young gas glows more than old.
       const young = age.mul(u.glowAge).negate().exp().mul(0.8).add(0.2);
       // Jet hover: sky light falls on the smoke from above.
-      const sky = u.ambient.mul(density);
+      // Smoke overhead shades it, so billows show bright tops and dark bellies.
+      const up = dyeTexNode.sample(toUVW(positionRay.add(vec3(0.0, 0.35, 0.0))).clamp(0.0, 1.0)).level(0).r
+        .add(dyeTexNode.sample(toUVW(positionRay.add(vec3(0.0, 0.9, 0.0))).clamp(0.0, 1.0)).level(0).r);
+      const sky = u.ambient.mul(density).mul(up.mul(u.skyShadow).negate().exp().mul(0.85).add(0.15));
       return fire.mul(density.add(0.15)).mul(u.glowGain).mul(young).add(sky).mul(seen(positionRay));
     });
 
@@ -715,7 +720,7 @@ export function createFire({
       const cellNoise = mx_noise_float(positionRay.mul(vec3(2.6, 1.6, 2.6)).add(vec3(0.0, u.time.mul(-3.2), 0.0)));
       const edge = min(uvw, vec3(1).sub(uvw));
       // Thin haze in the box does not count; only real billows dim the scene.
-      const smoke = dye.r.mul(smoothstep(0.08, 0.6, dye.r)).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));
+      const smoke = dye.r.mul(smoothstep(0.25, 1.2, dye.r)).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));
       return vec3(T.mul(cellNoise).mul(u.heatGain), T.mul(u.heatGain), smoke).mul(seen(positionRay));
     });
     const heatMesh = new THREE.Mesh(new THREE.BoxGeometry(SX, SY, SZ), heatMaterial);

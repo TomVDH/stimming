@@ -140,6 +140,7 @@ async function setup() {
   u.ambient.value.setRGB(0.035, 0.05, 0.09);
   u.shadowAbsorption.value = 2.2; u.shadowAmbient.value = 0.15; u.asymmetry.value = 0.35;
   u.heatGain.value = 5;
+  u.skyShadow.value = 1.2;
   vol = gas.volume({ steps: 72, lift: 0, sceneZ: post.sceneZ });
   volScene.add(vol.mesh);
   heatScene.add(vol.heatMesh);
@@ -156,12 +157,15 @@ async function setup() {
   }
   gasF.setEmitters(pts);
   // Fire's rates times 60: jet gas crosses a cell in a hundredth of a second.
-  f.emitTemperature.value = 330; f.emitDensity.value = 420; f.emitGain.value = 1;
+  // Smoke outweighs heat, so the cooled exhaust stays as billows.
+  f.emitTemperature.value = 330; f.emitDensity.value = 2000; f.emitGain.value = 1;
   // The emitter feeds this sim; the jet cores add only a little heat.
   f.feed.value.set(0.05, 0);
   f.buoyancy.value = 0.6; f.weight.value = 0.05;
-  f.turbulence.value = 3.0; f.turbFrequency.value = 10.0; f.vorticity.value = 4.0;
-  f.velDamping.value = 0.25; f.cooling.value = 1.3; f.dissipation.value = 0.35;
+  // Strong swirl rolls the smoke into billows at the jet's edge.
+  f.turbulence.value = 4.0; f.turbFrequency.value = 10.0; f.vorticity.value = 8.0;
+  f.velDamping.value = 0.25; f.cooling.value = 1.3; f.dissipation.value = 0.7;
+  f.skyShadow.value = 1.2;
   // A flat glow curve, near Fire's own, so the cooler stream still shows.
   f.tMax.value = 3;
   f.intensity.value = 0.8; f.glowSpread.value = 4.8; f.glowGain.value = 1.0; f.glowAge.value = 3.0;
@@ -296,7 +300,8 @@ function applyTime() {
   post.U.key.value.setRGB(...k.key);
   post.U.pull.value = k.pull;
   gas.u.ambient.value.setRGB(...k.smoke);
-  gasF.u.ambient.value.setRGB(...k.smoke);
+  // The exhaust smoke takes more sky light, so its billows read against the plate.
+  gasF.u.ambient.value.setRGB(...k.smoke).multiplyScalar(1.8);
   for (const p of P) p.U.gain.value = k.plume;
 }
 

@@ -120,7 +120,14 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
   const sceneCol = scenePass.getTextureNode().sample(bentUV);
   const gasCol = blurred.getTextureNode().sample(bentUV).mul(U.vol);
   // Smoke dims the scene behind it; the lit gas then adds over.
-  const behind = exp(heat.sample(screenUV).b.mul(U.occ).negate());
+  // Five taps soften the volume's dither in the smoke sum.
+  const sumAt = Fn(() => {
+    const d = vec2(2.5).div(U.res);
+    return heat.sample(screenUV).b.mul(0.4)
+      .add(heat.sample(screenUV.add(vec2(d.x, 0.0))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(d.x, 0.0))).b.mul(0.15))
+      .add(heat.sample(screenUV.add(vec2(0.0, d.y))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(0.0, d.y))).b.mul(0.15));
+  })();
+  const behind = exp(sumAt.mul(U.occ).negate());
   const lit = vec4(sceneCol.rgb.mul(behind).add(gasCol.rgb), 1.0);
   const glow = bloom(lit, 0.55, 0.6, 0.85);
   const tone = renderOutput(lit.add(glow));
