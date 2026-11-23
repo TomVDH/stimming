@@ -13,10 +13,10 @@ import { setStarLift, sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { CLEAR, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
-import { hero, heroSlitAz } from '../world/hero.ts';
+import { hero, heroSlitAz, type HeroOf } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
-import { cutFocus, cutGrain } from '../post/chain.ts';
+import { cutFocus, cutGrain, cutMist } from '../post/chain.ts';
 
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
 // A pick from rest cuts to close shots of the main dome.
@@ -118,7 +118,10 @@ let R = 1;
 // The hero model stands in only for the main dome.
 let dome: Dome = complex.main;
 // The hero's telescope, when the cuts show the main dome.
-const heroScope = () => (dome === complex.main ? hero.scope : null);
+// The chosen dome's close model; null for a dome without one.
+let heroNow: HeroOf | null = hero.of(complex.main);
+const heroScope = () => heroNow?.scope ?? null;
+const heroReady = (): boolean => !!heroNow?.ready;
 
 // Inside the dome, the eye keeps clear of the hero's fixed parts.
 // The values come from world/hero.ts and world/hero-scope.ts.
@@ -201,6 +204,9 @@ function place(cut: Cut, az: number, aspect: number): Framed {
   slitPoint(plan.eye, az * DEG, eye).lerp(look, 1 - NEAR[NEAR.length - 1]);
   return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture };
 }
+
+// These shots stand inside the dome, so they take no mist.
+const INDOOR = new Set<Shot>(['lift', 'glass', 'mirror']);
 
 /* ---------- the glass shot: locked on the glass's place of rest ---------- */
 // Copied from world/hero-scope.ts, in dome units.
@@ -424,24 +430,26 @@ const mouthAt = new Vector3();
 function swap(on: boolean): void {
   if (on !== heroOn) {
     heroOn = on;
-    hero.show(on);
-    complex.main.show(!on);
+    heroNow?.show(on);
+    dome.show(!on);
   }
-  if (on) hero.follow(complex.main);
+  if (on) heroNow?.follow(dome);
 }
 
 // The catalog waits here until the hero's glass can take it.
 // The glass bakes its star map once, in about 30 ms.
 // That happens while the wide shot shows.
-let stars: readonly Star[] | null = null, starsSet = false;
+// Each dome's model takes the catalog once.
+let stars: readonly Star[] | null = null;
+const fed = new WeakSet<object>();
 // Hands the glass its stars once.
 // It hands it the sky's turn while the hero shows.
 function feedGlass(show: boolean): void {
-  const sc = hero.scope;
+  const sc = heroScope();
   if (!sc) return;
-  if (stars && !starsSet) {
+  if (stars && !fed.has(sc)) {
     sc.setStars(stars);
-    starsSet = true;
+    fed.add(sc);
     // The star map goes to the GPU now, not in the glass shot.
     // Before the hero's warm-up, the warm-up uploads it.
     const u = (renderer.properties.get(sc.glass.material) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
@@ -457,6 +465,7 @@ function toWide(): void {
   dropBeats();
   cutFocus(null);
   cutGrain(0);
+  cutMist(true);
   showBars(false);
   black(0);
   still.style.display = 'none';
@@ -480,6 +489,7 @@ function stepDip(dt: number): void {
     black(1);
     cutFocus(null);
     cutGrain(0);
+    cutMist(true);
     return;
   }
   const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
@@ -519,22 +529,25 @@ export const cuts = {
   // target: the picked star.
   // d: the dome the cuts show; the main dome by default.
   start(phase: Phase, v: View, target: AltAz, d: Dome = complex.main): void {
+    // The old dome's model goes before the dome changes.
+    swap(false);
     dome = d;
+    heroNow = hero.of(d);
     d.root.updateMatrixWorld(true);
     d.cupola.getWorldPosition(centre);
     R = DOME_R1 * d.root.scale.x;
     setBoxes();
     view = v;
     // The reflector adds the mirror shot.
-    seq = startSeq(phase, v, hero.ready && !!heroScope()?.restGlass);
+    seq = startSeq(phase, v, heroReady() && !!heroScope()?.restGlass);
     // Reduced motion waits in the wide shot until the tube rests.
     mode = reduced() ? 'wait' : 'cuts';
     stillT = 0;
     inT = 0;
     locks.clear();
-    useHero = hero.ready && d === complex.main;
+    useHero = heroReady();
     cutShot = null;
-    hero.scope?.setTarget(altAzDir(target), TARGET_K);
+    heroScope()?.setTarget(altAzDir(target), TARGET_K);
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
@@ -585,18 +598,19 @@ export const cuts = {
     const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
     // A new cut is a hard cut, so the model may change there.
     // The choice waits for the cut's first close frame, after the dip.
-    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready && dome === complex.main; }
+    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = heroReady(); }
     // The swap happens in the frame that changes the shot.
-    swap(close ? useHero : held && hero.ready);
+    swap(close ? useHero : held && heroReady());
     feedGlass(close ? useHero : held);
     // The close shots come after a pick, so the beam leaves the hero's laser.
-    const sc = hero.scope;
+    const sc = heroScope();
     if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
     rendered = close ? shot : null;
     if (!close) {
       starLift(false);
       cutFocus(null);
       cutGrain(0);
+      cutMist(true);
       if (inDown) black((inT / DIP_DOWN) ** 2);
       return;
     }
@@ -609,6 +623,7 @@ export const cuts = {
     // The film lens fills the band between the bars.
     applyShot(camera.aspect, s.eye, s.aim, renderFov(s.fov, camera.aspect));
     cutFocus(s);
+    cutMist(!INDOOR.has(shot));
     // The dip fades down to black, and the cuts' grain eases back.
     if (mode === 'dip') { const k = Math.min(1, dipT / DIP_DOWN); black(k * k); cutGrain(1 - k); }
     else cutGrain(1);
