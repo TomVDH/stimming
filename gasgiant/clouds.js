@@ -71,20 +71,29 @@ vec4 mapAt(vec2 xz) {
 vec3 gAlb = vec3(1.0);
 float gOpen = 0.0;
 vec3 th3(vec2 c) { vec3 p = vec3(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)), dot(c, vec2(419.2, 371.9))); return fract(sin(p) * 43758.5453); }
-// A tower in a void: one per cs km cell at most, joining the floor to the ceiling.
-// It flares at both ends, pinches in the middle, leans and twists a little.
-// fill is the share of cells with a tower; the tower scales with its cell.
+// A tower in a void: one per cs km cell at most.
+// Towers gather in clusters and lines, as convection does; open plains lie between.
+// A third join floor and ceiling, a third rise as plumes, a third hang from the ceiling.
+// fill is the share of cells with a tower in a cluster.
 float tower(vec3 p, float h, float flo, float cei, float seed, float nb, float cs, float fill, out float f) {
   vec2 cell = floor(p.xz / cs);
   vec3 r = th3(cell + seed);
-  float k = cs / 48.0;
+  vec3 r2 = th3(cell + seed + 41.0);
+  float cl = textureLod(uVol, vec3((cell + 0.5) * 0.09, fract(seed * 0.13) + 0.31), 0.0).a;
+  float on = step(1.0 - fill * 1.8 * smoothstep(0.4, 0.66, cl), r.z);
+  float k = cs / 48.0 * (0.5 + 0.9 * r2.x);
   f = clamp((h - flo) / (cei - flo), 0.0, 1.0);
-  float lean = (f - 0.5) * (r.z - 0.5) * 9.0 * k;
-  vec2 c = (cell + 0.25 + 0.5 * r.xy) * cs + vec2(lean, lean * 0.6) + 2.0 * k * vec2(sin(f * 7.0 + r.x * 6.0), cos(f * 5.0 + r.y * 6.0));
-  float e = abs(2.0 * f - 1.0);
+  float len = r2.y < 0.34 ? 1.0 : 0.3 + 0.6 * r2.z;
+  float g = r2.y < 0.67 ? f / len : (f - 1.0 + len) / len;
+  float inside = step(0.0, g) * step(g, 1.0);
+  g = clamp(g, 0.0, 1.0);
+  float lean = (g - 0.5) * (r.z - 0.5) * 9.0 * k;
+  vec2 c = (cell + 0.25 + 0.5 * r.xy) * cs + vec2(lean, lean * 0.6) + 2.0 * k * vec2(sin(g * 7.0 + r.x * 6.0), cos(g * 5.0 + r.y * 6.0));
+  // Joined towers flare at both ends; plumes spread an anvil; pendants taper to a tip.
+  float e = r2.y < 0.34 ? abs(2.0 * g - 1.0) : g;
   float rad = k * (1.6 + 2.4 * r.y) * (0.45 + 1.5 * e * e * e) * (0.75 + 0.5 * nb);
-  float on = step(1.0 - fill, r.z);
-  return on * smoothstep(0.0, 1.6 * k, rad - length(p.xz - c));
+  rad *= r2.y < 0.34 ? 1.0 : r2.y < 0.67 ? 1.0 - smoothstep(0.88, 1.0, g) * 0.8 : smoothstep(0.0, 0.15, g);
+  return on * inside * smoothstep(0.0, 1.6 * k, rad - length(p.xz - c));
 }
 // Thin sheets stacked from bot up, one in each gap km.
 // Each sheet has its own height, thickness and cover; id names it.
@@ -97,45 +106,46 @@ float sheets(float h, float bot, float gap, float thick, float nb, float hole, f
   return (1.0 - smoothstep(th * 0.3, th + 0.4 + lod, abs(y))) * cov;
 }
 float band(float h, float lo, float hi, float w) { return smoothstep(lo - w, lo + w, h) * (1.0 - smoothstep(hi - w, hi + w, h)); }
-// Twisters and storm curtains in a void from flo to cei.
-// tw and cu are the shares of cells with a twister or a curtain.
+// Storm curtains and rare twisters in a void from flo to cei.
+// cu is the share of storm cells with a curtain; tw the share of curtains with a twister.
+// Storms gather where convection does, as the towers do.
 float stormsIn(vec3 p, float h, float flo, float cei, float seed, float cs, float tw, float cu) {
   float H = cei - flo;
   float f = clamp((h - flo) / H, 0.0, 1.0);
   float res = 0.0;
-  // A twister: a rope from the ceiling to the floor, a wall cloud on top, a dust skirt below.
   vec2 cell = floor(p.xz / cs);
-  vec3 r = th3(cell + seed + 17.0);
-  if (r.z > 1.0 - tw) {
-    vec2 c = (cell + 0.3 + 0.4 * r.xy) * cs;
-    // It wanders slowly; the foot trails the top; the rope sways.
-    c += cs * 0.06 * vec2(sin(uT * 0.013 + r.x * 6.3), cos(uT * 0.011 + r.y * 6.3));
-    c += vec2(0.8, 0.5) * (2.0 * r.x - 1.0) * (1.0 - f) * H * 0.5;
-    c += H * 0.04 * vec2(sin(f * 6.0 + uT * 0.07 + r.y * 9.0), cos(f * 5.0 + uT * 0.06 + r.x * 9.0));
-    vec2 q = p.xz - c;
-    float rr = length(q);
-    float f3 = f * f * f;
-    float rad = H * (0.01 + 0.012 * r.y) * (1.0 + 9.0 * f3 * f3) + H * 0.06 * exp(-f * 20.0);
-    if (rr < rad * 1.6 + 0.4) {
-      // The wall swirls on angle and log radius, as in Tornado alley, so it never winds up.
-      float a = atan(q.y, q.x) - uT * (0.4 + 0.5 * r.x) - 2.0 * log(max(rr, 0.05));
-      float sw = textureLod(uVol, vec3(cos(a) * 0.4 + r.x, h / (H * 0.6) - uT * 0.01, sin(a) * 0.4 + r.y), 0.0).r;
-      res = smoothstep(rad * 1.25 + 0.3, rad * 0.5, rr) * (0.35 + 0.9 * sw) * mix(0.45, 1.0, smoothstep(0.0, 0.15, f));
-    }
-  }
-  // A curtain: rain that hangs from the ceiling in streaks and dries before the floor.
-  float cc = cs * 0.8;
-  vec2 cell2 = floor(p.xz / cc);
-  vec3 r2 = th3(cell2 + seed + 29.0);
-  if (r2.z > 1.0 - cu) {
-    vec2 c2 = (cell2 + 0.5) * cc + (r2.xy - 0.5) * cc * 0.3;
-    float rc = cc * (0.14 + 0.14 * r2.y);
-    float e = length((p.xz - c2) * vec2(1.0, 1.7));
+  vec3 r = th3(cell + seed + 29.0);
+  vec3 r2 = th3(cell + seed + 53.0);
+  float cl = textureLod(uVol, vec3((cell + 0.5) * 0.11, fract(seed * 0.13) + 0.62), 0.0).a;
+  if (r.z > 1.0 - cu * 1.8 * smoothstep(0.42, 0.66, cl)) {
+    vec2 c = (cell + 0.5) * cs + (r.xy - 0.5) * cs * 0.3;
+    float rc = cs * (0.14 + 0.14 * r.y);
+    // A curtain: rain that hangs from the ceiling in streaks and dries before the floor.
+    float e = length((p.xz - c) * vec2(1.0, 1.7));
     if (e < rc) {
-      float st = textureLod(uVol, vec3(p.x / 4.0, h / 60.0 - uT * 0.004, p.z / 4.0) + r2, 0.0).g;
-      float reach = 0.3 + 0.6 * r2.x;
+      float st = textureLod(uVol, vec3(p.x / 4.0, h / 60.0 - uT * 0.004, p.z / 4.0) + r, 0.0).g;
+      float reach = 0.3 + 0.6 * r.x;
       float hang = smoothstep(1.0 - reach, 1.0 - reach + 0.35, f);
-      res = max(res, 0.3 * smoothstep(rc, rc * 0.4, e) * smoothstep(0.45, 0.8, st) * hang);
+      res = 0.3 * smoothstep(rc, rc * 0.4, e) * smoothstep(0.45, 0.8, st) * hang;
+    }
+    // A twister drops from the rain-free base at the curtain's edge.
+    if (r2.z > 1.0 - tw) {
+      float an = r2.x * 6.2832;
+      vec2 tc = c + vec2(cos(an), sin(an) / 1.7) * rc * 1.05;
+      // It wanders slowly; the foot trails the top; the rope sways.
+      tc += rc * 0.15 * vec2(sin(uT * 0.013 + r2.y * 6.3), cos(uT * 0.011 + r2.x * 6.3));
+      tc += vec2(cos(an), sin(an)) * (1.0 - f) * H * 0.35 * (r2.y - 0.3);
+      tc += H * 0.04 * vec2(sin(f * 6.0 + uT * 0.07 + r2.y * 9.0), cos(f * 5.0 + uT * 0.06 + r2.x * 9.0));
+      vec2 q = p.xz - tc;
+      float rr = length(q);
+      float f3 = f * f * f;
+      float rad = H * (0.008 + 0.01 * r2.y) * (1.0 + 9.0 * f3 * f3) + H * 0.05 * exp(-f * 20.0);
+      if (rr < rad * 1.6 + 0.4) {
+        // The wall swirls on angle and log radius, as in Tornado alley, so it never winds up.
+        float a = atan(q.y, q.x) - uT * (0.4 + 0.5 * r2.x) - 2.0 * log(max(rr, 0.05));
+        float sw = textureLod(uVol, vec3(cos(a) * 0.4 + r2.x, h / (H * 0.6) - uT * 0.01, sin(a) * 0.4 + r2.y), 0.0).r;
+        res = max(res, smoothstep(rad * 1.25 + 0.3, rad * 0.5, rr) * (0.35 + 0.9 * sw) * mix(0.45, 1.0, smoothstep(0.0, 0.15, f)));
+      }
     }
   }
   return res;
@@ -174,7 +184,7 @@ float dens(vec3 p, float lod, float fine) {
     // Wide cells break each deck here and there.
     vec4 nc = textureLod(uVol, vec3(0.6 * q.x + 0.8 * q.z, h * 4.0, 0.8 * q.x - 0.6 * q.z) / 157.0 + vec3(0.11, 0.0, 0.53), 0.0);
     float f = 0.0;
-    // A void sets vd (floor, ceiling, seed, hue) and vk (cell, twisters, curtains).
+    // A void sets vd (floor, ceiling, seed, hue) and vk (storm cell km, twister share, curtain share).
     vec4 vd = vec4(0.0);
     vec3 vk = vec3(0.0);
     if (h > 0.0) {
@@ -211,7 +221,7 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.5 + 0.3 * n1.a), pal(0.1), f);
       gOpen = f;
       vd = vec4(-24.0, 2.0, 3.1, 0.5);
-      vk = vec3(80.0, 0.35, 0.35);
+      vk = vec3(70.0, 0.12, 0.35);
     } else if (h > -38.0) {
       // The brown deck: a floor above, a ceiling below, a few breaks.
       float cov = smoothstep(0.3, 0.48, 1.0 - nc.a + 0.08 * (nb - 0.5));
@@ -225,7 +235,7 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.95 + 0.15 * n1.a), pal(0.45), f);
       gOpen = f;
       vd = vec4(-64.0, -38.0, 7.7, 0.95);
-      vk = vec3(70.0, 0.45, 0.4);
+      vk = vec3(60.0, 0.15, 0.4);
     } else if (h > -92.0) {
       // The water deck, heaped where the storm's wake churns.
       float top = -64.0 + 22.0 * m.a * n1.a + 5.0 * (nb - 0.5);
@@ -251,7 +261,7 @@ float dens(vec3 p, float lod, float fine) {
       gAlb = mix(pal(0.55 + 0.1 * n1.a), pal(0.95), f);
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-230.0, -158.0, 11.3, 0.55);
-      vk = vec3(130.0, 0.3, 0.25);
+      vk = vec3(110.0, 0.1, 0.3);
     } else if (h > -262.0) {
       // The indigo deck: heaped on top, pouches hang from its base.
       float pop = max(n2.b - 0.4, 0.0) / 0.6;
@@ -271,7 +281,7 @@ float dens(vec3 p, float lod, float fine) {
       d = max(d, sv * 0.8);
       gOpen = 0.3 + 0.7 * f;
       vd = vec4(-360.0, -262.0, 5.9, 0.15);
-      vk = vec3(170.0, 0.5, 0.3);
+      vk = vec3(150.0, 0.18, 0.35);
     } else if (h > -385.0) {
       // The salt deck: pale jade, flat, its top in long wave rows.
       float top = -360.0 + 3.0 * sin(qr.x / 9.0 + 4.0 * n1.r) * (0.6 + 0.4 * nb);
@@ -307,12 +317,12 @@ float dens(vec3 p, float lod, float fine) {
   }
   return d;
 }
-// Optical depth toward the sun over four growing taps, to 33 km.
+// Optical depth toward the light over four growing taps, to 33 km.
 // A low sun needs the reach: a 6 km head throws a 34 km shadow.
-float sunOD(vec3 p, float lod) {
+float lightOD(vec3 p, vec3 ld, float lod) {
   float od = 0.0, st = 1.2;
   for (int j = 0; j < 4; j++) {
-    p += SUN * st;
+    p += ld * st;
     od += dens(p, lod + 1.0, 0.0) * st;
     st *= 2.6;
   }
@@ -353,15 +363,22 @@ void main() {
         if (tHit < 0.0) tHit = t;
         float h = altOf(p);
         vec4 L = lut(h);
+        // Under the deck tops the light comes down through the ceiling, slanted to the sun's side.
+        vec3 upv = normalize(p - PC);
+        vec3 ld = normalize(mix(upv * 0.75 + normalize(SUN - upv * dot(SUN, upv)) * 0.66, SUN, L.a));
         // Fire's smoke: Beer, multiple scatter, powder, a shadow ambient.
-        float tau = SIG * (lod < 2.5 ? sunOD(p, lod) : 0.0);
+        // Far clouds in the decks take a mean depth; far ones seen from above take none.
+        float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod) : inWin ? 3.0 : 0.0);
         float beer = exp(-tau);
-        float lit = beer + 0.3 * exp(-0.25 * tau);
+        // The multiple-scatter term carries the light into the cloud, so thin parts glow.
+        float lit = beer + 0.38 * exp(-0.22 * tau);
         float powder = 1.0 - exp(-2.0 * tau - 0.6);
         lit = mix(lit, lit * powder, 0.35) + 0.025;
         float ring = ringShadow(p);
         vec3 sun = L.rgb * L.a * lit * ph * ring * 0.85;
-        vec3 diffuse = L.rgb * (1.0 - L.a) * (0.2 + 0.8 * open * open);
+        // The light from above lights what it reaches; it glows forward when the eye looks toward it.
+        float phD = mix(1.0, clPhase(dot(rd, ld)), 0.4);
+        vec3 diffuse = L.rgb * (1.0 - L.a) * (0.07 + 0.45 * open * open + 1.0 * lit * phD);
         vec3 sky = SKY_C * L.a * (0.25 + 0.75 * open) * (0.6 + 0.4 * ring);
         vec3 Lc = alb * (sun + diffuse + sky);
         // Flashes light the cloud round them, with no shadow.

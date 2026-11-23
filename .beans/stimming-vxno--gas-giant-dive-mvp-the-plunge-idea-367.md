@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T21:45:00Z
+updated_at: 2026-11-23T22:05:00Z
 parent: stimming-oh7b
 ---
 
@@ -27,6 +27,9 @@ MVP: the plunge from 260 km over the cloud deck to crush depth, 640 km down (Tom
 - [ ] Tom's look pass: the capsule interior crop, the storm, the decks
 - [x] Tom, 2026-11-23: low side sun; the abyssal dive to 640 km, fourteen layers
 - [x] Tom, 2026-11-23: voids to the horizon, twisters, storm curtains
+- [x] Tom, 2026-11-23: light into the clouds; clustered towers; rare twisters at curtain edges
+- [ ] Void ceilings after Tornado alley's storm base
+- [ ] Lo-fi diagram of all possible layers to the crush
 - [ ] More weirdness in the voids
 - [ ] Tom's later pass: the window effects for the deep layers
 - [ ] Record link times, frame times and the session cost

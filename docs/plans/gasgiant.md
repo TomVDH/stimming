@@ -152,6 +152,16 @@ Tom: "for the void layers (the ones that are empty and have storms, twisters and
 | Curtains | Rain hangs from the ceiling in streaks and dries before the floor. |
 | Next | More weirdness in the voids, from Tom's list. |
 
+### Light into the clouds, and a real spread (Tom, 2026-11-23)
+
+Tom: "we need subsurface / lighting that can penetrate some of the clouds -- less tornados -- more accurate and realistic distribution there please".
+
+| Part | Change |
+|---|---|
+| Light | Under the deck tops the light comes down through the ceiling, slanted to the sun's side. The four light taps follow it, so thin parts glow and cores go dark. A stronger multiple-scatter term (0.38) carries light into the cloud; the light glows forward when the eye looks toward it. Far cloud in a deck takes a mean depth. |
+| Towers | They gather in clusters and lines from a wide noise field; plains lie between. Sizes vary by 2.8 times. A third join floor and ceiling, a third rise as plumes with an anvil, a third hang from the ceiling to a tip. |
+| Twisters | Only at the edge of a rain curtain, in 10 to 18 percent of storm cells; storms gather where the towers do. |
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech
