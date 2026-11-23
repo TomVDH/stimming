@@ -832,9 +832,127 @@ vec3 outEmit(vec3 P, vec3 D) {
   return c + glareAlong(P, D);
 }
 
+/* shading outside: each model leaves its surface, and the pass shades it once */
+// The nearest surface: place, normal, albedo, roughness, metalness, glow, and how much light it takes.
+vec3 sfP, sfN, sfAlb, sfEmit;
+float sfRough, sfMetal, sfLit;
+// The car in the shot does not shadow itself.
+bool sfCar;
+// A surface that takes light.
+void sfSet(vec3 P, vec3 n, vec3 alb, float rough, float metal) {
+  sfP = P; sfN = n; sfAlb = alb; sfRough = rough; sfMetal = metal;
+  sfEmit = vec3(0.0); sfLit = 1.0; sfCar = false;
+}
+// A colour that only glows: a lamp, or the view through a door.
+void sfGlow(vec3 e) { sfEmit = e; sfLit = 0.0; }
+// A glow laid over the surface, with coverage a.
+void sfOver(vec3 e, float a) { sfEmit = mix(sfEmit, e, a); sfLit *= 1.0 - a; }
+// A rough render: the normal leans a little with the noise.
+vec3 bumpN(vec3 n, vec3 H, float k) {
+  vec3 g = vec3(cwN(H.yz * 31.0), cwN(H.xz * 31.0 + 3.0), cwN(H.xy * 31.0 + 7.0)) - 0.5;
+  return normalize(n + (g - n * dot(g, n)) * k);
+}
+// True when the segment from P to P + v meets the box short of its end.
+bool segBox(vec3 P, vec3 v, vec3 lo, vec3 hi) {
+  vec3 iv = 1.0 / (v + vec3(1e-7));
+  vec3 a = (lo - P) * iv, b = (hi - P) * iv, tn = min(a, b), tf = max(a, b);
+  float t0 = max(max(tn.x, tn.y), tn.z), t1 = min(min(tf.x, tf.y), tf.z);
+  return t0 < t1 && t1 > 0.0 && t0 < 0.98;
+}
+// True when the segment meets an upright pipe below its top.
+bool segPipe(vec3 P, vec3 v, vec2 c, float r, float top) {
+  float t = pipeT(P, v, c, r);
+  return t > 0.0 && t < 0.98 && P.y + v.y * t < top;
+}
+// 1 when a lamp at P + v reaches P; the lot's solid shapes cast shadows.
+float outVis(vec3 P, vec3 v) {
+  if (segBox(P, v, vec3(-2.65, 0.0, 0.0), vec3(2.65, 4.1, TL))) return 0.0;
+  if (segBox(P, v, vec3(2.65, 0.0, 0.0), vec3(6.4, 3.4, 7.5))) return 0.0;
+  if (segBox(P, v, vec3(-1.7, 4.1, -0.12), vec3(1.7, 4.7, 0.3))) return 0.0;
+  if (segBox(P, v, BTH0, BTH1)) return 0.0;
+  // The canopy: a slab that slopes up from the facade to its front edge.
+  const float K = (CY1 - CY0) / CZ;
+  float den = v.y - K * v.z;
+  if (abs(den) > 1e-6) {
+    float tc = (CY0 + K * P.z - P.y) / den;
+    vec3 U = P + v * tc;
+    if (tc > 0.0 && tc < 0.98 && U.z < 0.0 && U.z > CZ && abs(U.x) < CXW) return 0.0;
+  }
+  if (segPipe(P, v, POLE, 0.12, LAMP.y)) return 0.0;
+  for (int i = 0; i < 2; i++) {
+    if (segPipe(P, v, vec2(i == 0 ? -CXW + 0.3 : CXW - 0.3, CZ + 0.45), 0.07, CY1)) return 0.0;
+    if (segPipe(P, v, vec2(PYX + (i == 0 ? -0.55 : 0.55), PYZ + 0.12), 0.1, 11.2)) return 0.0;
+  }
+  // The car in the shot: its body and its cabin as two boxes.
+  if (uShot > 0.5 && !sfCar) {
+    vec3 o = P - vec3(0.0, 0.0, uS - 0.2);
+    if (segBox(o, v, vec3(-0.95, 0.15, -2.65), vec3(0.95, 0.9, 2.65))) return 0.0;
+    if (segBox(o, v, vec3(-0.75, 0.9, -1.3), vec3(0.75, 1.32, 0.7))) return 0.0;
+  }
+  return 1.0;
+}
+// How much soft light a point gets: less at a wall's foot, under the car and round the booth.
+float aoOut(vec3 P, vec3 n) {
+  if (n.y < 0.5) return 0.5 + 0.5 * smoothstep(0.0, 1.2, P.y);
+  vec2 bq = max(max(vec2(-2.65, 0.0) - P.xz, P.xz - vec2(6.4, TL)), 0.0);
+  float ao = 0.45 + 0.55 * smoothstep(0.0, 1.4, length(bq));
+  vec2 kq = max(max(BTH0.xz - P.xz, P.xz - BTH1.xz), 0.0);
+  ao *= 0.5 + 0.5 * smoothstep(0.0, 0.8, length(kq));
+  if (uShot > 0.5) {
+    vec2 cq = max(abs(P.xz - vec2(0.0, uS - 0.2)) - vec2(0.85, 2.5), 0.0);
+    ao *= 0.15 + 0.85 * smoothstep(0.0, 0.7, length(cq));
+  }
+  return ao;
+}
+// The soft lights outside that cast no shadow: the doors' spill, the arrow's bulbs, the far lamps.
+vec3 outFill(vec3 P, vec3 n) {
+  float front = step(P.z, 0.05), back = step(TL - 0.05, P.z);
+  vec3 sp = vec3(clamp(P.x, -1.7, 1.7), clamp(P.y, 0.3, 2.7), front > 0.5 ? 0.8 : TL - 0.8);
+  vec3 L = pointL(P, n, sp, (uZone[0] * 1.2 + uArchC[0] * 0.5) * front + (uZone[4] * 1.2 + uArchC[8] * 0.4) * back) * uOut.z;
+  L += pointL(P, n, vec3(PYX + 0.6, 7.0, PYZ - 0.3), WARM * 0.3 * uNeon.w);
+  L += (pointL(P, n, EXL1, WARM * 0.45) + pointL(P, n, EXL2, WARM * 0.45)) * uOut.y * step(TL, P.z);
+  if (uShot > 0.5) L += pointL(P, n, vec3(0.0, 0.8, uS - 3.0), TAILC * 0.35);
+  return L + headL(P, n);
+}
+// The surface lit and seen along D: soft light, then four lamps with shadows, and the sun.
+// Diffuse and GGX specular; F is Schlick's.
+vec3 sfShade(vec3 D) {
+  if (sfLit <= 0.0) return sfEmit;
+  vec3 P = sfP, n = sfN, V = -D;
+  if (dot(n, V) < 0.0) n = -n;
+  vec3 Ps = P + n * 0.03;
+  float nv = max(dot(n, V), 1e-3);
+  float a = max(sfRough * sfRough, 0.004), a2 = a * a, k = (sfRough + 1.0) * (sfRough + 1.0) / 8.0;
+  vec3 F0 = mix(vec3(0.04), sfAlb, sfMetal), dif = sfAlb * (1.0 - sfMetal);
+  vec3 sky = uZen * 1.4 + vec3(0.0012, 0.0012, 0.0016) + uDay * uMid * 0.45;
+  vec3 L = dif * (sky * (0.7 + 0.3 * n.y) + outFill(P, n)) * aoOut(P, n);
+  // The bulbs hang in shades: they light the lane under the canopy most.
+  float under = mix(0.15, 1.0, step(P.y, CY0) * step(CZ - 0.4, P.z) * step(P.z, 0.3) * step(abs(P.x), CXW + 0.4));
+  for (int i = 0; i < 5; i++) {
+    vec3 at = i == 0 ? LAMP : i == 1 ? BULB1 : i == 2 ? BULB2 : i == 3 ? vec3(PYX, 5.5, PYZ - 0.3) : Ps + uSunD * 1e3;
+    vec3 col = i == 0 ? uSod * 20.0 * uOut.x : i == 1 ? WARM * 2.4 * uOut.y * under : i == 2 ? WARM * 1.9 * uOut.y * under : i == 3 ? NEONR * 0.6 * uNeon.x + NEONB * 0.4 * uNeon.y : uDay * vec3(0.9, 0.85, 0.75) * 0.75;
+    if (dot(col, col) < 1e-12) continue;
+    vec3 v = at - Ps;
+    float d2 = dot(v, v);
+    vec3 l = v * inversesqrt(d2);
+    float nl = dot(n, l);
+    if (nl <= 0.0) continue;
+    // The sodium lamp's reflector throws its light down.
+    if (i == 0) col *= smoothstep(0.1, 0.5, l.y);
+    if (i < 4) col *= outVis(Ps, v) / (d2 + 0.05);
+    vec3 h = normalize(l + V);
+    float nh = clamp(dot(n, h), 0.0, 1.0), vh = clamp(dot(V, h), 0.0, 1.0);
+    float dd = nh * nh * (a2 - 1.0) + 1.0;
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - vh, 5.0);
+    vec3 spec = F * min(a2 / (dd * dd), 400.0) / (4.0 * (nl * (1.0 - k) + k) * (nv * (1.0 - k) + k));
+    L += col * nl * (dif * (1.0 - F) + spec);
+  }
+  return sfEmit + L * sfLit;
+}
+
 /* the ground outside */
 // The open ground: desert dust and gravel, the lot's cracked concrete, the road.
-vec3 groundAt(vec3 G, vec3 D, float t) {
+void groundAt(vec3 G, vec3 D, float t) {
   float pw = max(0.01, t * uPix);
   float lot = step(ROAD1, G.x) * step(G.x, 7.0) * step(-18.0, G.z) * step(G.z, 0.3);
   float pad = step(abs(G.x), 3.2) * step(TL - 0.3, G.z) * step(G.z, TL + 7.0);
@@ -861,17 +979,21 @@ vec3 groundAt(vec3 G, vec3 D, float t) {
   }
   // Strange: snow lies on everything.
   alb = mix(alb, vec3(0.8, 0.82, 0.86), uWorld.x * (0.85 - 0.3 * grit));
-  vec3 c = alb * outLight(G, vec3(0.0, 1.0, 0.0));
+  // Dust and concrete are matt; the road's tar a little less.
+  sfSet(G, vec3(0.0, 1.0, 0.0), alb, road > 0.5 ? 0.75 : 0.92, 0.0);
   // Water runs out of the doors and lies in puddles that mirror the lights.
   float wet = step(abs(G.x), 2.4) * smoothstep(-7.0, -0.5, G.z) * step(G.z, 0.0) + pad * smoothstep(TL + 5.0, TL, G.z);
   if (wet > 0.0) {
     float pud = smoothstep(0.45, 0.6, cwFbm2(G.xz * vec2(0.9, 0.6) + 2.0));
     vec3 R = normalize(vec3(D.x, -D.y, D.z) + vec3(cwN(G.xz * 3.0) - 0.5, 0.0, cwN(G.xz * 3.0 + 4.0) - 0.5) * 0.03 * (1.0 - pud));
     float F = 0.03 + 0.97 * pow(1.0 - clamp(-D.y, 0.0, 1.0), 5.0);
-    c = c * (1.0 - 0.4 * wet) + outEmit(G, R) * F * mix(0.2, 0.9, pud) * wet;
+    sfAlb *= 1.0 - 0.4 * wet;
+    // Standing water is smooth: the lamps make long streaks in it.
+    sfRough = mix(sfRough, 0.1, pud * wet);
+    sfEmit = outEmit(G, R) * F * mix(0.2, 0.9, pud) * wet;
   }
   // Far off, the ground goes into the haze at the hills' foot.
-  return t > 120.0 ? mix(c, hills(normalize(vec3(D.x, 0.0005, D.z))).rgb * 0.9, smoothstep(120.0, 2400.0, t)) : c;
+  if (t > 120.0) sfOver(hills(normalize(vec3(D.x, 0.0005, D.z))).rgb * 0.9, smoothstep(120.0, 2400.0, t));
 }
 // Telephone poles along the far side of the road, and two wires between them.
 vec3 phonePoles(vec3 P, vec3 D, inout float t, vec3 c) {
@@ -909,18 +1031,18 @@ vec3 phonePoles(vec3 P, vec3 D, inout float t, vec3 c) {
   return c;
 }
 // A bulb in a wire cage: a hot core crossed by dark wires.
-vec3 bulbAt(vec3 P, vec3 D, vec3 at, vec3 hot, inout float t, vec3 c) {
+void bulbAt(vec3 P, vec3 D, vec3 at, vec3 hot, inout float t) {
   vec3 v = at - P;
   float tl = dot(v, D);
-  if (tl <= 0.0 || tl > t) return c;
+  if (tl <= 0.0 || tl > t) return;
   vec3 off = v - D * tl;
   float r = length(off), rad = max(0.07, tl * uPix * 1.5);
-  if (r > rad) return c;
+  if (r > rad) return;
   vec3 side = normalize(cross(D, vec3(0.0, 1.0, 0.0)));
   float ox = dot(off, side);
   float wire = smoothstep(0.006, 0.002, abs(abs(ox) - 0.03)) + smoothstep(0.006, 0.002, abs(ox));
   t = tl;
-  return mix(c, hot * smoothstep(rad, rad * 0.4, r) * (1.0 - 0.7 * min(wire, 1.0)) * (0.07 / rad), smoothstep(rad, rad * 0.8, r));
+  sfOver(hot * smoothstep(rad, rad * 0.4, r) * (1.0 - 0.7 * min(wire, 1.0)) * (0.07 / rad), smoothstep(rad, rad * 0.8, r));
 }
 vec3 entranceLite(vec3 P, vec3 D, out float t);
 // The world past the exit door: no building, only the open desert.
@@ -935,15 +1057,16 @@ vec3 desertBeyond(vec3 P, vec3 D, out float t) {
 #else
   t = 1e4;
   float tg = D.y < -1e-5 ? -P.y / D.y : 1e9;
-  vec3 c = tg < t ? groundAt(P + D * tg, D, tg) : farView(D);
+  sfGlow(farView(D));
+  if (tg < t) groundAt(P + D * tg, D, tg);
   t = min(t, tg);
   for (int i = 0; i < 2; i++) {
     vec3 at = i == 0 ? EXL1 : EXL2;
     float tp = pipeT(P, D, at.xz, 0.04);
-    if (tp > 0.0 && tp < t && P.y + D.y * tp < at.y - 0.05) { t = tp; c = vec3(0.04) * outLight(P + D * tp, -vec3(D.x, 0.0, D.z)); }
-    c = bulbAt(P, D, at, WARM * 20.0 * uOut.y, t, c);
+    if (tp > 0.0 && tp < t && P.y + D.y * tp < at.y - 0.05) { t = tp; sfSet(P + D * tp, normalize(-vec3(D.x, 0.0, D.z)), vec3(0.04), 0.5, 0.5); }
+    bulbAt(P, D, at, WARM * 20.0 * uOut.y, t);
   }
-  return phonePoles(P, D, t, c);
+  return phonePoles(P, D, t, sfShade(D));
 #endif
 }
 // A traffic signal: a dark box with a red lamp over a green one. g is 1 for green.
@@ -1121,15 +1244,15 @@ vec3 tunnelFrom(vec3 P, vec3 D, float t0, out float t) {
 
 /* the building outside */
 // The building's skin: sun-bleached stucco, glass blocks that glow, painted words, the door frame.
-vec3 buildingAt(vec3 H, vec3 n, vec3 D, float t) {
-  vec3 L = outLight(H, n);
+void buildingAt(vec3 H, vec3 n, vec3 D, float t) {
   vec2 q = abs(n.x) > 0.5 ? H.zy : H.xy;
   float patch_ = smoothstep(0.55, 0.62, cwFbm2(q * 0.9 + 4.0));
   vec3 alb = STUCCO * (0.85 + 0.25 * cwN(q * 13.0)) * mix(1.0, 0.8, patch_);
   // Rain stains run down from the roof's edge.
   alb *= 1.0 - 0.4 * smoothstep(0.5, 0.85, cwN(vec2(q.x * 5.0, q.y * 0.35))) * smoothstep(1.5, 4.1, H.y);
   alb = mix(alb, DADO, step(H.y, 0.85) * 0.85);
-  vec3 c = alb * L;
+  // The render is coarse: a lamp's light rakes across its grain.
+  sfSet(H, bumpN(n, H, 0.35 - 0.2 * patch_), alb, 0.92, 0.0);
   if (abs(n.x) > 0.5) {
     // A row of glass blocks lets the tunnel's light out along each side.
     float pz = mod(H.z - 7.9, 2.6);
@@ -1137,52 +1260,58 @@ vec3 buildingAt(vec3 H, vec3 n, vec3 D, float t) {
       vec2 gb = abs(fract(vec2(pz, H.y - 2.5) / 0.25) - 0.5);
       float blk = smoothstep(0.5, 0.25, max(gb.x, gb.y));
       vec3 inside = lightAt(vec3(0.0, 2.2, H.z), vec3(0.0, 1.0, 0.0)) * 2.5 + zoneCol(H.z) * 0.12;
-      c = inside * (0.25 + 0.75 * blk) * (0.75 + 0.5 * cwN(H.zy * 18.0)) + vec3(0.01) * L;
+      sfN = n; sfAlb = vec3(0.01); sfRough = 0.2;
+      sfEmit = inside * (0.25 + 0.75 * blk) * (0.75 + 0.5 * cwN(H.zy * 18.0));
     }
     // Hand-painted words along the left side, faded by the sun.
     if (n.x < 0.0 && H.z > 8.2 && H.z < 17.8 && H.y > 1.2 && H.y < 2.2) {
       float w = atlas(SIDE_R, vec2((H.z - 8.2) / 9.6, (H.y - 1.2) / 1.0)).r;
-      c = mix(c, PAINTR * L, w * 0.75 * (0.6 + 0.4 * cwN(H.zy * 7.0)));
+      sfAlb = mix(sfAlb, PAINTR, w * 0.75 * (0.6 + 0.4 * cwN(H.zy * 7.0)));
     }
   } else if (n.z < -0.5) {
     float jamb = abs(H.x) - DW;
     // The door's steel frame, gone dull.
-    if ((jamb > 0.0 && jamb < 0.12 && H.y < DH + 0.12) || (H.y > DH && H.y < DH + 0.12 && jamb < 0.12)) c = vec3(0.3) * L * (0.6 + 0.4 * cwN(H.xy * 20.0)) + glareAlong(H, reflect(D, n)) * 0.05;
+    if ((jamb > 0.0 && jamb < 0.12 && H.y < DH + 0.12) || (H.y > DH && H.y < DH + 0.12 && jamb < 0.12)) {
+      sfSet(H, n, vec3(0.3) * (0.6 + 0.4 * cwN(H.xy * 20.0)), 0.45, 0.6);
+      sfEmit = glareAlong(H, reflect(D, n)) * 0.05;
+    }
     // Hazard stripes on the jambs, peeling.
     if (jamb > 0.12 && jamb < 0.4 && H.y < 0.9) {
       float st = step(0.5, fract((H.y + abs(H.x)) * 3.0));
       float peel = smoothstep(0.5, 0.65, cwFbm(H.xy * 4.0));
-      c = mix(c, mix(vec3(0.5, 0.38, 0.03), vec3(0.03), st) * L, 0.85 * (1.0 - peel));
+      sfAlb = mix(sfAlb, mix(vec3(0.5, 0.38, 0.03), vec3(0.03), st), 0.85 * (1.0 - peel));
+      sfRough = mix(sfRough, 0.6, 1.0 - peel);
     }
     // ENTER, painted over the door.
-    if (abs(H.x) < 1.3 && H.y > 3.45 && H.y < 4.05) c = mix(c, PAINTR * L, signAt(11, vec2((H.x + 1.3) / 2.6, (H.y - 3.45) / 0.6)) * 0.8);
+    if (abs(H.x) < 1.3 && H.y > 3.45 && H.y < 4.05) sfAlb = mix(sfAlb, PAINTR, signAt(11, vec2((H.x + 1.3) / 2.6, (H.y - 3.45) / 0.6)) * 0.8);
   }
-  return c;
 }
 // The office beside the tunnel: stucco, a screen of breeze blocks, a dark window.
-vec3 officeAt(vec3 H, vec3 n, vec3 D, float t) {
-  vec3 L = outLight(H, n);
+void officeAt(vec3 H, vec3 n, vec3 D, float t) {
   vec2 q = abs(n.x) > 0.5 ? H.zy : H.xy;
   vec3 alb = STUCCO * (0.85 + 0.25 * cwN(q * 13.0)) * (1.0 - 0.35 * smoothstep(0.55, 0.8, cwN(vec2(q.x * 4.0, q.y * 0.5))));
   alb = mix(alb, DADO, step(H.y, 0.85) * 0.85);
-  vec3 c = alb * L;
+  sfSet(H, bumpN(n, H, 0.3), alb, 0.92, 0.0);
   if (n.z < -0.5) {
     // Breeze blocks: cast squares, each pierced with four round holes.
     if (H.x > 4.75 && H.x < 6.15 && H.y > 0.1 && H.y < 3.25) {
       vec2 b = abs(fract(vec2(H.x - 4.75, H.y - 0.1) / 0.35) - 0.5) * 0.35;
       float hole = smoothstep(0.062, 0.05, length(b - vec2(0.075)));
-      c = mix(alb * L * 1.1, vec3(0.002), hole);
+      // Cast concrete is smoother than render; the holes are dark.
+      sfN = n;
+      sfAlb = mix(alb * 1.1, vec3(0.002), hole);
+      sfRough = 0.8;
     }
     // The office window: dark glass behind slatted blinds.
     if (H.x > 3.0 && H.x < 4.4 && H.y > 0.95 && H.y < 2.3) {
       vec3 R = reflect(D, n);
-      c = vec3(0.004, 0.004, 0.005) * (0.6 + 0.4 * step(0.5, fract(H.y * 22.0))) + farView(R) * 0.15 + glareAlong(H, R) * 0.08;
+      sfSet(H, n, vec3(0.004, 0.004, 0.005) * (0.6 + 0.4 * step(0.5, fract(H.y * 22.0))), 0.05, 0.0);
+      sfEmit = farView(R) * 0.15 + glareAlong(H, R) * 0.08;
     }
   }
-  return c;
 }
 // The canopy: a thin slab sweeping up from the facade, on two pipe posts, bulbs under it.
-vec3 canopy(vec3 P, vec3 D, inout float t, vec3 c) {
+void canopy(vec3 P, vec3 D, inout float t) {
   const float K = (CY1 - CY0) / CZ;
   float den = D.y - K * D.z;
   if (den > 1e-5) {
@@ -1190,8 +1319,9 @@ vec3 canopy(vec3 P, vec3 D, inout float t, vec3 c) {
     vec3 U = P + D * tu;
     if (tu > 0.0 && tu < t && U.z < 0.0 && U.z > CZ && abs(U.x) < CXW) {
       t = tu;
+      // Painted boards under the canopy, joined every 60 cm.
       float pan = step(0.5, fract(U.x / 0.6 + 0.5));
-      c = SOFFIT * outLight(U - vec3(0.0, 0.02, 0.0), vec3(0.0, -1.0, 0.0)) * (0.88 + 0.12 * pan) * (0.8 + 0.3 * cwN(U.xz * 3.0));
+      sfSet(U - vec3(0.0, 0.02, 0.0), vec3(0.0, -1.0, 0.0), SOFFIT * (0.88 + 0.12 * pan) * (0.8 + 0.3 * cwN(U.xz * 3.0)), 0.7, 0.0);
     }
   }
   // The front edge: a fascia band with a dull chrome lip.
@@ -1201,7 +1331,9 @@ vec3 canopy(vec3 P, vec3 D, inout float t, vec3 c) {
     if (tf < t && abs(F.x) < CXW && F.y > CY1 - 0.02 && F.y < CY1 + 0.4) {
       t = tf;
       float lip = smoothstep(0.02, 0.0, abs(F.y - CY1 - 0.05) - 0.015);
-      c = mix(STUCCO * 0.9 * outLight(F, vec3(0.0, 0.0, -1.0)) * (0.8 + 0.3 * cwN(F.xy * 6.0)), vec3(0.4) * outLight(F, vec3(0.0, 0.6, -0.8)) + farView(reflect(D, vec3(0.0, 0.0, -1.0))) * 0.3, lip);
+      vec3 fn = normalize(mix(vec3(0.0, 0.0, -1.0), vec3(0.0, 0.6, -0.8), lip));
+      sfSet(F, lip > 0.5 ? fn : bumpN(fn, F, 0.3), mix(STUCCO * 0.9 * (0.8 + 0.3 * cwN(F.xy * 6.0)), vec3(0.6), lip), mix(0.9, 0.3, lip), lip);
+      sfEmit = farView(reflect(D, vec3(0.0, 0.0, -1.0))) * 0.3 * lip;
     }
   }
   // The side edge toward the camera.
@@ -1211,54 +1343,62 @@ vec3 canopy(vec3 P, vec3 D, inout float t, vec3 c) {
   float yu = CY0 + K * S.z;
   if (ts > 0.0 && ts < t && abs(P.x) > CXW && S.z < 0.0 && S.z > CZ && S.y > yu - 0.01 && S.y < yu + 0.2 + 0.2 * (S.z / CZ)) {
     t = ts;
-    c = STUCCO * 0.85 * outLight(S, vec3(-sign(D.x), 0.0, 0.0));
+    sfSet(S, vec3(-sign(D.x), 0.0, 0.0), STUCCO * 0.85, 0.9, 0.0);
   }
-  // Two pipe posts hold the front edge.
+  // Two pipe posts hold the front edge: galvanised, gone dull.
   for (int i = 0; i < 2; i++) {
     vec2 at = vec2(i == 0 ? -CXW + 0.3 : CXW - 0.3, CZ + 0.45);
     float tp = pipeT(P, D, at, 0.07);
     if (tp > 0.0 && tp < t) {
       vec3 Q = P + D * tp;
-      if (Q.y < CY1) { t = tp; vec3 pn = normalize(vec3(Q.x - at.x, 0.0, Q.z - at.y)); c = vec3(0.3) * outLight(Q, pn) + farView(reflect(D, pn)) * 0.1; }
+      if (Q.y < CY1) {
+        t = tp;
+        vec3 pn = normalize(vec3(Q.x - at.x, 0.0, Q.z - at.y));
+        sfSet(Q, pn, vec3(0.5, 0.5, 0.48) * (0.7 + 0.3 * cwN(vec2(atan(pn.z, pn.x) * 2.0, Q.y * 3.0))), 0.42, 0.85);
+        sfEmit = farView(reflect(D, pn)) * 0.1;
+      }
     }
   }
-  c = bulbAt(P, D, BULB1, WARM * 30.0 * uOut.y, t, c);
-  return bulbAt(P, D, BULB2, WARM * 24.0 * uOut.y, t, c);
+  bulbAt(P, D, BULB1, WARM * 30.0 * uOut.y, t);
+  bulbAt(P, D, BULB2, WARM * 24.0 * uOut.y, t);
 }
 // The cashier's booth: a small box with windows, a dim bulb inside and the price board.
-vec3 booth(vec3 P, vec3 D, inout float t, vec3 c) {
+void booth(vec3 P, vec3 D, inout float t) {
   vec3 n;
   vec2 bt = boxT(P, D, BTH0, BTH1, n);
-  if (bt.x <= 0.0 || bt.x >= bt.y || bt.x >= t) return c;
+  if (bt.x <= 0.0 || bt.x >= bt.y || bt.x >= t) return;
   t = bt.x;
   vec3 H = P + D * bt.x;
-  vec3 L = outLight(H, n);
   vec3 mid = 0.5 * (BTH0 + BTH1);
   vec2 q = abs(n.x) > 0.5 ? H.zy : H.xy;
   vec3 alb = STUCCO * (0.8 + 0.3 * cwN(q * 12.0));
   alb = mix(alb, PAINTR * 0.8, step(abs(H.y - 0.95), 0.06));
-  c = n.y > 0.5 ? vec3(0.08) * L : alb * L;
+  // The roof is tar paper; the walls are render.
+  if (n.y > 0.5) sfSet(H, n, vec3(0.08), 0.8, 0.0);
+  else sfSet(H, bumpN(n, H, 0.3), alb, 0.9, 0.0);
   bool win = (n.x > 0.5 && H.y > 1.05 && H.y < 1.9 && abs(H.z - mid.z) < 0.42) || (n.z < -0.5 && H.y > 0.95 && H.y < 1.55 && abs(H.x - mid.x) < 0.4);
   if (win) {
     vec3 R = reflect(D, n);
-    c = WARM * 0.03 * uOut.w * (0.6 + 0.4 * cwN(q * 6.0)) + farView(R) * 0.12 + glareAlong(H, R) * 0.06;
+    sfSet(H, n, vec3(0.01), 0.05, 0.0);
+    sfEmit = WARM * 0.03 * uOut.w * (0.6 + 0.4 * cwN(q * 6.0)) + farView(R) * 0.12 + glareAlong(H, R) * 0.06;
   }
   // The price board over the front window, faded.
   if (n.z < -0.5 && H.y > 1.65 && H.y < 2.3 && abs(H.x - mid.x) < 0.52) {
     float w = atlas(PRICE_R, vec2((H.x - mid.x + 0.52) / 1.04, (H.y - 1.65) / 0.65)).r;
-    c = mix(vec3(0.62, 0.58, 0.5) * L * (0.7 + 0.3 * cwN(H.xy * 25.0)), vec3(0.05, 0.04, 0.06) * L, w * 0.85);
+    sfSet(H, n, mix(vec3(0.62, 0.58, 0.5) * (0.7 + 0.3 * cwN(H.xy * 25.0)), vec3(0.05, 0.04, 0.06), w * 0.85), 0.6, 0.0);
   }
-  return c;
 }
 // The lamp: a wooden pole, an arm, and the sodium head.
-vec3 lampPost(vec3 P, vec3 D, inout float t, vec3 c) {
+void lampPost(vec3 P, vec3 D, inout float t) {
   float tp = pipeT(P, D, POLE, 0.12);
   if (tp > 0.0 && tp < t) {
     vec3 Q = P + D * tp;
     if (Q.y < LAMP.y + 0.15) {
       t = tp;
+      // Weathered wood, split along the grain.
       vec3 pn = normalize(vec3(Q.x - POLE.x, 0.0, Q.z - POLE.y));
-      c = vec3(0.13, 0.1, 0.075) * (0.7 + 0.5 * cwN(vec2(atan(pn.z, pn.x) * 3.0, Q.y * 8.0))) * outLight(Q, pn);
+      float grain = cwN(vec2(atan(pn.z, pn.x) * 3.0, Q.y * 8.0));
+      sfSet(Q, pn, vec3(0.13, 0.1, 0.075) * (0.7 + 0.5 * grain), 0.8 - 0.2 * grain, 0.0);
     }
   }
   float ta = (LAMP.z - P.z) / (abs(D.z) > 1e-5 ? D.z : 1e-5);
@@ -1268,11 +1408,11 @@ vec3 lampPost(vec3 P, vec3 D, inout float t, vec3 c) {
     bool head = abs(A.x - LAMP.x) < 0.32 && A.y > LAMP.y - 0.06 && A.y < LAMP.y + 0.12;
     if (arm || head) {
       t = ta;
-      c = vec3(0.08) * outLight(A + vec3(0.0, 0.25, 0.0), vec3(0.0, 0.0, -1.0));
-      if (head && A.y < LAMP.y) c = uSod * 30.0 * uOut.x * (0.6 + 0.4 * smoothstep(0.32, 0.0, abs(A.x - LAMP.x)));
+      // Painted steel, with the glowing lens under the head.
+      sfSet(A + vec3(0.0, 0.25, 0.0), vec3(0.0, 0.0, -1.0), vec3(0.12), 0.45, 0.5);
+      if (head && A.y < LAMP.y) sfGlow(uSod * 30.0 * uOut.x * (0.6 + 0.4 * smoothstep(0.32, 0.0, abs(A.x - LAMP.x))));
     }
   }
-  return c;
 }
 // The arrow on the pylon, as a distance in metres: negative inside.
 float arrowD(vec2 s) {
@@ -1282,20 +1422,26 @@ float arrowD(vec2 s) {
   return min(body, head);
 }
 // The pylon: two pipes, a painted panel, an arrow ringed with bulbs, and the neon.
-vec3 pylon(vec3 P, vec3 D, inout float t, vec3 c) {
+void pylon(vec3 P, vec3 D, inout float t) {
   for (int i = 0; i < 2; i++) {
     vec2 at = vec2(PYX + (i == 0 ? -0.55 : 0.55), PYZ + 0.12);
     float tp = pipeT(P, D, at, 0.1);
     if (tp > 0.0 && tp < t) {
       vec3 Q = P + D * tp;
-      if (Q.y < 11.2) { t = tp; vec3 pn = normalize(vec3(Q.x - at.x, 0.0, Q.z - at.y)); c = vec3(0.24, 0.22, 0.2) * outLight(Q, pn); }
+      // Painted steel pipe, rusting through.
+      if (Q.y < 11.2) {
+        t = tp;
+        vec3 pn = normalize(vec3(Q.x - at.x, 0.0, Q.z - at.y));
+        float rust = smoothstep(0.55, 0.8, cwN(vec2(atan(pn.z, pn.x) * 2.0, Q.y * 2.5)));
+        sfSet(Q, pn, mix(vec3(0.24, 0.22, 0.2), RUST * 0.5, rust), mix(0.45, 0.85, rust), 0.4 * (1.0 - rust));
+      }
     }
   }
   float tz = (PYZ - P.z) / (abs(D.z) > 1e-5 ? D.z : 1e-5);
-  if (tz <= 0.0 || tz >= t) return c;
+  if (tz <= 0.0 || tz >= t) return;
   vec3 S = P + D * tz;
   vec2 s = vec2(S.x - PYX, S.y);
-  vec3 L = outLight(S, vec3(0.0, 0.0, -sign(D.z)));
+  vec3 nf = vec3(0.0, 0.0, -sign(D.z));
   // The name panel: a slanted board, cream with a red border, faded.
   vec2 pp = vec2(s.x - (s.y - 8.0) * 0.12, s.y);
   if (abs(pp.x) < 1.15 && pp.y > 8.0 && pp.y < 11.1) {
@@ -1304,22 +1450,29 @@ vec3 pylon(vec3 P, vec3 D, inout float t, vec3 c) {
     vec3 alb = mix(vec3(0.64, 0.6, 0.5), PAINTR, border) * (0.8 + 0.3 * cwN(pp * 9.0));
     alb = mix(alb, PAINTR, atlas(PYLON_R, vec2((pp.x + 1.0) / 2.0, (pp.y - 8.25) / 2.6)).r * 0.9);
     alb *= 1.0 - 0.4 * smoothstep(0.6, 0.85, cwN(vec2(pp.x * 6.0, pp.y * 0.7)));
-    return alb * (L + WARM * 0.05 * uNeon.w);
+    // Enamel on sheet steel, chalky with age.
+    sfSet(S, bumpN(nf, S, 0.12), alb, 0.55, 0.0);
+    sfEmit = alb * WARM * 0.05 * uNeon.w;
+    return;
   }
   // The arrow points to the door; bulbs run round its edge, most of them dead.
   float ar = arrowD(s);
   if (ar < 0.0) {
     t = tz;
-    c = vec3(0.62, 0.46, 0.1) * (0.75 + 0.3 * cwN(s * 7.0)) * (L + WARM * 0.06 * uNeon.w);
+    vec3 alb = vec3(0.62, 0.46, 0.1) * (0.75 + 0.3 * cwN(s * 7.0));
+    sfSet(S, nf, alb, 0.5, 0.0);
+    sfEmit = alb * WARM * 0.06 * uNeon.w;
     vec2 gq = floor(s / 0.2 + 0.5) * 0.2;
     float ga = arrowD(gq);
     if (ga > -0.14 && ga < -0.03) {
       float id = cwH(gq * 7.3 + 1.0);
       float chase = 0.55 + 0.45 * smoothstep(0.35, 0.0, abs(fract(uChase - gq.x * 0.35 - gq.y * 0.2) - 0.5) - 0.12);
       float b = smoothstep(0.06, 0.035, length(s - gq));
-      c = mix(c, id > 0.58 ? WARM * 22.0 * uNeon.w * chase : vec3(0.2, 0.18, 0.14) * L * 2.0, b);
+      // A dead bulb is clear glass: a small dome that catches the lamps.
+      if (id > 0.58) sfOver(WARM * 22.0 * uNeon.w * chase, b);
+      else if (b > 0.5) { sfN = normalize(nf * 0.6 + vec3(s - gq, 0.0) / 0.06); sfAlb = vec3(0.3, 0.27, 0.21); sfRough = 0.12; }
     }
-    return c;
+    return;
   }
   // The neon box under the arrow: a dark backing with the tubes.
   if (abs(s.x) < 1.3 && s.y > 4.8 && s.y < 6.3) {
@@ -1329,9 +1482,10 @@ vec3 pylon(vec3 P, vec3 D, inout float t, vec3 c) {
     vec3 lit = NEONR * (tb.g * uNeon.x + tb.r * uNeon.z) + NEONB * tb.b * uNeon.y;
     vec3 glo = NEONR * (halo.g * uNeon.x + halo.r * uNeon.z) + NEONB * halo.b * uNeon.y;
     // Dead glass catches only a little light.
-    return vec3(0.01) * L + glo * 0.45 + lit * 6.0 + vec3(0.06, 0.06, 0.07) * tb.r * (1.0 - uNeon.z) * (L * 6.0 + glo * 2.0);
+    float dead = tb.r * (1.0 - uNeon.z);
+    sfSet(S, nf, vec3(0.01) + vec3(0.36, 0.36, 0.42) * dead, mix(0.6, 0.15, dead), 0.0);
+    sfEmit = glo * 0.45 + lit * 6.0 + vec3(0.12, 0.12, 0.14) * dead * glo;
   }
-  return c;
 }
 // The car from outside: a long, low sedan with fins. p is relative to its middle, on the ground.
 float carD(vec3 p) {
@@ -1343,10 +1497,10 @@ float carD(vec3 p) {
   float wheel = max(length(wq) - 0.36, abs(abs(p.x) - 0.78) - 0.11);
   return min(min(body, cab), min(fin, wheel));
 }
-vec3 carBody(vec3 P, vec3 D, inout float t, vec3 col) {
+void carBody(vec3 P, vec3 D, inout float t) {
   vec3 o = P - vec3(0.0, 0.0, uS - 0.2), n;
   vec2 bb = boxT(o, D, vec3(-1.05, 0.0, -2.8), vec3(1.05, 1.45, 2.8), n);
-  if (bb.x >= bb.y || bb.y < 0.0 || bb.x > t) return col;
+  if (bb.x >= bb.y || bb.y < 0.0 || bb.x > t) return;
   float s = max(bb.x, 0.0);
   bool hit = false;
   for (int i = 0; i < 56; i++) {
@@ -1355,23 +1509,25 @@ vec3 carBody(vec3 P, vec3 D, inout float t, vec3 col) {
     s += d * 0.9;
     if (s > bb.y) break;
   }
-  if (!hit || s > t) return col;
+  if (!hit || s > t) return;
   t = s;
   vec3 p = o + D * s, W = P + D * s;
   vec2 e = vec2(0.003, 0.0);
   vec3 nn = normalize(vec3(carD(p + e.xyy) - carD(p - e.xyy), carD(p + e.yxy) - carD(p - e.yxy), carD(p + e.yyx) - carD(p - e.yyx)));
-  vec3 L = outLight(W + nn * 0.02, nn);
   vec3 R = reflect(D, nn);
   float fr = 0.04 + 0.96 * pow(clamp(1.0 - dot(-D, nn), 0.0, 1.0), 5.0);
   vec3 env = farView(R) + glareAlong(W, R) * 0.15;
-  vec3 c = uPaint * L * 0.45 + env * fr * 0.9;
+  // Paint under a clear coat: the coat mirrors the night, the paint takes the lamps.
+  sfSet(W, nn, uPaint, 0.22, 0.0);
+  sfCar = true;
+  sfEmit = env * fr * 0.9;
   // Glass all round the cabin; chrome on the bumpers and a spear down the side.
-  if (p.y > 1.04 && p.y < 1.33 && abs(nn.y) < 0.75) c = env * (0.06 + 0.7 * fr) + L * 0.01;
-  if ((abs(p.y - 0.45) < 0.07 && abs(p.z) > 2.5) || abs(p.y - 0.8) < 0.012) c = env * 0.7 + L * 0.2;
+  if (p.y > 1.04 && p.y < 1.33 && abs(nn.y) < 0.75) { sfAlb = vec3(0.015); sfRough = 0.05; sfEmit = env * (0.06 + 0.7 * fr); }
+  if ((abs(p.y - 0.45) < 0.07 && abs(p.z) > 2.5) || abs(p.y - 0.8) < 0.012) { sfAlb = vec3(0.8); sfMetal = 1.0; sfRough = 0.12; sfEmit = env * 0.7; }
   // The tail lamps glow; the brakes are on.
-  if (p.z < -2.6 && abs(abs(p.x) - 0.76) < 0.1 && p.y > 0.68 && p.y < 1.0) c = TAILC * 3.0;
-  if (p.y < 0.5 && abs(abs(p.z) - 1.55) < 0.4) c *= 0.12;
-  return c;
+  if (p.z < -2.6 && abs(abs(p.x) - 0.76) < 0.1 && p.y > 0.68 && p.y < 1.0) sfGlow(TAILC * 3.0);
+  // Black tyres and the dark wheel wells.
+  if (p.y < 0.5 && abs(abs(p.z) - 1.55) < 0.4) { sfAlb *= 0.12; sfEmit *= 0.12; sfRough = 0.85; sfMetal = 0.0; }
 }
 // A ray from outside: tg meets the ground, bt the building, n its face.
 // Returns 0 for a miss, 1 for the building, 2 for the front door.
@@ -1397,32 +1553,34 @@ vec3 exterior(vec3 P, vec3 D, out float t) {
 #else
   t = 1e4;
   vec3 c = vec3(0.0), n;
+  sfGlow(c);
   float tg;
   vec2 bt;
   int part = frontDoor(P, D, tg, bt, n);
-  if (tg < t) { t = tg; c = groundAt(P + D * tg, D, tg); }
+  if (tg < t) { t = tg; groundAt(P + D * tg, D, tg); }
   if (part > 0) {
     vec3 H = P + D * bt.x;
-    if (part == 2) { float ti; c = tunnelFrom(H, D, bt.x, ti); t = ti; }
-    else { t = bt.x; c = buildingAt(H, n, D, bt.x); }
+    if (part == 2) { float ti; sfGlow(tunnelFrom(H, D, bt.x, ti)); t = ti; }
+    else { t = bt.x; buildingAt(H, n, D, bt.x); }
   }
   vec2 ot = boxT(P, D, vec3(2.65, 0.0, 0.0), vec3(6.4, 3.4, 7.5), n);
-  if (ot.x > 0.0 && ot.x < ot.y && ot.x < t) { t = ot.x; c = officeAt(P + D * ot.x, n, D, ot.x); }
+  if (ot.x > 0.0 && ot.x < ot.y && ot.x < t) { t = ot.x; officeAt(P + D * ot.x, n, D, ot.x); }
   // The stepped parapet over the door.
   vec2 pt = boxT(P, D, vec3(-1.7, 4.1, -0.12), vec3(1.7, 4.7, 0.3), n);
-  if (pt.x > 0.0 && pt.x < pt.y && pt.x < t) { t = pt.x; c = buildingAt(P + D * pt.x, n, D, pt.x); }
-  c = canopy(P, D, t, c);
+  if (pt.x > 0.0 && pt.x < pt.y && pt.x < t) { t = pt.x; buildingAt(P + D * pt.x, n, D, pt.x); }
+  canopy(P, D, t);
 #endif
 #ifdef PASS_O
-  return c;
+  return sfShade(D);
 #else
-  c = booth(P, D, t, c);
-  c = lampPost(P, D, t, c);
-  c = pylon(P, D, t, c);
-  if (t >= 1e4) c = farView(D);
-  c = phonePoles(P, D, t, c);
-  if (uShot > 0.5) c = carBody(P, D, t, c);
-  return c;
+  // The pass before is a glow here: a nearer model replaces it.
+  sfGlow(c);
+  booth(P, D, t);
+  lampPost(P, D, t);
+  pylon(P, D, t);
+  if (uShot > 0.5) carBody(P, D, t);
+  if (t >= 1e4) sfGlow(farView(D));
+  return phonePoles(P, D, t, sfShade(D));
 #endif
 #endif
 }
@@ -1436,27 +1594,30 @@ vec3 entranceLite(vec3 P, vec3 D, out float t) {
 #else
   t = 1e4;
   vec3 c = vec3(0.0), n;
+  sfGlow(c);
   float tg = D.y < -1e-5 ? -P.y / D.y : 1e9;
-  if (tg < t) { t = tg; c = groundAt(P + D * tg, D, tg); }
+  if (tg < t) { t = tg; groundAt(P + D * tg, D, tg); }
   vec2 bt = boxT(P, D, vec3(-2.65, 0.0, 0.0), vec3(2.65, 4.1, TL), n);
   if (bt.x > 0.0 && bt.x < bt.y && bt.x < t) {
     vec3 H = P + D * bt.x;
     t = bt.x;
     // The door shows only a lit haze and the first tubes, far inside.
-    c = n.z < -0.5 && abs(H.x) < DW && H.y < DH ? (uZone[0] * 0.16 + uArchC[0] * 0.02) * (0.4 + 0.6 * smoothstep(0.0, 2.6, H.y)) + uArchC[0] * 0.5 * exp(-pow((H.y - 2.75) / 0.03, 2.0)) * step(abs(H.x), 0.5) : buildingAt(H, n, D, bt.x);
+    if (n.z < -0.5 && abs(H.x) < DW && H.y < DH) sfGlow((uZone[0] * 0.16 + uArchC[0] * 0.02) * (0.4 + 0.6 * smoothstep(0.0, 2.6, H.y)) + uArchC[0] * 0.5 * exp(-pow((H.y - 2.75) / 0.03, 2.0)) * step(abs(H.x), 0.5));
+    else buildingAt(H, n, D, bt.x);
   }
   vec2 ot = boxT(P, D, vec3(2.65, 0.0, 0.0), vec3(6.4, 3.4, 7.5), n);
-  if (ot.x > 0.0 && ot.x < ot.y && ot.x < t) { t = ot.x; c = officeAt(P + D * ot.x, n, D, ot.x); }
-  c = canopy(P, D, t, c);
+  if (ot.x > 0.0 && ot.x < ot.y && ot.x < t) { t = ot.x; officeAt(P + D * ot.x, n, D, ot.x); }
+  canopy(P, D, t);
 #endif
 #ifdef PASS_E
-  return c;
+  return sfShade(D);
 #else
-  c = booth(P, D, t, c);
-  c = lampPost(P, D, t, c);
-  c = pylon(P, D, t, c);
-  if (t >= 1e4) c = farView(D);
-  return phonePoles(P, D, t, c);
+  sfGlow(c);
+  booth(P, D, t);
+  lampPost(P, D, t);
+  pylon(P, D, t);
+  if (t >= 1e4) sfGlow(farView(D));
+  return phonePoles(P, D, t, sfShade(D));
 #endif
 }
 // A person, standing: a dark shape on a plane that faces the eye. base is the feet.
