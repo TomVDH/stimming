@@ -3,8 +3,9 @@
 title: 'Icons: a new round for every toy'
 status: in-progress
 type: epic
+priority: normal
 created_at: 2026-11-23T08:46:34Z
-updated_at: 2026-11-23T08:46:34Z
+updated_at: 2026-11-23T10:26:02Z
 ---
 
 Tom, 2026-11-23: "we want to have all our current toys have a one by one pass for new icons -- this is a new subsession we work chunked there -- ensure we involve our sheet".
@@ -23,3 +24,8 @@ Overlaps to tell Tom: Railgun has an open menu icon bean (stimming-yrcx, waits o
 - [ ] 3 to 7 the rest of the main shelf, then the Lab with no round
 - [ ] 8 to 14 the Lab
 - [ ] 15 the last of the Lab; ask Tom about Prism, Fidget board and Heat putty
+
+
+## Sheet: all rounds (Tom, 2026-11-23)
+
+Tom: "can we get the sheet with ALL logos per toy we've had so far". The sheet opens on All rounds: every card of every gallery per toy (`icons/rounds.json`, 154 galleries for 101 toys, plus `GALLERY`), newest round first; `?latest` keeps the A and D view. Chunk 2 moved to one side session per toy, five at a time.
