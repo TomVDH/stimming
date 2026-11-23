@@ -4,6 +4,7 @@ import { COMMON } from './world.js';
 import { SKY } from './sky.js';
 import { GRADE } from '../shared/grade.js';
 import { OUTPUT } from '../shared/output.js';
+import { BOKEH } from '../shared/bokeh.js';
 
 export const COMPOSITE_FS = /* glsl */`#version 300 es
 precision highp float;
@@ -38,3 +39,13 @@ void main() {
   c = gdGrade(c * uExp, vUv, uAsp, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), vec3(0.0005, 0.0004, 0.0006), 0.42, 0.45, 0.035);
   o = vec4(ouFilmAces(c, 1.0, gl_FragCoord.xy), 1.0);
 }`;
+
+// The scene in round discs at half size: the view through fog on the pane.
+export const BOKEH_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uScene;
+uniform vec2 uRad;
+${BOKEH}
+void main() { o = vec4(bokeh(uScene, vUv, uRad, 0.0, 1.5, 2.0, 0.2), 1.0); }`;

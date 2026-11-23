@@ -61,8 +61,9 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Each void's ceiling is a storm base after Tornado alley's (Tom, 2026-11-23): folded lumps on a warped field, broad rolls, scud; the lit floor lights the crests, the folds go black.
 - God rays and scale (Tom, 2026-11-23): ragged breaks 20 to 40 km across cut through each void's ceiling and the deck above. Light falls through them in slanted shafts that glow in the gas, brightest toward the light, and lands in soft pools on the floors and towers; the rest lies in shade. From above, a break opens onto the lit void below.
 - Each layer tints the light. The light fades slowly through the abyss and fails under the last deck. The eye opens up to 8 times as the light fails; flashes dim to match.
-- The outer pane carries the weather: frost high up, drops that bead and race up in the decks, veils of hue and brightness in the air, heat shimmer deep down.
-- Inside a deck, wisps tear past the glass in three layers and flashes come three times as often.
+- The window has two layers (Tom, 2026-11-23). Against it: the storm's near fog streams past, curtains and banks in the near 32 m after Window seat's, lit by the flashes from their bearing. On it: beads, runs and fog from the shared wet pane, frost in orbit, ammonia rime in the white deck, mist deep down, veils of hue and brightness, heat shimmer.
+- Under stress the pane bows in and the view swells; from 120 km down long jagged cracks run in from the rim, branch and join in a web; each new crack jolts the capsule. At 640 km the hull fails: a burst, then black, and the toy wakes at the top.
+- Inside a deck, flashes come three times as often.
 
 ## Controls
 
@@ -102,7 +103,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into three zone programs |
 | `sky.js` | Space, sun, rings, limb haze |
 | `post.js` | Pass 4: the composite. The final grade |
-| `cabin.js` | The capsule: wall, bezel, liner, panes and the glass weather |
+| `cabin.js` | The capsule: wall, bezel, liner, panes; the window's two layers (near fog copied from Window seat, wet pane from `shared/wetglass.js`), cracks, the crush |
 | `bolts.js` | Lightning timing |
 | `sound.js` | Web Audio |
 

@@ -1,14 +1,60 @@
 // Gas giant dive, the cabin pass: the capsule's window and a crop of its wall, after Window seat's pass 2.
 // The cabin is traced in capsule metres: a curved wall, a bezel ring, a tapered liner, two panes.
 // Light comes in through the window; the outside, blurred, is the cabin's only sky.
-// The outer pane carries the weather: frost up high, drops in the decks, veils, heat shimmer deep down.
+// Two layers on the window: what streams past against it, and what sticks on it.
+// Under stress the pane bows and cracks; at the crush it shatters.
 // Output: one RGBA16F target, linear light before the grade.
+import { GLASS_RAIN } from '../shared/glassrain.js';
+import { WET_GLASS } from '../shared/wetglass.js';
+
+/* ---------- K: Window seat's near fog (copied from window/shader.js wispDens and nearFog) ---------- */
+// Curtains and banks in the near 32 m, turned for a fall: they run along the fall line.
+// p is in metres; uWispP moves the field up past the capsule.
+const NEAR_FOG = /* glsl */`
+float wispDens(vec3 p) {
+  float n = textureLod(uVol, p / vec3(30.0, 136.0, 9.0), 0.0).r * 0.78 + textureLod(uVol, p / vec3(10.0, 68.0, 3.2) + 0.37, 0.0).g * 0.22;
+  float bank = textureLod(uVol, p / vec3(80.0, 408.0, 26.0) + 0.71, 0.0).b;
+  float d = max(smoothstep(0.64 - 0.16 * uNear, 0.78 - 0.14 * uNear, n), smoothstep(0.62 - 0.2 * uNear, 0.76 - 0.2 * uNear, bank) * 0.85);
+  return d * smoothstep(0.05, 0.5, uNear);
+}
+// air is the storm's own light; flashes light the murk from their bearing.
+vec3 nearFog(vec3 c, vec3 d, vec3 X0, vec3 air, out float Tn) {
+  Tn = 1.0;
+  if (uNear <= 0.05) return c;
+  float t1 = 32.0, T = 1.0;
+  vec3 col = vec3(0.0);
+  // Sixteen even steps, jittered per pixel.
+  float dt = (t1 - 0.5) / 16.0, t = 0.5 + dt * h12(gl_FragCoord.xy + 5.3);
+  for (int i = 0; i < 16; i++) {
+    vec3 x = X0 + d * t;
+    float dn = wispDens(x + uWispP);
+    // A flash lights the curtains on its side most.
+    float fk = 1.0 / (1.0 + dot(x - uFlashP, x - uFlashP) / 900.0);
+    vec3 L = air + FLASH_C * uFlash * (0.4 + 3.0 * fk);
+    float a = 1.0 - exp(-0.22 * dn * dt);
+    col += T * L * a;
+    T *= 1.0 - a;
+    t += dt;
+  }
+  Tn = T;
+  return c * T + col;
+}`;
+/* ---------- end K ---------- */
 
 export const CABIN_FS = /* glsl */`#version 300 es
 precision highp float;
+precision highp sampler3D;
 in vec2 vUv;
 out vec4 o;
-uniform sampler2D uScene, uBloom;
+uniform sampler2D uScene, uBloom, uBok;
+uniform sampler3D uVol;
+// The near fog's place, and the brightest flash, in capsule metres.
+uniform vec3 uWispP, uFlashP;
+// The wet pane: run direction, run flow, air speed in m/s, fog on the pane.
+uniform vec2 uM;
+uniform float uFlow, uAir, uFog;
+// Ice in the white deck, stress 0 to 1, the crush 0 to 1, the near fog's density.
+uniform float uIce, uStress, uCrush, uNear;
 uniform vec3 uEye;
 uniform mat3 uLook;
 uniform vec2 uTan, uShake;
@@ -40,6 +86,53 @@ vec3 fireRamp(float t) {
   return mix(c, RAMP_S, smoothstep(0.65, 1.0, t));
 }
 const vec3 FLASH_C = vec3(0.64, 0.74, 1.0);
+${GLASS_RAIN}
+${WET_GLASS}
+${NEAR_FOG}
+// Cracks on the outer pane: long jagged lines that run in from the edges as stress grows.
+// Each crack starts at its own stress and lengthens; two branch off it; arcs join them late.
+// It returns the crack's strength; dir bends the view across it.
+vec2 h22(vec2 p) { return vec2(h12(p), h12(p + 19.7)); }
+float cracks(vec2 p, float s, out vec2 dir) {
+  dir = vec2(0.0);
+  float res = 0.0;
+  if (s > 0.0) {
+    for (int i = 0; i < 9; i++) {
+      float fi = float(i);
+      vec2 r = h22(vec2(fi, 3.7));
+      // It starts on the rim, most near the corners, and heads inward.
+      float side = floor(r.x * 4.0);
+      vec2 o = side < 1.0 ? vec2(-0.3, -0.22) : side < 2.0 ? vec2(0.3, 0.22) : side < 3.0 ? vec2(-0.3, 0.22) : vec2(0.3, -0.22);
+      o += (h22(vec2(fi, 9.1)) - 0.5) * vec2(0.2, 0.12);
+      float ang = atan(-o.y, -o.x) + (r.y - 0.5) * 1.6;
+      vec2 dv = vec2(cos(ang), sin(ang));
+      vec2 q = p - o;
+      float u = dot(q, dv);
+      // A crack wanders: two scales of jag, its own for each crack.
+      float v = dot(q, vec2(-dv.y, dv.x)) - 0.018 * (vn(vec2(u * 18.0, fi * 7.0)) - 0.5) - 0.006 * (vn(vec2(u * 90.0, fi * 3.0)) - 0.5);
+      float len = clamp((s - 0.12 * fi / 9.0 - 0.02) * 1.6, 0.0, 1.0) * (0.35 + 0.45 * h12(vec2(fi, 5.5)));
+      float line = smoothstep(0.0016, 0.0, abs(v)) * step(0.0, u) * smoothstep(len, len - 0.02, u);
+      // Two branches leave the crack at a third and two thirds of its length.
+      for (int k = 1; k <= 2; k++) {
+        float bu = len * float(k) / 3.0;
+        vec2 bo = o + dv * bu;
+        float ba = ang + (h12(vec2(fi, float(k))) - 0.5) * 2.2;
+        vec2 bd = vec2(cos(ba), sin(ba));
+        vec2 bq = p - bo;
+        float bu2 = dot(bq, bd);
+        float bv = dot(bq, vec2(-bd.y, bd.x)) - 0.01 * (vn(vec2(bu2 * 25.0, fi + float(k) * 4.0)) - 0.5);
+        float bl = len * 0.45 * smoothstep(0.3, 0.7, s);
+        line = max(line, smoothstep(0.0013, 0.0, abs(bv)) * step(0.0, bu2) * smoothstep(bl, bl - 0.015, bu2));
+      }
+      // Late on, arcs round the start join the cracks into a web.
+      float ring = abs(length(q) - (0.06 + 0.05 * h12(vec2(fi, 8.0)))) - 0.0012;
+      float arc = smoothstep(0.0012, 0.0, ring) * smoothstep(0.6, 0.9, s) * step(0.55, vn(vec2(atan(q.y, q.x) * 4.0, fi)));
+      line = max(line, arc);
+      if (line > res) { res = line; dir = vec2(-dv.y, dv.x) * sign(v + 1e-6); }
+    }
+  }
+  return res;
+}
 float sdBox(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 float sdRecess(vec2 p, float z) { float k = clamp(-z / DEPTH, 0.0, 1.0); return sdBox(p, mix(OUTB, INB, k), mix(ROUT, RIN, k)); }
 // GGX with Smith visibility and Schlick's Fresnel.
@@ -167,45 +260,32 @@ void main() {
       vec2 p = X.xy;
       float edge = -sdRecess(p, -DEPTH);
       vec2 uv = vUv + uShake;
+      // Stress: the pane bows in under the pressure, so the view swells and wavers.
+      vec2 pn = p / INB;
+      float bow = max(1.0 - dot(pn, pn), 0.0);
+      uv -= pn * vec2(1.0 / uAsp, 1.0) * uStress * uStress * 0.06 * bow;
+      uv += uStress * 0.002 * vec2(vn(p * 8.0 + uTime * 0.7) - 0.5, vn(p * 8.0 + 3.1 - uTime * 0.6) - 0.5);
       // Heat deep down: the air outside wavers.
       uv += uHeat * 0.004 * vec2(vn(p * 30.0 + vec2(0.0, uTime * 3.0)) - 0.5, vn(p * 30.0 + vec2(5.0, uTime * 2.5)) - 0.5);
-      // Drops: they bead when the capsule hangs and race up the glass in a fall.
-      vec2 dq = p * vec2(40.0, 24.0);
-      vec2 cell = floor(dq);
-      float rx = h12(cell), ry = h12(cell + 7.1), rs = h12(cell + 3.3);
-      float speed = mix(-0.02, 1.6, uRush) * (0.4 + rs);
-      vec2 c = vec2(rx * 0.6 + 0.2, fract(ry + uTime * speed));
-      vec2 dd = (fract(dq) - c) * vec2(1.0, 1.0 / (1.0 + 3.0 * uRush * rs));
-      float rad = (0.12 + 0.16 * rs) * step(1.0 - uWet * 0.85, h12(cell + 11.0));
-      float drop = smoothstep(rad, rad * 0.8, length(dd));
-      // A drop is a small lens: it flips and shrinks the view behind it.
-      float rr = length(dd) / max(rad, 1e-3);
-      uv -= drop * dd * 0.14;
-      vec3 out_ = outside(uv);
-      // Its edge bends light away and goes dark; the lamp leaves a glint near its top.
-      out_ *= mix(1.0, 0.3, drop * smoothstep(0.55, 1.0, rr));
-      vec2 gq = dd / max(rad, 1e-3) - vec2(-0.3, 0.35);
-      out_ += drop * exp(-dot(gq, gq) * 40.0) * (LAMP * 3.0 + W * 0.4);
+      // Cracks bend the view along them; cracked facets each tilt their piece of it.
+      vec2 cdir;
+      float crack = cracks(p, min(uStress + 2.0 * uCrush, 1.0), cdir);
+      uv += cdir * crack * 0.003 * vec2(1.0 / uAsp, 1.0);
+      // On the window: beads, runs and fog from the shared wet pane.
+      WgPane g = wgPane(p, 1.0, uM, uFlow, uWet, uAir, 0.4, uFog, 0.5 * uFog, -edge);
+      vec2 at = uv + g.off * vec2(1.0 / uAsp, 1.0) * 1.2;
+      // Against the window: the storm's near fog streams past, lit by the flashes.
+      float Tn;
+      vec3 behind = outside(at);
+      vec3 sharp = nearFog(behind, d, X, W * 0.9, Tn);
+      vec3 bok = texture(uBok, clamp(at, 0.001, 0.999)).rgb * Tn + (sharp - behind * Tn);
+      vec3 out_ = wgView(g, sharp, bok, 0.0, vec3(0.95, 0.98, 0.97), W * 0.06, LAMP * 3.0 + W * 0.4);
       // Veils of hue and brightness rush up the glass in the air.
       vec2 wp = vec2(p.x * 5.0, p.y * 1.0 - uTime * 0.9);
       float w1 = vf(wp), w2 = vf(vec2(p.x * 3.0 + 4.0, p.y * 0.7 - uTime * 0.6));
       vec3 hue = mix(vec3(0.82, 1.1, 1.06), vec3(1.12, 0.84, 1.16), smoothstep(0.3, 0.7, w2));
       hue = mix(hue, vec3(0.9, 1.16, 0.9), smoothstep(0.55, 0.8, w1) * 0.6);
       out_ *= mix(vec3(1.0), hue, uWipe * 0.8) * (1.0 + uWipe * (w1 - 0.5) * 1.3);
-      // In a deck the cloud tears past the glass: three layers of wisps at 1, 4 and 12 m.
-      // Each layer rushes up at its own speed, so they shear; a flash lights them all.
-      if (uDeck > 0.01) {
-        for (int k = 0; k < 3; k++) {
-          float zk = -DEPTH - (k == 0 ? 1.0 : k == 1 ? 4.0 : 12.0);
-          vec3 Xk = uEye + d * ((zk - uEye.z) / d.z);
-          float sc = k == 0 ? 2.2 : k == 1 ? 0.8 : 0.3;
-          float sp = (0.3 + 3.5 * uRush) * (k == 0 ? 1.0 : k == 1 ? 0.55 : 0.3);
-          float wv = vf(vec2(Xk.x * sc * 2.4 + float(k) * 3.1, Xk.y * sc * 0.6 - uTime * sp));
-          float wsp = smoothstep(0.42, 0.78, wv) * uDeck;
-          vec3 wl = W * (0.7 + 0.6 * wv) + FLASH_C * uFlash * (1.5 + 2.0 * wv);
-          out_ = mix(out_, wl, wsp * (0.85 - 0.2 * float(k)));
-        }
-      }
       // Entry: the plasma round the hull, marched through 1.2 m outside the pane.
       // It streams up from the heat shield below; Fire's ramp colours it by heat.
       if (uEntry > 0.01) {
@@ -224,9 +304,13 @@ void main() {
         out_ = out_ * tr + fl;
       }
       // Frost grows in from the edge of the outer pane, high and cold.
+      // In the white deck ammonia rime streaks up the glass instead, combed by the air.
       float fr = vf(p * 90.0) * 0.6 + vf(p * 300.0) * 0.4;
-      float frost = uFrost * smoothstep(0.03, 0.0, edge - fr * 0.035);
+      float rime = vf(vec2(p.x * 160.0, p.y * 14.0 - uTime * 0.05)) * 0.7 + vf(p * 260.0) * 0.3;
+      float frost = max(uFrost * smoothstep(0.03, 0.0, edge - fr * 0.035), uIce * smoothstep(0.55, 0.8, rime) * smoothstep(0.0, 0.06, edge) * 0.8);
       out_ = mix(out_, (W * 1.6 + vec3(0.04)) * vec3(0.85, 0.95, 1.0) * (0.5 + 0.9 * fr) + out_ * 0.3, frost * 0.85);
+      // A crack: a dark core with a bright lip where the lamp and the window catch it.
+      out_ = mix(out_, out_ * 0.3 + (W * 0.5 + LAMP * 4.0) * (0.3 + 0.7 * h12(floor(p * 400.0))), crack * 0.8);
       // The pane's edge sits in the gasket's shade.
       out_ *= smoothstep(0.0, 0.012, edge);
       // The inner pane: it reflects the cabin faintly, with a smudge or two.
@@ -238,5 +322,8 @@ void main() {
     }
   }
   // A flash outside lights the cabin for a moment: it is already in W.
+  // The crush: a white burst as the pane goes, then black.
+  col = mix(col, vec3(0.7, 0.74, 0.78), smoothstep(0.0, 0.06, uCrush) * (1.0 - smoothstep(0.06, 0.2, uCrush)));
+  col *= 1.0 - smoothstep(0.15, 0.4, uCrush);
   o = vec4(col, 1.0);
 }`;

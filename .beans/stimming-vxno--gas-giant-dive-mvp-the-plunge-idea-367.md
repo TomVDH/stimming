@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-24T00:30:00Z
+updated_at: 2026-11-24T01:10:00Z
 parent: stimming-oh7b
 ---
 
@@ -36,7 +36,7 @@ MVP: the plunge from 260 km over the cloud deck to crush depth, 640 km down (Tom
 - [x] Tom, 2026-11-23: staged loading (three march zones) and resume on reload
 - [ ] Focus: the dive from above, first touch, the first two layers (polished: thunderheads, veils, billows inside; the window weather still covers the interior)
 - [ ] More weirdness in the voids
-- [ ] Tom's later pass: the window effects for the deep layers
+- [x] Tom, 2026-11-23: the window's two layers (near fog after Window seat, shared wet pane), cracks, the crush
 - [ ] Record link times, frame times and the session cost
 
 

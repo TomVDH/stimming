@@ -10,7 +10,8 @@ import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, marchFS, zoneFor } from './clouds.js';
-import { COMPOSITE_FS, FINAL_FS } from './post.js';
+import { COMPOSITE_FS, FINAL_FS, BOKEH_FS } from './post.js';
+import { wetGlassMotion } from '../shared/wetglass.js';
 import { CABIN_FS } from './cabin.js';
 import { makeBolts, stepBolts, flashUniform, busyBolts } from './bolts.js';
 import { diveSound, C_SOUND } from './sound.js';
@@ -28,8 +29,11 @@ let frozen = reduced();
 const S = {
   alt: ALT_TOP, v: 0, diving: false, slideTo: null,
   yaw: 0, pitch: 0, tMap: 2600, tC: 0, lum: 1, shake: 0, wipe: 0, tWipe: 0, tGlass: 0, melt: 0,
+  wispY: 0, crush: -1, crackLvl: 0,
 };
 const B = makeBolts();
+// The wet pane's runs: they flow, and the air slants them.
+const wgm = wetGlassMotion();
 if (QS.has('qa')) globalThis.__gg = { S, B };
 // ?alt=-70 starts at that height, for checks.
 if (QS.has('alt')) S.alt = clamp(Number(QS.get('alt')) || ALT_TOP, ALT_DEEP, ALT_TOP);
@@ -159,7 +163,7 @@ async function setup() {
   // Only the march zone the eye starts in links before the first frame.
   const zone = zoneFor(S.alt);
   const src = {
-    bake: BAKE_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, cabin: CABIN_FS, fin: FINAL_FS,
+    bake: BAKE_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
   };
   const set = {};
   for (const [k, fs] of Object.entries(src)) set[k] = program(gl, TRI_VS, pruneGLSL(fs));
@@ -211,10 +215,12 @@ function resize(force = false) {
   W = Math.max(1, Math.round(w * dpr)); H = Math.max(1, Math.round(h * dpr));
   canvas.width = W; canvas.height = H;
   const m = marchCut();
-  free(gl, T.march); free(gl, T.scene); free(gl, T.cabin);
+  free(gl, T.march); free(gl, T.scene); free(gl, T.cabin); free(gl, T.bok);
   T.march = target(gl, Math.max(1, Math.round(W * m.scale)), Math.max(1, Math.round(H * m.scale)));
   T.scene = target(gl, W, H);
   T.cabin = target(gl, W, H);
+  // The view through fog on the pane: the scene in discs, at half size.
+  T.bok = target(gl, Math.max(1, W >> 1), Math.max(1, H >> 1));
   wake();
 }
 
@@ -246,7 +252,7 @@ function basis() {
   const eye = [-0.2 * wide - 0.0025 * S.yaw, 0.01 + 0.002 * S.pitch, 0.4 + 0.3 * (1 - wide)];
   // GLSL takes a mat3 by columns: the look's columns are its axes in capsule space.
   const lookM = new Float32Array([r[0], r[1], r[2], u[0], u[1], u[2], z[0], z[1], z[2]]);
-  return { fwd, right: world(r).map(v => v * tx), up: world(u).map(v => v * ty), tan: [tx, ty], eye, lookM };
+  return { fwd, right: world(r).map(v => v * tx), up: world(u).map(v => v * ty), tan: [tx, ty], eye, lookM, X, Y, Z };
 }
 // Where the view's aim meets the deck, for the lightning.
 function aimOnDeck(b) {
@@ -297,6 +303,22 @@ function step(dt) {
   S.tGlass += sdt * (frozen ? 0 : 1);
   const heat = smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1);
   S.melt = S.alt > 245 && !S.diving ? Math.max(0, S.melt - dt * 0.2) : Math.min(1, S.melt + heat * dt * 0.8);
+  // The near fog streams up past the glass, faster with the fall.
+  S.wispY += sdt * (3 + 50 * clamp(S.v / 5, 0, 1));
+  wgm.step(sdt, Math.min(60, Math.abs(S.v) * 10));
+  // Each new crack jolts the capsule.
+  const lvl = Math.floor(stressAt(S.alt) * 12);
+  if (lvl > S.crackLvl && !frozen) S.shake += 0.8;
+  S.crackLvl = lvl;
+  // The crush: at the floor of the dive the hull fails; 2.5 s later the toy wakes at the top.
+  if (S.crush < 0 && S.alt <= ALT_DEEP + 0.01) S.crush = 0;
+  if (S.crush >= 0) {
+    S.crush += dt / 2.5;
+    if (S.crush >= 1) {
+      S.crush = -1; S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.diving = false; S.lum = luma(lightAt(S.alt)); S.melt = 0;
+      B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); saveSpot();
+    }
+  }
   const b = basis();
   stepBolts(B, dt, { alt: S.alt, aim: aimOnDeck(b), soft: frozen, live: timeK > 0, deck: deckAt(S.alt) });
   for (const hd of B.heard.splice(0)) {
@@ -304,11 +326,13 @@ function step(dt) {
     snd.thunder(d, hd.level, clamp(hd.pos[0] / Math.max(d, 1), -1, 1));
   }
   snd.update(dt, Math.abs(S.v), depthOf(S.alt), S.diving);
-  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01;
+  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0;
 }
 
 // How far into a void the eye is: 0 in the decks, the sky and the dark.
 const voidAt = h => (1 - deckAt(h)) * (1 - smooth(-6, 0, h)) * smooth(-505, -495, h);
+// The stress on the pane: none above 120 km down, full at the crush.
+const stressAt = h => Math.pow(clamp((-120 - h) / (-120 - ALT_DEEP), 0, 1), 1.2);
 // The eye's gain: it opens as the light fails, up to 8 times.
 const gainAt = lum => clamp(Math.pow(Math.max(lum, 1e-7), -0.5), 1, TUNE.gainMax);
 // How deep in a deck the eye is: 0 in the air and the voids, 1 inside cloud.
@@ -375,6 +399,11 @@ function render(dt) {
   gl.uniform3fv(P.comp.u.uCam, cam);
   gl.uniform3fv(P.comp.u.uFwd, b.fwd); gl.uniform3fv(P.comp.u.uRight, b.right); gl.uniform3fv(P.comp.u.uUp, b.up);
   tri(gl, T.scene, vao);
+  // The scene in discs at half size, for the view through fog on the pane.
+  gl.useProgram(P.bok.p);
+  bind(gl, P.bok, 'uScene', 0, T.scene);
+  gl.uniform2f(P.bok.u.uRad, 0.012 * H / W, 0.012);
+  tri(gl, T.bok, vao);
   // Pass 5: bloom on the outside, then the cabin, then the grade to the screen.
   const bl = bloom.render(T.scene.tex, W, H, { threshold: 1.1, cap: 8, levels: D.level > 0 ? 5 : 3 });
   gl.bindVertexArray(vao);
@@ -383,6 +412,26 @@ function render(dt) {
   const c = P.cabin.u;
   bind(gl, P.cabin, 'uScene', 0, T.scene);
   bind(gl, P.cabin, 'uBloom', 1, { tex: bl });
+  bind(gl, P.cabin, 'uBok', 2, T.bok);
+  gl.activeTexture(gl.TEXTURE3);
+  gl.bindTexture(gl.TEXTURE_3D, vol);
+  gl.uniform1i(c.uVol, 3);
+  // Against the window: the near fog's place, its density, and the brightest flash in capsule metres.
+  gl.uniform3f(c.uWispP, 0, -S.wispY, 0);
+  const inDeck = deckAt(S.alt);
+  gl.uniform1f(c.uNear, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1));
+  const fd = [flash[0], flash[1] - S.alt, flash[2]], fl = Math.hypot(...fd) || 1;
+  const fc = k => (fd[0] * b[k][0] + fd[1] * b[k][1] + fd[2] * b[k][2]) / fl * 25;
+  gl.uniform3f(c.uFlashP, fc('X'), fc('Y'), fc('Z'));
+  // On the window: runs, beads and fog; rime in the white deck; mist on the glass deep down.
+  gl.uniform2fv(c.uM, wgm.m);
+  gl.uniform1f(c.uFlow, wgm.flow);
+  gl.uniform1f(c.uAir, wgm.speed);
+  gl.uniform1f(c.uFog, 0.05 + 0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt));
+  gl.uniform1f(c.uIce, smooth(-1, 2, S.alt) * (1 - smooth(20, 23, S.alt)));
+  // Stress bows and cracks the pane; the crush shatters it, with no white burst under reduced motion.
+  gl.uniform1f(c.uStress, stressAt(S.alt));
+  gl.uniform1f(c.uCrush, S.crush < 0 ? 0 : frozen ? 0.3 + 0.7 * S.crush : S.crush);
   gl.uniform3fv(c.uEye, b.eye);
   gl.uniformMatrix3fv(c.uLook, false, b.lookM);
   gl.uniform2fv(c.uTan, b.tan);
@@ -391,7 +440,8 @@ function render(dt) {
   gl.uniform1f(c.uWipe, S.wipe);
   // Entry heat melts the frost; it forms again only near the top.
   gl.uniform1f(c.uFrost, smooth(40, 120, S.alt) * (1 - S.melt));
-  gl.uniform1f(c.uWet, smooth(25, 5, S.alt) * (1 - smooth(-95, -115, S.alt)));
+  // Rain and drops below the white deck, heaviest in the decks, gone under the last deck.
+  gl.uniform1f(c.uWet, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)));
   gl.uniform1f(c.uRush, clamp(S.v / 5, 0, 1));
   gl.uniform1f(c.uHeat, frozen ? 0 : smooth(-80, -130, S.alt));
   gl.uniform1f(c.uAsp, W / H);

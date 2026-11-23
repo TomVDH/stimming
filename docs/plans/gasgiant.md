@@ -235,6 +235,18 @@ Tom asked if the toy is WebGPU with passes like Tornado alley, and what big thin
 
 The window's glass weather still covers much of the deck's interior in the capsule view; it waits for Tom's window pass.
 
+### The window: two layers, stress and the crush (Tom, 2026-11-23)
+
+Tom: "for the window itself -- there is two layers -- what sticks against the window (e.g. volumetric storm voronoi that also flashes with lightning) -- and what STICKS ON the window (e.g. drops, fog, frost etc etc) -- we also want the window to progressively crack and buckle under stress as we go deeper". Then: "we already have a patchy kind of fog storm in window seat -- that code could return".
+
+| Part | Change |
+|---|---|
+| Against | Window seat's near fog (`wispDens`, `nearFog`, copied under a K marker): curtains and banks in the near 32 m, turned to run along the fall line, rushing up past the glass faster with the fall. Sixteen steps a pixel. Lit by the window's light and by the brightest flash from its bearing in capsule metres. Dense in the decks, thin in the voids. |
+| On | `shared/glassrain.js` and `shared/wetglass.js`: beads and runs that the air speed (the fall) slants, and fog on the pane that drops wipe. A half-size bokeh pass (`shared/bokeh.js`) is the view through the fog. Frost in orbit; ammonia rime streaks in the white deck; mist on the glass deep down. The old hand-made drops and wisps are gone. |
+| Stress | From 120 km down the pane bows in (the view swells toward its middle and wavers). Nine cracks run in from the rim in turn, jagged at two scales, each with two branches; late, arcs join them into a web. Each crack bends the view and catches the lamp. Every new crack (12 steps) jolts the capsule. |
+| Crush | At 640 km: a soft burst, black, and 2.5 s later the toy wakes at the top. Reduced motion skips the burst. |
+| Cost | GPU 2.8 to 4.4 ms a frame to -400 km, 7.9 at -600, at 1280 x 800 on the RTX 3070. |
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech
