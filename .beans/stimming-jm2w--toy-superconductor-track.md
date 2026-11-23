@@ -22,7 +22,8 @@ Build Superconductor track (idea 130, group A, a science toy) as a Lab toy: an M
 - [x] Icon round spike-supercon-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/supercon.md
-- [x] Commit and push
+- [x] Commit (4cddbc9e, a1b0232c)
+- [ ] Push: held, origin/main..main also lists two Observatory commits from another chat (478c0632, 999abee2)
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
