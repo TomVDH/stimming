@@ -22,15 +22,16 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 
 Idea 373, group B. Bean `stimming-hjsw`. Plan: [interchange.md](../plans/interchange.md).
 A motorway interchange at night, seen from straight above as a long exposure. Every lamp draws a line of light.
-Swap the design (cloverleaf, turbine, stack); the old trails fade and the new ones draw in. A jam burns as a bright knot.
+Swap the design (cloverleaf, turbine, stack, megastack); the old trails fade and the new ones draw in. A jam burns as a bright knot.
 
 ## Rules
 
 - Two motorways cross at the origin, two lanes each way. Traffic keeps right. Units are metres.
 - A design gives only the ramps that leave the northbound road. The builder turns them by 90 degrees for the other three roads.
 - Cars never change lanes. Each car follows one path of links from its lane's start to its end.
-- Shares on each approach: 60% through, 20% right, 20% left. The inner lane carries through traffic only.
-- The Intelligent Driver Model, 60 substeps a second: T 1.1 s, s0 2.2 m, a 1.4 m/s², b 2.2 m/s². Lanes 31 m/s, ramps 19 to 20 m/s, turbine swirls 17 m/s, stack flyovers 18 m/s, cloverleaf loops 10.5 m/s.
+- Shares on each approach: 60% through, 20% right, 20% left. In Megastack also 10% carpool (from the inner lane) and 4% U-turn. The inner lane carries through traffic, and the carpool move in Megastack.
+- Megastack is the stack, plus a carpool flyover at level 5 from the inner lane to the left, and a U-turn loop at level 2 past each arm. Tom asked for it on 2026-11-23: "a multialyered LA-like or shenzen type situation".
+- The Intelligent Driver Model, 60 substeps a second: T 1.1 s, s0 2.2 m, a 1.4 m/s², b 2.2 m/s². Lanes 31 m/s, ramps 19 to 20 m/s, turbine swirls 17 m/s, stack flyovers 18 m/s, carpool flyovers 23 m/s, cloverleaf loops 10.5 m/s, U-turn loops 9 m/s.
 - At a merge the lane has the right of way. A ramp car waits until the next lane car would reach the merge at least 1 s after it. After 6 s of waiting it pushes in.
 - One car in nine is a lorry: 13 to 16 m long, slow to pull away.
 - The plate keeps exp(-dt / 7 s) of its light each step. During a swap it keeps exp(-dt / 1.8 s) for 1.5 s.
@@ -50,7 +51,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 | Slot | Holds |
 |---|---|
-| Choice | Design: Cloverleaf, Turbine, Stack |
+| Choice | Design: Cloverleaf, Turbine, Stack, Megastack |
 | Actions | Clear (C): wipes the plate |
 | Slider | Traffic: 500 to 3600 vehicles an hour on each approach, default 35% |
 
@@ -87,7 +88,7 @@ Raw WebGL2 holds a float plate that fades by blending, with no ping-pong. Canvas
 |---|---|
 | `index.html` | The page and its importmap |
 | `main.js` | State, bar, plate exposure, frame loop, pointer |
-| `designs.js` | The three designs and the network builder |
+| `designs.js` | The four designs and the network builder |
 | `sim.js` | The driver model, merges, spawns, lamps |
 | `basemap.js` | The still map in Canvas 2D |
 | `render.js` | Plate, compose, cars, bloom, grade |
@@ -135,3 +136,4 @@ None.
 ## History
 
 - 2026-11-23: built. Three designs, the plate, white inbound and red outbound trails.
+- 2026-11-23: Megastack, the fourth design, on Tom's ask.

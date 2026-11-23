@@ -22,8 +22,8 @@ function rng(seed) {
   return () => { s = (s + 0x6d2b79f5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
-// Shares of each approach's traffic: through, right, left.
-const SHARE = { through: 0.6, right: 0.2, left: 0.2 };
+// Shares of each approach's traffic by move. Carpool and U-turn moves exist in Megastack only.
+const SHARE = { through: 0.6, right: 0.2, left: 0.2, hov: 0.1, uturn: 0.04 };
 
 export function makeSim(net, flow = 0.5) {
   const rand = rng(373);

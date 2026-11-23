@@ -117,8 +117,40 @@ function stack() {
   };
 }
 
-export const DESIGNS = { cloverleaf, turbine, stack };
-export const ORDER = ['cloverleaf', 'turbine', 'stack'];
+// Megastack: the stack, plus a carpool flyover from the inner lane and a U-turn loop at each end.
+// Five deck levels, after the big stacks of Los Angeles and the knots of Shenzhen and Chongqing.
+function megastack() {
+  const base = stack();
+  // The carpool flyover leaves the inner lane to the left, climbs over the median and sweeps wide.
+  const R = 112, y0 = -112, xm = 1.2;
+  const c = [xm - R, y0];
+  const hov = join(
+    bez(lanePt(0, 0, -310), N, [xm, -190], N, 40),
+    [[xm, -190], [xm, y0]],
+    spiral(c, R, R, 0, Math.PI / 2),
+    [[c[0], c[1] + R], [-190, c[1] + R]],
+    bez([-190, c[1] + R], W, lanePt(1, 0, 310), W, 40),
+  );
+  // The U-turn: off to the right past the crossing, a tight loop over both carriageways, back on.
+  const xo = 40, yo = 150, xi = -13, rr = (xo - xi) / 2, cx = (xo + xi) / 2;
+  const uturn = join(
+    bez(lanePt(0, 1, 60), N, [xo, yo], N, 40),
+    spiral([cx, yo], rr, rr, 0, Math.PI),
+    bez([xi, yo], [0, -1], lanePt(2, 1, -110), [0, -1], 18),
+  );
+  return {
+    name: 'Megastack',
+    laneZ: base.laneZ,
+    ramps: [
+      ...base.ramps,
+      { from: [0, 0, -310], to: [1, 0, 310], pts: hov, v0: 23, kind: 'flyover', move: 'hov', level: () => 5 },
+      { from: [0, 1, 60], to: [2, 1, -110], pts: uturn, v0: 9, kind: 'loop', move: 'uturn', level: () => 2 },
+    ],
+  };
+}
+
+export const DESIGNS = { cloverleaf, turbine, stack, megastack };
+export const ORDER = ['cloverleaf', 'turbine', 'stack', 'megastack'];
 
 /* ---------- the builder ---------- */
 // Resamples a polyline to points about 1 m apart.

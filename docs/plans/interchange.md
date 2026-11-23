@@ -18,6 +18,7 @@ A motorway interchange at night, from straight above, as a long exposure. Headli
 - [x] The still map: fields, decks in height order with shadows, paint, lamp pools.
 - [x] A swap: the map cross-fades, the old trails fade fast.
 - [x] Bar v3: Design, Clear, Traffic. Tap to brake, hold to stop.
+- [x] Megastack: five deck levels, carpool flyovers, U-turn loops (Tom: "a multialyered LA-like or shenzen type situation").
 
 ## Next, each after Tom's look
 

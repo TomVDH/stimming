@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T19:39:58Z
-updated_at: 2026-11-23T20:07:47Z
+updated_at: 2026-11-23T20:11:07Z
 ---
 
 Night view from above, long exposure. Headlight trails draw the flow through a motorway interchange. Swap the design: cloverleaf, turbine, four-level stack, diverging diamond. Trails rebuild; jams show as knots. Picked by Tom 2026-11-23. Starts in the Lab.
@@ -21,3 +21,5 @@ Stack type: Shader (raw WebGL2, Canvas 2D map). Folder `interchange/`. Plan: `do
 - [ ] Tom's look
 - [ ] Diverging diamond
 - [ ] Menu tile, icon round, favicon
+
+- [x] Megastack design: multi-level, LA or Shenzhen type (Tom, 2026-11-23: "we'd want a multialyered LA-like or shenzen type situation also")
