@@ -16,10 +16,11 @@ Related: stimming-hben (aim marker: thin white line, soft glow on the sky).
 
 - [x] Read the standards, the plan and the code
 - [x] Mock of the selector on a live frame
-- [ ] Tom picks the rule, the sky model and the controls
-- [ ] Short design, Tom's yes
-- [ ] Selector in the wide shot
-- [ ] Switchable hero dome (with the obs-cuts session)
-- [ ] Sky controls
-- [ ] npm run check: 0 errors; node tests
+- [x] Tom picks the rule, the sky model and the controls
+- [x] Short design, Tom's yes (docs/plans/observatory-selector.md); build plan docs/plans/observatory-selector-build.md
+- [x] Selector in the wide shot
+- [ ] Switchable hero dome (with the obs-cuts session): asked 2026-11-23; until then the cuts play for the 1 m only
+- [x] Sky controls: Night, City light, Site
+- [x] npm run check: 0 errors; node tests
 - [ ] Screenshots to Tom; his sign-off
+- [ ] The classic dome from the building session replaces the west small dome stand-in

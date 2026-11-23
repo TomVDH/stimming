@@ -154,8 +154,8 @@ Blockout v2 (woods, clearing, three domes, building, shed, road, the camera on t
 
 ## The machine
 
-1. **Aim.** The pointer moves the laser (mouse: move; touch: drag). The cupola turns after the beam's azimuth at a capped speed, with ease in and out.
-2. **Pick.** A tap or click picks the brightest catalog star near the beam end.
+1. **Aim.** The pointer moves the selector's hover (mouse: move; touch: drag); the beam shows only after a pick (2026-11-23, [observatory-selector.md](observatory-selector.md)). The cupola turns after the aim's azimuth at a capped speed, with ease in and out.
+2. **Pick.** A tap locks the nearest visible star; a chip then sends the great refractor or the 1 m reflector ([observatory-selector.md](observatory-selector.md)).
 3. **Open.** The slit shutter opens, 6 s on an S-curve, if it is shut. The tube starts to lift from its 5° park when the shutter is half open.
 4. **Slew.** The cupola turns to the star; the tube slews in its mount. The tube and the dome arrive together.
 5. **Track.** The tube follows the star as the sky turns; the cupola steps after it. A small tracking light comes on.
@@ -204,7 +204,8 @@ Approved by Tom as proposed.
 | Slot | Holds |
 |---|---|
 | Bottom left (actions) | `Enter` (E): into the telescope, when a star is picked; `Back` (Esc) inside |
-| Bottom right (slider) | `Time`: real speed to fast; trails above a set speed |
+| Top left (choice) | `Night`: Tonight or a season ([observatory-selector.md](observatory-selector.md)) |
+| Bottom right (slider) | `City light`: Bortle 1 to 9 (2026-11-23); the `Time` slider is not built |
 | Settings | Letterbox; Resolution; Quality |
 | Dev (`?dev`) | Camera eye, pitch, yaw and field of view (memory: scene camera in Dev); latitude; look values copied from Railgun |
 
