@@ -30,6 +30,8 @@ const S = {
   alt: ALT_TOP, v: 0, diving: false, slideTo: null,
   yaw: 0, pitch: 0, tMap: 2600, tC: 0, lum: 1, shake: 0, wipe: 0, tWipe: 0, tGlass: 0, melt: 0,
   wispY: 0, crush: -1, crackLvl: 0,
+  // The head, after Window seat: hover sway (hx, hy to targets thx, thy) and the lean to the glass (lean to leanT).
+  hx: 0, hy: 0, thx: 0, thy: 0, lean: 0, leanT: 0,
 };
 const B = makeBolts();
 // The wet pane's runs: they flow, and the air slants them.
@@ -43,7 +45,7 @@ if (QS.has('alt')) S.alt = clamp(Number(QS.get('alt')) || ALT_TOP, ALT_DEEP, ALT
 // The spot lives in this tab only: a new visit starts at the top.
 const RESUME = 'stimming.gasgiant.resume';
 function saveSpot() {
-  try { sessionStorage.setItem(RESUME, JSON.stringify({ alt: S.alt, yaw: S.yaw, pitch: S.pitch, at: Date.now() })); } catch { /* storage blocked */ }
+  try { sessionStorage.setItem(RESUME, JSON.stringify({ alt: S.alt, yaw: S.yaw, pitch: S.pitch, lean: S.leanT, at: Date.now() })); } catch { /* storage blocked */ }
 }
 function loadSpot() {
   try {
@@ -54,7 +56,7 @@ function loadSpot() {
 }
 if (!QS.has('alt')) {
   const r = loadSpot();
-  if (r) { S.alt = clamp(r.alt, ALT_DEEP, ALT_TOP); S.yaw = clamp(+r.yaw || 0, -25, 25); S.pitch = clamp(+r.pitch || 0, -15, 15); }
+  if (r) { S.alt = clamp(r.alt, ALT_DEEP, ALT_TOP); S.yaw = clamp(+r.yaw || 0, -25, 25); S.pitch = clamp(+r.pitch || 0, -15, 15); S.lean = S.leanT = clamp(+r.lean || 0, 0, 1); }
 }
 addEventListener('pagehide', saveSpot);
 document.addEventListener('visibilitychange', () => { if (document.hidden) saveSpot(); });
@@ -64,11 +66,27 @@ const depthOf = alt => (ALT_TOP - alt) / (ALT_TOP - ALT_DEEP);
 const altOf = d => ALT_TOP - d * (ALT_TOP - ALT_DEEP);
 
 /* ---------- dev tuning ---------- */
-// ?dev shows the Dev sheet: jump to a layer, look freely, tune the light.
-const TUNE_DEF = { expo: 1, gainMax: 8, ms: 0.38, amb: 1, bounce: 0.3, haze: 1, flash: 1, rays: 1, sunAz: SUN_AZ, sunEl: SUN_EL, devPitch: 0, devYaw: 0 };
+// ?dev shows the Dev sheet: jump to a layer, render sharper, tune the light and the window.
+const TUNE_DEF = {
+  cabin: 'on', devPitch: 0, devYaw: 0,
+  pix: 'auto', march: 'half', steps: '1',
+  sunAz: SUN_AZ, sunEl: SUN_EL,
+  expo: 1, gainMax: 8,
+  ms: 0.38, amb: 1, bounce: 0.3, haze: 1, rays: 1,
+  flash: 1,
+  near: 1, wet: 1, fogK: 1, cracks: 'depth',
+};
 const TUNE = { ...TUNE_DEF };
 let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
-const tune = (id, v) => { TUNE[id] = v; if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl); touch(); };
+// Render rows change the targets, so they resize.
+const RESIZE = new Set(['pix', 'march', 'cabin']);
+const tune = (id, v) => {
+  TUNE[id] = v;
+  if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
+  if (RESIZE.has(id) && P) resize(true);
+  touch();
+};
+const cabinOff = () => QS.has('out') || TUNE.cabin === 'off';
 // Each layer's middle; a void's view sits a third of the way down.
 const GOTO = [{ value: 'top', label: 'Top, 260 km' }, ...LAYERS.map(l => ({ value: l.id, label: `${l.id[0].toUpperCase()}${l.id.slice(1)}, ${l.top} to ${l.bot} km` }))];
 function goTo(id) {
@@ -80,21 +98,30 @@ function goTo(id) {
   touch();
 }
 const slider = (group, id, label, min, max, step) => ({ type: 'slider', group, id: 'gg_' + id, label, min, max, step, value: TUNE_DEF[id], persist: true, onInput: v => tune(id, v) });
+const choice = (group, id, label, options) => ({ type: 'choice', group, id: 'gg_' + id, label, value: TUNE_DEF[id], persist: true, options: options.map(([value, l]) => ({ value, label: l })), onPick: v => tune(id, v) });
 const DEV = [
   { type: 'choice', group: 'Go to', id: 'gg_goto', label: 'Layer', value: 'top', options: GOTO, onPick: goTo },
-  slider('Camera', 'devPitch', 'Pitch', -60, 60, 1),
-  slider('Camera', 'devYaw', 'Yaw', -180, 180, 1),
-  slider('Light', 'sunAz', 'Sun azimuth', -180, 180, 1),
-  slider('Light', 'sunEl', 'Sun elevation', 2, 60, 1),
-  slider('Light', 'expo', 'Exposure', 0.25, 4, 0.01),
-  slider('Light', 'gainMax', 'Eye gain cap', 1, 30, 0.5),
-  slider('Light', 'ms', 'Light into cloud', 0, 1.2, 0.01),
-  slider('Light', 'amb', 'Ambient from above', 0, 3, 0.01),
-  slider('Light', 'bounce', 'Floor bounce', 0, 1.5, 0.01),
-  slider('Light', 'haze', 'Haze reach', 0.2, 4, 0.01),
-  slider('Light', 'flash', 'Flash strength', 0, 3, 0.01),
-  slider('Light', 'rays', 'God rays', 0, 4, 0.01),
-  { type: 'button', group: 'Light', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, v] of Object.entries(TUNE_DEF)) ui.setting('gg_' + id)?.set(v, true); } },
+  choice('View', 'cabin', 'Cabin', [['on', 'On'], ['off', 'Off']]),
+  slider('View', 'devPitch', 'Pitch', -60, 60, 1),
+  slider('View', 'devYaw', 'Yaw', -180, 180, 1),
+  choice('Render', 'pix', 'Pixels', [['auto', 'Auto'], ['native', 'Native']]),
+  choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
+  choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
+  slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
+  slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
+  slider('Exposure', 'expo', 'Exposure', 0.25, 4, 0.01),
+  slider('Exposure', 'gainMax', 'Eye gain cap', 1, 30, 0.5),
+  slider('Clouds', 'ms', 'Light into cloud', 0, 1.2, 0.01),
+  slider('Clouds', 'amb', 'Ambient from above', 0, 3, 0.01),
+  slider('Clouds', 'bounce', 'Floor bounce', 0, 1.5, 0.01),
+  slider('Clouds', 'haze', 'Haze reach', 0.2, 4, 0.01),
+  slider('Clouds', 'rays', 'God rays', 0, 4, 0.01),
+  slider('Storm', 'flash', 'Flash strength', 0, 3, 0.01),
+  slider('Window', 'near', 'Near fog', 0, 2, 0.01),
+  slider('Window', 'wet', 'Drops', 0, 2, 0.01),
+  slider('Window', 'fogK', 'Pane fog', 0, 2, 0.01),
+  choice('Window', 'cracks', 'Cracks', [['depth', 'By depth'], ['off', 'Off'], ['full', 'Full']]),
+  { type: 'button', group: 'Reset', label: 'All dev values', text: 'Defaults', onClick: () => { for (const [id, v] of Object.entries(TUNE_DEF)) ui.setting('gg_' + id)?.set(v, true); } },
 ];
 
 /* ---------- bar ---------- */
@@ -105,16 +132,17 @@ const ui = initPage({ id: ID, bar: {
   quality: true,
   dev: DEV,
   reset: () => { S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.yaw = 0; S.pitch = 0; B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); saveSpot(); touch(); },
-  keys: [['hold', 'dive'], ['drag', 'look'], ['space', 'dive']],
+  keys: [['hold', 'dive'], ['drag', 'look'], ['scroll', 'lean'], ['space', 'dive']],
   help: [
     ['hold', 'Hold to dive into the clouds'],
     ['release', 'Let go to hang where you are'],
     ['drag', 'Drag to look round'],
+    ['scroll', 'Scroll to lean to the glass, or back into the seat'],
     ['space', 'Hold Space to dive; Depth takes you back up'],
   ],
 } });
 // Saved dev values hold from the last visit.
-for (const id of Object.keys(TUNE_DEF)) { const v = ui.setting?.('gg_' + id)?.value; if (typeof v === 'number') TUNE[id] = v; }
+for (const id of Object.keys(TUNE_DEF)) { const v = ui.setting?.('gg_' + id)?.value; if (v != null && typeof v === typeof TUNE_DEF[id]) TUNE[id] = v; }
 sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ sleepMs: 1500, keys: new Set([' ']) });
@@ -135,7 +163,10 @@ const link = {};
 // The march's size and steps by quality and the slow-frame rung.
 function marchCut() {
   const r = D.rung;
-  return { scale: r >= 2 ? 0.34 : 0.5, steps: r >= 3 ? 96 : D.level >= 2 ? 190 : 150, fine: r >= 3 ? 0 : 1 };
+  // The dev sheet can pin the clouds at full size and scale the steps.
+  const scale = TUNE.march === 'full' ? 1 : r >= 2 ? 0.34 : 0.5;
+  const steps = (r >= 3 ? 96 : D.level >= 2 ? 190 : 150) * Number(TUNE.steps);
+  return { scale, steps, fine: r >= 3 && TUNE.march !== 'full' ? 0 : 1 };
 }
 
 // The march programs by zone; the deeper ones link after the first frame.
@@ -211,7 +242,8 @@ function resize(force = false) {
   const w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
   if (!force && w === cssW && h === cssH) return;
   cssW = w; cssH = h;
-  const dpr = D.dpr(w, h);
+  // Native pixels skip the budget, for dev work.
+  const dpr = TUNE.pix === 'native' ? (window.devicePixelRatio || 1) : D.dpr(w, h);
   W = Math.max(1, Math.round(w * dpr)); H = Math.max(1, Math.round(h * dpr));
   canvas.width = W; canvas.height = H;
   const m = marchCut();
@@ -237,8 +269,10 @@ function basis() {
   // The look: yaw about Y, then pitch about X, in capsule axes.
   // The eye sits left of the window and looks across it, as in Window seat.
   // A narrow stage eases the angle and moves the eye back, so the whole window shows.
-  const wide = QS.has('out') ? 0 : smooth(0.6, 1.4, W / H);
-  const ly = (S.yaw + 21 * wide + TUNE.devYaw) * DEG, lp = (S.pitch - 3 - TUNE.devPitch) * DEG;
+  const wide = cabinOff() ? 0 : smooth(0.6, 1.4, W / H);
+  // Leaning in turns the angled view straight out through the port; the aim follows the sway a third of the way.
+  const near = S.lean * S.lean * (3 - 2 * S.lean);
+  const ly = (S.yaw + 21 * wide * (1 - near) + TUNE.devYaw + S.hx * 1.5) * DEG, lp = (S.pitch - 3 - TUNE.devPitch + S.hy * 1.0) * DEG;
   const cy = Math.cos(ly), sy = Math.sin(ly), cp = Math.cos(lp), sp = Math.sin(lp);
   const look = [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp];
   const col = i => [look[i], look[3 + i], look[6 + i]];
@@ -249,7 +283,9 @@ function basis() {
   if (tx < Math.tan(25 * DEG)) { tx = Math.tan(25 * DEG); ty = tx / asp; }
   const r = col(0), u = col(1), z = col(2);
   const fwd = world([-z[0], -z[1], -z[2]]);
-  const eye = [-0.2 * wide - 0.0025 * S.yaw, 0.01 + 0.002 * S.pitch, 0.4 + 0.3 * (1 - wide)];
+  // The head sways 2 cm with the mouse; leaning in moves it to the port's centre, 2 cm off the wall.
+  const rest = [-0.2 * wide - 0.0025 * S.yaw, 0.01 + 0.002 * S.pitch, 0.4 + 0.3 * (1 - wide)];
+  const eye = [rest[0] * (1 - near) + S.hx * 0.02, rest[1] * (1 - near) + S.hy * 0.015, rest[2] + (0.02 - rest[2]) * near];
   // GLSL takes a mat3 by columns: the look's columns are its axes in capsule space.
   const lookM = new Float32Array([r[0], r[1], r[2], u[0], u[1], u[2], z[0], z[1], z[2]]);
   return { fwd, right: world(r).map(v => v * tx), up: world(u).map(v => v * ty), tan: [tx, ty], eye, lookM, X, Y, Z };
@@ -303,6 +339,11 @@ function step(dt) {
   S.tGlass += sdt * (frozen ? 0 : 1);
   const heat = smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1);
   S.melt = S.alt > 245 && !S.diving ? Math.max(0, S.melt - dt * 0.2) : Math.min(1, S.melt + heat * dt * 0.8);
+  // The head eases toward its targets, so moves feel bodily.
+  const kh = 1 - Math.exp(-dt / 0.25);
+  S.hx += (S.thx - S.hx) * kh; S.hy += (S.thy - S.hy) * kh;
+  S.lean += (S.leanT - S.lean) * (1 - Math.exp(-dt / 0.35));
+  if (Math.abs(S.leanT - S.lean) < 1e-4) S.lean = S.leanT;
   // The near fog streams up past the glass, faster with the fall.
   S.wispY += sdt * (3 + 50 * clamp(S.v / 5, 0, 1));
   wgm.step(sdt, Math.min(60, Math.abs(S.v) * 10));
@@ -326,7 +367,8 @@ function step(dt) {
     snd.thunder(d, hd.level, clamp(hd.pos[0] / Math.max(d, 1), -1, 1));
   }
   snd.update(dt, Math.abs(S.v), depthOf(S.alt), S.diving);
-  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0;
+  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0
+    || Math.abs(S.thx - S.hx) + Math.abs(S.thy - S.hy) > 0.002 || S.lean !== S.leanT;
 }
 
 // How far into a void the eye is: 0 in the decks, the sky and the dark.
@@ -379,7 +421,7 @@ function render(dt) {
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
   gl.uniform1f(u.uT, S.tC);
   gl.uniform1f(u.uTMap, S.tMap);
-  gl.uniform1f(u.uSteps, Math.min(256, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt)))));
+  gl.uniform1f(u.uSteps, Math.min(400, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt)))));
   gl.uniform1f(u.uFine, m.fine);
   // In a void the eye sees to the horizon, 1,600 km; in a deck, 220 km.
   const vk = voidAt(S.alt);
@@ -419,7 +461,7 @@ function render(dt) {
   // Against the window: the near fog's place, its density, and the brightest flash in capsule metres.
   gl.uniform3f(c.uWispP, 0, -S.wispY, 0);
   const inDeck = deckAt(S.alt);
-  gl.uniform1f(c.uNear, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1));
+  gl.uniform1f(c.uNear, Math.min(1, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1) * TUNE.near));
   const fd = [flash[0], flash[1] - S.alt, flash[2]], fl = Math.hypot(...fd) || 1;
   const fc = k => (fd[0] * b[k][0] + fd[1] * b[k][1] + fd[2] * b[k][2]) / fl * 25;
   gl.uniform3f(c.uFlashP, fc('X'), fc('Y'), fc('Z'));
@@ -427,10 +469,11 @@ function render(dt) {
   gl.uniform2fv(c.uM, wgm.m);
   gl.uniform1f(c.uFlow, wgm.flow);
   gl.uniform1f(c.uAir, wgm.speed);
-  gl.uniform1f(c.uFog, 0.05 + 0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt));
+  // No base fog: clear glass stays sharp.
+  gl.uniform1f(c.uFog, (0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt)) * TUNE.fogK);
   gl.uniform1f(c.uIce, smooth(-1, 2, S.alt) * (1 - smooth(20, 23, S.alt)));
   // Stress bows and cracks the pane; the crush shatters it, with no white burst under reduced motion.
-  gl.uniform1f(c.uStress, stressAt(S.alt));
+  gl.uniform1f(c.uStress, TUNE.cracks === 'off' ? 0 : TUNE.cracks === 'full' ? 1 : stressAt(S.alt));
   gl.uniform1f(c.uCrush, S.crush < 0 ? 0 : frozen ? 0.3 + 0.7 * S.crush : S.crush);
   gl.uniform3fv(c.uEye, b.eye);
   gl.uniformMatrix3fv(c.uLook, false, b.lookM);
@@ -441,7 +484,7 @@ function render(dt) {
   // Entry heat melts the frost; it forms again only near the top.
   gl.uniform1f(c.uFrost, smooth(40, 120, S.alt) * (1 - S.melt));
   // Rain and drops below the white deck, heaviest in the decks, gone under the last deck.
-  gl.uniform1f(c.uWet, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)));
+  gl.uniform1f(c.uWet, Math.min(1, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)) * TUNE.wet));
   gl.uniform1f(c.uRush, clamp(S.v / 5, 0, 1));
   gl.uniform1f(c.uHeat, frozen ? 0 : smooth(-80, -130, S.alt));
   gl.uniform1f(c.uAsp, W / H);
@@ -455,7 +498,7 @@ function render(dt) {
   tri(gl, T.cabin, vao);
   gl.useProgram(P.fin.p);
   // ?out shows the outside alone, for look work.
-  bind(gl, P.fin, 'uScene', 0, QS.has('out') ? T.scene : T.cabin);
+  bind(gl, P.fin, 'uScene', 0, cabinOff() ? T.scene : T.cabin);
   gl.uniform1f(P.fin.u.uExp, 0.3 * gainAt(S.lum) * TUNE.expo);
   gl.uniform1f(P.fin.u.uSeed, frameNo % 97);
   gl.uniform1f(P.fin.u.uAsp, W / H);
@@ -528,6 +571,13 @@ stage.addEventListener('pointerdown', e => {
   touch();
 });
 stage.addEventListener('pointermove', e => {
+  // Hover sways the head on mouse devices, as in Window seat; reduced motion keeps it still.
+  if (e.pointerType === 'mouse' && !frozen) {
+    const r = stage.getBoundingClientRect();
+    S.thx = clamp((e.clientX - r.left) / r.width * 2 - 1, -1, 1);
+    S.thy = -clamp((e.clientY - r.top) / r.height * 2 - 1, -1, 1);
+    wake();
+  }
   if (!down || e.pointerId !== pid) return;
   const dx = e.clientX - px, dy = e.clientY - py;
   if (mode === 'press' && Math.hypot(dx, dy) > 8) { mode = 'drag'; clearTimeout(holdT); }
@@ -549,6 +599,9 @@ function end(e) {
   touch();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, end));
+stage.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') { S.thx = 0; S.thy = 0; wake(); } });
+// The wheel leans toward the glass or back into the seat.
+stage.addEventListener('wheel', e => { e.preventDefault(); S.leanT = clamp(S.leanT - e.deltaY * 0.0012, 0, 1); touch(); }, { passive: false });
 
 /* ---------- life cycle ---------- */
 whenVisible(stage, on => {

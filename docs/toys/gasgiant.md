@@ -80,6 +80,8 @@ Bar v3, from the `bar` spec in `initPage()`.
 | Hold on the stage | Dives; the fall gains speed, the frame shakes |
 | Release | The fall eases to a hang over about 3 s |
 | Drag | Looks round: 25 degrees each way, 15 up and down; the head moves a little |
+| Hover (mouse) | The head sways up to 2 cm with the pointer, as in Window seat; the aim follows a third of the way. Still under reduced motion |
+| Scroll | Leans to the glass or back into the seat, as in Window seat; leaning in turns the angled view straight out through the port |
 | Click | A short sink |
 | Space (hold) | The same as a hold |
 
@@ -107,7 +109,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `bolts.js` | Lightning timing |
 | `sound.js` | Web Audio |
 
-Dev: `?dev` shows the Dev sheet (Tom, 2026-11-23): Go to any layer; Pitch and Yaw past the drag's limits; Sun azimuth and elevation, Exposure, Eye gain cap, Light into cloud, Ambient from above, Floor bounce, Haze reach, Flash strength, God rays; Reset. The values persist.
+Dev: `?dev` shows the Dev sheet (Tom, 2026-11-23), in groups: Go to (any layer); View (cabin on or off, pitch, yaw past the drag's limits); Render (pixels auto or native, clouds at half or full size, steps 1x to 2x); Sun (azimuth, elevation); Exposure (exposure, eye gain cap); Clouds (light into cloud, ambient, floor bounce, haze reach, god rays); Storm (flash strength); Window (near fog, drops, pane fog, cracks by depth, off or full); Reset. The values persist, and apply without `?dev` too.
 
 Links: `?alt=-14` starts at that height; `?out` shows the outside with no cabin; `?qa` exposes the state as `__gg`, times each shader link, and `__gg.bench(n)` times n frames on the GPU.
 

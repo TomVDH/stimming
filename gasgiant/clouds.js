@@ -536,7 +536,7 @@ void main() {
     float sk = 1.0;
     bool refined = false;
     int n = int(uSteps);
-    for (int i = 0; i < 256; i++) {
+    for (int i = 0; i < 400; i++) {
       if (i >= n || t > t1 || T < 0.02) break;
       vec3 p = ro + rd * t;
       float ds = min(inWin ? 0.3 + grow * t : 0.3 + 0.0075 * t, cap + (0.004 + 0.006 * vw) * t) * sk;

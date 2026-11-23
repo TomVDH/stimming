@@ -375,3 +375,14 @@ MVP: $60 to $100 (an L at the top of its band: one volume at a scale no toy has 
 - Dev server `npm run dev` on port 8000 (check the port first); the browser pane for screenshots.
 - Headless QA in Edge on ANGLE D3D11; ANGLE GL if a pass stalls. Check the renderer string.
 - Q1 to Q10 from `docs/plans/README.md`; one screenshot per beat (top, white-out, brown, water deck with a flash, the dark); per-pass link times and frame times in the bean.
+
+### Sharper dev views, a tidy dev sheet, the head (Tom, 2026-11-23)
+
+Tom: "can we get neater organized controls -- also ability to have full res raymarches? so we can tweak? all is v blurry rn". Then: "I like window seat controls re mouse wobble and the ability to hug the glass -- pls include".
+
+| Part | Change |
+|---|---|
+| Dev sheet | Groups: Go to, View, Render, Sun, Exposure, Clouds, Storm, Window, Reset. New rows: Cabin on or off (as `?out`); Pixels auto or native; Clouds half or full size; Steps 1x, 1.5x, 2x (up to 400); Near fog, Drops and Pane fog multipliers; Cracks by depth, off or full. |
+| Sharpness | The blur came from the half-size march, the pixel budget (ratio 1.5, 2.4 million pixels) and a base fog on the pane. Full size and native pixels lift the first two (10.7 ms a frame at native pixels, full-size clouds, on the RTX 3070); the base pane fog is gone, so clear glass stays sharp. |
+| Head | After Window seat: hover sways the head up to 2 cm and the aim a third of that, easing in 0.25 s; the wheel leans to the glass, moving the eye to the port's centre 2 cm off the wall and turning the angled view straight out. The lean is part of the resume spot. |
+
