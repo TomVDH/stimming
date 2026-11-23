@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T10:44:20Z
+updated_at: 2026-11-23T20:55:00Z
 parent: stimming-oh7b
 ---
 
@@ -40,3 +40,8 @@ MVP: the plunge from 260 km over the cloud deck to 20 bar. Raw WebGL2 on shared/
 ## Look pass: storm and outside, 2026-11-23
 
 Spiral storm with arms, lanes and folds; hue drift; exposure 0.3; saturation lift; three sun taps; holes in the belts. Links 1.1 s on D3D11. Next: cloud-top relief at Juno's scale for the near deck.
+
+
+## Look pass: the near deck, 2026-11-23
+
+Tom: "Yes, near deck". Popcorn heads, folded ridges along the bands, a crisp top near the eye, darker and deeper-coloured valleys, more sun and less diffuse. Dive 7.6 ms a frame median, 8.2 p90 (with the cabin pass); links 0.9 s. Stills 09 and 10 in docs/qa/gasgiant/.

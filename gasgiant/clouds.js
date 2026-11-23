@@ -123,16 +123,30 @@ float dens(vec3 p, float lod, float fine) {
       // The ammonia deck: tops follow the map; billows stand on them; a lumpy ceiling below.
       // Billows stand taller in the zones and the storm, where the cloud is thick.
       float top = 4.0 + 20.0 * m.r + (6.0 + 5.0 * m.r) * (nb - 0.5) * (1.0 + m.a);
-      // Convective cells 17 km across heap the tops, as in Juno's close views.
-      top += fine * 5.0 * (n2.b - 0.45) * (0.4 + 0.6 * m.r);
+      // Relief at Juno's scale: cells, popcorn heads and folded ridges, in km.
+      // Convective cells 4 km across heap the tops.
+      float rel = 5.0 * (n2.b - 0.45);
+      // Popcorn heads stand up to 6 km over the deck.
+      float pop = max(n2.b - 0.42, 0.0) / 0.58;
+      rel += 6.0 * pop * pop;
+      // Folded ridges run along the bands, with sharp crests.
+      vec4 n3 = textureLod(uVol, vec3(qr.x / 150.0, h * 0.03, qr.z / 34.0) + vec3(0.21, 0.4, 0.47), 0.0);
+      float rg = 1.0 - abs(2.0 * n3.a - 1.0);
+      rel += 4.0 * rg * rg * rg - 1.4;
+      rel *= fine * (0.4 + 0.6 * m.r);
+      top += rel;
       float base = 2.0 + 3.0 * (nb - 0.5);
       float sh = min(top - h, (h - base) * 0.7);
       // Holes open in the low belts; zones and the storm stay closed.
       float cov = smoothstep(0.22, 0.42, nc.a + 0.55 * (m.r - 0.45) + 0.08 * (nb - 0.5));
-      d = smoothstep(0.0, 1.2 + lod, sh) * (0.45 + 0.55 * n1.b) * cov;
+      // A crisp top near the eye lets the heads cast shadows.
+      d = smoothstep(0.0, 0.35 + 0.85 * lod, sh) * (0.55 + 0.45 * n1.b) * cov;
       // Hue drifts a little with the billows, so the colours blend in the cloud.
-      gAlb = mix(vec3(0.86, 0.9, 0.88), pal(m.g + 0.22 * (n1.a - 0.5) + 0.12 * (n2.a - 0.5)), m.b);
-      gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0);
+      // Valleys between heads see less sky; their colour runs deeper.
+      float ao = clamp(0.5 + 0.2 * rel, 0.2, 1.15);
+      float sat = clamp(m.b + 0.35 * (1.0 - ao), 0.0, 1.0);
+      gAlb = mix(vec3(0.86, 0.9, 0.88), pal(m.g + 0.22 * (n1.a - 0.5) + 0.12 * (n2.a - 0.5)), sat);
+      gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0) * ao;
     } else if (h > -24.0) {
       // The upper void: towers stand between the brown floor and the white ceiling.
       d = tower(p, h, -24.0, 2.0, 3.1, nb, f) * (0.6 + 0.4 * n1.b);
@@ -211,8 +225,8 @@ void main() {
         float powder = 1.0 - exp(-2.0 * tau - 0.6);
         lit = mix(lit, lit * powder, 0.35) + 0.025;
         float ring = ringShadow(p);
-        vec3 sun = L.rgb * L.a * lit * ph * ring * 0.6;
-        vec3 diffuse = L.rgb * (1.0 - L.a) * (0.25 + 1.0 * open * open);
+        vec3 sun = L.rgb * L.a * lit * ph * ring * 0.85;
+        vec3 diffuse = L.rgb * (1.0 - L.a) * (0.2 + 0.8 * open * open);
         vec3 sky = SKY_C * L.a * (0.25 + 0.75 * open) * (0.6 + 0.4 * ring);
         vec3 Lc = alb * (sun + diffuse + sky);
         // Flashes light the cloud round them, with no shadow.

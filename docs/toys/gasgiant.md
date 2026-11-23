@@ -30,6 +30,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - A fictional giant in green, teal and purple (Tom, 2026-11-23): mint zones, jade and teal belts, a purple storm with a magenta heart and teal filaments.
 - Bright rings arch over the northern sky, seen from their unlit side. Their shadow lies on the deck.
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
+- Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
 - Three decks with a void under each of the upper two (Tom, 2026-11-23). Hourglass towers join each floor to its ceiling, far off in the haze.
 - The light fails with depth: teal, then green, then violet, then black. The eye adapts only part of the way.
 - The outer pane carries the weather: frost high up, drops that bead and race up in the decks, veils of hue and brightness in the air, heat shimmer deep down.

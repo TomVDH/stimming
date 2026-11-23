@@ -107,9 +107,21 @@ Tom picked "Storm and outside" for the next pass. `?out` shows the outside alone
 | Storm | The map's storm lies on angle and log radius, as the volume does: two spiral arms trail by a twist, a warp folds the filaments into small eddies, dark teal lanes run between violet arms, the heart is magenta and dimpled. Tops follow the arms, so the low sun shades the lanes. |
 | Colour | A slow hue drift across the disc; zones carry at least half their colour; the billows vary the hue inside the cloud. |
 | Light | Exposure 0.3 at the top, so the deck sits in the mid-tones; a 1.3 saturation lift before the film curve; thinner haze over the deck. |
-| Shade | Three sun taps to 15 km; less multiple-scatter floor, so billows show a shaded side. Taller billows in the zones and the storm; 17 km convective cells on the tops. |
+| Shade | Three sun taps to 15 km; less multiple-scatter floor, so billows show a shaded side. Taller billows in the zones and the storm; 4 km convective cells on the tops. |
 | Holes | They open in the low belts; zones and the storm stay closed. |
-| Next | The near deck from 60 km still reads smooth. It needs cloud-top relief at Juno's scale: folded ridges and popcorn cells sharp enough to cast shadows. |
+
+### The near deck (Tom, 2026-11-23: "Yes, near deck")
+
+From 60 km the ammonia deck read smooth: its top faded over 2 to 3 km, as deep as its bumps were tall.
+
+| Part | Change |
+|---|---|
+| Relief | Popcorn heads 4 km across, up to 6 km tall, and folded ridges that run along the bands, with sharp crests (one more noise tap, stretched east to west). The relief fades with distance, with the fine octave. |
+| Edge | The top is crisp near the eye: density rises over 0.35 km, plus 0.85 km for each step of distance. |
+| Valleys | They see less sky and take a deeper colour of their belt or zone. |
+| Light | Sun 0.85 (was 0.6), diffuse 0.2 + 0.8 open² (was 0.25 + 1.0), so the heads show a lit side and a shaded side. |
+
+Dive at 7.6 ms a frame (median), 8.2 ms p90, with the cabin pass; shader links 0.9 s.
 
 ## 4. Tech
 
