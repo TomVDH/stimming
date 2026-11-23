@@ -70,7 +70,7 @@ const TUNE = { ...TUNE_DEF };
 let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const tune = (id, v) => { TUNE[id] = v; if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl); touch(); };
 // Each layer's middle; a void's view sits a third of the way down.
-const GOTO = [{ value: 'top', label: 'Top, 260 km' }, ...LAYERS.map(l => ({ value: l.id, label: `${l.id[0].toUpperCase()}${l.id.slice(1)}, ${-l.top} to ${-l.bot} km` }))];
+const GOTO = [{ value: 'top', label: 'Top, 260 km' }, ...LAYERS.map(l => ({ value: l.id, label: `${l.id[0].toUpperCase()}${l.id.slice(1)}, ${l.top} to ${l.bot} km` }))];
 function goTo(id) {
   const l = LAYERS.find(x => x.id === id);
   S.alt = l ? (l.kind === 'void' ? l.top - (l.top - l.bot) * 0.35 : (l.top + l.bot) / 2) : ALT_TOP;
