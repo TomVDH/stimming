@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T21:25:00Z
+updated_at: 2026-11-23T21:45:00Z
 parent: stimming-oh7b
 ---
 
@@ -26,6 +26,8 @@ MVP: the plunge from 260 km over the cloud deck to crush depth, 640 km down (Tom
 - [x] QA Q1 to Q10, docs/toys/gasgiant.md
 - [ ] Tom's look pass: the capsule interior crop, the storm, the decks
 - [x] Tom, 2026-11-23: low side sun; the abyssal dive to 640 km, fourteen layers
+- [x] Tom, 2026-11-23: voids to the horizon, twisters, storm curtains
+- [ ] More weirdness in the voids
 - [ ] Tom's later pass: the window effects for the deep layers
 - [ ] Record link times, frame times and the session cost
 
@@ -52,3 +54,8 @@ Tom: "Yes, near deck". Popcorn heads, folded ridges along the bands, a crisp top
 ## The abyssal dive, 2026-11-23
 
 Low side sun (az 65, el 10), four sun taps. Fourteen layers to -500 km, dark gas to crush depth at -640 km (about 1,000 bar). Light fades slowly and fails under the last deck; eye gain up to 8; flashes dim to match. A held dive takes 200 s. Frame 7.7 ms median at 60, -200 and -300 km. Stills 11 to 15.
+
+
+## The voids to the horizon, 2026-11-23
+
+Void march window 1,600 km, haze 470 to 870 km, twisters and curtains. 7.8 ms a frame in the voids; links 1.5 s. Stills 16 to 19.

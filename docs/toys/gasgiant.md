@@ -53,6 +53,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 | -470 to -500 | Last | Dark magenta deck, tall heads, rare lightning |
 | -500 to -640 | Dark | Clear gas; the light fails; the hull fails at -640 |
 
+- The voids are expansive stretches, as in Tornado alley (Tom, 2026-11-23): in a void the eye sees to the horizon, 1,600 km, where floor and ceiling meet. Twisters and storm curtains stand among the towers.
 - Each layer tints the light. The light fades slowly through the abyss and fails under the last deck. The eye opens up to 8 times as the light fails; flashes dim to match.
 - The outer pane carries the weather: frost high up, drops that bead and race up in the decks, veils of hue and brightness in the air, heat shimmer deep down.
 - Inside a deck, wisps tear past the glass in three layers and flashes come three times as often.

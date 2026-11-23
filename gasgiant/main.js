@@ -224,6 +224,8 @@ function step(dt) {
   return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01;
 }
 
+// How far into a void the eye is: 0 in the decks, the sky and the dark.
+const voidAt = h => (1 - deckAt(h)) * (1 - smooth(-6, 0, h)) * smooth(-505, -495, h);
 // The eye's gain: it opens as the light fails, up to 8 times.
 const gainAt = lum => clamp(Math.pow(Math.max(lum, 1e-7), -0.5), 1, 8);
 // How deep in a deck the eye is: 0 in the air and the voids, 1 inside cloud.
@@ -260,10 +262,11 @@ function render(dt) {
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
   gl.uniform1f(u.uT, S.tC);
   gl.uniform1f(u.uTMap, S.tMap);
-  gl.uniform1f(u.uSteps, m.steps);
+  gl.uniform1f(u.uSteps, Math.min(256, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt)))));
   gl.uniform1f(u.uFine, m.fine);
-  // Inside the decks the eye sees far down the voids.
-  gl.uniform1f(u.uWin, 220);
+  // In a void the eye sees to the horizon, 1,600 km; in a deck, 220 km.
+  const vk = voidAt(S.alt);
+  gl.uniform1f(u.uWin, 220 + 1380 * vk);
   gl.uniform1f(u.uSeed, frameNo % 64);
   flashUniform(B, flash);
   // Deep down the eye opens wider; the flashes dim to match, as they show at the water deck.

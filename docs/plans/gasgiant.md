@@ -140,6 +140,20 @@ Tom: "Yes, low side sun -- also we are doing a deep majestic abyssal dive into t
 
 Frame time 7.7 ms median at 60, -200 and -300 km.
 
+### The voids to the horizon (Tom, 2026-11-23)
+
+Tom: "for the void layers (the ones that are empty and have storms, twisters and all other sorts of weirdness) need to extend faaaaar on the horizon -- like the tornado alley these are expansive stretches we can look into".
+
+| Part | Change |
+|---|---|
+| Reach | In a void the march window opens from 220 to 1,600 km; steps grow twice as fast; 30 percent more steps. The shell's curve brings floor and ceiling together at the horizon. |
+| Haze | Mean free path 470 km in the upper and lower voids, 670 km in the nave, 870 km in the abyss. |
+| Twisters | One per 70 to 170 km cell in a share of cells: a rope from the ceiling to the floor, a wall cloud on top, a dust skirt below. The wall swirls on angle and log radius, as in Tornado alley; the rope sways and wanders. |
+| Curtains | Rain hangs from the ceiling in streaks and dries before the floor. |
+| Next | More weirdness in the voids, from Tom's list. |
+
+Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
+
 ## 4. Tech
 
 ### Renderer
