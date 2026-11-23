@@ -99,8 +99,11 @@ export function skinMaterial(U, look) {
         // Specks: lenticels and oil glands, small dots in the skin.
         float sp = smoothstep(uSpeck.x, uSpeck.x + 0.04, vn(fp * uSpeck.y));
         base = mix(base, uSpeckCol, sp * uSpeck.z);
+        // The fruit's own detail: patches, scars, rougher spots.
+        float roughAdd = 0.0;
+        ${L.glsl || ''}
         // Fuzz hides the skin's shine: it reads rougher as the fuzz grows.
-        float rough = mix(uRough, 0.95, uFuzz * 0.7);
+        float rough = mix(clamp(uRough + roughAdd, 0.02, 1.0), 0.95, uFuzz * 0.7);
         vec3 col = shade(base, n, v, rough, uWrap, uSss * base, uF0 * (1.0 - 0.6 * uFuzz));
         float nv = clamp(dot(n, v), 0.0, 1.0);
         // Velvet: fine fuzz lights up at grazing angles.

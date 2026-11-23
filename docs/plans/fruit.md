@@ -18,6 +18,7 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Registry | One module per fruit; Fruit choice; roll-off swap |
 | Realism 1 | Studio reflections, wrap diffuse, wet film on a per-fruit relief, specks, pores; bead chord sign fixed (the march never ran before) |
 | Ten fruits | Six new fruits on the shared parts |
+| Pomegranate | Arils as packed teardrop meshes, some sliced; open chambers in a spongy pith; skin patches, streaks and scars; a big crown with stamens |
 
 ## Next: one fruit at a time
 
