@@ -1,10 +1,10 @@
-// Kiwi sound: squelch, boing, the knife and the juice, the thunk on a join.
+// Fruit sound: squelch, boing, the knife and the juice, the thunk on a join.
 // Raw Web Audio on the shared kit; muted until the toy's sound is on.
 import { sound } from '../shared/stim.js';
 
 const jit = (v, k) => v * (1 + (Math.random() * 2 - 1) * k);
 
-export function kiwiSound(kit) {
+export function fruitSound(kit) {
   const live = () => (sound.on ? kit.live() : null);
   // Every scheduled source, so a hidden tab can stop them all.
   const nodes = new Set();

@@ -1,4 +1,4 @@
-// Kiwi juice: droplets thrown by the slice.
+// Fruit juice: droplets thrown by the slice, in the fruit's own colour.
 // Each drop is a turbid bead, stretched along its flight, flattened where it lands.
 import * as THREE from 'three';
 import { LIGHT, BEAD } from './glsl.js';
@@ -25,19 +25,21 @@ void main() {
 const FRAG = /* glsl */`
 ${LIGHT}
 ${BEAD}
+uniform vec3 uTint;
 varying vec3 vP, vEye, vKey, vRim, vW, vN;
 void main() {
   vec3 p = normalize(vP);
   vec3 v = normalize(vEye - vP);
   vec3 n = normalize(vN);
   vec3 vw = normalize(cameraPosition - vW);
-  vec3 tint = vec3(0.42, 0.88, 0.08);
+  vec3 tint = uTint;
   vec3 sigma = (vec3(1.0) - tint) * 2.4;
-  vec3 sk = beadScatter(p, v, vKey, sigma, 0.6);
-  vec3 sr = beadScatter(p, v, vRim, sigma, 0.6);
+  float chord = max(2.0 * dot(p, v), 0.0);
+  vec3 sk = beadScatter(p, v, vKey, sigma, 0.6, chord);
+  vec3 sr = beadScatter(p, v, vRim, sigma, 0.6, chord);
   float fw = 0.5 + 1.5 * pow(max(dot(-vw, uRimDir), 0.0), 2.0);
   vec3 col = tint * (uKeyCol * sk * 1.6 + uRimCol * sr * fw + hemi(n) * 0.3);
-  col += tint * 0.35 * (1.0 - beadThrough(p, v, sigma, 0.6)) + tint * uRimCol * 0.12;
+  col += tint * 0.35 * (1.0 - exp(-sigma * chord * 0.6)) + tint * uRimCol * 0.12;
   vec3 h = normalize(uKeyDir + vw);
   col += uKeyCol * smoothstep(0.86, 0.9, pow(max(dot(n, h), 0.0), 18.0)) * 1.4;
   col += uRimCol * tint * pow(1.0 - max(dot(n, vw), 0.0), 3.0) * 0.15;
@@ -45,7 +47,7 @@ void main() {
 }`;
 
 export function makeJuice(L) {
-  const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 14, 10), new THREE.ShaderMaterial({ uniforms: L, vertexShader: VERT, fragmentShader: FRAG }), MAX);
+  const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 14, 10), new THREE.ShaderMaterial({ uniforms: { ...L, uTint: { value: new THREE.Vector3(0.42, 0.88, 0.08) } }, vertexShader: VERT, fragmentShader: FRAG }), MAX);
   mesh.frustumCulled = false;
   mesh.count = 0;
   const drops = [];
@@ -54,6 +56,7 @@ export function makeJuice(L) {
   return {
     mesh,
     get busy() { return drops.length > 0; },
+    setTint(c) { mesh.material.uniforms.uTint.value.set(...c); },
     // A burst from the cut plane; dir is the swipe's sign on screen.
     burst(root, dir, k = 1) {
       root.updateMatrixWorld();

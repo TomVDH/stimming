@@ -1,9 +1,9 @@
-// Kiwi fuzz: short hairs as instanced camera-facing ribbons.
+// Fruit fuzz: short hairs as instanced camera-facing ribbons.
 // Each hair is a cubic curve on four control points, rooted on the skin.
 import * as THREE from 'three';
 import { MeshSurfaceSampler } from 'three/addons/math/MeshSurfaceSampler.js';
 import { LIGHT, DENT } from './glsl.js';
-import { rng } from './fruit.js';
+import { rng } from './half.js';
 
 const SEG = 5;
 // Hair counts per half for Low, Standard and High.
@@ -11,7 +11,7 @@ const COUNT = [7000, 17000, 30000];
 
 const VERT = /* glsl */`
 ${DENT}
-uniform float uLen, uWidth, uRuffle, uTime, uPx, uSide;
+uniform float uLen, uWidth, uRuffle, uTime, uPx, uSide, uLift, uCurl;
 uniform vec3 uFlow, uGrav;
 attribute float aT, aSide;
 attribute vec3 aRoot, aNrm;
@@ -37,11 +37,12 @@ void main() {
   float len = uLen * (0.55 + 0.75 * aRnd.x);
   // A ruffle: each hair lifts and twists while the fruit squeezes.
   float ru = uRuffle * (0.6 + 0.8 * fract(aRnd.w * 7.3));
-  vec3 lift = n * (0.38 + 0.3 * aRnd.z + ru * 0.7);
+  vec3 lift = n * (uLift + 0.3 * aRnd.z + ru * 0.7);
   vec3 p0 = dent(aRoot);
   vec3 p1 = p0 + (lift * 0.9 + comb * 0.25) * len * 0.33;
   vec3 p2 = p1 + (lift * 0.45 + comb * 0.8 + side * aRnd.z * 0.4 + uFlow * 0.5) * len * 0.36;
-  vec3 p3 = p2 + (lift * 0.1 + comb * 0.75 - side * aRnd.z * 0.5 + uFlow * 1.1 + uGrav * 0.25 + side * ru * sin(uTime * 30.0 + aRnd.w * 40.0) * 0.4) * len * 0.36;
+  // Curl hooks the tip over, as on long spines.
+  vec3 p3 = p2 + (lift * (0.1 - uCurl * 0.6) + comb * (0.75 + uCurl) - side * aRnd.z * 0.5 + uFlow * 1.1 + uGrav * 0.25 + side * ru * sin(uTime * 30.0 + aRnd.w * 40.0) * 0.4) * len * 0.36;
   vec3 hp = bez(p0, p1, p2, p3, aT);
   vec3 ht = dbez(p0, p1, p2, p3, aT);
   vec4 wp = modelMatrix * vec4(hp, 1.0);
@@ -64,6 +65,7 @@ void main() {
 
 const FRAG = /* glsl */`
 ${LIGHT}
+uniform vec3 uRoot0, uRoot1, uTip, uTrans;
 varying vec3 vT, vW, vNs;
 varying float vTt, vCov, vRootK;
 void main() {
@@ -71,8 +73,8 @@ void main() {
   vec3 V = normalize(cameraPosition - vW);
   vec3 ns = normalize(vNs);
   // Root colour from the skin, tips lighter and golden.
-  vec3 root = mix(vec3(0.04, 0.02, 0.008), vec3(0.09, 0.045, 0.018), vRootK);
-  vec3 tipc = vec3(0.15, 0.085, 0.034);
+  vec3 root = mix(uRoot0, uRoot1, vRootK);
+  vec3 tipc = uTip;
   vec3 base = mix(root, tipc, smoothstep(0.1, 1.0, vTt));
   // Wrap light along the fibre: the hair lights all round its axis.
   float tl = dot(T, uKeyDir);
@@ -89,7 +91,7 @@ void main() {
   float back = pow(max(dot(-V, uRimDir), 0.0), 2.0);
   float rimSide = smoothstep(-0.3, 0.4, dot(ns, uRimDir));
   float tr = sqrt(max(1.0 - pow(dot(T, uRimDir), 2.0), 0.0));
-  col += vec3(0.5, 0.32, 0.13) * uRimCol * (back * 2.2 + 0.3) * rimSide * tr * smoothstep(0.1, 1.0, vTt);
+  col += uTrans * uRimCol * (back * 2.2 + 0.3) * rimSide * tr * smoothstep(0.1, 1.0, vTt);
   gl_FragColor = vec4(col, vCov * (1.0 - smoothstep(0.85, 1.0, vTt) * 0.6));
 }`;
 
@@ -105,7 +107,9 @@ function strip() {
   return g;
 }
 
-export function makeFuzz(halves, L) {
+export function makeFuzz(halves, L, F) {
+  const Z = F.fuzz;
+  const v3 = a => ({ value: new THREE.Vector3(...a) });
   const n = COUNT[2];
   const parts = halves.map((hf, hi) => {
     const skin = hf.userData.skin;
@@ -128,7 +132,7 @@ export function makeFuzz(halves, L) {
     const su = skin.material.uniforms;
     const U = {
       ...L, uDent: su.uDent, uJig: su.uJig, uJigT: su.uJigT,
-      uSide: su.uSide, uLen: { value: 0.07 }, uWidth: { value: 0.0045 }, uRuffle: { value: 0 }, uPx: { value: 0.001 },
+      uSide: su.uSide, uRoot0: v3(Z.root[0]), uRoot1: v3(Z.root[1]), uTip: v3(Z.tip), uTrans: v3(Z.trans), uLen: { value: 0.07 }, uWidth: { value: 0.0045 }, uLift: { value: Z.lift ?? 0.38 }, uCurl: { value: Z.curl ?? 0 }, uRuffle: { value: 0 }, uPx: { value: 0.001 },
       uFlow: { value: new THREE.Vector3() }, uGrav: { value: new THREE.Vector3(0, -1, 0) },
     };
     const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, alphaToCoverage: true, transparent: false });
@@ -141,11 +145,12 @@ export function makeFuzz(halves, L) {
   let level = 1, fuzz = 0.6, busy = false;
   const wp = new THREE.Vector3(), iq = new THREE.Quaternion(), tmp = new THREE.Vector3(), wq = new THREE.Quaternion();
   function count() {
-    const c = fuzz < 0.02 ? 0 : COUNT[level];
+    const c = fuzz < 0.02 ? 0 : Math.round(COUNT[level] * (Z.count ?? 1));
     for (const pt of parts) { pt.g.instanceCount = c; pt.mesh.visible = c > 0; }
   }
   return {
     get busy() { return busy; },
+    dispose() { for (const pt of parts) { pt.hf.remove(pt.mesh); pt.g.dispose(); pt.mesh.material.dispose(); } },
     setLevel(lv, rung) { level = Math.max(0, lv - (rung >= 3 ? 1 : 0)); count(); },
     // The pixel size at one unit of distance, for the hair width floor.
     setPx(px) { for (const pt of parts) pt.U.uPx.value = px; },
@@ -154,8 +159,8 @@ export function makeFuzz(halves, L) {
       fuzz = st.fuzz;
       busy = false;
       for (const pt of parts) {
-        pt.U.uLen.value = 0.01 + fuzz * 0.07;
-        pt.U.uWidth.value = 0.0028 + fuzz * 0.0016;
+        pt.U.uLen.value = 0.01 + fuzz * Z.len;
+        pt.U.uWidth.value = (0.0028 + fuzz * 0.0016) * Z.width;
         pt.hf.updateWorldMatrix(true, false);
         pt.hf.getWorldPosition(wp);
         if (pt.first || dt <= 0) { pt.prev.copy(wp); pt.first = false; }

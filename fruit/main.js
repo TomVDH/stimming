@@ -1,17 +1,18 @@
-// Kiwi: a toony kiwi to squish and slice.
+// Fruit slice: a toony fruit to squish and slice. Four fruits, one at a time.
 // three.js 0.170: custom toon shaders, juice beads, fuzz ribbons, a lens finish.
 import * as THREE from 'three';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
-import { makeHalf, A, B } from './fruit.js';
+import { makeHalf } from './half.js';
+import { FRUITS } from './fruits.js';
 import { makeFuzz } from './fuzz.js';
 import { makeJuice } from './juice.js';
 import { makePost } from './post.js';
-import { kiwiSound } from './sound.js';
+import { fruitSound } from './sound.js';
 mark('libs');
 
-const ID = 'kiwi';
+const ID = 'fruit';
 const stage = document.getElementById('stage');
 const fail = stage.querySelector('.fail');
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
@@ -21,10 +22,14 @@ const qa = new URLSearchParams(location.search);
 let frozen = reduced();
 
 /* ---------- state ---------- */
-const FUZZ0 = 0.6;
-const fuzzSaved = Number(saved('fuzz'));
+const pick0 = FRUITS.some(f => f.id === saved('pick')) ? saved('pick') : FRUITS[0].id;
+let F = FRUITS.find(f => f.id === pick0);
+// Each fruit keeps its own fuzz; a fuzzy orange is allowed.
+const fuzzOf = f => { const v = saved(`fuzz.${f.id}`); const n = Number(v); return v !== null && n >= 0 && n <= 1 ? n : f.fuzz.k; };
 const st = {
-  fuzz: saved('fuzz') !== null && fuzzSaved >= 0 && fuzzSaved <= 1 ? fuzzSaved : FUZZ0,
+  fuzz: fuzzOf(F),
+  // The swap: the old fruit rolls out, the new one rolls in.
+  rollX: 0, rollV: 0, swapTo: null,
   // Open: 0 whole, 1 two halves apart. A spring carries it.
   open: 0, openV: 0, openTo: 0,
   // Squash along the vertical: 1 at rest. A spring carries it.
@@ -41,24 +46,29 @@ const st = {
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
+  choice: {
+    label: 'Fruit', value: F.id,
+    options: FRUITS.map((f, i) => ({ value: f.id, label: f.label, key: String((i + 1) % 10) })),
+    onPick: v => { swap(v); touch(); },
+  },
   actions: [
     { verb: 'slice', label: 'Slice', key: 'Space', onPress: () => toggle() },
     { verb: 'squeeze', label: 'Squeeze', key: 's', hold: true, onDown: () => { st.keySqueeze = true; touch(); }, onUp: () => { st.keySqueeze = false; touch(); } },
   ],
-  slider: { label: 'Fuzz', min: 0, max: 1, step: 0.01, value: st.fuzz, onInput: v => { st.fuzz = v; save('fuzz', v); touch(); } },
+  slider: { label: 'Fuzz', min: 0, max: 1, step: 0.01, value: st.fuzz, onInput: v => { st.fuzz = v; save(`fuzz.${F.id}`, v); touch(); } },
   quality: true,
-  reset: () => { st.fuzz = FUZZ0; save('fuzz', FUZZ0); ui.slider?.set?.(FUZZ0); touch(); },
-  keys: [['press', 'squish'], ['swipe', 'slice'], ['tap', 'wobble'], ['space', 'slice or join']],
+  reset: () => { for (const f of FRUITS) save(`fuzz.${f.id}`, f.fuzz.k); st.fuzz = F.fuzz.k; ui.slider?.set?.(st.fuzz); touch(); },
+  keys: [['press', 'squish'], ['swipe', 'slice'], ['tap', 'wobble'], ['space', 'slice']],
   help: [
-    ['press', 'Press the kiwi to squish it; it springs back'],
+    ['press', 'Press the fruit to squish it; it springs back'],
     ['swipe', 'Swipe across it to slice it in two'],
     ['tap', 'Tap a half to make it wobble; tap the gap to join them'],
-    ['space', 'Space slices or joins, hold S to squeeze'],
+    ['space', 'Space slices or joins, hold S to squeeze, 1 to 0 pick a fruit'],
   ],
 } });
 const introDone = playIntro({ ready: pageReady() });
-const kit = audioKit({ keys: new Set([' ', 's', 'S']), sleepMs: 1500 });
-const snd = kiwiSound(kit);
+const kit = audioKit({ keys: new Set([' ', 's', 'S', ...'1234567890']), sleepMs: 1500 });
+const snd = fruitSound(kit);
 
 /* ---------- three ---------- */
 let renderer = null, scene = null, camera = null, post = null, fuzz = null, juice = null;
@@ -78,7 +88,7 @@ const L = {
   uGlow: { value: 0.55 },
 };
 const halfU = side => ({ ...L, uSide: { value: side }, uDent: { value: new THREE.Vector4(0, 0, 0, 0) }, uJig: { value: new THREE.Vector4(0, 0, 0, 0) }, uJigT: { value: 9 } });
-const FLOOR_Y = -B - 0.015;
+const FLOOR_Y = -0.815;
 
 function makeFloor() {
   const g = new THREE.PlaneGeometry(400, 400);
@@ -158,16 +168,50 @@ async function setup() {
   root = new THREE.Group();
   root.matrixAutoUpdate = false;
   scene.add(root);
-  for (let i = 0; i < 2; i++) {
-    const h = makeHalf(halfU(i ? -1 : 1), i ? 0.035 : -0.035, 17 + i * 31);
-    h.userData.i = i;
-    root.add(h);
-    halves.push(h);
-  }
-  fuzz = makeFuzz(halves, L);
   juice = makeJuice(L);
   scene.add(juice.mesh);
   post = makePost(renderer, L);
+  build(F);
+}
+
+// Build fruit f in place of the old one.
+function build(f) {
+  if (halves.length) {
+    fuzz.dispose();
+    for (const h of halves) {
+      root.remove(h);
+      h.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
+    }
+  }
+  F = f;
+  halves = [0, 1].map(i => {
+    const h = makeHalf(F, halfU(i ? -1 : 1), i ? 0.035 : -0.035, 17 + i * 31);
+    h.userData.i = i;
+    h.userData.dent = { depth: 0, v: 0, to: 0 };
+    root.add(h);
+    return h;
+  });
+  fuzz = makeFuzz(halves, L, F);
+  fuzz.setLevel(D.level, D.rung);
+  if (H) fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
+  juice.setTint(F.juice);
+  L.uGlow.value = F.glow;
+  st.fuzz = fuzzOf(F);
+  ui.slider?.set?.(st.fuzz);
+  st.open = st.openTo = st.openV = 0;
+  // New shaders compile now, in one hitch, not over the next frames.
+  // The hitch is not a slow device: the slow-frame watch starts over.
+  if (started) { renderer.compile(scene, camera); D.reset(); }
+}
+
+// Pick a fruit: the one on stage rolls out, the new one rolls in.
+function swap(id) {
+  if (id === (st.swapTo ?? F.id)) return;
+  st.swapTo = id;
+  save('pick', id);
+  ui.choice?.set(id);
+  if (frozen || !started) { build(FRUITS.find(f => f.id === id)); st.swapTo = null; st.rollX = st.rollV = 0; return; }
+  st.rollV = Math.min(st.rollV, -2);
 }
 
 /* ---------- motion ---------- */
@@ -209,6 +253,23 @@ function step(dt) {
       u.uJig.value.w *= Math.exp(-h * 3.2);
     }
   }
+  // The roll: out to the left, a rebuild, then in from the right on a spring.
+  if (st.swapTo) {
+    st.rollV -= 26 * dt;
+    st.rollX += st.rollV * dt;
+    if (st.rollX < -6) {
+      build(FRUITS.find(f => f.id === st.swapTo));
+      st.swapTo = null;
+      st.rollX = 6; st.rollV = -9;
+    }
+  } else {
+    for (let i = 0; i < n; i++) {
+      const was = st.rollX;
+      [st.rollX, st.rollV] = spring(st.rollX, st.rollV, 0, 45, 0.5, h);
+      // It lands: a squash as it stops.
+      if (was > 0.05 && st.rollX <= 0.05 && st.rollV < -1) { st.sqV -= 2.2; snd.join(0); }
+    }
+  }
   st.sliceT += dt;
   simT += dt;
   // Ambient drift: a slow breath, off in reduced motion.
@@ -221,7 +282,7 @@ function step(dt) {
   const lively = Math.abs(st.openV) > 0.01 || Math.abs(st.open - st.openTo) > 0.002 || Math.abs(st.sqV) > 0.01 || Math.abs(st.sq - (squeezing ? 0.72 : 1)) > 0.002
     || Math.abs(st.hopV) > 0.01 || st.tiltV.length() > 0.01 || st.tilt.length() > 0.002 || squeezing || down
     || halves.some(hf => Math.abs(hf.userData.dent.v) > 0.01 || Math.abs(hf.userData.dent.depth - hf.userData.dent.to) > 0.001 || hf.userData.skin.material.uniforms.uJig.value.w > 0.001)
-    || juice.busy || fuzz.busy;
+    || juice.busy || fuzz.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
   return { lively };
 }
 
@@ -231,8 +292,9 @@ function place() {
   const breath = frozen ? 0 : Math.sin(amb * 1.3) * 0.012;
   const s = st.sq * (1 + breath), w = 1 / Math.sqrt(s);
   // The squash keeps the bottom on the floor.
-  T4.makeTranslation(0, FLOOR_Y + B * s + st.hop * 0.35, 0);
-  R4.makeRotationFromEuler(new THREE.Euler(st.tilt.y * 0.35, 0, -st.tilt.x * 0.35));
+  T4.makeTranslation(st.rollX, FLOOR_Y + (F.rest ?? F.B) * s + st.hop * 0.35, 0);
+  // A roll turns it about its own middle as it travels.
+  R4.makeRotationFromEuler(new THREE.Euler(st.tilt.y * 0.35, 0, -st.tilt.x * 0.35 - st.rollX / F.B));
   S4.makeScale(w, s, w);
   M4.copy(T4).multiply(R4).multiply(S4);
   root.matrix.copy(M4);
@@ -241,12 +303,12 @@ function place() {
   const c = clamp(o, 0, 1.3);
   // Whole, the cut faces hide: a dent must not show them through the skin.
   const faces = st.openTo > 0 || o > 0.02;
-  for (const hf of halves) for (const k of ['bed', 'core', 'beads', 'seeds']) hf.userData[k].visible = faces;
+  for (const hf of halves) for (const p of hf.userData.faceParts) p.visible = faces;
   // Whole, the fruit turns its stem end a little toward the eye.
   root.matrix.multiply(R4.makeRotationY(-0.45 * (1 - c)));
   // Open, each half swings its face to the eye and rests tilted back.
   const tilt = OPEN_TILT * c;
-  const lift = Math.sqrt((A * Math.sin(tilt)) ** 2 + (B * Math.cos(tilt)) ** 2) - B;
+  const lift = Math.sqrt((F.A * Math.sin(tilt)) ** 2 + (F.B * Math.cos(tilt)) ** 2) - F.B;
   halves[0].position.set(-openX * o, lift, OPEN_Z * o);
   halves[0].rotation.set(0, -OPEN_YAW * o, tilt);
   halves[1].position.set(openX * o, lift, OPEN_Z * o);
@@ -255,7 +317,7 @@ function place() {
   const sh = floor.material.uniforms.uShadow.value;
   halves.forEach((hf, i) => {
     hf.updateMatrixWorld(true);
-    V1.set(-A * 0.4 * c, 0, 0).applyMatrix4(hf.matrixWorld);
+    V1.set(-F.A * 0.4 * c, 0, 0).applyMatrix4(hf.matrixWorld);
     sh[i].set(V1.x, V1.z, 0.95 - 0.35 * c, 0.8);
   });
 }
@@ -479,12 +541,11 @@ whenVisible(stage, on => {
 onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); });
 new ResizeObserver(() => resize()).observe(stage);
-if (qa.has('qa')) globalThis.__kiwi = { st, halves, slice, join, toggle, D, post: () => post, fuzz: () => fuzz, juice: () => juice, cam: () => camera, renderer: () => renderer, get frames() { return frameNo; }, get raf() { return raf || timer; } };
+if (qa.has('qa')) globalThis.__fruit = { st, get halves() { return halves; }, get F() { return F; }, swap, slice, join, toggle, D, post: () => post, fuzz: () => fuzz, juice: () => juice, cam: () => camera, renderer: () => renderer, get frames() { return frameNo; }, get raf() { return raf || timer; } };
 
 mark('build');
 try {
   await setup();
-  for (const hf of halves) hf.userData.dent = { depth: 0, v: 0, to: 0 };
   if (qa.get('open') === '1') { st.open = st.openTo = 1; }
   resize(true);
   place();

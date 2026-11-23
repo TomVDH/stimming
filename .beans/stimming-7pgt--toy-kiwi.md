@@ -1,6 +1,6 @@
 ---
 # stimming-7pgt
-title: 'Toy: Kiwi'
+title: 'Toy: Fruit slice (was Kiwi)'
 status: in-progress
 type: feature
 created_at: 2026-11-23T18:43:35Z
@@ -8,7 +8,7 @@ updated_at: 2026-11-23T18:43:35Z
 parent: stimming-oh7b
 ---
 
-Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.luruke.com, reworked as our own code (Tom, 2026-11-23). MVP at high fidelity, Bar v3. Toy id kiwi. Grab and squish it; the fuzz ruffles. Swipe across it and it slices in two; the cut face is rays of emerald juice beads round a cream core, with a ring of black seeds. Plan: docs/plans/kiwi.md. Toy doc: docs/toys/kiwi.md.
+Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.luruke.com, reworked as our own code (Tom, 2026-11-23). MVP at high fidelity, Bar v3. Toy id kiwi. Grab and squish it; the fuzz ruffles. Swipe across it and it slices in two; the cut face is rays of emerald juice beads round a cream core, with a ring of black seeds. Plan: docs/plans/fruit.md. Toy doc: docs/toys/fruit.md. Renamed Fruit slice (id fruit) once it held ten fruits.
 
 - [x] Plan at docs/plans/kiwi.md
 - [x] Reference photos of the real thing
@@ -22,6 +22,12 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
 - [x] Icon round spike-kiwi-1 (Current, A, D), emblems, sheet row
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA, docs/toys/kiwi.md
+- [x] Rename to Fruit slice (id fruit); fruit registry, Fruit choice, roll-off swap
+- [x] Pomegranate, blood orange, peach
+- [x] Realism pass 1: studio reflections, wet cut faces, specks, pores; bead chord sign fixed
+- [x] Dragon fruit, rambutan, mangosteen, passion fruit, starfruit, fig
+- [ ] Raspberry-grade procedural pass, one fruit at a time (Tom's order)
+- [ ] Menu icon for Fruit slice (the tile still shows the kiwi of round kiwi-1)
 - [ ] Tom sets the Dutch name
 - [ ] Tom hears the sound
 - [ ] Tom picks an icon (round kiwi-1)

@@ -1,4 +1,4 @@
-// Kiwi post: the lens finish.
+// Fruit post: the lens finish.
 // Scene to a float target, then depth of field, bloom, then ACES, vignette and grain.
 import * as THREE from 'three';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
