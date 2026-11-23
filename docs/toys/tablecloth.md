@@ -35,7 +35,7 @@ Idea 112, group E, a physics loop: drag the cloth edge and yank it; plates and g
 - A walnut table, 1.4 x 0.85 m, on four turned legs, a bead under the apron; oak boards.
 - White satin damask cloth, 2.1 x 1.5 m, about 0.33 m of drop each side. Damask figures and a border band show only in the sheen; a doubled hem.
 - Two places across the table: a porcelain dinner plate with a slate line on its verge, a knife, a fork, a tulip wine glass with deep red wine, a tumbler with water. A brass candlestick with a lit candle between them; wax drips run down the candle from its rim.
-- Fire, after Fire: flames are heat in a fluid drawn through Fire's wood ramp; smoke takes the lamp's light. The fire lights the room. A white hem stitch and a fine weave show in the linen.
+- Fire, after Fire: flames are heat in a fluid drawn through Fire's wood ramp, its hot stops turned toward orange (Tom, 2026-11-23); smoke takes the lamp's light. The fire lights the room. A white hem stitch and a fine weave show in the linen.
 - True details: the setting moves a few cm toward the pull even on a clean yank; the trailing edge flicks each piece as it slips out, so plates chatter and glasses rock; the liquid surface stays level and lags its glass (first slosh mode of its radius); a tipped glass pours from the low side of its rim; the candle flame leans in the wind of the passing cloth and goes out if the stick falls; a wine glass's foot and stem survive its fall while the bowl breaks; a slow pull takes the setting down the cloth's hanging face before it drops.
 
 ## Controls
@@ -105,4 +105,4 @@ Captures: `docs/qa/tablecloth/` (01 blockout to 10 icons; 11 to 17 for the secon
 - The Dutch name: draft Tafelkleedtruc.
 - The icon pick: A of spike tablecloth-1 is on the menu until Tom picks.
 - Fire on a slow drag: the cloth catches each time the candle falls on or near it. A fast yank leaves the candle standing, so no fire.
-- Reduced motion keeps the fire: it is the result of a gesture.
+- Reduced motion keeps the fire: it is the result of a gesture (Tom: yes).

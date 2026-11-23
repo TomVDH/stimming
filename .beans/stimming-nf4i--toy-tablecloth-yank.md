@@ -43,3 +43,4 @@ Build Tablecloth yank (idea 112, group E, a physics loop) as a Lab toy: an MVP a
 - Icons: no pick in icons/picks.json, so A of spike tablecloth-1 is on the menu. The intro emblem is A's emblem. The favicon shared/favicons/tablecloth.png comes from the menu tile.
 - Open for Tom: 3D or flat (3D by default), a closer shot, the Dutch name (draft Tafelkleedtruc), the icon pick.
 - Pass 2 (2026-11-23): captures 11 to 17. Embers: a fallen flame alone lit the cloth in half the runs, as the candle often lands past the hem; a spray of burning wax as it lands lights it in 10 of 10 slow drags. Fire costs 7.8 ms mean a frame with over 900 particles burning (headless Edge, RTX 3070). The yank outcomes moved: 6 m/s all stand, 4 m/s all stand, 3 m/s one or two fall, 2 m/s about five fall.
+- Tom, 2026-11-23: flames more orange (done: the hot ramp stops turn toward orange); the blaze size and the fire under reduced motion stay as built.

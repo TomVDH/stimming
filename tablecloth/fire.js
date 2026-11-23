@@ -304,8 +304,9 @@ function okl(L, C, h, out) {
   const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
   return out.set(Math.max(0, 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s), Math.max(0, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s), Math.max(0, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s));
 }
-// Fire's wood: start, mid, end and smoke stops in OKLCH.
-const WOOD = [[0.93, 0.11, 95], [0.72, 0.19, 52], [0.6, 0.24, 30], [0.8, 0.03, 50]];
+// Fire's wood stops in OKLCH: start, mid, end, smoke.
+// Tom wants more orange: the hot stops lose lightness and turn toward orange.
+const WOOD = [[0.85, 0.16, 66], [0.7, 0.2, 47], [0.57, 0.22, 33], [0.8, 0.03, 50]];
 export const FIRE_LIGHT = okl(...WOOD[1], new THREE.Color());
 
 export function createFire(renderer, camera, lamp) {
