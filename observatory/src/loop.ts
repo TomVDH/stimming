@@ -7,7 +7,7 @@ import {
   type Axis, type Limits, type Shutter,
 } from './core/dome.ts';
 import { Vector3 } from 'three';
-import { camHooks, camera, renderer, skyHooks, stageEl, ui } from './setup.ts';
+import { camHooks, camera, lookHooks, renderer, skyHooks, stageEl, ui } from './setup.ts';
 import { NIGHTS, SITES, bortleGlow, bortleMag, nightShiftMs } from './core/skyctl.ts';
 import { skyU } from './sky/haze.ts';
 import { renderPost } from './post/chain.ts';
@@ -202,6 +202,9 @@ export function draw(): void {
   renderPost();
   cuts.afterRender();
   drawSelector();
+  // The way in shows while the chosen telescope holds a star.
+  const held = machine.phase !== 'aim' && machine.phase !== 'lost' && !!machine.target;
+  scopeView.syncBar(held && !cuts.busy && opening.done && !scopeView.showing, bound);
   dirty = false;
   draws++;
 }
@@ -377,9 +380,8 @@ function pick(s: Star): void {
   if (from === 'aim' || from === 'lost') {
     // The cuts frame the chosen dome; liftView reads its machine.
     cuts.start(machine.phase, liftView(), targetPos(s), SCOPE_DOME[bound]);
-    // The refractor's view through the telescope loads while the cuts play.
-    if (bound === 'refractor') scopeView.prepare(s, clock.skyMs());
-    else scopeView.hooks.cancel();
+    // The view through the telescope loads while the cuts play.
+    scopeView.prepare(s, clock.skyMs(), bound);
   }
   lastInput = performance.now();
   dirty = true;
@@ -395,11 +397,27 @@ onEsc(() => {
 // A skip by tap or Esc draws the wide shot on the next frame.
 // A skip also ends a pause.
 cuts.onSkip(() => { setPaused(false); dirty = true; wake(); });
-// The glass shot opens into the view through the telescope.
+// The cuts end in the view through the telescope.
 // The scene sleeps while the view shows.
-cuts.through({ ...scopeView.hooks, done() { scopeView.hooks.done(); setPaused(true); } });
+cuts.through(scopeView.hooks);
+// The bar leaves while the view shows; the monogram stays.
+scopeView.onOpen(() => { setPaused(true); ui.hideControls(); });
+// The bar's way in: a dip to black, then the view of the chosen telescope.
+lookHooks.go = () => {
+  const s = machine.target;
+  if (!s || cuts.busy || !opening.done || scopeView.showing) return;
+  scopeView.enter(s, clock.skyMs(), bound);
+};
 // A close fades the wide shot up from black.
-scopeView.onClose(() => { setPaused(false); cuts.back(); dirty = true; wake(); });
+// The shell has no call to show the bar again, so the toy clears its bare flag.
+scopeView.onClose(() => {
+  const shell = document.querySelector<HTMLElement>('.stim-ui');
+  if (shell) delete shell.dataset.bare;
+  setPaused(false);
+  cuts.back();
+  dirty = true;
+  wake();
+});
 
 // A hidden page stops the loop at once.
 whenVisible(stageEl, (vis: boolean) => {

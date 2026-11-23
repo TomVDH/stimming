@@ -132,5 +132,15 @@ Tom: keep the current fidelity; make every control we have work; add smart toolt
 - [x] Brass and felt tooltips on the eyepiece case, the clock drive and the telescope switch
 - [ ] Tom sees the tips
 
+## Round 9: a way into the telescope (Tom, 2026-11-23)
+
+Tom: "also lacking an action to go into the telescope itself -- though we want the cuts to kind of stream into it with the smooth black wipe we had before". Names: Little Observatory (the refractor) and Big Observatory (the 1 m).
+
+- [x] Bar action "Look through · Little Observatory" or "· Big Observatory" (key L) while the chosen telescope holds a star; the stage dips to black and the view fades up (view/through.ts)
+- [x] The view loads for either telescope: sim.html?embed&scope=small|big; the Big Observatory opens the 1 m's program
+- [x] The bar leaves while the view shows and comes back after Back to the dome; the monogram stays
+- [ ] The cuts end in the dip to black, then the view fades up from it, for both observatories: view/cuts.ts, owned by the cuts chat (local_fddee57f); through.ts fades up from black when no iris ran
+- [ ] Tom sees the way in
+
 Merged to main on 2026-11-22 (5e9c4a6a, 7937852b).
 Round 7 merged to main on 2026-11-23 with the selector and cuts chain (claude/obs-sim-integrate).

@@ -1,10 +1,12 @@
-// The view through the telescope, after the cuts.
+// The view through the telescope, after the cuts or from the bar.
 // The simulator page runs in a frame over the stage.
-// It loads while the cuts play and draws once the push starts.
+// It loads while the cuts play and draws once it opens.
 import { reduced } from '../../../shared/stim.js';
 import type { Star } from '../core/catalog.ts';
 import type { Circle, Through } from './cuts.ts';
 import { stageEl } from '../setup.ts';
+
+import type { Scope } from '../core/selector.ts';
 
 // The bundle sits in dist/; the page sits next to dist/.
 const PAGE = new URL('../sim.html', import.meta.url).href;
@@ -12,12 +14,27 @@ const PAGE = new URL('../sim.html', import.meta.url).href;
 const IN_FROM = 0.3, IN_TO = 0.85;
 // The iris stays this share inside the glass's rim.
 const RIM = 0.92;
+// From black, the view fades up in this many seconds.
+const UP_S = 0.45;
+// The bar's way in: the stage dips to black in this many seconds.
+const DOWN_S = 0.35;
 // The view fades out in this many seconds.
 const OUT_S = 0.35;
 
 let frame: HTMLIFrameElement | null = null;
-// true once the push starts: the frame then draws.
+// The star and the telescope the frame was loaded for.
+let loaded: { hip: number; scope: Scope } | null = null;
+// true once the view starts to open: the frame then draws.
 let going = false;
+// true once the push's iris has drawn the frame.
+let irised = false;
+// The black over the stage for the bar's way in.
+let veil: HTMLDivElement | null = null;
+// The bar's chip for the way in, found once.
+let lookChip: HTMLElement | null = null;
+// The action's label in setup.ts.
+export const LOOK = 'Look through';
+let onOpen: () => void = () => {};
 let onClose: () => void = () => {};
 
 const smooth = (a: number, b: number, x: number): number => {
@@ -32,7 +49,9 @@ function post(msg: 'go'): void {
 function drop(): void {
   frame?.remove();
   frame = null;
+  loaded = null;
   going = false;
+  irised = false;
 }
 
 // The frame says it is ready or asks to close.
@@ -44,36 +63,82 @@ window.addEventListener('message', (e) => {
   if (d?.obsSim === 'close') close();
 });
 
+// Fades an element's opacity to a value in s seconds.
+function fade(el: HTMLElement, to: number, s: number, ease: string): void {
+  if (reduced()) { el.style.transition = 'none'; el.style.opacity = String(to); return; }
+  el.style.transition = `opacity ${s}s ${ease}`;
+  el.style.opacity = String(to);
+}
+
 // The view fades out over the black; the wide shot fades up under it.
 function close(): void {
   const f = frame;
   if (!f) return;
   frame = null;
+  loaded = null;
   going = false;
+  irised = false;
+  // The bar's veil lifts itself; the cuts lift their own black.
+  const v = veil;
+  veil = null;
   onClose();
   stageEl.focus();
-  if (reduced()) { f.remove(); return; }
-  f.style.transition = `opacity ${OUT_S}s ease-in`;
-  f.style.opacity = '0';
+  fade(f, 0, OUT_S, 'ease-in');
   f.style.pointerEvents = 'none';
-  setTimeout(() => f.remove(), OUT_S * 1000 + 50);
+  setTimeout(() => f.remove(), reduced() ? 0 : OUT_S * 1000 + 50);
+  if (v) {
+    fade(v, 0, UP_S, 'ease-out');
+    setTimeout(() => v.remove(), reduced() ? 0 : UP_S * 1000 + 50);
+  }
 }
 
 export const scopeView = {
   // Loads the view on a star while the cuts play.
   // skyMs: the toy's sky time now.
-  prepare(s: Star, skyMs: number): void {
+  prepare(s: Star, skyMs: number, scope: Scope): void {
     drop();
     const f = document.createElement('iframe');
-    f.src = `${PAGE}?embed&ra=${s.ra.toFixed(5)}&dec=${s.dec.toFixed(5)}&t=${Math.round(skyMs)}`;
+    f.src = `${PAGE}?embed&scope=${scope === 'reflector' ? 'big' : 'small'}&ra=${s.ra.toFixed(5)}&dec=${s.dec.toFixed(5)}&t=${Math.round(skyMs)}`;
     f.title = 'The view through the telescope';
     f.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;border:0;z-index:4;background:#000;visibility:hidden;opacity:0';
     stageEl.append(f);
     frame = f;
+    loaded = { hip: s.hip, scope };
   },
-  // The loop sets what follows a close.
+  // true while a view is open or opening.
+  get showing(): boolean { return going; },
+  // The bar's way in: the stage dips to black, then the view fades up.
+  enter(s: Star, skyMs: number, scope: Scope): void {
+    if (going) return;
+    if (!frame || loaded?.hip !== s.hip || loaded.scope !== scope) scopeView.prepare(s, skyMs, scope);
+    const v = document.createElement('div');
+    v.style.cssText = 'position:absolute;inset:0;z-index:3;background:#000;opacity:0;pointer-events:none';
+    stageEl.append(v);
+    veil = v;
+    going = true;
+    // The start style must land before the fade.
+    void v.offsetWidth;
+    fade(v, 1, DOWN_S, 'ease-in');
+    setTimeout(() => {
+      if (veil !== v || !frame) return;
+      scopeView.hooks.begin();
+      scopeView.hooks.done();
+    }, reduced() ? 0 : DOWN_S * 1000);
+  },
+  // Shows the bar's way in while a telescope holds a star.
+  // The label names the observatory, in plain words.
+  syncBar(show: boolean, scope: Scope): void {
+    lookChip ??= [...document.querySelectorAll<HTMLElement>('.s2-chip')].find(b => b.querySelector('.s2-label')?.textContent === LOOK) ?? null;
+    if (!lookChip) return;
+    if (lookChip.hidden !== !show) lookChip.hidden = !show;
+    const text = `${LOOK} · ${scope === 'reflector' ? 'Big' : 'Little'} Observatory`;
+    const label = lookChip.querySelector('.s2-label');
+    if (label && label.textContent !== text) label.textContent = text;
+  },
+  // The loop sets what follows an open and a close.
+  onOpen(fn: () => void): void { onOpen = fn; },
   onClose(fn: () => void): void { onClose = fn; },
-  // The hooks the cuts call through the push.
+  // The hooks the cuts call at their end.
   hooks: {
     begin(): void {
       if (!frame) return;
@@ -81,19 +146,32 @@ export const scopeView = {
       frame.style.visibility = 'visible';
       post('go');
     },
-    // The view opens as an iris in the glass.
+    // The push's iris: the view opens in the glass.
+    // c: null for reduced motion.
     step(k: number, c: Circle | null): void {
       if (!frame) return;
+      irised = true;
       frame.style.opacity = String(smooth(IN_FROM, IN_TO, k));
       frame.style.clipPath = c ? `circle(${(c.r * RIM).toFixed(1)}px at ${c.x.toFixed(1)}px ${c.y.toFixed(1)}px)` : 'none';
     },
+    // After the iris the view is in; from black it fades up.
     done(): void {
       if (!frame) return;
-      frame.style.opacity = '1';
+      if (irised) frame.style.opacity = '1';
+      else {
+        // The start style must land before the fade.
+        void frame.offsetWidth;
+        fade(frame, 1, UP_S, 'ease-out');
+      }
       frame.style.clipPath = 'none';
       frame.focus();
+      onOpen();
     },
-    cancel(): void { drop(); },
+    cancel(): void {
+      drop();
+      veil?.remove();
+      veil = null;
+    },
     has(): boolean { return !!frame; },
   } satisfies Through,
 };

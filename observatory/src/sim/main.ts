@@ -1217,6 +1217,12 @@ async function boot(): Promise<void> {
     aim = { x: b.x, y: b.y, z: b.z };
     pose = shellToPose(aim, rowsNow());
   }
+  // The toy names the telescope it looks through.
+  if (params.get('scope') === 'big') {
+    const el = document.querySelector<HTMLInputElement>('input[name="scope"][value="big"]');
+    if (el) el.checked = true;
+    setScope(BIG);
+  }
   resize();
   toToy('ready');
 }

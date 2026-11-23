@@ -16,6 +16,9 @@ export const camHooks: { set?(key: string, v: number): void; copy?(): void; shot
 const camRow = (key: string, label: string, min: number, max: number, step: number) =>
   ({ type: 'slider' as const, id: `cam-${key}`, group: 'Cut camera', label, min, max, step, value: 0, onInput: (v: number) => camHooks.set?.(key, v) });
 
+// The bar's way into the telescope; loop.ts fills it.
+export const lookHooks: { go?(): void } = {};
+
 // The sky rows' hooks; loop.ts fills them after load.
 export const skyHooks: { night?(id: string): void; sky?(b: number): void; site?(id: string): void } = {};
 
@@ -28,6 +31,8 @@ export const ui = initPage({
       options: NIGHTS.map(n => ({ value: n.id, label: n.label })),
       onPick: (v: string) => skyHooks.night?.(v),
     },
+    // Look through: into the chosen telescope; view/through.ts names the observatory.
+    actions: [{ verb: 'look', label: 'Look through', key: 'L', onPress: () => lookHooks.go?.() }],
     // City light: the Bortle class, 1 a pristine sky, 9 a city sky.
     slider: { label: 'City light', min: 1, max: 9, step: 1, value: 2, onInput: (v: number) => skyHooks.sky?.(v) },
     // Site: the latitude the sky turns over; the hill stays.
@@ -56,6 +61,7 @@ export const ui = initPage({
       ['move', 'Find a star'],
       ['click', 'Hold a star, then choose an observatory'],
       ['1 2', 'Choose Little or Big Observatory'],
+      ['l', 'Look through the telescope'],
       ['esc', 'Let go, or skip ahead'],
     ],
   },
