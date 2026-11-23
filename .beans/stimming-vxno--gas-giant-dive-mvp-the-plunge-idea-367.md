@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T22:45:00Z
+updated_at: 2026-11-23T23:05:00Z
 parent: stimming-oh7b
 ---
 
@@ -31,6 +31,7 @@ MVP: the plunge from 260 km over the cloud deck to crush depth, 640 km down (Tom
 - [ ] Void ceilings after Tornado alley's storm base (first pass in; relief not yet at Tornado alley's level)
 - [x] Lo-fi diagram of all possible layers to the crush (docs/plans/gasgiant-layers.svg)
 - [x] Dev sheet: go to a layer, free look, light tuning (?dev)
+- [x] Tom, 2026-11-23: god rays through breaks, light pools, scale
 - [ ] More weirdness in the voids
 - [ ] Tom's later pass: the window effects for the deep layers
 - [ ] Record link times, frame times and the session cost

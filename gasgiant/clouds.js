@@ -57,6 +57,8 @@ uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
 uniform vec4 uFlash[4];
 // Dev tuning: multiple scatter, ambient, bounce, haze reach.
 uniform vec4 uTune;
+// Dev tuning: the strength of the god rays.
+uniform float uRays;
 ${COMMON}
 ${CLOUDS}
 const float SIG = 1.1;
@@ -112,6 +114,25 @@ float sheets(float h, float bot, float gap, float thick, float nb, float hole, f
   return (1.0 - smoothstep(th * 0.3, th + 0.4 + lod, abs(y))) * cov;
 }
 float band(float h, float lo, float hi, float w) { return smoothstep(lo - w, lo + w, h) * (1.0 - smoothstep(hi - w, hi + w, h)); }
+// A break in a void's ceiling: ragged gaps 20 to 40 km across that drift slowly.
+// The same gap runs through the deck above, so light falls through it.
+// soft widens the edge: light through a thick deck spreads into a penumbra.
+float breakAt(vec2 xz, float seed, float soft) {
+  vec4 v = textureLod(uVol, vec3(xz / 260.0 + vec2(uT * 0.00004, fract(seed * 0.71)), fract(seed * 0.37)), 0.0);
+  return smoothstep(0.64 - soft, 0.72 + 0.3 * soft, v.a + 0.1 * (v.r - 0.5));
+}
+// The void round a height, floor included: its ceiling and its seed. x under -1000 means none.
+vec2 voidOver(float h) {
+  return h > -30.0 && h < 0.0 ? vec2(2.0, 3.1) : h > -70.0 && h < -38.0 ? vec2(-38.0, 7.7)
+    : h > -236.0 && h < -158.0 ? vec2(-158.0, 11.3) : h > -366.0 && h < -262.0 ? vec2(-262.0, 5.9) : vec2(-1e4, 0.0);
+}
+// The share of the light from above that reaches p through a break.
+float shaftAt(vec3 p, float h, vec3 ld, vec3 upv, vec2 vo) {
+  vec3 q = p + ld * ((vo.x - h) / max(dot(ld, upv), 0.2));
+  return breakAt(q.xz, vo.y, 0.12);
+}
+// The light's way down in the decks: slanted to the sun's side.
+vec3 deepLight(vec3 upv) { return normalize(upv * 0.75 + normalize(SUN - upv * dot(SUN, upv)) * 0.66); }
 // Storm curtains and rare twisters in a void from flo to cei.
 // cu is the share of storm cells with a curtain; tw the share of curtains with a twister.
 // Storms gather where convection does, as the towers do.
@@ -216,7 +237,7 @@ float dens(vec3 p, float lod, float fine) {
       // Holes open in the low belts; zones and the storm stay closed.
       float cov = smoothstep(0.22, 0.42, nc.a + 0.55 * (m.r - 0.45) + 0.08 * (nb - 0.5));
       // A crisp top near the eye lets the heads cast shadows.
-      d = smoothstep(0.0, 0.35 + 0.85 * lod, sh) * (0.55 + 0.45 * n1.b) * cov;
+      d = smoothstep(0.0, 0.35 + 0.85 * lod, sh) * (0.55 + 0.45 * n1.b) * cov * (1.0 - breakAt(p.xz, 3.1, 0.0));
       // Hue drifts a little with the billows, so the colours blend in the cloud.
       // Valleys between heads see less sky; their colour runs deeper.
       float ao = clamp(0.5 + 0.2 * rel, 0.2, 1.15);
@@ -234,7 +255,7 @@ float dens(vec3 p, float lod, float fine) {
       // The brown deck: a floor above, a ceiling below, a few breaks.
       float cov = smoothstep(0.3, 0.48, 1.0 - nc.a + 0.08 * (nb - 0.5));
       float sh = min(-24.0 + 4.0 * (nb - 0.5) - h, (h + 40.0) * 0.8);
-      d = smoothstep(0.0, 1.6 + lod, sh) * cov * 0.85;
+      d = smoothstep(0.0, 1.6 + lod, sh) * cov * 0.85 * (1.0 - breakAt(p.xz, 7.7, 0.0));
       gAlb = mix(pal(0.34), pal(0.6), n1.a);
       gOpen = clamp(1.0 - (-24.0 - h) / 6.0, 0.0, 1.0);
     } else if (h > -64.0) {
@@ -277,7 +298,7 @@ float dens(vec3 p, float lod, float fine) {
       float base = -265.0;
       float sh = min(top - h, (h - base) * 0.8);
       float cov = smoothstep(0.22, 0.42, nc.a + 0.12);
-      d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov;
+      d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov * (1.0 - breakAt(p.xz, 5.9, 0.0));
       gAlb = mix(vec3(0.36, 0.34, 0.74), pal(0.5), 0.35 * n1.a);
       gOpen = clamp(1.0 - (top - h) / 8.0, 0.0, 1.0);
     } else if (h > -360.0) {
@@ -336,7 +357,8 @@ float dens(vec3 p, float lod, float fine) {
         sc = smoothstep(0.6, 0.8, n2.r + 0.2 * (n1.b - 0.5)) * band(h, cb - 3.0, cb - 0.3, 0.6) * 0.45;
       }
       float dc = smoothstep(0.0, 0.25 + 0.5 * lod, h - cb) * (0.7 + 0.3 * n1.b);
-      float dd = max(dc, sc);
+      float br = breakAt(p.xz, vd.z, 0.0);
+      float dd = max(dc * (1.0 - br), sc * (1.0 - 0.5 * br));
       if (dd > d) {
         d = dd;
         gAlb = mix(pal(vk.w + 0.08 * n1.a), vec3(0.8), 0.25);
@@ -416,7 +438,7 @@ void main() {
         vec4 L = lut(h);
         // Under the deck tops the light comes down through the ceiling, slanted to the sun's side.
         vec3 upv = normalize(p - PC);
-        vec3 ld = normalize(mix(upv * 0.75 + normalize(SUN - upv * dot(SUN, upv)) * 0.66, SUN, L.a));
+        vec3 ld = normalize(mix(deepLight(upv), SUN, L.a));
         // Fire's smoke: Beer, multiple scatter, powder, a shadow ambient.
         // Far clouds in the decks take a mean depth; far ones seen from above take none.
         float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod) : inWin ? 3.0 : 0.0);
@@ -430,6 +452,9 @@ void main() {
         // The light from above lights what it reaches; it glows forward when the eye looks toward it.
         float phD = mix(1.0, clPhase(dot(rd, ld)), 0.4);
         vec3 diffuse = L.rgb * (1.0 - L.a) * (0.07 + 0.45 * open * open + 1.0 * lit * phD) * uTune.y;
+        // In a void the light comes mostly through the breaks: pools of light, wide shade.
+        vec2 vo = voidOver(h);
+        if (vo.x > -1e3) diffuse *= mix(0.5, 1.0 + 0.9 * uRays, shaftAt(p, h, ld, upv, vo));
         vec3 sky = SKY_C * L.a * (0.25 + 0.75 * open) * (0.6 + 0.4 * ring);
         // The lit floor bounces its light up onto the ceiling's underside.
         vec3 bounce = L.rgb * mix(vec3(1.0), bc * 1.3, 0.5) * (1.0 - L.a) * uTune.z * 2.0 * under;
@@ -456,7 +481,17 @@ void main() {
           + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -385.0, 6.0) + 40.0 * step(hg, -500.0);
         float sg = 1.0 / (mfp * uTune.w);
         float ag = 1.0 - exp(-sg * ds * 1.6);
-        col += T * lut(hg).rgb * vec3(0.38, 0.42, 0.44) * ag;
+        vec3 gs = lut(hg).rgb * vec3(0.38, 0.42, 0.44);
+        // God rays: in a void the gas glows where light falls through a break.
+        // The shafts glow most when the eye looks toward the light.
+        vec2 vo = voidOver(hg);
+        if (vo.x > -1e3) {
+          vec3 upg = normalize(p - PC);
+          vec3 lg = deepLight(upg);
+          float sh = shaftAt(p, hg, lg, upg, vo);
+          gs = gs * 0.55 + lut(vo.x + 6.0).rgb * sh * mix(1.0, clPhase(dot(rd, lg)), 0.8) * 4.0 * uRays;
+        }
+        col += T * gs * ag;
         T *= 1.0 - ag;
       }
       t += ds * (dn > 0.003 ? 1.0 : 1.6);

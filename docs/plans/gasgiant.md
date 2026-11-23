@@ -171,7 +171,21 @@ Tom: "take inspo from the look of the storm deck in tornado alley -- esp from th
 | Ceilings | Each void draws its ceiling as a storm base: a warped field of lumps 12 km across and up to 4.5 km deep, small lumps on them, broad rolls, billows on the skin, scud under it. The deck above runs down to the void's top. Crests catch the floor's light in its colour; folds go black. First pass: it has not yet reached Tornado alley's sculpted relief (`docs/qa/tornado-scene/deck-F2.5.jpg`). |
 | March | At the first hit in a deck the march steps back and comes in at a fifth of the step, so a crisp skin is not stepped over. |
 | Diagram | `gasgiant-layers.svg` (and `.png`): the fourteen built layers, and eight that could go in, to the crush at 640 km. |
-| Dev | `?dev`: Go to a layer, free pitch and yaw, sun direction, exposure, eye gain cap, light into cloud, ambient, floor bounce, haze reach, flash strength. The sun is a uniform now. |
+| Dev | `?dev`: Go to a layer, free pitch and yaw, god rays, sun direction, exposure, eye gain cap, light into cloud, ambient, floor bounce, haze reach, flash strength. The sun is a uniform now. |
+
+### God rays and scale (Tom, 2026-11-23)
+
+Tom: "we want protruding god rays in the distance and evoke a sense of scale with smart lighting and layering".
+
+| Part | Change |
+|---|---|
+| Breaks | Ragged gaps 20 to 40 km across, from one wide noise field per void, cut through the void's ceiling and the deck above it. They drift slowly. |
+| Shafts | Each gas step in a void follows the slanted light up to the ceiling; under a break the gas scatters the light from above the ceiling, brightest toward the light. The shafts lean 49 degrees to the sun's side. |
+| Pools | Floors, towers and twisters in a void take the light from above through the breaks, with a soft penumbra; the rest lies at half light. |
+| Scale | Lit pools and dark bands layer the floor to the horizon; from above, a break opens onto the lit void below. |
+| Dev | A God rays slider (0 to 4). |
+
+Frame time 7.8 to 7.9 ms in the voids. The march links in 1.9 s on D3D11 (all passes 2.5 s): near the 3 s budget.
 
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
