@@ -29,7 +29,8 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 | Tap a half | It hops and wobbles and throws a few drops. |
 | Hold a half | That half squashes and drips juice from its face; release: it springs back and squirts. |
 | Drag the background | The lights swing round the fruit. From behind, light comes through the skin and the flesh. |
-| Tap the gap | Join: the halves meet with a thunk. |
+| Swipe across a half or a wedge | It splits lengthwise, along the swipe: two wedges open like a book, each with a lengthwise cut face. Wedges split again while they are wide enough. |
+| Tap the gap | Join: every piece slides back, the wedges become the two halves, which meet with a thunk. |
 | Pick a fruit | The fruit on stage rolls off to the left; the new one rolls in from the right. |
 | Keys | 1 to 0 pick a fruit, Space slices or joins, hold S squeezes |
 
@@ -45,6 +46,7 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 |---|---|---|
 | Depth | `half.js` | The cut-face shader passes the view ray's slide per unit depth (`gPar`); a fruit samples its flesh again below the cut. |
 | Light | `glsl.js` | Wrap diffuse with a scatter tint; reflections of a procedural studio (key, rim, fill and top softboxes) blurred by roughness; Schlick Fresnel |
+| Wedges | `main.js`, `half.js` | A piece is a half's meshes with a sector round the axis: every shader of the half drops what lies outside it. Pieces clone the half's meshes with their own uniforms, relinked to the light rig. A lengthwise cut face draws the fruit's own cross-section pattern, read by depth toward the skin and turned slowly along the length; fruits with open chambers fill them with juice cells there. Each piece finds its own floor contact. |
 | Floor | `main.js` | The whole fruit's lowest skin point sets its rest height. Each frame an open half finds its lowest hull point in its new pose and sits there; its own squash keeps that point down. |
 | Light through | `half.js` | For each skin point, the path each light runs inside the fruit's ellipsoid to reach it (cut short at an open half's face); Beer-Lambert in the fruit's own colour, brightest looking toward the light. Cut faces glow more toward the back light. |
 | Halves | `half.js` | A lathe skin per half, the cut face at x = 0. The join ring's normals lie in the cut plane, and a press on the whole fruit dents both halves, so the seam never shows. Skin colour, specks and pores run in fruit space, so the seam does not show. |

@@ -36,6 +36,7 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
 - [x] Halves jiggle, squish and drip juice on their own
 - [x] Backlit subsurface scattering (drag the background to swing the light)
 - [x] Juice puddle: drops pool, spread, hold an edge, mirror the fruit (QA 25)
+- [x] Wedges: swipe a half or wedge to split it lengthwise along the swipe (QA 26)
 - [ ] Menu icon for Fruit slice (the tile still shows the kiwi of round kiwi-1)
 - [ ] Tom sets the Dutch name
 - [ ] Tom hears the sound

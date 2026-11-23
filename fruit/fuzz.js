@@ -18,7 +18,7 @@ uniform vec3 uFlow, uGrav;
 attribute float aT, aSide;
 attribute vec3 aRoot, aNrm;
 attribute vec4 aRnd;
-varying vec3 vT, vW, vNs;
+varying vec3 vT, vW, vNs, vRootL;
 varying float vTt, vCov, vRootK;
 vec3 bez(vec3 a, vec3 b, vec3 c, vec3 d, float t) {
   float s = 1.0 - t;
@@ -63,15 +63,17 @@ void main() {
   vNs = normalize(mat3(modelMatrix) * n);
   vTt = aT;
   vRootK = aRnd.w;
+  vRootL = aRoot;
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
 
 const FRAG = /* glsl */`
 ${LIGHT}
 uniform vec3 uRoot0, uRoot1, uTip, uTrans;
-varying vec3 vT, vW, vNs;
+varying vec3 vT, vW, vNs, vRootL;
 varying float vTt, vCov, vRootK;
 void main() {
+  secClip(vRootL);
   vec3 T = normalize(vT);
   vec3 V = normalize(cameraPosition - vW);
   vec3 ns = normalize(vNs);
@@ -140,7 +142,7 @@ export function makeFuzz(halves, L, F) {
     const su = skin.material.uniforms;
     const U = {
       ...L, uDent: su.uDent, uJig: su.uJig, uJigT: su.uJigT,
-      uSide: su.uSide, uRoot0: v3(Z.root[0]), uRoot1: v3(Z.root[1]), uTip: v3(Z.tip), uTrans: v3(Z.trans), uLen: { value: 0.07 }, uWidth: { value: 0.0045 }, uLift: { value: Z.lift ?? 0.38 }, uPatch: { value: Z.patch ?? 0 }, uCurl: { value: Z.curl ?? 0 }, uRuffle: { value: 0 }, uPx: { value: 0.001 },
+      uSide: su.uSide, uSec: su.uSec, uRoot0: v3(Z.root[0]), uRoot1: v3(Z.root[1]), uTip: v3(Z.tip), uTrans: v3(Z.trans), uLen: { value: 0.07 }, uWidth: { value: 0.0045 }, uLift: { value: Z.lift ?? 0.38 }, uPatch: { value: Z.patch ?? 0 }, uCurl: { value: Z.curl ?? 0 }, uRuffle: { value: 0 }, uPx: { value: 0.001 },
       uFlow: { value: new THREE.Vector3() }, uGrav: { value: new THREE.Vector3(0, -1, 0) },
     };
     const m = new THREE.ShaderMaterial({ uniforms: U, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, alphaToCoverage: true, transparent: false });

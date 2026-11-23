@@ -53,7 +53,10 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
   float mid = 1.0 - smoothstep(pithR(a) - 0.01, pithR(a) + 0.01, r);
   float rind = smoothstep(rindR(a) - 0.01, rindR(a) + 0.005, r);
   // The chambers are open: the arils show down to the floor.
+  // A lengthwise cut shows the arils as packed ruby cells instead.
+#ifndef LONGFACE
   if (max(max(wall, mid), rind) < 0.5) discard;
+#endif
   // Pith: cream with a yellow cast, pink toward the rind; pores darker.
   vec2 sp = sponge(f);
   vec3 cream = mix(vec3(0.56, 0.44, 0.2), vec3(0.66, 0.56, 0.3), vn(vec3(f * 14.0, 2.0)));
@@ -68,7 +71,19 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
   col *= 0.5 + 0.5 * smoothstep(0.5, 0.98, solid);
   // The skin at the edge: a thin red line.
   col = mix(col, vec3(0.3, 0.02, 0.025), smoothstep(0.962, 0.972, r));
+#ifdef LONGFACE
+  // A lengthwise cut shows the arils as packed ruby cells, each seed a pale fleck.
+  if (max(max(wall, mid), rind) < 0.5) {
+    vec2 ce = cellEdge(f * 16.0);
+    vec2 cc = cells(f * 16.0);
+    vec3 ar = mix(vec3(0.16, 0.004, 0.012), vec3(0.62, 0.02, 0.05), smoothstep(0.0, 0.35, ce.x));
+    col = mix(ar, vec3(0.5, 0.36, 0.3), (1.0 - smoothstep(0.1, 0.18, cc.x)) * step(0.4, cc.y));
+  }
+#endif
   glow = (1.0 - max(max(wall, mid), rind)) * 0.3 + wall * 0.5;
+#ifdef LONGFACE
+  if (max(max(wall, mid), rind) < 0.5) glow = 0.7;
+#endif
   return col;
 }`;
 

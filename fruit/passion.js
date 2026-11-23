@@ -15,7 +15,9 @@ float relief(vec2 f) { return 0.0014 * smoothstep(0.0, 0.25, sponge(f).x) + 0.00
 vec3 bed(vec2 f, float r, float a, inout float glow) {
   // The cavity is open: the pulp shows down to the juice below.
   float cav = ${CAV.toFixed(3)} + 0.012 * sin(a * 9.0 + 1.0) + 0.006 * sin(a * 23.0);
+#ifndef LONGFACE
   if (r < cav - 0.004) discard;
+#endif
   // The pith: thick and cream, spongy, a faint purple flush near the shell.
   vec2 sp = sponge(f);
   vec3 col = mix(vec3(0.6, 0.56, 0.46), vec3(0.68, 0.64, 0.52), vn(vec3(f * 10.0, 3.0)));
@@ -28,6 +30,16 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
   // The shell at the edge: dark purple.
   col = mix(col, vec3(0.1, 0.02, 0.07), smoothstep(0.958, 0.968, r));
   glow = lin * 0.4;
+#ifdef LONGFACE
+  // A lengthwise cut shows the pulp as golden sacs, a black seed in each.
+  if (r < cav - 0.004) {
+    vec2 ce = cellEdge(f * 12.0);
+    vec2 cc = cells(f * 12.0 + 0.3);
+    vec3 sac = mix(vec3(0.35, 0.16, 0.005), vec3(0.9, 0.55, 0.03), smoothstep(0.0, 0.35, ce.x));
+    col = mix(sac, vec3(0.015, 0.01, 0.008), 1.0 - smoothstep(0.1, 0.17, cc.x));
+    glow = 0.8;
+  }
+#endif
   return col;
 }`;
 

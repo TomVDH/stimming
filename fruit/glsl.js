@@ -9,6 +9,11 @@ uniform float uTime;
 float toon(float x) { return smoothstep(0.0, 1.0, x); }
 float toon2(float x) { return 0.35 * smoothstep(-0.05, 0.05, x) + 0.65 * smoothstep(0.45, 0.55, x); }
 vec3 hemi(vec3 n) { return mix(uGround, uSky, n.y * 0.5 + 0.5); }
+// A piece of a half is a sector round the axis: x its start, y its span, z on.
+uniform vec4 uSec;
+void secClip(vec3 p) {
+  if (uSec.z > 0.5 && mod(atan(p.z, p.y) - uSec.x, 6.2832) > uSec.y) discard;
+}
 float h12(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float h13(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
 float vn(vec3 p) {

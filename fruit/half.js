@@ -93,6 +93,7 @@ export function skinMaterial(U, look) {
       uniform float uThruK, uCut;
       varying vec3 vW, vN, vL, vKeyL, vRimL;
       void main() {
+        secClip(vL);
         vec3 n = normalize(vN);
         vec3 v = normalize(cameraPosition - vW);
         // Colour and pores in fruit space, so the seam does not show.
@@ -165,23 +166,15 @@ function ringGeometry([hy, hz]) {
   return g;
 }
 
-// The cut face's bed: a disc in the cut plane, a hair under the beads.
+// The cut face's shader: each fruit gives bed() for colour and relief() for the wet film.
 // bed is GLSL: vec3 bed(vec2 f, float r, float a, inout float glow).
 // The GLSL also gives float relief(vec2 f): the cut's height, for the wet film.
-export function bedMesh(U, F, bed, { depth = 0.012, wet = 1, rough = 0.5, wrap = 0.6, bumpK = 1, hole = null } = {}) {
-  const g = hole ? ringGeometry(hole) : new THREE.CircleGeometry(1, 128);
-  // The rim follows the fruit's own outline at the cut, crease and all.
-  const P = g.attributes.position;
-  for (let i = 0; i < P.count; i++) {
-    const x = P.getX(i), y = P.getY(i), ph = Math.atan2(-x, y), k = F.shape(0, ph, 0);
-    P.setXY(i, x * k, y * k);
-  }
-  g.rotateY(Math.PI / 2);
-  g.scale(1, F.B, F.C);
-  g.translate(-depth, 0, 0);
-  const m = new THREE.ShaderMaterial({
-    uniforms: U,
-    vertexShader: `${VERT_HEAD}\nvarying vec2 vF;\nvarying vec3 vTy, vTz;\nvoid main() {\nvF = vec2(position.y / ${F.B.toFixed(3)}, position.z / ${F.C.toFixed(3)});\nvTy = normalize(mat3(modelMatrix) * vec3(0, 1, 0));\nvTz = normalize(mat3(modelMatrix) * vec3(0, 0, 1));\n${DENTED}\n}`,
+// vert sets vF (the face pattern's point) and vTy, vTz (its two directions, in world space).
+function bedMaterial(U, bed, vert, { wet = 1, rough = 0.5, wrap = 0.6, bumpK = 1 } = {}, defines = {}) {
+  return new THREE.ShaderMaterial({
+    uniforms: U, defines,
+    side: defines.LONGFACE ? THREE.DoubleSide : THREE.FrontSide,
+    vertexShader: `${VERT_HEAD}\nvarying vec2 vF;\nvarying vec3 vTy, vTz;\n${vert}`,
     fragmentShader: /* glsl */`
       ${LIGHT}
       uniform float uGlow;
@@ -193,17 +186,26 @@ export function bedMesh(U, F, bed, { depth = 0.012, wet = 1, rough = 0.5, wrap =
       vec2 gPar;
       ${bed}
       void main() {
+        secClip(vL);
         float r = length(vF);
         float a = atan(vF.y, vF.x);
         vec3 n = normalize(vN);
         vec3 v = normalize(cameraPosition - vW);
+#ifdef LONGFACE
+        // A lengthwise face is two-sided: its normal turns to the eye.
+        if (dot(n, v) < 0.0) n = -n;
+#endif
         gPar = vec2(dot(v, vTy), dot(v, vTz)) / max(dot(v, n), 0.25);
+#ifdef LONGFACE
+        // A lengthwise face maps the pattern loosely: no depth layer, a gentle relief.
+        gPar = vec2(0.0);
+#endif
         float glow = 0.0;
         vec3 col = bed(vF, r, a, glow);
         // The cut is wet: its relief breaks a film of juice.
         float e = 0.0012;
         float h0 = relief(vF), hy = relief(vF + vec2(e, 0.0)), hz = relief(vF + vec2(0.0, e));
-        vec3 nw = normalize(n - (vTy * (hy - h0) + vTz * (hz - h0)) / e * ${bumpK.toFixed(2)});
+        vec3 nw = normalize(n - (vTy * (hy - h0) + vTz * (hz - h0)) / e * ${bumpK.toFixed(2)} * ${defines.LONGFACE ? '0.15' : '1.0'});
         // A cut face tips up into the key; flesh holds less light than paint.
         vec3 lit = shade(col * 0.72, nw, v, ${rough.toFixed(2)}, ${wrap.toFixed(2)}, col * 0.45, 0.0);
         // Glow: the back light soaks through the thin flesh, most when we look toward it.
@@ -213,7 +215,59 @@ export function bedMesh(U, F, bed, { depth = 0.012, wet = 1, rough = 0.5, wrap =
         gl_FragColor = vec4(lit, 1.0);
       }`,
   });
-  return new THREE.Mesh(g, m);
+}
+
+// The cut face's bed: a disc in the cut plane, a hair under the beads.
+export function bedMesh(U, F, bed, opts = {}) {
+  const { depth = 0.012, hole = null } = opts;
+  const g = hole ? ringGeometry(hole) : new THREE.CircleGeometry(1, 128);
+  // The rim follows the fruit's own outline at the cut, crease and all.
+  const P = g.attributes.position;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i), y = P.getY(i), ph = Math.atan2(-x, y), k = F.shape(0, ph, 0);
+    P.setXY(i, x * k, y * k);
+  }
+  g.rotateY(Math.PI / 2);
+  g.scale(1, F.B, F.C);
+  g.translate(-depth, 0, 0);
+  const vert = `void main() {\nvF = vec2(position.y / ${F.B.toFixed(3)}, position.z / ${F.C.toFixed(3)});\nvTy = normalize(mat3(modelMatrix) * vec3(0, 1, 0));\nvTz = normalize(mat3(modelMatrix) * vec3(0, 0, 1));\n${DENTED}\n}`;
+  const mesh = new THREE.Mesh(g, bedMaterial(U, bed, vert, opts));
+  // A lengthwise cut later draws its flesh from the same source.
+  mesh.userData.bedSrc = { bed, opts };
+  return mesh;
+}
+
+// A lengthwise cut face: the plane through the axis at angle phi, in a half of fruit F.
+// Its flesh is the fruit's own cross-section pattern, read by depth toward the skin;
+// the pattern turns slowly along the length, so the cut is not one long streak.
+export function longFaceMesh(U, F, src, phi, e) {
+  const NT = 40, NR = 24, pos = [], uvF = [], nrm = [], idx = [];
+  const c = Math.cos(phi), s = Math.sin(phi);
+  for (let i = 0; i <= NT; i++) {
+    const t = Math.sin((i / NT) * Math.PI / 2) * 0.999;
+    const r = F.shape(t, phi, e);
+    for (let j = 0; j <= NR; j++) {
+      const rho = j / NR;
+      pos.push(-F.A * t, F.B * r * rho * c, F.C * r * rho * s);
+      const tw = phi + t * 1.3;
+      uvF.push(rho * Math.cos(tw), rho * Math.sin(tw));
+      nrm.push(0, -s, c);
+    }
+  }
+  for (let i = 0; i < NT; i++) for (let j = 0; j < NR; j++) {
+    const a = i * (NR + 1) + j, b = a + NR + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  g.setAttribute('aF', new THREE.Float32BufferAttribute(uvF, 2));
+  g.setIndex(idx);
+  const vert = `attribute vec2 aF;\nvoid main() {\nvF = aF;\nvTy = normalize(mat3(modelMatrix) * vec3(0.0, ${c.toFixed(4)}, ${s.toFixed(4)}));\nvTz = normalize(mat3(modelMatrix) * vec3(-1.0, 0.0, 0.0));\n${DENTED}\n}`;
+  // Its own sector stays off: the face lies on the piece's edge and must not clip itself.
+  const LU = { ...U, uSec: { value: new THREE.Vector4(0, 0, 0, 0) } };
+  // Seen more often at a slant, so its wet film is calmer.
+  return new THREE.Mesh(g, bedMaterial(LU, src.bed, vert, { ...src.opts, wet: (src.opts.wet ?? 1) * 0.45 }, { LONGFACE: 1 }));
 }
 
 // Juice beads: instanced turbid ellipsoids, lit through their chords.
@@ -226,7 +280,7 @@ export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet
       uniform vec3 uKeyDir, uRimDir;
       attribute vec3 aCol;
       attribute float aSig, aSeed;
-      varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol;
+      varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol, vLp;
       varying float vSig, vScale, vSeed;
       void main() {
         mat4 m = modelMatrix * instanceMatrix;
@@ -238,6 +292,7 @@ export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet
         vec3 c = (instanceMatrix * vec4(0, 0, 0, 1)).xyz;
         vec3 hp = (instanceMatrix * vec4(position, 1.0)).xyz;
         hp += dent(c) - c;
+        vLp = hp;
         vec4 wp = modelMatrix * vec4(hp, 1.0);
         vW = wp.xyz;
         vec3 s2 = vec3(dot(instanceMatrix[0].xyz, instanceMatrix[0].xyz), dot(instanceMatrix[1].xyz, instanceMatrix[1].xyz), dot(instanceMatrix[2].xyz, instanceMatrix[2].xyz));
@@ -253,9 +308,10 @@ export function beadMesh(U, beads, { seedCol = [0.9, 0.82, 0.7], scale = 12, wet
       ${BEAD}
       uniform float uGlow;
       uniform vec3 uSeedCol;
-      varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol;
+      varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol, vLp;
       varying float vSig, vScale, vSeed;
       void main() {
+        secClip(vLp);
         vec3 p = normalize(vP);
         vec3 v = normalize(vEye - vP);
         vec3 n = normalize(vN);
@@ -343,6 +399,7 @@ export function solidMaterial(U, { col = 'vec3(0.03)', rough = 0.3, f0 = 0.04, w
       varying vec3 vW, vN, vL;
       varying float vTip;
       void main() {
+        secClip(vL);
         vec3 n = normalize(vN);
         // A hollow shows its inside: the normal turns to the eye.
         if (!gl_FrontFacing) n = -n;

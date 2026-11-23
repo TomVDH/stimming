@@ -58,6 +58,14 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
   vec3 top = flesh(f, 1.0);
   vec3 deep = flesh(f - gPar * 0.035, 0.7) * 0.8;
   vec3 col = mix(top, deep, 0.45);
+#ifdef LONGFACE
+  // Lengthwise, the seeds lie in the ring's band as black flecks.
+  {
+    vec2 cc = cells(f * 34.0);
+    float band = smoothstep(${f3(FACE.ring0)}, ${f3(FACE.ring0 + 0.04)}, r) * (1.0 - smoothstep(${f3(FACE.ring1 - 0.06)}, ${f3(FACE.ring1)}, r));
+    col = mix(col, vec3(0.01, 0.008, 0.006), (1.0 - smoothstep(0.12, 0.2, cc.x)) * step(0.35, cc.y) * band);
+  }
+#endif
   // The seed ring: a glassy yellow-green band under the jelly cells.
   float ring = smoothstep(${f3(FACE.ring0 - 0.02)}, ${f3(FACE.ring0 + 0.01)}, r) * (1.0 - smoothstep(${f3(FACE.ring1 - 0.03)}, ${f3(FACE.ring1 + 0.02)}, r));
   col = mix(col, vec3(0.12, 0.2, 0.01), ring * 0.85);
@@ -78,6 +86,7 @@ function coreMaterial(U) {
       uniform float uGlow;
       varying vec3 vW, vN, vL;
       void main() {
+        secClip(vL);
         vec3 n = normalize(vN);
         vec3 v = normalize(cameraPosition - vW);
         vec2 f = vL.yz / vec2(${(FACE.core * B).toFixed(4)}, ${(FACE.core * C).toFixed(4)});

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
-import { makeHalf } from './half.js';
+import { makeHalf, longFaceMesh } from './half.js';
 import { FRUITS } from './fruits.js';
 import { makeFuzz } from './fuzz.js';
 import { makeJuice } from './juice.js';
@@ -92,7 +92,7 @@ const L = {
   uFuzz: { value: st.fuzz },
   uGlow: { value: 0.55 },
 };
-const halfU = side => ({ ...L, uSide: { value: side }, uAbc: { value: new THREE.Vector3(1, 1, 1) }, uCut: { value: 0 }, uDent: { value: new THREE.Vector4(0, 0, 0, 0) }, uJig: { value: new THREE.Vector4(0, 0, 0, 0) }, uJigT: { value: 9 } });
+const halfU = side => ({ ...L, uSide: { value: side }, uAbc: { value: new THREE.Vector3(1, 1, 1) }, uCut: { value: 0 }, uSec: { value: new THREE.Vector4(0, 6.2832, 0, 0) }, uDent: { value: new THREE.Vector4(0, 0, 0, 0) }, uJig: { value: new THREE.Vector4(0, 0, 0, 0) }, uJigT: { value: 9 } });
 const FLOOR_Y = -0.815;
 
 function makeFloor() {
@@ -218,13 +218,14 @@ async function setup() {
 function build(f) {
   if (halves.length) {
     fuzz.dispose();
-    for (const h of halves) {
+    for (const h of halves) if (!base.includes(h)) dropPiece(h);
+    for (const h of base) {
       root.remove(h);
       h.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.dispose(); } });
     }
   }
   F = f;
-  halves = [0, 1].map(i => {
+  base = halves = [0, 1].map(i => {
     const hu = halfU(i ? -1 : 1);
     hu.uAbc.value.set(F.A, F.B, F.C);
     const h = makeHalf(F, hu, i ? 0.035 : -0.035, 17 + i * 31);
@@ -236,6 +237,9 @@ function build(f) {
     const P = h.userData.skin.geometry.attributes.position, hull = [];
     for (let k = 0; k < P.count; k++) if (k % 3 === 0 || k <= 96) hull.push(P.getX(k), P.getY(k), P.getZ(k));
     h.userData.hull = new Float32Array(hull);
+    h.userData.piece = newPiece(i, 0, Math.PI * 2);
+    h.userData.uni = hu;
+    h.userData.longs = [];
     h.matrixAutoUpdate = false;
     root.add(h);
     return h;
@@ -274,6 +278,10 @@ function spring(x, v, to, k, z, dt) {
   return [x + v * dt, v];
 }
 let openX = 0.78, restY = 0.8;
+// The two halves as built; halves holds the pieces on stage, the halves themselves at first.
+let base = [];
+// A piece: a half's sector round the axis, eased apart from its neighbours.
+const newPiece = (side, s0, span) => ({ side, s0, span, off: 0, offV: 0, offTo: 0, rot: 0, rotV: 0, rotTo: 0 });
 const OPEN_Z = 0.2, OPEN_YAW = 1.0, OPEN_TILT = 0.42;
 let simT = 0, amb = 0;
 const M4 = new THREE.Matrix4(), S4 = new THREE.Matrix4(), T4 = new THREE.Matrix4(), R4 = new THREE.Matrix4();
@@ -297,6 +305,9 @@ function step(dt) {
       st.tilt[ax] = r[0]; st.tiltV[ax] = r[1];
     }
     for (const hf of halves) {
+      const pc = hf.userData.piece;
+      [pc.off, pc.offV] = spring(pc.off, pc.offV, st.openTo ? pc.offTo : 0, 60, 0.5, h);
+      [pc.rot, pc.rotV] = spring(pc.rot, pc.rotV, st.openTo ? pc.rotTo : 0, 60, 0.5, h);
       const b = hf.userData.body;
       [b.sq, b.sqV] = spring(b.sq, b.sqV, b.squeeze ? 0.74 : 1, b.squeeze ? 90 : 170, b.squeeze ? 0.7 : 0.15, h);
       [b.hop, b.hopV] = spring(b.hop, b.hopV, 0, 120, 0.3, h);
@@ -325,6 +336,8 @@ function step(dt) {
       if (was > 0.05 && st.rollX <= 0.05 && st.rollV < -1) { st.sqV -= 2.2; snd.join(0); }
     }
   }
+  // Joined again: the wedges become the two halves once more.
+  if (!st.openTo && st.open < 0.03 && halves.length > 2) mergeBack();
   // A squeezed half drips juice from its face.
   for (const hf of halves) {
     const b = hf.userData.body;
@@ -351,13 +364,14 @@ function step(dt) {
   const lively = Math.abs(st.openV) > 0.01 || Math.abs(st.open - st.openTo) > 0.002 || Math.abs(st.sqV) > 0.01 || Math.abs(st.sq - (squeezing ? 0.72 : 1)) > 0.002
     || Math.abs(st.hopV) > 0.01 || st.tiltV.length() > 0.01 || st.tilt.length() > 0.002 || squeezing || down
     || halves.some(hf => Math.abs(hf.userData.dent.v) > 0.01 || Math.abs(hf.userData.dent.depth - hf.userData.dent.to) > 0.001 || hf.userData.skin.material.uniforms.uJig.value.w > 0.001)
+    || halves.some(hf => { const pc = hf.userData.piece; return Math.abs(pc.offV) > 0.01 || Math.abs(pc.rotV) > 0.01 || Math.abs(pc.off - (st.openTo ? pc.offTo : 0)) > 0.002; })
     || halves.some(hf => { const b = hf.userData.body; return b.squeeze || Math.abs(b.sqV) > 0.01 || Math.abs(b.sq - 1) > 0.002 || Math.abs(b.hopV) > 0.01; })
     || Math.abs(lightAzTo - lightAz) > 0.002
     || juice.busy || fuzz.busy || puddle.busy || !!st.swapTo || Math.abs(st.rollX) > 0.002 || Math.abs(st.rollV) > 0.01;
   return { lively };
 }
 
-const UP = new THREE.Vector3(0, 1, 0);
+const UP = new THREE.Vector3(0, 1, 0), V3 = new THREE.Vector3(), M7 = new THREE.Matrix4();
 const V1 = new THREE.Vector3(), V2 = new THREE.Vector3(), Q1 = new THREE.Quaternion(), E1 = new THREE.Euler();
 const M5 = new THREE.Matrix4(), M6 = new THREE.Matrix4(), T5 = new THREE.Matrix4();
 function place() {
@@ -384,29 +398,35 @@ function place() {
   // Open, each half swings its face to the eye and rests tilted back.
   // Its lowest point is found in its new pose, so it sits on the floor, never in it.
   const tilt = OPEN_TILT * c;
-  halves.forEach((hf, i) => {
-    const b = hf.userData.body;
+  for (const hf of halves) {
+    const b = hf.userData.body, pc = hf.userData.piece, i = pc.side;
     E1.set(0, i ? Math.PI + OPEN_YAW * o : -OPEN_YAW * o, tilt);
     Q1.setFromEuler(E1);
+    // A wedge slides out along its own middle and turns a little about the axis.
+    const mid = pc.s0 + pc.span / 2;
+    V3.set(0, Math.cos(mid), Math.sin(mid)).multiplyScalar(pc.span < 6.2 ? pc.off : 0);
+    M7.makeRotationX(pc.rot).setPosition(V3);
     const a = hf.userData.hull;
     let minY = 0;
-    for (let k = 0; k < a.length; k += 3) { V2.set(a[k], a[k + 1], a[k + 2]).applyQuaternion(Q1); if (V2.y < minY) minY = V2.y; }
+    for (let k = 0; k < a.length; k += 3) { V2.set(a[k], a[k + 1], a[k + 2]).applyMatrix4(M7).applyQuaternion(Q1); if (V2.y < minY) minY = V2.y; }
     // Its own squash keeps that lowest point on the floor; the hop lifts it.
     const hs = b.sq, hw = 1 / Math.sqrt(hs);
     M5.makeRotationFromQuaternion(Q1);
     M6.makeScale(hw, hs, hw);
-    M5.premultiply(M6);
+    M5.premultiply(M6).multiply(M7);
     T5.makeTranslation((i ? 1 : -1) * openX * o, -restY - minY * hs + b.hop * 0.25, OPEN_Z * o);
     hf.matrix.copy(T5).multiply(M5);
     hf.matrixWorldNeedsUpdate = true;
-  });
-  // A soft contact shadow under each half.
+  }
+  // A soft contact shadow under each side.
   const sh = floor.material.uniforms.uShadow.value;
-  halves.forEach((hf, i) => {
+  for (let i = 0; i < 2; i++) {
+    const hf = halves.find(h => h.userData.piece.side === i);
+    if (!hf) continue;
     hf.updateMatrixWorld(true);
     V1.set(-F.A * 0.4 * c, 0, 0).applyMatrix4(hf.matrixWorld);
     sh[i].set(V1.x, V1.z, 0.95 - 0.35 * c, 0.8);
-  });
+  }
 }
 
 /* ---------- framing ---------- */
@@ -538,14 +558,138 @@ function squirtFrom(hf, n, speed) {
   juice.squirt(FO, FN, F.B * 0.55, n, speed);
 }
 const whole = () => !st.openTo && st.open < 0.05;
+const TAU = Math.PI * 2;
+
+/* ---------- wedges ---------- */
+// A copy of a node with its own materials; their shared uniforms relink to the rig and to U.
+function cloneNode(o, U, map) {
+  let n;
+  if (o.isInstancedMesh) {
+    n = new THREE.InstancedMesh(o.geometry, o.material.clone(), o.count);
+    n.instanceMatrix = o.instanceMatrix;
+  } else if (o.isMesh) n = new THREE.Mesh(o.geometry, o.material.clone());
+  else n = new THREE.Group();
+  if (n.material) {
+    for (const k in n.material.uniforms) {
+      if (k in L) n.material.uniforms[k] = L[k];
+      else if (k in U) n.material.uniforms[k] = U[k];
+    }
+    n.onBeforeRender = o.onBeforeRender;
+  }
+  n.position.copy(o.position); n.quaternion.copy(o.quaternion); n.scale.copy(o.scale);
+  n.frustumCulled = o.frustumCulled;
+  map.set(o, n);
+  for (const c of o.children) if (!(c.isMesh && c.material?.uniforms?.uLen)) n.add(cloneNode(c, U, map));
+  return n;
+}
+// A piece of side half bh: the sector from s0 across span, with lengthwise faces at its edges.
+function makePiece(bh, s0, span, from) {
+  const side = bh.userData.piece.side;
+  const U = halfU(side ? -1 : 1);
+  U.uAbc.value.set(F.A, F.B, F.C);
+  U.uSec.value.set(s0, span, 1, 0);
+  const map = new Map();
+  const g = cloneNode(bh, U, map);
+  g.matrixAutoUpdate = false;
+  g.userData = {
+    skin: map.get(bh.userData.skin), bed: map.get(bh.userData.bed),
+    faceParts: bh.userData.faceParts.map(p => map.get(p)),
+    dent: { depth: 0, v: 0, to: 0 }, body: { sq: 1, sqV: 0, hop: 0, hopV: 0, squeeze: false, drip: 0 },
+    uni: U, longs: [],
+    piece: { ...newPiece(side, s0, span), off: from.off, offV: from.offV, rot: from.rot, rotV: from.rotV },
+  };
+  // The lengthwise cuts, at both edges of the sector.
+  const src = bh.userData.bed.userData.bedSrc, e = side ? 0.035 : -0.035;
+  for (const phi of [s0, s0 + span]) {
+    const lf = longFaceMesh({ ...L, ...U }, F, src, phi, e);
+    g.add(lf);
+    g.userData.longs.push(lf);
+    g.userData.faceParts.push(lf);
+  }
+  // Its hull: the half's hull inside the sector, and the axis it now shows.
+  const a = bh.userData.hull, hull = [];
+  for (let k = 0; k < a.length; k += 3) if (((Math.atan2(a[k + 2], a[k + 1]) - s0) % TAU + TAU) % TAU <= span) hull.push(a[k], a[k + 1], a[k + 2]);
+  for (let t = 0; t <= 1; t += 0.1) hull.push(-F.A * t, 0, 0);
+  g.userData.hull = new Float32Array(hull);
+  root.add(g);
+  return g;
+}
+function dropPiece(g) {
+  root.remove(g);
+  g.traverse(o => { if (o.material) o.material.dispose(); });
+  for (const lf of g.userData.longs) lf.geometry.dispose();
+}
+// Cut piece hf along the lengthwise plane at angle phi (its own space).
+function splitPiece(hf, phi) {
+  const pc = hf.userData.piece, bh = base[pc.side];
+  let parts;
+  if (pc.span > 6.2) parts = [[phi, Math.PI], [phi + Math.PI, Math.PI]];
+  else {
+    const d = ((phi - pc.s0) % TAU + TAU) % TAU;
+    parts = [[pc.s0, d], [phi, pc.span - d]];
+  }
+  const out = parts.map(([s0, span], k) => {
+    const g = makePiece(bh, s0, span, pc);
+    const q = g.userData.piece;
+    // The two open like a book: apart along their middles, a little turn each way.
+    q.offTo = pc.offTo + 0.17;
+    q.rotTo = pc.rotTo + (k ? 0.42 : -0.42);
+    return g;
+  });
+  if (base.includes(hf)) root.remove(hf);
+  else dropPiece(hf);
+  halves = halves.filter(h => h !== hf).concat(out);
+  fuzz.dispose();
+  fuzz = makeFuzz(halves, L, F);
+  fuzz.setLevel(D.level, D.rung);
+  if (H) fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
+  if (started) renderer.compile(scene, camera);
+  // Juice from the new cut.
+  for (const g of out) squirtFrom(g, frozen ? 4 : 10, 0.9);
+  snd.slice();
+}
+// All wedges back into the two halves.
+function mergeBack() {
+  for (const h of halves) if (!base.includes(h)) dropPiece(h);
+  for (const h of base) { if (!h.parent) root.add(h); const pc = h.userData.piece; pc.off = pc.offV = pc.rot = pc.rotV = pc.offTo = pc.rotTo = 0; }
+  halves = base.slice();
+  fuzz.dispose();
+  fuzz = makeFuzz(halves, L, F);
+  fuzz.setLevel(D.level, D.rung);
+  if (H) fuzz.setPx(2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / H);
+}
+// The cut plane a swipe makes across a piece: through the axis, along the swipe.
+const PL = new THREE.Plane(), NR3 = new THREE.Matrix3();
+function cutAngle(hf, a, b) {
+  hf.updateMatrixWorld(true);
+  const o = new THREE.Vector3(0, 0, 0).applyMatrix4(hf.matrixWorld);
+  const n = new THREE.Vector3(1, 0, 0).applyMatrix3(NR3.getNormalMatrix(hf.matrixWorld)).normalize();
+  PL.setFromNormalAndCoplanarPoint(n, o);
+  const pts = [a, b].map(([x, y]) => { ndc.set((x / cssW) * 2 - 1, -(y / cssH) * 2 + 1); ray.setFromCamera(ndc, camera); const q = new THREE.Vector3(); return ray.ray.intersectPlane(PL, q) ? hf.worldToLocal(q) : null; });
+  const pc = hf.userData.piece, mid = pc.s0 + pc.span / 2;
+  if (!pts[0] || !pts[1]) return mid;
+  const am = Math.atan2(pts[1].z - pts[0].z, pts[1].y - pts[0].y);
+  if (pc.span > 6.2) return am;
+  // Of the line's two angles, take the one inside the sector, nearest its middle.
+  let best = null;
+  for (const c of [am, am + Math.PI]) {
+    const d = ((c - pc.s0) % TAU + TAU) % TAU;
+    if (d > 0.18 && d < pc.span - 0.18 && (best === null || Math.abs(d - pc.span / 2) < Math.abs(best.d - pc.span / 2))) best = { c, d };
+  }
+  return best ? best.c : mid;
+}
 function hitAt(x, y) {
   ndc.set((x / cssW) * 2 - 1, -(y / cssH) * 2 + 1);
   ray.setFromCamera(ndc, camera);
-  const hs = ray.intersectObjects(halves.map(h => h.userData.skin).concat(halves.map(h => h.userData.bed)), false);
-  if (!hs.length) return null;
-  const o = hs[0].object;
-  const hf = halves.find(h => h.userData.skin === o || h.userData.bed === o);
-  return { half: hf, w: hs[0].point.clone(), p: hf.worldToLocal(hs[0].point.clone()) };
+  const hs = ray.intersectObjects(halves.flatMap(h => [h.userData.skin, h.userData.bed, ...h.userData.longs]), false);
+  for (const x of hs) {
+    const hf = halves.find(h => h.userData.skin === x.object || h.userData.bed === x.object || h.userData.longs.includes(x.object));
+    const p = hf.worldToLocal(x.point.clone()), pc = hf.userData.piece;
+    // A hit on the part of a mesh its sector clips away does not count.
+    if (pc.span < 6.2 && !hf.userData.longs.includes(x.object) && ((Math.atan2(p.z, p.y) - pc.s0) % TAU + TAU) % TAU > pc.span) continue;
+    return { half: hf, w: x.point.clone(), p };
+  }
+  return null;
 }
 // The halves a press reaches: both while the fruit is whole, so the seam never shows.
 const reach = hit => (whole() ? halves : [hit.half]);
@@ -567,7 +711,7 @@ function release(hit) {
     }
   }
 }
-let down = false, pid = null, at0 = null, atN = null, tN = 0, moved = false, held = false, holdT = 0, hit0 = null, crossed = 0, path = [];
+let down = false, pid = null, at0 = null, atN = null, tN = 0, moved = false, held = false, holdT = 0, hit0 = null, crossed = 0, path = [], cutFrom = null;
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !renderer || !started || (e.target !== renderer.domElement && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
@@ -575,6 +719,7 @@ stage.addEventListener('pointerdown', e => {
   hit0 = hitAt(at0[0], at0[1]);
   path = [at0];
   crossed = 0;
+  cutFrom = null;
   clearTimeout(holdT);
   if (hit0) { press(hit0, 0.05); snd.squish(0.4); }
   // A hold on the fruit squeezes it flat.
@@ -616,6 +761,17 @@ stage.addEventListener('pointermove', e => {
       if (!h) crossed |= 2;
     }
     if (!st.openTo && (crossed & 2) && swipeLong()) { slice(Math.sign(p[0] - at0[0]) || 1); release(null); }
+    // Open: a swipe across a piece cuts it again, lengthwise, along the swipe.
+    if (st.openTo && st.open > 0.8 && !held) {
+      const h = hitAt(p[0], p[1]);
+      if (h && !cutFrom) cutFrom = { hf: h.half, p };
+      else if (!h && cutFrom && cutFrom.hf.parent && swipeLong() && cutFrom.hf.userData.piece.span > 0.5) {
+        splitPiece(cutFrom.hf, cutAngle(cutFrom.hf, cutFrom.p, p));
+        release(null);
+        cutFrom = null;
+        path = [p];
+      }
+    }
     touch();
   }
 });

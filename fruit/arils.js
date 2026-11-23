@@ -55,6 +55,7 @@ varying vec3 vP, vEye, vKey, vRim, vW, vN, vCol, vSeed, vCapN, vL;
 varying float vAo, vCut, vSig;
 const float RS = ${f(o.rs)};
 void main() {
+  secClip(vL);
   bool cap = vCut > 0.5;
   vec3 n = normalize(cap ? vCapN : vN);
   vec3 vw = normalize(cameraPosition - vW);
@@ -167,13 +168,15 @@ export function makeArils(U, list, R, opts = {}) {
   const AU = { ...U, uCamL: { value: new THREE.Vector3() }, uKeyL: { value: new THREE.Vector3() }, uRimL: { value: new THREE.Vector3() } };
   const mesh = new THREE.Mesh(g, new THREE.ShaderMaterial({ uniforms: AU, vertexShader: vert(o), fragmentShader: frag(o) }));
   // The camera and the lights, in the half's own space, before each draw.
+  // It reads the mesh it draws, so a clone of the mesh updates its own uniforms.
   const inv = new THREE.Matrix4(), m3 = new THREE.Matrix3();
-  mesh.onBeforeRender = (r, s, cam) => {
-    inv.copy(mesh.matrixWorld).invert();
-    AU.uCamL.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(inv);
+  mesh.onBeforeRender = function (r, s, cam) {
+    const u = this.material.uniforms;
+    inv.copy(this.matrixWorld).invert();
+    u.uCamL.value.setFromMatrixPosition(cam.matrixWorld).applyMatrix4(inv);
     m3.setFromMatrix4(inv);
-    AU.uKeyL.value.copy(U.uKeyDir.value).applyMatrix3(m3).normalize();
-    AU.uRimL.value.copy(U.uRimDir.value).applyMatrix3(m3).normalize();
+    u.uKeyL.value.copy(u.uKeyDir.value).applyMatrix3(m3).normalize();
+    u.uRimL.value.copy(u.uRimDir.value).applyMatrix3(m3).normalize();
   };
   mesh.frustumCulled = false;
   return mesh;
