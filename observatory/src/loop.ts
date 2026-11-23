@@ -17,7 +17,7 @@ import { lights } from './world/lights.ts';
 import { LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
 import { pickStar } from './core/pick.ts';
 import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
-import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
+import { WIDE, applyCamera, applySweep, eyeAt, type View } from './view/camera.ts';
 import { camDev, cuts, type CamKey } from './view/cuts.ts';
 import { scopeView } from './view/through.ts';
 import type { Shot } from './core/sequence.ts';
@@ -152,6 +152,8 @@ function pose(): void {
 }
 
 export function draw(): void {
+  // The opening's camera sweeps onto the wide shot.
+  if (!opening.done && !cuts.busy) applySweep(camera.aspect, opening.t);
   pose();
   // A close shot sets the camera after the pose, so it can frame the tube.
   cuts.frame();

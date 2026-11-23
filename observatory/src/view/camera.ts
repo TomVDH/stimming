@@ -3,6 +3,7 @@ import '../sky/stars.ts';
 import { Vector3 } from 'three';
 import { camera } from '../setup.ts';
 import { EYE_H, RISE, hillHeight } from '../world/hill.ts';
+import { OPENING_S } from '../core/opening.ts';
 
 /* ---------- camera: from the rise, a little above the treetops ---------- */
 // The eye stands on the rise 300 m north of the complex and looks south at it.
@@ -28,6 +29,35 @@ export function applyCamera(aspect: number, v: View = aspect < 1 ? TALL : WIDE):
   camera.rotation.set(v.pitch * DEG, -v.yaw * DEG, 0);
   camera.updateProjectionMatrix();
   camera.updateMatrixWorld();
+}
+
+/* ---------- the sweep: the opening's camera move onto the wide shot ---------- */
+// The opening starts on the dusk sky, toward the sunset's glow.
+// The camera pans and tilts down onto the dome as night falls.
+// It stays on the rise: the woods and the land are built for its view.
+// The start differs from the end view by these amounts.
+// The eye stands at most 10 m higher, the woods' test eye.
+const SWEEP = { yaw: 26, pitch: 11, fov: 6, h: 10 };
+// The pan leads; the tilt starts later and lands with it.
+const TILT_FROM = 0.15;
+// Smooth at both ends, so the move starts and lands without a jerk.
+const smoother = (k: number): number => k * k * k * (k * (6 * k - 15) + 10);
+const clamp01 = (x: number): number => Math.min(1, Math.max(0, x));
+const swept: View = { eye: { x: 0, z: 0, h: 0 }, pitch: 0, yaw: 0, fov: 0 };
+
+// The sweep at t seconds into the opening.
+// At OPENING_S and after, it is the end view exactly.
+export function applySweep(aspect: number, t: number): void {
+  const end = aspect < 1 ? TALL : WIDE;
+  const k = clamp01(t / OPENING_S);
+  const pan = 1 - smoother(k), tilt = 1 - smoother(clamp01((k - TILT_FROM) / (1 - TILT_FROM)));
+  swept.eye.x = end.eye.x;
+  swept.eye.z = end.eye.z;
+  swept.eye.h = end.eye.h + SWEEP.h * tilt;
+  swept.yaw = end.yaw + SWEEP.yaw * pan;
+  swept.pitch = end.pitch + SWEEP.pitch * tilt;
+  swept.fov = end.fov + SWEEP.fov * pan;
+  applyCamera(aspect, swept);
 }
 
 // The eye of a view in world space.
