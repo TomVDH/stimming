@@ -14,8 +14,10 @@ import { complex } from './world/complex.ts';
 import { altAzDir, laser } from './world/laser.ts';
 import { trackingLamp } from './world/lamp.ts';
 import { lights } from './world/lights.ts';
-import { LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
-import { pickStar } from './core/pick.ts';
+import { CUPOLA, LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
+import { nearStar } from './core/pick.ts';
+import { choose, hover, makeSelector, release, tapSel, type Scope } from './core/selector.ts';
+import { selectorView } from './view/selector.ts';
 import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
 import { camDev, cuts, type CamKey } from './view/cuts.ts';
@@ -41,9 +43,18 @@ const eye = eyeAt(WIDE);
 const REST_AZ = (Math.atan2(eye.x - mainAt.x, -(eye.z - mainAt.z)) * 180 / Math.PI + 360) % 360;
 // The cupola turns after the beam only once the pointer has moved.
 let aimed = false;
-// The machine owns the main dome: cupola, tube and shutter. It starts shut.
+// The machine owns the bound dome: cupola, tube and shutter. It starts shut.
 // The ?dev shot replay builds a fresh machine, so this is let.
 let machine = makeMachine({ az: REST_AZ });
+// The telescope domes: the 1 m in the main dome, the great refractor in the classic dome.
+// The west small dome stands in for the classic dome until it is built.
+const SCOPE_DOME: Record<Scope, Dome> = { reflector: complex.main, refractor: complex.small[0] };
+// The scope the machine drives; the other telescope dome follows, shut.
+let bound: Scope = 'reflector';
+// The selector: hover, lock, then a choice of telescope.
+const sel = makeSelector();
+// The faintest star the sky shows; the Sky row sets it.
+let skyLimit = 99;
 // The small domes start 1.5 s and 3 s after the leader.
 // In aim the leader is the beam; after a pick it is the main dome's cupola.
 // They rest shut, open that long after a pick, and shut that long after aim.
@@ -51,11 +62,15 @@ let machine = makeMachine({ az: REST_AZ });
 // ax: the cupola's axis.
 // sh: the shutter, which takes as long as the main one.
 // alt: the tube's altitude, parked low as the main tube.
-type Turn = { dome: Dome; ax: Axis; lim: Limits; delay: number; sh: Shutter; alt: Axis };
+// scope: set on a telescope dome; it follows only while the machine drives the other.
+type Turn = { dome: Dome; ax: Axis; lim: Limits; delay: number; sh: Shutter; alt: Axis; scope?: Scope };
 const turns: Turn[] = [
-  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
+  { dome: complex.small[0], ax: makeAxis(REST_AZ), lim: { cap: 1.6, accel: 0.45, wrap: true }, delay: 1.5, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT), scope: 'refractor' },
   { dome: complex.small[1], ax: makeAxis(REST_AZ), lim: { cap: 1.3, accel: 0.4, wrap: true }, delay: 3, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT) },
+  { dome: complex.main, ax: makeAxis(REST_AZ), lim: CUPOLA, delay: 0.75, sh: makeShutter(0), alt: makeAxis(TUBE_PARK_ALT), scope: 'reflector' },
 ];
+// The domes that follow now: every dome but the bound one.
+const followers = (): Turn[] => turns.filter(d => d.scope !== bound);
 // A small tube lifts and lowers slower than the main tube.
 const SMALL_TUBE: Limits = { cap: 1.2, accel: 0.4, wrap: false };
 // The small shutters want open after a pick.
@@ -105,9 +120,9 @@ function wishAgo(now: number, s: number): boolean {
 // The leader's azimuth: the beam in aim, the main cupola after a pick.
 const leaderAz = () => (machine.phase === 'aim' && aimed ? aim.az : machine.cupolaAz);
 // A small shutter still has a way to go.
-const shutting = () => turns.some(d => !shutterAtRest(d.sh) || d.sh.p !== (wishes[wishes.length - 1].open ? 1 : 0));
+const shutting = () => followers().some(d => !shutterAtRest(d.sh) || d.sh.p !== (wishes[wishes.length - 1].open ? 1 : 0));
 const turning = () => machine.moving || shutting()
-  || turns.some(d => !atRest(d.ax) || !atRest(d.alt) || azDelta(d.ax.pos, leaderAz()) !== 0);
+  || followers().some(d => !atRest(d.ax) || !atRest(d.alt) || azDelta(d.ax.pos, leaderAz()) !== 0);
 // The cuts, the crossfade or the lights still need frames.
 const showing = () => cuts.busy || light !== lightGoal(machine.phase);
 const awake = () => !opening.done || turning() || skyMoving() || showing() || performance.now() - lastInput < SLEEP;
@@ -125,16 +140,16 @@ const skyMoving = () => clock.easing() || clock.speed > 1;
 const mouth = new Vector3();
 function pose(): void {
   skyAt(clock.skyMs());
-  for (const d of turns) {
+  for (const d of followers()) {
     d.dome.setCupola(d.ax.pos);
     // The models never see a tube under its park.
     d.dome.setTube({ alt: Math.max(TUBE_PARK_ALT, d.alt.pos), az: d.ax.pos });
     d.dome.setShutter(d.sh.value);
   }
-  const m = machine;
-  complex.main.setCupola(m.cupolaAz);
-  complex.main.setTube({ alt: m.tubeAlt, az: m.tubeAz });
-  complex.main.setShutter(m.shutter01);
+  const m = machine, dome = SCOPE_DOME[bound];
+  dome.setCupola(m.cupolaAz);
+  dome.setTube({ alt: m.tubeAlt, az: m.tubeAz });
+  dome.setShutter(m.shutter01);
   trackingLamp.set(m.tracking);
   // The dusk sets the look each frame until night shows once.
   if (!nightSet) {
@@ -147,7 +162,28 @@ function pose(): void {
   // The beam follows the pointer in aim; after a pick it follows the tube.
   // After a pick it leaves the laser on the tube.
   const free = m.phase === 'aim' || m.phase === 'lost';
-  laser.aim(free ? complex.main.slitTop : complex.main.laserMouth(mouth), free ? aim : { alt: m.tubeAlt, az: m.tubeAz });
+  // Before a pick the selector shows; the beam comes on with a choice.
+  if (!free) laser.aim(dome.laserMouth(mouth), { alt: m.tubeAlt, az: m.tubeAz });
+  if (free) laser.visible = false;
+  else if (nightSet) laser.visible = true;
+}
+
+// A point's place on the stage in CSS px, or null behind the camera.
+const toStage = (v: Vector3): { x: number; y: number } | null => {
+  const p = v.clone().project(camera);
+  if (p.z > 1) return null;
+  return { x: (p.x + 1) / 2 * stageEl.clientWidth, y: (1 - p.y) / 2 * stageEl.clientHeight };
+};
+// Draws the selector, or hides it in the cuts and at dusk.
+// A locked star that sets lets go.
+function drawSelector(): void {
+  if (cuts.busy || opening.locked || !sel.star) { selectorView.hide(); return; }
+  const p = targetPos(sel.star);
+  if (p.alt <= 5) { release(sel); selectorView.hide(); return; }
+  const star = toStage(altAzDir(p).multiplyScalar(1000).add(camera.position));
+  const r = toStage(SCOPE_DOME.refractor.slitTop), f = toStage(SCOPE_DOME.reflector.slitTop);
+  if (!star || !r || !f) { selectorView.hide(); return; }
+  selectorView.draw(sel, star, { refractor: r, reflector: f });
 }
 
 export function draw(): void {
@@ -156,6 +192,7 @@ export function draw(): void {
   cuts.frame();
   renderPost();
   cuts.afterRender();
+  drawSelector();
   dirty = false;
   draws++;
 }
@@ -199,8 +236,9 @@ function tick(now: number): void {
     // Keep one wish older than the longest delay.
     while (wishes.length > 1 && wishes[1].t <= t - KEEP_MS) wishes.shift();
   }
-  for (const d of turns) {
-    const open = wishAgo(t, d.delay);
+  for (const d of followers()) {
+    // An unbound telescope dome stays shut.
+    const open = !d.scope && wishAgo(t, d.delay);
     // The shutter stays open until the tube clears it.
     const goal = open || d.alt.pos >= TUBE_CLEAR_ALT ? 1 : 0;
     if (!shutterAtRest(d.sh) || d.sh.p !== goal) {
@@ -224,7 +262,7 @@ function tick(now: number): void {
     seen.push({ t, az: lead });
     while (seen.length > 1 && seen[1].t <= t - KEEP_MS) seen.shift();
   }
-  for (const d of turns) {
+  for (const d of followers()) {
     const target = azAgo(t, d.delay);
     if (atRest(d.ax) && azDelta(d.ax.pos, target) === 0) continue;
     stepAxis(d.ax, target, dt, d.lim);
@@ -261,6 +299,7 @@ function input(a: AltAz): void {
   aimed = true;
   // A lost machine goes back to aim; a picked star keeps its tracking while the pointer moves.
   if (machine.phase === 'lost') machine.release();
+  hover(sel, nearStar(sky.stars, a, lst(clock.skyMs(), LON), LAT, 1.5, skyLimit));
   if (machine.phase === 'aim') {
     seen.push({ t: lastInput, az: aim.az });
     // Keep one sample older than the longest delay.
@@ -282,10 +321,30 @@ function tap(a: AltAz): void {
   if (cuts.showing) { lastInput = performance.now(); cuts.skip(); return; }
   if (cuts.busy) return;
   if (reviewTap()) return;
-  const s = pickStar(sky.stars, a, lst(clock.skyMs(), LON), LAT);
-  if (s) pick(s);
+  tapSel(sel, nearStar(sky.stars, a, lst(clock.skyMs(), LON), LAT, 1.5, skyLimit));
+  lastInput = performance.now();
+  dirty = true;
+  wake();
 }
 onTap(tap);
+// A chip or key 1 or 2 sends the locked star to that telescope.
+selectorView.onChoose(scope => {
+  const s = choose(sel, scope);
+  if (!s) return;
+  bind(scope);
+  pick(s);
+});
+// Moves the machine to a scope's dome.
+// The old dome becomes a follower from where it stands, and shuts.
+function bind(scope: Scope): void {
+  if (scope === bound) return;
+  const from = turns.find(d => d.scope === bound)!, to = turns.find(d => d.scope === scope)!;
+  from.ax = makeAxis(machine.cupolaAz);
+  from.sh = makeShutter(machine.shutter01);
+  from.alt = makeAxis(machine.tubeAlt);
+  machine = makeMachine({ az: to.ax.pos, shutter01: to.sh.value });
+  bound = scope;
+}
 // A pick from rest or lost plays the cuts; a re-pick only slews.
 function pick(s: Star): void {
   const from = machine.phase;
@@ -293,7 +352,8 @@ function pick(s: Star): void {
   if (from === 'aim' || from === 'lost') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s };
   machine.pick(s);
   // An open shutter plays only the slew cuts.
-  if (from === 'aim' || from === 'lost') cuts.start(machine.phase, liftView(), targetPos(s));
+  // The cuts frame the main dome; the classic dome's cuts wait for obs-cuts.
+  if ((from === 'aim' || from === 'lost') && bound === 'reflector') cuts.start(machine.phase, liftView(), targetPos(s));
   lastInput = performance.now();
   dirty = true;
   wake();
@@ -301,7 +361,10 @@ function pick(s: Star): void {
 function skipOpening(): void {
   if (opening.skip()) wake();
 }
-onEsc(() => { if (opening.locked) skipOpening(); });
+onEsc(() => {
+  if (opening.locked) { skipOpening(); return; }
+  if (sel.mode === 'locked') { release(sel); dirty = true; wake(); }
+});
 // A skip by tap or Esc draws the wide shot on the next frame.
 // A skip also ends a pause.
 cuts.onSkip(() => { setPaused(false); dirty = true; wake(); });
@@ -530,12 +593,19 @@ window.__qa = {
   get running() { return raf !== 0; },
   get frames() { return frames; },
   get draws() { return draws; },
-  // Dome 0 is the main dome, read from the machine.
+  // The domes in order: main, east, roof.
+  // The bound dome reads from the machine.
   // vel: the cupola's speed on screen.
   get domes() {
-    return [{ pos: machine.cupolaAz, vel: machine.axes.cupola.vel, open: machine.shutter01 },
-      ...turns.map(d => ({ pos: d.ax.pos, vel: d.ax.vel, open: d.sh.value }))];
+    const of = (dome: Dome) => {
+      if (dome === SCOPE_DOME[bound]) return { pos: machine.cupolaAz, vel: machine.axes.cupola.vel, open: machine.shutter01 };
+      const d = turns.find(x => x.dome === dome)!;
+      return { pos: d.ax.pos, vel: d.ax.vel, open: d.sh.value };
+    };
+    return [of(complex.main), of(complex.small[0]), of(complex.small[1])];
   },
+  // The selector's mode, its star and the telescope the machine drives.
+  get selector() { return { mode: sel.mode, hip: sel.star?.hip ?? null, last: sel.last, bound }; },
   // The main dome's axes and shutter: the load's speed, the drive's speed.
   get motion() {
     const a = machine.axes;
