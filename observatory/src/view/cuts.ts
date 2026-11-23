@@ -3,7 +3,7 @@ import '../world/hero.ts';
 import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
 import type { Object3D } from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
+import { MIRROR_PUSH, cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
 import type { Phase } from '../core/machine.ts';
 import type { Dome } from '../world/observatory.ts';
 import type { Star } from '../core/catalog.ts';
@@ -253,26 +253,41 @@ function glassEye(s: Framed, v: View): void {
   s.aim.copy(gp);
 }
 
-/* ---------- the mirror shot: close on the reflector's primary ---------- */
-// Tom, 2026-11-23: the shot cuts in; it does not push down the tube.
-// The primary fills MIRROR_FILL of the band's height.
+/* ---------- the mirror shot: the disk wipe onto the reflector's primary ---------- */
+// Tom, 2026-11-23: the secondary's white disk crests over the camera as a wipe.
+// The push starts on the glass shot's framing and lasts MIRROR_PUSH.
+// The lens widens to the mirror cut's lens.
+// The primary then fills MIRROR_FILL of the band's height.
 const MIRROR_FILL = 0.95;
+// A shallow focus: the passing disk goes soft, the primary stays sharp.
+const MIRROR_APERTURE = 0.03;
+// The focus pulls from the disk to the primary over this share of the push.
+const PULL_A = 0.3, PULL_B = 0.7;
 const side = new Vector3(), off = new Vector3();
-// The eye stands inside the tube, past the secondary.
-// It sits off the axis, between two vanes, midway between the housing and the ring.
-// So the secondary's silhouette shows in the mirror, and no vane cuts the frame.
-function mirrorEye(s: Framed, v: View): void {
+const smooth = (a: number, b: number, x: number): number => ease(Math.min(1, Math.max(0, (x - a) / (b - a))));
+// t: seconds in the shot.
+// The eye keeps off the axis, midway between the housing and the ring.
+// It turns from under the axis to between two vanes before it reaches them.
+function mirrorEye(s: Framed, v: View, t: number): void {
   const sc = heroScope();
-  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined) { glassEye(s, v); return; }
+  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined || sc.frontDist === undefined) { glassEye(s, v); return; }
   sc.restGlass(v.restAlt, v.tubeAz, gp, ga, gu);
-  s.fov = cutOf('mirror').fov;
-  const d = sc.mirrorR / MIRROR_FILL / Math.tan(s.fov * DEG / 2);
-  const o = (sc.secR + sc.aperture / 2) / 2;
+  const k = ease(Math.min(1, t / MIRROR_PUSH));
+  const fov0 = cutOf('glass').fov, fov1 = cutOf('mirror').fov;
+  s.fov = fov0 + (fov1 - fov0) * k;
+  const d0 = sc.aperture / GLASS_FILL / 2 / Math.tan(fov0 * DEG / 2);
+  const d1 = sc.mirrorR / MIRROR_FILL / Math.tan(fov1 * DEG / 2);
+  const d = d0 + (d1 - d0) * k;
+  const o = Math.max(d * Math.tan(GLASS_UNDER), (sc.secR + sc.aperture / 2) / 2);
+  const turn = Math.min(1, k * 2) * Math.PI / 4;
   side.crossVectors(ga, gu);
-  off.copy(gu).multiplyScalar(-Math.SQRT1_2).addScaledVector(side, Math.SQRT1_2);
+  off.copy(gu).multiplyScalar(-Math.cos(turn)).addScaledVector(side, Math.sin(turn));
   s.eye.copy(gp).addScaledVector(ga, d).addScaledVector(off, o);
   s.aim.copy(gp);
-  s.focus = s.eye.distanceTo(gp);
+  // The focus starts on the disk at the tube's front, then pulls to the primary.
+  const toMirror = s.eye.distanceTo(gp), toDisk = Math.max(0.3, d - sc.frontDist);
+  s.focus = toDisk + (toMirror - toDisk) * smooth(PULL_A, PULL_B, k);
+  s.aperture = MIRROR_APERTURE;
 }
 
 // Tom, 2026-11-23: realistic stars in the mirror.
@@ -572,7 +587,7 @@ export const cuts = {
     const s = locks.of(cutOf(shot));
     // Only the mirror shot lifts the stars.
     starLift(!!s.mirror);
-    if (s.mirror) mirrorEye(s, view);
+    if (s.mirror) mirrorEye(s, view, mode === 'cuts' ? seq.t : MIRROR_PUSH);
     else if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     // The film lens fills the band between the bars.

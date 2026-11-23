@@ -590,9 +590,10 @@ type Painted = { stone: ReturnType<typeof stoneTex>; dome: ReturnType<typeof dom
 // p: the primary's centre. axis: out of the tube. up: across it, skyward.
 // aperture: the front ring's diameter in world units.
 // mirrorR: the primary's radius. secR: the secondary housing's radius.
+// frontDist: the front ring's plane, out from the primary along the axis.
 export type RestGlass = {
   restGlass(alt: number, az: number, p: Vector3, axis: Vector3, up: Vector3): void;
-  readonly aperture: number; readonly mirrorR: number; readonly secR: number;
+  readonly aperture: number; readonly mirrorR: number; readonly secR: number; readonly frontDist: number;
 };
 export type CutScope = HeroScope & Partial<RestGlass>;
 
@@ -1242,6 +1243,7 @@ function bigScope(main: Dome, floorY: number): CutScope {
     get aperture() { return 2 * M_CAGE_R * M_SIZE * main.root.scale.x; },
     get mirrorR() { return M_MIRROR_R * M_SIZE * main.root.scale.x; },
     get secR() { return M_SEC_R * M_SIZE * main.root.scale.x; },
+    get frontDist() { return (M_MIRROR_Z - M_CAGE_Z) * M_SIZE * main.root.scale.x; },
   };
 }
 
