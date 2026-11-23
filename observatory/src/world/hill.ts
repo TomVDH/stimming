@@ -81,15 +81,19 @@ function lowLand(x: number, z: number): number {
   // A wide valley lies between the camera's ridge and the peak.
   const valley = -60 * Math.exp(-(((z + 340) / 110) ** 2)) * Math.exp(-((x / 900) ** 2));
   // Rock ribs and gullies cover the slopes, not the summit.
-  const rough = 26 * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(80, 180, r);
+  // The back country takes broader, deeper ribs.
+  const rough = (26 + 16 * sstep(700, 1500, z)) * ridged(x / 120 + 3, z / 120 + 7, 11) * sstep(80, 180, r);
   const fine = 5 * (vnoise(x / 22, z / 22, 3) - 0.5);
   // Rock knolls break up the summit between the pads.
   const crag = 4 * ridged(x / 28 + 1, z / 28 + 2, 4) * (1 - sstep(100, 140, r));
   // Two forested ridges recede behind the peak, out of the valley mist.
   // The height haze fills the deep land between them, so each ridge reads as a layer.
   const edge = 1 - sstep(1150, 1550, Math.abs(x));
-  const mid1 = 95 * Math.exp(-(((z - 1350) / 170) ** 2)) * (0.7 + 0.3 * Math.sin(x / 310 + 1.3)) * edge;
-  const mid2 = 150 * Math.exp(-(((z - 2350) / 240) ** 2)) * (0.65 + 0.35 * Math.sin(x / 430 + 2.4)) * edge;
+  // Ridged noise gives them peaks, cols and spurs, not smooth swells.
+  // Their crests stay under the summit's skyline.
+  const crest = 0.6 + 0.55 * ridged(x / 330 + 11, z / 330 + 3, 21);
+  const mid1 = 105 * Math.exp(-(((z - 1350) / 170) ** 2)) * (0.7 + 0.3 * Math.sin(x / 310 + 1.3)) * crest * edge;
+  const mid2 = 170 * Math.exp(-(((z - 2350) / 240) ** 2)) * (0.65 + 0.35 * Math.sin(x / 430 + 2.4)) * crest * edge;
   return peak + moat + valley + rough + fine + crag + mid1 + mid2;
 }
 // The ridge's crest stands this far under the summit.
