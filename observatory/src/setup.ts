@@ -54,8 +54,8 @@ export const ui = initPage({
     // Bar v3 lists every input in How to play: one instruction per row.
     help: [
       ['move', 'Find a star'],
-      ['click', 'Lock it, then choose a telescope'],
-      ['1 2', 'Choose a telescope'],
+      ['click', 'Hold a star, then choose an observatory'],
+      ['1 2', 'Choose Little or Big Observatory'],
       ['esc', 'Let go, or skip ahead'],
     ],
   },

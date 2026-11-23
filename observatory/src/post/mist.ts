@@ -174,8 +174,6 @@ const lay = /* glsl */`
 
 // The scene's depth, kept by the tap.
 let sceneDepth: DepthTexture | null = null;
-// The beam tests itself against this depth, after the mist.
-export const tappedDepth = (): DepthTexture | null => sceneDepth;
 // A pass that only keeps the depth of the target the scene drew into.
 export function makeDepthTap(): Pass {
   class Tap extends Pass {

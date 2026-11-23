@@ -1221,22 +1221,17 @@ function bigScope(main: Dome, m: ModernScope, floorY: number, size: number): Cut
     md.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
     mp.set(0, floorY + M_AXIS_Y * size, 0);
   };
-  let tAlt = 45, tAz = 0;
   // A reflector has no objective glass; this hidden mesh stands in.
   const glass = new Mesh();
   glass.visible = false;
   return {
     root: m.root, glass,
     // An alt-az fork never flips over the pole.
-    setTube(alt, az) { tAlt = alt; tAz = az; m.setTube(alt, az); return false; },
+    setTube(alt, az) { m.setTube(alt, az); return false; },
     step: () => false,
     // The clearance check reads the refractor's joints; these stay empty.
     parts: { mount: new Group(), polar: new Group(), ra: new Group(), dec: new Group(), tube: new Group(), worm: new Group(), knob: new Group() },
     setSky() {}, setTarget() {}, setSlit() {}, setStars() {},
-    laserMouth(out) {
-      line(tAlt, tAz);
-      return main.root.localToWorld(out.copy(mp).addScaledVector(md, -M_CAGE_Z * size));
-    },
     restGlass(alt, az, p, axis, up) {
       line(alt, az);
       main.root.localToWorld(p.copy(mp).addScaledVector(md, -M_MIRROR_Z * size));

@@ -39,8 +39,6 @@ export type HeroScope = {
   // Hands over the catalog once it loads.
   // The glass then shows the stars.
   setStars(stars: readonly Star[]): void;
-  // The laser's mouth in world space.
-  laserMouth(out: Vector3): Vector3;
 };
 
 const DEG = Math.PI / 180;
@@ -583,12 +581,6 @@ const LENS: LensShape = { radius: GLASS_R, edge: GLASS_Z, a: 0.1, b: 0.4 };
 // So the shield keeps SLIT_HALF - SHIELD_OUT - D_OFF to each slit edge: 0.035 m.
 // The finder rides at this angle round the tube, toward the top.
 const FINDER_A = 50 * DEG, FINDER_D = 0.27;
-// The laser rides opposite the finder, toward the top.
-// A plain cylinder stands in until the laser has a model.
-const LASER_A = Math.PI - FINDER_A, LASER_D = 0.23, LASER_R = 0.03;
-// It runs from LASER_Z0 to its mouth at LASER_Z1.
-const LASER_Z0 = 1.0, LASER_Z1 = 1.75;
-const LASER_MOUTH = new Vector3(Math.cos(LASER_A) * LASER_D, Math.sin(LASER_A) * LASER_D, LASER_Z1);
 // The tube rings hold the tube at these points.
 const RINGS = [-0.45, 0.5];
 // The saddle plate lies under the rings, on the declination flange.
@@ -755,13 +747,6 @@ function buildTube(k: Kit, M: Mats, Pc: Pieces, glassMat: Material): Mesh {
       k.put(Pc.thumb, M.steel, stand(new Vector3(fx + Math.cos(a) * 0.048, fy + Math.sin(a) * 0.048, z), new Vector3(Math.cos(a), Math.sin(a), 0), 0, 0.75));
     }
   }
-
-  /* the laser's stand-in: a closed cylinder */
-  k.add(M.darkSteel, along(turn([
-    [[0, LASER_Z0], [LASER_R, LASER_Z0]],
-    [[LASER_R, LASER_Z0], [LASER_R, LASER_Z1]],
-    [[LASER_R, LASER_Z1], [0, LASER_Z1]],
-  ], 24), Y_TO_Z, LASER_MOUTH.x, LASER_MOUTH.y));
 
   /* the tube rings and the saddle plate */
   for (const z of RINGS) {
@@ -1141,10 +1126,6 @@ export function buildHeroScope(size: number): HeroScope {
   let env: Texture | null = null;
   return {
     root, glass, setTube, step, parts: { mount, polar, ra, dec, tube, worm, knob },
-    laserMouth(out) {
-      tube.updateWorldMatrix(true, false);
-      return tube.localToWorld(out.copy(LASER_MOUTH));
-    },
     setSky: G.setSky, setTarget: G.setTarget, setSlit: G.setSlit,
     setStars(stars) {
       env?.dispose();

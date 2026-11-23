@@ -7,7 +7,7 @@ This page is the design. The task-by-task build plan comes after Tom approves it
 
 ## Intent
 
-An old observatory stands on a hill at night, under a big sky. The pointer is a green aiming laser. The cupola turns slowly after the beam, the slit opens and the telescope slews to the star you pick.
+An old observatory stands on a hill at night, under a big sky. The pointer finds a star; you choose the Little or the Big Observatory. The cupola turns slowly, the slit opens and the telescope slews to the star you pick.
 The bonus: you enter the telescope. You see the star in the eyepiece, with its real catalog data and some pseudo data around it.
 The joy is the heavy, slow machine that does what you ask, under a real sky.
 
@@ -18,7 +18,7 @@ The joy is the heavy, slow machine that does what you ask, under a real sky.
 | The shot | The observatory on the hill, seen from outside |
 | The look | Railgun's Villeneuve look: one wide, locked-off shot, haze, a big quiet sky, a small machine |
 | Fast time | Fast-forward time draws star trails, as Star trails does |
-| The hand | The aiming laser aims; the cupola turns after it |
+| The hand | The pointer aims; the cupola turns after it |
 | The bonus | Enter the telescope; the eyepiece shows the star with pseudo data |
 | The stars | A real catalog: HYG (Hipparcos, Yale, Gliese). The download needs Tom's yes with file and size. |
 | The eyepiece | Approved as proposed: the way in, the round view, the sparse data, the hand (see "Inside the telescope") |
@@ -92,10 +92,10 @@ Tom picked A: the 3D machine needs three.js, and the look comes from Railgun in 
 
 - **The shot.** From a nearby rise, a little above the treetops, about 300 m from the complex. Locked off. The sky fills the upper 60% of the frame. A pointer move leans the lens a little, as in Railgun.
 - **The woods.** Dark conifer woods cover the hill. A clearing at the top holds the complex. A gravel road turns up through the woods to it.
-- **The complex.** The main dome (the big refractor; the laser comes out of it), two smaller domes, a long low stone building with a few lit windows, and a shed with a roll-off roof.
+- **The complex.** The main dome (the big refractor), two smaller domes, a long low stone building with a few lit windows, and a shed with a roll-off roof.
 - **The domes.** A white dome on a stone drum, a warm lit door, a dark slit, the steel tube out of it. The icon (A of `icons/spike-observatory-1.html`) sets the shapes.
 - **All three domes answer.** The two small domes turn to the same star a few seconds after the main dome, each at its own slow speed. Each stands at a different angle to the camera, so a slit faces the viewer for most aims.
-- **The laser.** A thin green beam from the dome top to the aim point. The haze shows it, so it looks solid near the dome and fades with height.
+- **No laser.** Tom removed the green aiming laser on 2026-11-23: "get rid of the green laser altogether -- eliminate its code" (`stimming-4itb`).
 - **The sky.** Tonight's real sky at 51° N, from the catalog, with no moon. It turns at sidereal speed. Railgun's haze and grade sit over it.
 - **Fast time.** The Time slider runs the sky faster. Above a set speed, the stars draw trails with the accumulate and decay pass from `trails/index.html`, ported into the three.js chain.
 
@@ -105,7 +105,7 @@ Tom, 2026-11-17: "We will start from a nice cinematic dusk and will slowly go in
 
 1. **Start.** The page opens at dusk, just after sunset, in the same locked wide shot. The west is still warm; the sky runs from deep blue to slate. The domes, the drum and the treetops catch the last light.
 2. **Into the night.** About 45 s. The sky darkens to the night look of Task 7. The stars come out by magnitude, brightest first. The haze cools. The complex lights come on one by one as it gets dark.
-3. **Play.** The laser and picks stay off until full night. Then the laser comes on and the toy plays.
+3. **Play.** Aim and picks stay off until full night. Then the toy plays.
 4. **The sky stays real.** The light comes from tonight's real sunset direction at 51° N. The sky clock runs fast through the opening and eases to speed 1 at full night, so it ends on the real sky of now. Its speed stays under the trail speed.
 5. **Defaults (designer's calls, approved).** It plays on every visit. A tap or Esc skips to night in a short ease. Reduced motion opens at night. Sound stays muted.
 
@@ -154,7 +154,7 @@ Blockout v2 (woods, clearing, three domes, building, shed, road, the camera on t
 
 ## The machine
 
-1. **Aim.** The pointer moves the selector's hover (mouse: move; touch: drag); the beam shows only after a pick (2026-11-23, [observatory-selector.md](observatory-selector.md)). The cupola turns after the aim's azimuth at a capped speed, with ease in and out.
+1. **Aim.** The pointer moves the selector's hover (mouse: move; touch: drag); a lock offers Little Observatory and Big Observatory (2026-11-23, [observatory-selector.md](observatory-selector.md)); no beam shows (`stimming-4itb`). The cupola turns after the aim's azimuth at a capped speed, with ease in and out.
 2. **Pick.** A tap locks the nearest visible star; a chip then sends the great refractor or the 1 m reflector ([observatory-selector.md](observatory-selector.md)).
 3. **Open.** The slit shutter opens, 6 s on an S-curve, if it is shut. The tube starts to lift from its 5° park when the shutter is half open.
 4. **Slew.** The cupola turns to the star; the tube slews in its mount. The tube and the dome arrive together.

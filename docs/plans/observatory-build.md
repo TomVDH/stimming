@@ -2,6 +2,8 @@
 
 Status: active · Bean: `stimming-wqq9`
 
+Tom removed the green laser on 2026-11-23 (`stimming-4itb`). The laser tasks below are history; `world/laser.ts` is gone and `altAzDir` lives in `sky/altaz.ts`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** An observatory on a hill under tonight's real sky. A green aiming laser turns the cupola, a pick opens the slit and slews the tube, and you can enter the telescope for real and pseudo star data.

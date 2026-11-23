@@ -7,7 +7,7 @@ import { SUN_END, SUN_START, streakForDusk, sunsetAz } from '../core/opening.ts'
 import { HAZE_C, HORIZON, ZENITH, fog, skyU } from '../sky/haze.ts';
 import { LAT, NIGHT_MAG, setStarLimit, setStreak } from '../sky/stars.ts';
 import { HEMI_I, TOP, hemi } from './hill.ts';
-import { altAzDir } from './laser.ts';
+import { altAzDir } from '../sky/altaz.ts';
 
 /* ---------- the golden hour and the dusk: a warm west, last light on the hilltop ---------- */
 // w is the dusk: 1 at the start, 0 at full night.

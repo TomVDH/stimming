@@ -8,8 +8,6 @@ import type { Clock } from './clock.ts';
 export const OPENING_S = 10;
 // A tap or Esc reaches night in this time.
 export const SKIP_S = 0.8;
-// After night, the beam fades in over this time.
-export const BEAM_S = 1;
 // The sun sinks from 3 degrees above the horizon to 18 below.
 // The western ridge hides it, so only its light shows.
 // At 18 degrees below, the night is full.
@@ -35,7 +33,7 @@ export const EXPOSURE_S = 8;
 // Each lamp takes LAMP_RAMP seconds to reach full.
 export const LAMP_FROM = 5, LAMP_TO = 8.5, LAMP_RAMP = 0.3;
 
-const END = OPENING_S + BEAM_S;
+const END = OPENING_S;
 // The sky turns this many degrees per second at speed 1.
 const SIDEREAL = 360 / 86164.0905;
 // The clock's ease from the peak to speed 1 takes this long.
@@ -70,9 +68,9 @@ export function streakForDusk(w: number): number {
 export type Opening = {
   // Seconds on the opening's timeline.
   readonly t: number;
-  // True until full night: no beam, no aim, no pick.
+  // True until full night: no aim, no pick.
   readonly locked: boolean;
-  // True once the beam is full.
+  // True at full night.
   // Then the opening does nothing.
   readonly done: boolean;
   readonly skipping: boolean;
@@ -94,7 +92,6 @@ export type Opening = {
   streak(): number;
   // Lamp i of n: 0 off, 1 full.
   lamp(i: number, n: number): number;
-  beam(): number;
 };
 
 export function makeOpening(reduced: boolean): Opening {
@@ -153,7 +150,6 @@ export function makeOpening(reduced: boolean): Opening {
       const at = n > 1 ? LAMP_FROM + (LAMP_TO - LAMP_FROM) * i / (n - 1) : LAMP_FROM;
       return clamp01((t - at) / LAMP_RAMP);
     },
-    beam: () => clamp01((t - OPENING_S) / BEAM_S),
   };
 }
 

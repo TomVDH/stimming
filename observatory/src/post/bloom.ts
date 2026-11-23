@@ -45,7 +45,7 @@ export function makeBloom(strength: number, radius: number, threshold: number): 
   const bloom = new UnrealBloomPass(new Vector2(256, 256), strength, radius, threshold) as Bloom;
   const full = bloom.setSize.bind(bloom);
   // A wide, soft knee: lit stone blooms only a trace.
-  // Lamps and the beam run far past it and bloom in full.
+  // Lamps run far past it and bloom in full.
   bloom.highPassUniforms.smoothWidth.value = 5.0;
   // Full size on High, 0.7 on Standard, half on phones.
   // The composer passes device pixels.

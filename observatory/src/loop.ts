@@ -13,7 +13,7 @@ import { skyU } from './sky/haze.ts';
 import { renderPost } from './post/chain.ts';
 import { TUBE_PARK_ALT, TUBE_REST_ALT, type Dome } from './world/observatory.ts';
 import { complex } from './world/complex.ts';
-import { altAzDir, laser } from './world/laser.ts';
+import { altAzDir } from './sky/altaz.ts';
 import { trackingLamp } from './world/lamp.ts';
 import { lights } from './world/lights.ts';
 import { CUPOLA, LIFT_AT, TUBE_CLEAR_ALT, makeMachine } from './core/machine.ts';
@@ -147,8 +147,6 @@ const liftView = () => ({
 });
 const skyMoving = () => clock.easing() || clock.speed > 1 || clock.shifting() || latK < 1 || swinging;
 
-// The laser's mouth, reused each frame.
-const mouth = new Vector3();
 function pose(): void {
   skyAt(clock.skyMs());
   for (const d of followers()) {
@@ -167,18 +165,10 @@ function pose(): void {
     setDusk(opening.dusk(), opening.magLimit());
     // The City light row caps the dusk's limit too.
     setStarLimit(Math.min(opening.dusk() > 0 ? opening.magLimit() : NIGHT_MAG, skyLimit));
-    laser.level(opening.beam());
     nightSet = opening.done;
   }
   // At dusk each lamp comes on alone.
   lights.set(light, opening.done ? undefined : opening.lamp);
-  // The beam follows the pointer in aim; after a pick it follows the tube.
-  // After a pick it leaves the laser on the tube.
-  const free = m.phase === 'aim' || m.phase === 'lost';
-  // Before a pick the selector shows; the beam comes on with a choice.
-  if (!free) laser.aim(dome.laserMouth(mouth), { alt: m.tubeAlt, az: m.tubeAz });
-  if (free) laser.visible = false;
-  else if (nightSet) laser.visible = true;
 }
 
 // A point's place on the stage in CSS px, or null behind the camera.
@@ -308,7 +298,7 @@ export function wake(): void {
 }
 
 function input(a: AltAz): void {
-  // The beam stays off until night.
+  // The aim stays off until night.
   if (opening.locked) return;
   lastInput = performance.now();
   // A close shot's camera gives no true aim; the pointer waits for the wide shot.

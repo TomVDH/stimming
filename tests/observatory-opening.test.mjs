@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   makeOpening, driveClock, sunsetAz, streakForDusk,
-  OPENING_S, SKIP_S, BEAM_S, SUN_START, SUN_END, MAG_START, MAG_END, PEAK_SPEED, EXPOSURE_S,
+  OPENING_S, SKIP_S, SUN_START, SUN_END, MAG_START, MAG_END, PEAK_SPEED, EXPOSURE_S,
 } from '../observatory/src/core/opening.ts';
 import { makeClock, TRAIL_SPEED } from '../observatory/src/core/clock.ts';
 
@@ -83,19 +83,17 @@ test('no star shows in the golden hour; the brightest show by 3 s; the sky is ri
   assert.ok(op.magLimit() >= 5, `limit ${op.magLimit()} at 6 s`);
 });
 
-test('play stays locked until full night; then the beam comes on', () => {
+test('play stays locked until full night; then the opening is done', () => {
   const op = makeOpening(false);
   assert.equal(op.locked, true);
-  assert.equal(op.beam(), 0);
+  assert.equal(op.done, false);
   run(op, OPENING_S - 0.1);
   assert.equal(op.locked, true);
-  assert.equal(op.beam(), 0);
+  assert.equal(op.done, false);
   run(op, 0.2);
   assert.equal(op.locked, false);
-  assert.equal(op.done, false);
-  run(op, BEAM_S);
-  assert.equal(op.beam(), 1);
   assert.equal(op.done, true);
+  assert.equal('beam' in op, false);
 });
 
 test('the sky clock runs fast, stays under the trail speed and ends on real now at speed 1', () => {
@@ -199,7 +197,7 @@ test('a skip mid-way reaches night in about 0.8 s; the streaks collapse with it'
   assert.equal(op.streak(), 0);
   assert.equal(streakForDusk(op.dusk()), 0);
   assert.equal(op.magLimit(), 6.5);
-  run(op, BEAM_S + FRAME);
+  run(op, FRAME);
   driveClock(op, c);
   assert.equal(op.done, true);
   assert.equal(c.speed, 1);
@@ -218,7 +216,6 @@ test('reduced motion opens at night with play unlocked and no streaks', () => {
   assert.equal(op.locked, false);
   assert.equal(op.dusk(), 0);
   assert.equal(op.magLimit(), 6.5);
-  assert.equal(op.beam(), 1);
   assert.equal(op.speed(), 1);
   assert.equal(op.lagMs(), 0);
   assert.equal(op.streak(), 0);

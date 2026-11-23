@@ -14,7 +14,7 @@ import { camera, renderer } from '../setup.ts';
 import { CLEAR, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
 import { hero, heroSlitAz, type HeroOf } from '../world/hero.ts';
-import { altAzDir, laser } from '../world/laser.ts';
+import { altAzDir } from '../sky/altaz.ts';
 import { applyCamera, applyShot } from './camera.ts';
 import { cutFocus, cutGrain, cutMist } from '../post/chain.ts';
 
@@ -379,9 +379,6 @@ function black(k: number): void {
   dip.style.opacity = String(k);
 }
 
-// The cuts hide the beam; the wide shot shows it.
-function beam(on: boolean): void { laser.mesh.visible = on; }
-
 // The glass on the stage in CSS px: its centre and radius.
 const gEdge = new Vector3();
 function glassOnStage(): Circle {
@@ -464,8 +461,6 @@ let heroOn = false, held = false;
 // It changes only at a hard cut, so no locked shot swaps its model.
 // A hero that gets ready late joins at the next cut.
 let useHero = false, cutShot: Shot | null = null;
-// The hero laser's mouth, reused each frame.
-const mouthAt = new Vector3();
 function swap(on: boolean): void {
   if (on !== heroOn) {
     heroOn = on;
@@ -508,7 +503,6 @@ function toWide(): void {
   showBars(false);
   black(0);
   still.style.display = 'none';
-  beam(true);
   applyCamera(camera.aspect);
 }
 
@@ -522,7 +516,6 @@ function stepDip(dt: number): void {
     dipWide = true;
     dropBeats();
     showBars(false);
-    beam(true);
     applyCamera(camera.aspect);
     // This frame shows full black.
     black(1);
@@ -667,9 +660,6 @@ export const cuts = {
     // The swap happens in the frame that changes the shot.
     swap(close ? useHero : held && heroReady());
     feedGlass(close ? useHero : held);
-    // The close shots come after a pick, so the beam leaves the hero's laser.
-    const sc = heroScope();
-    if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
     rendered = close ? shot : null;
     if (!close) {
       starLift(false);
@@ -697,7 +687,6 @@ export const cuts = {
     // The first shot fades up from the black.
     // The camera and the hero swapped under it.
     if (mode === 'cuts' && inT < DIP_DOWN + DIP_UP + 0.1) black((1 - Math.min(1, (inT - DIP_DOWN) / DIP_UP)) ** 2);
-    beam(false);
     showBars(true);
     if (mode === 'push') thru!.step(k, reduced() ? null : glassOnStage());
   },
@@ -707,8 +696,7 @@ export const cuts = {
     if (blending) beats[beatN % 2].style.opacity = String(Math.max(0, 1 - k));
   },
   // QA: keeps the hero model in outside the cuts, for stills.
-  // The beam hides as in the close shots.
-  hold(on: boolean): void { held = on; beam(!on); },
+  hold(on: boolean): void { held = on; },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
     // A film beat is kept for the blend.
@@ -722,7 +710,6 @@ export const cuts = {
     still.getContext('2d')!.drawImage(c, 0, 0);
     still.style.opacity = '1';
     still.style.display = 'block';
-    beam(true);
     applyCamera(camera.aspect);
   },
 };

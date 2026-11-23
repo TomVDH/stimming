@@ -2,7 +2,7 @@
 import './grade.ts';
 // Copied from railgun/src/post/chain.ts and settings.ts.
 // FXAA and the Dev rows are trimmed.
-import { ACESFilmicToneMapping, DepthTexture, HalfFloatType, Scene, WebGLRenderTarget } from 'three';
+import { ACESFilmicToneMapping, DepthTexture, HalfFloatType, WebGLRenderTarget } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -13,7 +13,7 @@ import { makeDof } from './dof.ts';
 import { makeDepthTap, makeMist } from './mist.ts';
 import { makeGrade } from './grade.ts';
 
-/* ---------- post chain: render, mist, beam, bloom, grade, tone map ---------- */
+/* ---------- post chain: render, mist, bloom, grade, tone map ---------- */
 // Railgun's look values: the bloom's strength, radius and threshold.
 // Then the tint, the vignette and the grain.
 const POST = { bloom: [0.5, 0.5, 2.0] as const, tint: [0.0008, 0.0009, 0.0016] as [number, number, number], vig: 0.6, vigIn: 0.38, grain: 0.075 };
@@ -41,12 +41,6 @@ composer.addPass(dof);
 setTimeout(() => dof.warm(renderer), 0);
 const mist = makeMist(camera);
 composer.addPass(mist);
-// The laser beam draws after the mist and the clouds, so they never cover it.
-// It tests itself against the scene's depth, so land and domes still hide it.
-export const beamScene = new Scene();
-const beamPass = new RenderPass(beamScene, camera);
-beamPass.clear = false;
-composer.addPass(beamPass);
 composer.addPass(makeBloom(...POST.bloom));
 const grade = makeGrade(POST);
 composer.addPass(grade);

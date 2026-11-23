@@ -1,6 +1,6 @@
 # Observatory: celestial selector and sky controls
 
-Status: active · Bean: `stimming-iv1u` · Parent: `stimming-wqq9`
+Status: active · Beans: `stimming-iv1u`, `stimming-4itb` · Parent: `stimming-wqq9`
 
 ## Intent
 
@@ -20,6 +20,20 @@ The sky gets three controls: the season, the darkness, the place.
 | Seeing | Darkness on a Bortle slider, 1 to 9. Default Bortle 2, alpine dark. |
 | Place | Named sites as chips. The hill and the woods do not change. |
 
+## The quieter look (Tom, 2026-11-23, `stimming-4itb`)
+
+Tom: "get rid of the green laser altogether -- eliminate its code -- the selector too -- not quite on brand with bar v3 -- the selector laser and selecting a star or area of the sky -- needs to be more subtle -- also -- let's just have "Little Observatory" -- and "Big Observatory" as names -- lets keep the psuedo tech terms out of it until we are within the telescope".
+On "the selector too", Tom chose a restyle, not a removal. He approved the first stills.
+This replaces the Hover, Choose and Send rows above.
+
+| Beat | Now |
+|---|---|
+| Hover | Four small corner ticks round the star, and its name in slab caps with the bar's dark edge. No glow, no magnitude, no instrument, no hairline. |
+| Lock | The ticks close in and turn white. Two bar v3 words under the name: `Little Observatory` (the classic dome) and `Big Observatory` (the Keck dome). They use the bar's own button: no box, and the white flash box closes in on hover. Keys 1 and 2. |
+| Hairline | Only while a word is under the pointer or the focus: one faint line from that word to its dome. |
+| Send | No beam. The slew and the cuts follow the chosen dome. |
+| Words | No telescope terms before the viewer is inside the telescope. |
+
 ## Calls made by the designer
 
 Tom can change any of these.
@@ -27,7 +41,7 @@ Tom can change any of these.
 | Topic | Call | Reason |
 |---|---|---|
 | Hover snap | The glow snaps to the star a tap picks: the nearest star in a small radius, the brighter of two near ones | Today a tap picks the brightest star in 3°, unseen; a preview must show the true pick |
-| Hover before night | No hover while the opening plays | The beam stays off until night today |
+| Hover before night | No hover while the opening plays | Aim and picks stay off until night |
 | Chip side | The chips sit on the side of the star with more room; they flip near an edge | The chips stay on screen at 375 px |
 | Chip size | 44 px tap height on touch | Touch target |
 | Re-pick while tracking | A new star shows the chips again. The same dome slews. The other dome takes over; the first one shuts. | One telescope answers at a time |

@@ -9,7 +9,7 @@ export type Scope = 'refractor' | 'reflector';
 // last: the telescope the last choice sent.
 export type SelState = { mode: 'idle' | 'hover' | 'locked'; star: Star | null; last: Scope };
 
-// The first hover's hairline runs to the big dome.
+// No choice yet counts as the big dome.
 export function makeSelector(): SelState {
   return { mode: 'idle', star: null, last: 'reflector' };
 }

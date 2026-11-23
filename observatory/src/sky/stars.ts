@@ -1,5 +1,5 @@
-// Load order: world/laser runs first.
-import '../world/laser.ts';
+// Load order: world/woods runs first.
+import '../world/woods.ts';
 import {
   AdditiveBlending, BufferAttribute, BufferGeometry, Color, DoubleSide, InstancedBufferAttribute, InstancedBufferGeometry,
   Matrix4, Mesh, Points, ShaderMaterial, Vector2, Vector4,
