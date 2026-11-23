@@ -23,7 +23,7 @@ export const ui = initPage({
     dev: [
       // The shot that shows, 1 to 5; a pick replays the cuts from that shot.
       { type: 'choice', id: 'cam-shot', group: 'Cut camera', label: 'Shot', display: 'segments', value: 'edge',
-        options: ['edge', 'slit', 'lift', 'roll', 'glass'].map((v, i) => ({ value: v, label: String(i + 1) })), onPick: (v: string) => camHooks.shot?.(v) },
+        options: ['edge', 'slit', 'lift', 'roll', 'glass', 'mirror'].map((v, i) => ({ value: v, label: String(i + 1) })), onPick: (v: string) => camHooks.shot?.(v) },
       camRow('ex', 'Eye forward', -2, 10, 0.05),
       camRow('ey', 'Eye right', -6, 6, 0.05),
       camRow('ez', 'Eye up', -2, 4, 0.05),

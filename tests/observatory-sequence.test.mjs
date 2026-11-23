@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq, cadence, CUT_FPS,
-  EDGE_CUT, SLIT_CUT, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
+  EDGE_CUT, SLIT_CUT, MIRROR_S, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
 } from '../observatory/src/core/sequence.ts';
 import { makeMachine, TUBE } from '../observatory/src/core/machine.ts';
 import { SHUTTER_S } from '../observatory/src/core/dome.ts';
@@ -50,7 +50,7 @@ const names = (r) => r.shots.map(x => x.shot).join(',');
 const of = (r, shot) => r.shots.find(x => x.shot === shot);
 
 test('five shots in order, each a locked camera with one lens', () => {
-  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll', 'glass']);
+  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll', 'glass', 'mirror']);
   for (const c of CUTS) {
     assert.equal(typeof c.fov, 'number', `${c.shot}: fov is one number`);
     // The inside shot needs a wider lens: the room is small.
@@ -254,4 +254,16 @@ test('lightLevel in slew dims from 1 to 0.35 and stays there', () => {
 test('lightLevel never overshoots on a big step', () => {
   assert.equal(lightLevel('aim', 0.9, 10), 1);
   assert.equal(lightLevel('track', 0.1, 10), 0);
+});
+
+test('the reflector adds the mirror shot after the glass shot; the refractor does not', () => {
+  const v = lift(15).at;
+  const plain = play(v);
+  assert.equal(names(plain), 'edge,slit,lift,roll,glass');
+  let s = startSeq('open', v(0), true);
+  const shots = [s.shot];
+  let t = 0;
+  while (!s.done && t < 60) { t += 0.01; s = stepSeq(s, 0.01, v(t)); if (s.shot !== shots[shots.length - 1]) shots.push(s.shot); }
+  assert.equal(shots.join(','), 'edge,slit,lift,roll,glass,mirror');
+  assert.ok(Math.abs(t - plain.end - MIRROR_S) < 0.03, `ends ${t} vs ${plain.end} + ${MIRROR_S}`);
 });

@@ -589,7 +589,11 @@ type Painted = { stone: ReturnType<typeof stoneTex>; dome: ReturnType<typeof dom
 // The big dome's reflector gives the glass shot its rest pose by maths.
 // p: the primary's centre. axis: out of the tube. up: across it, skyward.
 // aperture: the front ring's diameter in world units.
-export type RestGlass = { restGlass(alt: number, az: number, p: Vector3, axis: Vector3, up: Vector3): void; readonly aperture: number };
+// mirrorR: the primary's radius. secR: the secondary housing's radius.
+export type RestGlass = {
+  restGlass(alt: number, az: number, p: Vector3, axis: Vector3, up: Vector3): void;
+  readonly aperture: number; readonly mirrorR: number; readonly secR: number;
+};
 export type CutScope = HeroScope & Partial<RestGlass>;
 
 type Built = {
@@ -1201,6 +1205,8 @@ function onSphere(r: number, b: number, e: number): Matrix4 {
 // The primary's face lies M_MIRROR_Z behind the axis.
 // The front ring lies M_CAGE_Z along the tube, M_CAGE_R across.
 const M_AXIS_Y = 3.3, M_MIRROR_Z = 0.5, M_CAGE_Z = -1.95, M_CAGE_R = 0.58;
+// The primary's radius and the secondary housing's radius.
+const M_MIRROR_R = 0.5, M_SEC_R = 0.215;
 // The fork stands on the floor at this size.
 // Any larger, the swept tube hits the cupola.
 const M_SIZE = 0.75;
@@ -1234,6 +1240,8 @@ function bigScope(main: Dome, floorY: number): CutScope {
       up.set(0, 1, 0).addScaledVector(axis, -axis.y).normalize();
     },
     get aperture() { return 2 * M_CAGE_R * M_SIZE * main.root.scale.x; },
+    get mirrorR() { return M_MIRROR_R * M_SIZE * main.root.scale.x; },
+    get secR() { return M_SEC_R * M_SIZE * main.root.scale.x; },
   };
 }
 

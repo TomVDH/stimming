@@ -490,7 +490,7 @@ if (pauseBtn) {
 /* ---------- DEV COMPOSITING STRIP: temporary, strip with .dev-shots in index.html ---------- */
 // A row over the bar: previous, shots 1 to 5, next, replay, pause.
 // A shot button replays the cuts from that shot's start.
-const SHOTS: Shot[] = ['edge', 'slit', 'lift', 'roll', 'glass'];
+const SHOTS: Shot[] = ['edge', 'slit', 'lift', 'roll', 'glass', 'mirror'];
 // The shot the strip last showed or replayed.
 let stripShot: Shot = 'edge';
 const strip = DEV ? document.createElement('div') : null;

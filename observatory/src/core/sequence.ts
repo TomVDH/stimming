@@ -3,7 +3,7 @@
 import type { Phase } from './machine.ts';
 import { SHUTTER_S } from './dome.ts';
 
-export type Shot = 'edge' | 'slit' | 'lift' | 'roll' | 'glass';
+export type Shot = 'edge' | 'slit' | 'lift' | 'roll' | 'glass' | 'mirror';
 // Each cut is a locked camera.
 // fov: the vertical field of view in degrees, fixed for the cut.
 // phase: the machine phase the cut shows.
@@ -17,12 +17,16 @@ export type Cut = { shot: Shot; fov: number; phase: 'open' | 'slew' };
 // The cupola carries it round.
 // glass: close on the objective glass, with tonight's stars in it.
 // The glass rises into the frame, stops and holds.
+// mirror: the reflector's extra shot, after the glass shot.
+// The camera pushes down the tube, under the secondary.
+// It ends close on the primary, with the starry sky in it.
 export const CUTS: Cut[] = [
   { shot: 'edge', fov: 18, phase: 'open' },
   { shot: 'slit', fov: 10, phase: 'open' },
   { shot: 'lift', fov: 34, phase: 'slew' },
   { shot: 'roll', fov: 9, phase: 'slew' },
   { shot: 'glass', fov: 20, phase: 'slew' },
+  { shot: 'mirror', fov: 20, phase: 'slew' },
 ];
 export const cutOf = (shot: Shot): Cut => CUTS.find(c => c.shot === shot)!;
 
@@ -60,7 +64,11 @@ export type Lift = { altLeft: number; altEta: number };
 // t: seconds in it.
 // total: seconds since the pick.
 // settled: seconds since the tube came to rest, in the glass shot.
-export type Seq = { shot: Shot; t: number; total: number; settled: number; done: boolean };
+// extra: the mirror shot follows the glass shot.
+export type Seq = { shot: Shot; t: number; total: number; settled: number; done: boolean; extra: boolean };
+// The mirror shot pushes in for MIRROR_PUSH seconds.
+// Then it holds on the primary until MIRROR_S.
+export const MIRROR_PUSH = 4.5, MIRROR_S = 6.5;
 
 // Seconds until the glass shot is due.
 // It is due with GLASS_ENTER degrees left to lift.
@@ -77,8 +85,9 @@ const enter = (s: Seq, shot: Shot): Seq => ({ ...s, shot, t: 0, settled: 0 });
 // The sequence at the pick.
 // A shut shutter opens first.
 // An open shutter starts the slew at once, with the lift shot.
-export function startSeq(phase: Phase, m: Lift): Seq {
-  const s: Seq = { shot: 'edge', t: 0, total: 0, settled: 0, done: false };
+// extra: true for the reflector, which adds the mirror shot.
+export function startSeq(phase: Phase, m: Lift, extra = false): Seq {
+  const s: Seq = { shot: 'edge', t: 0, total: 0, settled: 0, done: false, extra };
   void m;
   return phase === 'open' ? s : enter(s, 'lift');
 }
@@ -100,8 +109,11 @@ export function stepSeq(s: Seq, dt: number, m: Lift): Seq {
       return n;
     case 'glass': {
       const settled = m.altLeft <= SETTLE ? s.settled + dt : 0;
-      return { ...n, settled, done: settled >= GLASS_HOLD - 1e-9 || n.t >= GLASS_MAX };
+      const end = settled >= GLASS_HOLD - 1e-9 || n.t >= GLASS_MAX;
+      if (end && s.extra) return enter(n, 'mirror');
+      return { ...n, settled, done: end };
     }
+    case 'mirror': return { ...n, done: n.t >= MIRROR_S };
   }
 }
 
