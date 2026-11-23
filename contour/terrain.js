@@ -1,6 +1,8 @@
 // Contour map terrain: one square grid of heights in metres, on the CPU.
 // The brush raises or digs; the sea floods in from the open edges.
 
+import { drain } from './fill.js';
+
 export const N = 512;
 // Metres per cell: the sheet is about 20 km across.
 export const CELL = 40;
@@ -104,6 +106,8 @@ export function makeTerrain() {
         rock[j * N + i] = 0.62 + 0.8 * (0.5 + fbm(n4, u * 7 + 11, v * 7 - 4, 4, 2.1, 0.55));
       }
     }
+    // Noise leaves pits everywhere; a real land drains, bar its large basins.
+    drain(h, N);
     floodAll();
     mark(dirtyH, 0, 0, N - 1, N - 1);
     mark(dirtyW, 0, 0, N - 1, N - 1);
@@ -205,6 +209,45 @@ export function makeTerrain() {
     }
     return crossed;
   }
+  // Softens the land round (cx, cy): each cell moves toward its local mean.
+  // k is the share of the way it moves at the centre, 0 to 1.
+  const tmp = new Float32Array(N * N), tmp2 = new Float32Array(N * N);
+  function soften(cx, cy, sigma, k) {
+    const r = Math.ceil(sigma * 2.5), m = 3;
+    const x0 = Math.max(0, Math.floor(cx - r)), x1 = Math.min(N - 1, Math.ceil(cx + r));
+    const y0 = Math.max(0, Math.floor(cy - r)), y1 = Math.min(N - 1, Math.ceil(cy + r));
+    if (x1 < x0 || y1 < y0) return 0;
+    const bx0 = Math.max(0, x0 - m), bx1 = Math.min(N - 1, x1 + m), by0 = Math.max(0, y0 - m), by1 = Math.min(N - 1, y1 + m);
+    // A box blur of radius m, in two passes.
+    for (let y = by0; y <= by1; y++) for (let x = x0; x <= x1; x++) {
+      let s = 0, n = 0;
+      for (let i = Math.max(0, x - m); i <= Math.min(N - 1, x + m); i++) { s += h[y * N + i]; n++; }
+      tmp[y * N + x] = s / n;
+    }
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      let s = 0, n = 0;
+      for (let j = Math.max(by0, y - m); j <= Math.min(by1, y + m); j++) { s += tmp[j * N + x]; n++; }
+      tmp2[y * N + x] = s / n;
+    }
+    const q = -0.5 / (sigma * sigma);
+    let crossed = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const c = y * N + x, dx = x - cx, dy = y - cy;
+      const g = Math.exp((dx * dx + dy * dy) * q);
+      if (g < 0.01) continue;
+      const old = h[c], nv = old + (tmp2[c] - old) * Math.min(1, k * g);
+      h[c] = nv;
+      if ((old < 0) !== (nv < 0)) crossed++;
+      if (nv < 0 && wet[c] && !(old < 0)) front.push(c);
+    }
+    mark(dirtyH, x0, y0, x1, y1);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      const c = y * N + x;
+      if (h[c] < 0 && wet[c] === 255 && edgeDry(c)) front.push(c);
+    }
+    return crossed;
+  }
+
   // True when a neighbour is low ground the water has not reached.
   function edgeDry(c) {
     const x = c % N, y = (c - x) / N;
@@ -237,7 +280,7 @@ export function makeTerrain() {
   }
 
   return {
-    h, wet, generate, floodStep, age, brush, at, grad, wetAt, refresh,
+    h, wet, generate, floodStep, age, brush, soften, at, grad, wetAt, refresh,
     takeDirtyH: () => take(dirtyH), takeDirtyW: () => take(dirtyW),
     get flooding() { return front.length > 0 || ramp.size > 0; },
     get frontSize() { return front.length; },

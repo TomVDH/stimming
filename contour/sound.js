@@ -1,6 +1,7 @@
 // Contour map sound in Web Audio. Muted by default; the kit holds the context.
 // Earth rumbles while the land moves; each contour under the brush ticks;
-// the sea washes in with the flood front.
+// the sea washes in with the flood front; lakes trickle as they rise;
+// rivers babble as they run; a new summit mark pips.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -16,6 +17,8 @@ const MAX_TICKS = 24;
 export function makeSound(kit) {
   let bus = null, brown = null, pending = 0, tickGate = 0;
   let earthV = null, washV = null, earthOn = false, washOn = false, washLvl = 0;
+  // Held loops by name: sand, fill, stream. Each has a level that eases.
+  const held = {};
   const live = new Set();
 
   function ensureBus(ac) {
@@ -187,6 +190,58 @@ export function makeSound(kit) {
     if (!washOn && washV.g.gain.value < 0.003) { drop(washV); washV = null; }
   }
 
+  // A held loop of white noise through one filter, faded by its level.
+  // A silent loop stops, so the context can sleep.
+  function hold(name, want, { type, freq, q, gain, pan = 0, wobble = 0 }) {
+    const ac = kit.live();
+    let v = held[name];
+    if (!ac || !kit.noise) { if (v) { drop(v); delete held[name]; } return; }
+    if (!v && want > 0.02) {
+      const b = ensureBus(ac);
+      const src = ac.createBufferSource();
+      src.buffer = kit.noise; src.loop = true;
+      const f = ac.createBiquadFilter();
+      f.type = type; f.Q.value = q; f.frequency.value = freq;
+      const g = ac.createGain(); g.gain.value = 0;
+      const p = ac.createStereoPanner();
+      src.connect(f).connect(g).connect(p).connect(b.dry);
+      src.start(ac.currentTime, Math.random() * 0.8);
+      v = held[name] = { src, f, g, p, on: true };
+    }
+    if (!v) return;
+    const t = ac.currentTime;
+    v.g.gain.setTargetAtTime(want * gain, t, 0.08);
+    // A babble: the band jumps a little, at random, each frame.
+    v.f.frequency.setTargetAtTime(freq * (1 + wobble * (Math.random() * 2 - 1)), t, wobble ? 0.03 : 0.15);
+    v.p.pan.setTargetAtTime(clamp(pan, -1, 1) * 0.5, t, 0.2);
+    v.on = want > 0.02;
+    if (!v.on && v.g.gain.value < 0.003) { drop(v); delete held[name]; }
+  }
+  // Smoothing: a soft rasp, like a hand brushing sand.
+  function sand(level, pan) { hold('sand', clamp(level, 0, 1), { type: 'bandpass', freq: 2600, q: 0.8, gain: 0.07, pan }); }
+  // Rising lakes: a trickle that grows with the water's climb.
+  function fill(rising, pan) { hold('fill', clamp(Math.sqrt(rising / 30), 0, 1), { type: 'bandpass', freq: 1300, q: 3, gain: 0.09, pan: pan * 0.5, wobble: 0.35 }); }
+  // A river running out: a light, quick babble.
+  function stream(growing) { hold('stream', clamp(growing * 0.6, 0, 1), { type: 'bandpass', freq: 2100, q: 4, gain: 0.07, wobble: 0.45 }); }
+
+  // A new summit mark lands: one small high pip, pitched by the height.
+  function pip(h, pan) {
+    const ac = kit.live();
+    if (!ac) return;
+    const b = ensureBus(ac), t = ac.currentTime + 0.01;
+    const o = ac.createOscillator();
+    o.type = 'triangle';
+    o.frequency.value = 880 * 2 ** (clamp(h, 0, 1900) / 1900) * jit(0.01);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.06 * jit(0.1), t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0005, t + 0.35);
+    const p = panner(ac, pan);
+    o.connect(g).connect(p).connect(b.dry);
+    o.start(t);
+    own(o, [o, g, p], t + 0.37);
+  }
+
   // The land breaks the surface, or the sea pours into a cut.
   function splash(pan, k = 1) {
     const ac = kit.live();
@@ -264,13 +319,14 @@ export function makeSound(kit) {
     live.clear();
     if (earthV) { drop(earthV); earthV = null; }
     if (washV) { drop(washV); washV = null; }
+    for (const k of Object.keys(held)) { drop(held[k]); delete held[k]; }
     earthOn = washOn = false; washLvl = 0;
   }
 
   return {
-    tick, press, earth, wash, splash, newLand, quiet,
-    get busy() { return pending > 0 || earthOn || washOn; },
+    tick, press, earth, wash, splash, newLand, quiet, sand, fill, stream, pip,
+    get busy() { return pending > 0 || earthOn || washOn || Object.values(held).some(v => v.on); },
     // A held loop still fading out keeps the frame loop awake.
-    get tail() { return !!(earthV || washV); },
+    get tail() { return !!(earthV || washV) || Object.keys(held).length > 0; },
   };
 }
