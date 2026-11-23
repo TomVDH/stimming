@@ -24,7 +24,7 @@ All from Wikimedia Commons.
 ### The model
 
 Buoy Business (`E:\dev\havoc`) carries an Akula GLB (`lab/ocean/assets/akula.glb`). Its licence is unknown ("confirm before shipping"), and Stimming is a public repo.
-Tom, 2026-11-23: "we had a akula model -- pls use that". The toy loads that GLB (`icebreach/akula.glb`); `CREDITS.md` notes the unknown licence.
+Tom, 2026-11-23: "we had a akula model -- pls use that". The toy loads that GLB (`icebreach/akula.glb`). Tom cleared it for the public repo the same day: "Yes, it's cleared".
 
 ## 2. The full toy (XXL): stages in order
 

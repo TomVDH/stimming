@@ -28,7 +28,7 @@ Idea 240, batch 9, grown to XXL: Tom's pick of 2026-11-23. Bean `stimming-ri97`.
 - 3D, three.js 0.170. Polar night: a low moon behind the sub and to the left, out of frame; stars; pressure ridges on the horizon in haze.
 - A long lens: 17 degrees across from 115 m, the eye 5 m over the floe, as from a pressure ridge.
 - References: the ICEX surfacings on Wikimedia Commons (USS Annapolis 2009, USS Connecticut 2018, USS Hampton) and the Akula photos and side plan. Slabs lean on the sail's base and ride its top.
-- The sub: the Akula from Buoy Business (`akula.glb`, 546 KB), loaded as havoc loads it: bow to +x, 110 m long, the black core on the axis. The masts over the sail roof split off and rise once she is up. The paint is black anechoic tile, wet from the sea, with water running off as she rises.
+- The sub: the Akula from Buoy Business (`akula.glb`, 546 KB; source havoc `lab/ocean/assets`, cleared by Tom for the public repo on 2026-11-23: "Yes, it's cleared"), loaded as havoc loads it: bow to +x, 110 m long, the black core on the axis. The masts over the sail roof split off and rise once she is up. The paint is black anechoic tile, wet from the sea, with water running off as she rises.
 - The floe: about 120 Voronoi slabs in a star round the sail, 1.0 m of ice under 0.24 m of snow by default. Snow tops with sastrugi and glints; blue cut faces with brine layers; algae-brown undersides.
 - Water: black open water in the hole with rings from the breach; a flood that spills over the floe from the hole (a pipe-model grid at 0.8 m cells), leaves a grey stain, and soaks in; new ice greys the hole over.
 - Plume: snow powder from the break and from each knock, and sea smoke off the open water. A K3 fluid with Fire's smoke shading, ported from Ship launch's `mist.js`.
@@ -76,7 +76,6 @@ Captures: `docs/qa/icebreach/` (01 blockout to 12 Lab tile). Headless Edge on D3
 ## Open
 
 - Tom's look at the shot, the breach and the flood.
-- The Akula GLB's licence is unknown (a Blockbench export from a zip); Tom said to use it on 2026-11-23. See `CREDITS.md`.
 - The icon round `icebreach-1` has no pick yet; A is on the menu.
 - The flood reads only as a dark band from this eye height.
 - Later stages are in the plan; none is built.

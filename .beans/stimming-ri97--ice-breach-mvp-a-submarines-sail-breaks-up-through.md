@@ -14,7 +14,7 @@ Arctic night. A submarine's sail breaks up through pack ice. Hold to surface: th
 
 - [x] Plan in docs/plans/icebreach.md
 - [x] Reference photos: Akula sail, ICEX surfacings, ice fracture
-- [x] Akula model: Tom said use the Buoy Business GLB (2026-11-23); licence unknown, in CREDITS.md
+- [x] Akula model: the Buoy Business GLB, cleared by Tom for the public repo (2026-11-23), in CREDITS.md
 - [x] Blockout in the real framing, 1280 x 800 capture to Tom
 - [x] Ice: bulge, star cracks, slabs with thickness and snow, tilt and slide
 - [x] Water floods the floe; calm and refreeze
