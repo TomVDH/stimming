@@ -1,10 +1,14 @@
 // @ts-check
 // Shared GLSL: rain and snow as particles in the world, lit by lamps.
-// precip.js draws rain on the frame; this module draws drops that cross a beam.
-// Each drop is one instance: a screen-space streak over one exposure.
-// Paste PRECIPFIELD into a vertex and a fragment shader. It declares no uniforms.
+// precip.js draws rain on the frame.
+// This module draws drops that cross a lamp's beam.
+// Each drop is one instance.
+// A drop draws as a screen-space streak over one exposure.
+// Paste PRECIPFIELD into a vertex and a fragment shader.
+// It declares no uniforms.
 // It compiles in raw WebGL2 and in a three.js ShaderMaterial.
-// Whiteout is the reference (snow, one lamp). Plan: docs/plans/precipfield.md.
+// Whiteout is the reference: snow and one lamp.
+// Plan: docs/plans/precipfield.md.
 //
 // Vertex shader, per instance:
 //   vec3 r = pfHash3(id * 1.37 + 0.5);                  // or a seed attribute
@@ -18,9 +22,9 @@
 //   gl_Position = s.pos;
 // Fragment shader:
 //   o = vec4(vCol * pfCover(vQ, vLen, vW), 1.0);       // additive blend
-// corner: pfCorner(gl_VertexID) for 6 vertices, or pfPlaneCorner(position.xy) on a plane.
-// z: 0.0 with no depth test, or the head's clip z / w for the depth buffer.
-// The toy keeps its crowds, its lights and their masks, and its depth test.
+// corner: pfCorner(gl_VertexID), or pfPlaneCorner(position.xy) on a plane.
+// z: 0.0 with no depth test, or the head's clip z / w.
+// The toy keeps its crowds, lights, masks and depth test.
 
 export const PRECIPFIELD = /* glsl */`
 float pfH1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
@@ -34,7 +38,8 @@ vec3 pfFlutter(float t, float w, float ph, float amp) {
 vec3 pfFlutterVel(float t, float w, float ph, float amp) {
   return vec3(cos(t * w + ph), cos(t * w * 1.3 + ph * 2.0) * 0.91, -sin(t * w * 0.8 + ph) * 0.8) * amp * w;
 }
-// A drop's place in a box that wraps. drift and fall are the travel so far, in m.
+// A drop's place in a box that wraps.
+// drift and fall are the travel so far, in m.
 vec3 pfPlace(vec3 r, vec3 lo, vec3 size, vec2 drift, float fall, vec3 flutter) {
   vec3 p = lo + r * size;
   p.xz += drift;
@@ -44,9 +49,11 @@ vec3 pfPlace(vec3 r, vec3 lo, vec3 size, vec2 drift, float fall, vec3 flutter) {
 }
 // Clip space to pixels.
 vec2 pfPx(vec4 clip, vec2 res) { return (clip.xy / clip.w * 0.5 + 0.5) * res; }
-// The blur disc off the focus plane, in pixels. aper is the lens's blur per unit of resY.
-float pfCoc(float dist, float focus, float aper, float resY) { return aper * abs(1.0 - focus / dist) * resY; }
-// The streak's half width in pixels: the drop, then its blur, never under 0.7.
+// The blur disc off the focus plane, in pixels.
+// aper is the lens blur per unit of resY.
+float pfCoc(float dist, float focus, float aper, float resY) { return aper * abs(1.0 - focus / max(dist, 1e-3)) * resY; }
+// The streak's half width in pixels: the drop plus its blur.
+// It never falls under 0.7 pixels.
 float pfWidth(float radPx, float coc, float cocMax) { return max(0.7, radPx + min(coc, cocMax)); }
 // Two triangles: x runs tail (0) to head (1), y runs across (-1 to 1).
 vec2 pfCorner(int k) {
@@ -59,7 +66,9 @@ vec2 pfCorner(int k) {
 vec2 pfPlaneCorner(vec2 xy) { return vec2(xy.y + 0.5, -xy.x * 2.0); }
 // A vertex that the rasteriser drops.
 const vec4 pfOff = vec4(2.0, 2.0, 2.0, 1.0);
-// pos: the clip position. q: the place in the capsule, in pixels. len and w: its length and half width.
+// pos is the clip position.
+// q is the place in the capsule, in pixels.
+// len and w are its length and half width.
 struct PfStreak { vec4 pos; vec2 q; float len; float w; };
 // A capsule from tail s0 to head s1, in pixels.
 PfStreak pfStreak(vec2 s0, vec2 s1, float w, vec2 corner, vec2 res, float z) {
@@ -76,20 +85,25 @@ PfStreak pfStreak(vec2 s0, vec2 s1, float w, vec2 corner, vec2 res, float z) {
   o.w = w;
   return o;
 }
-// The drop's light spreads over the streak and the blur disc, so long streaks stay dim.
+// The light spreads over the streak and the blur disc.
+// Long streaks stay dim.
 float pfSpread(float radPx, float len, float w) {
   float area = (len + 2.0 * w) * 2.0 * w;
   float energy = max(radPx * radPx, 0.04) * 3.1416;
   return min(energy / area, 1.0);
 }
-// Henyey-Greenstein: the forward lobe, per steradian. c is dot(light to drop, drop to eye).
+// Henyey-Greenstein: the forward lobe, per steradian.
+// c is dot(light to drop, drop to eye).
 float pfPhase(float c, float g) {
   float g2 = g * g;
   return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577;
 }
-// A point lamp at the drop. k: the toy's beam or mask. d2: distance squared. sig: haze per m.
+// A point lamp at the drop.
+// k is the toy's beam or mask; d2 is distance squared.
+// sig is the haze per metre.
 float pfPoint(float k, float d2, float soft, float sig) { return k / (d2 + soft) * exp(-sig * sqrt(d2)); }
-// The fragment: a capsule with a soft edge. Wide blur discs fade over most of their radius.
+// The fragment: a capsule with a soft edge.
+// Wide blur discs fade over most of their radius.
 float pfCover(vec2 q, float len, float w) {
   float x = clamp(q.x, 0.0, len);
   float d = length(vec2(q.x - x, q.y));

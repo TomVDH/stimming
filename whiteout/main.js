@@ -266,7 +266,7 @@ function step(dt, now) {
   pushHistory(sdt, storm);
   const gh = gustAtHut();
   st.windS += baseVel() * (1 + 0.5 * gh) * sdt;
-  st.fallS += 1.1 * sdt;
+  st.fallS += PF_SNOW.fall * sdt;
   stepLamp(dt, now);
   snd.update({ wind: strength(), gust: gh, pace: st.pace, panLamp: panOf(LAMP), panMast: panOf([MAST.x, MAST.guy, MAST.z]), dt });
 }
