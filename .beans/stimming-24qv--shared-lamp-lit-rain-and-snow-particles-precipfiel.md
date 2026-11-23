@@ -1,7 +1,7 @@
 ---
 # stimming-24qv
 title: 'Shared: lamp-lit rain and snow particles (precipfield.js), Whiteout first, Frietkot next'
-status: in-progress
+status: completed
 type: feature
 created_at: 2026-11-23T19:42:50Z
 updated_at: 2026-11-23T19:42:50Z
@@ -19,6 +19,6 @@ World-space rain and snow streaks, lit by lamps, as a shared module for raw WebG
 - [x] QA Q1 to Q10 on Whiteout, node --check, npm run check
 - [x] shared/AGENTS.md file row
 - [x] three.js 0.170 ShaderMaterial compiles and draws (pfPlaneCorner keeps the winding)
-- [ ] PR with /code-review
-- [ ] Merge after review
-- [ ] Frietkot adopts it in its own chat (Tom looks first)
+- [x] PR with /code-review (TomVDH/stimming#99; three nits fixed)
+- [x] Merge after review (1847f2ad, 2026-11-23)
+Next, outside this bean: Frietkot adopts it in its own chat (Tom looks first).

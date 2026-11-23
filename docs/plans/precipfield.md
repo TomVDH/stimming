@@ -1,6 +1,6 @@
 # Precip field: lamp-lit rain and snow particles
 
-Status: active · Bean: `stimming-24qv` · Tom approved the design, 2026-11-23. Built; the PR waits on review.
+Status: done · Bean: `stimming-24qv` · Tom approved the design, 2026-11-23. Merged in TomVDH/stimming#99 (1847f2ad). Frietkot adopts next, in its own bean.
 
 Tom, 2026-11-23, on Whiteout: "the lamp and glow and flare as well as the snow and how it interacts, very well done. Any way this can slot into any of our shared modules?" He picked lamp-lit precip first, and Frietkot as the rain reference.
 
