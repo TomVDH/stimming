@@ -23,6 +23,7 @@ import { selectorView } from './view/selector.ts';
 import { CUT_FPS, cadence, lightGoal, lightLevel } from './core/sequence.ts';
 import { WIDE, applyCamera, eyeAt, type View } from './view/camera.ts';
 import { camDev, cuts, type CamKey } from './view/cuts.ts';
+import { scopeView } from './view/through.ts';
 import type { Shot } from './core/sequence.ts';
 import { hero } from './world/hero.ts';
 import { onAim, onEsc, onTap } from './input.ts';
@@ -376,8 +377,13 @@ function pick(s: Star): void {
   if (from === 'aim' || from === 'lost') pickStart = { az: machine.cupolaAz, shutter: machine.shutter01, star: s, scope: bound };
   machine.pick(s);
   // An open shutter plays only the slew cuts.
-  // The cuts frame the chosen dome; liftView reads its machine.
-  if (from === 'aim' || from === 'lost') cuts.start(machine.phase, liftView(), targetPos(s), SCOPE_DOME[bound]);
+  if (from === 'aim' || from === 'lost') {
+    // The cuts frame the chosen dome; liftView reads its machine.
+    cuts.start(machine.phase, liftView(), targetPos(s), SCOPE_DOME[bound]);
+    // The refractor's view through the telescope loads while the cuts play.
+    if (bound === 'refractor') scopeView.prepare(s, clock.skyMs());
+    else scopeView.hooks.cancel();
+  }
   lastInput = performance.now();
   dirty = true;
   wake();
@@ -392,6 +398,11 @@ onEsc(() => {
 // A skip by tap or Esc draws the wide shot on the next frame.
 // A skip also ends a pause.
 cuts.onSkip(() => { setPaused(false); dirty = true; wake(); });
+// The glass shot opens into the view through the telescope.
+// The scene sleeps while the view shows.
+cuts.through({ ...scopeView.hooks, done() { scopeView.hooks.done(); setPaused(true); } });
+// A close fades the wide shot up from black.
+scopeView.onClose(() => { setPaused(false); cuts.back(); dirty = true; wake(); });
 
 // A hidden page stops the loop at once.
 whenVisible(stageEl, (vis: boolean) => {
