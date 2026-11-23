@@ -64,7 +64,7 @@ Tom's words: a long lens, a tight frame of the quarter arc (crop of its top half
 
 | | Choice |
 |---|---|
-| Lens | An action, Lens (L), as in Jet hover. The long lens is about half the wide view's width; the limb runs from the middle of the foot to the middle of the left side. A darker, harder tone curve, a deeper vignette, three haze layers at three speeds |
+| Lens | The long lens is the default (Tom, 2026-11-23). An action, Lens (L), as in Jet hover, opens the wide view. The long lens is about half the wide view's width; the limb runs from the middle of the foot to the middle of the left side. A darker, harder tone curve, a deeper vignette, three haze layers at three speeds |
 | Transit | A body crosses the disk on a chord just inside the limb, at true size, climbing away from the Bar |
 | Stars | The Band choice becomes a Star choice: Sun, Proxima, Rigel, Betelgeuse, VY CMa. The model runs in star units, so a scale body's size carries the scale: the earth beside the sun and Proxima, our sun beside the giants |
 | Giants | Few giant convection cells, strong limb darkening, a dust envelope (arcs, knots, patches over the disk), dimmer loops |

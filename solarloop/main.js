@@ -40,7 +40,8 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
 // Two framings: the wide dome, and a long lens on a quarter of the limb.
 const fit = { wide: { cx: 0, cy: R, hw: 520 }, long: { cx: 0, cy: R, hw: 280, psi: 0.5 } };
-const lens = { long: store.get('lens') === 'long', k: 0 };
+// The long lens is the default (Tom, 2026-11-23).
+const lens = { long: store.get('lens') !== 'wide', k: 0 };
 lens.k = lens.long ? 1 : 0;
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
@@ -253,7 +254,7 @@ function makeFrame() {
   const tx = Math.cos(L.psi), ty = -Math.sin(L.psi);
   // The transit runs along a chord just inside the limb, over about five minutes.
   const span = 2.4 * Math.hypot(L.hw, lh);
-  const s0 = ((st.time * 1.5 + span * 0.47) % span) - span / 2;
+  const s0 = ((st.time * 1.5 + span * 0.53) % span) - span / 2;
   const depth = R - 0.16 * lh;
   // It climbs away from the foot of the frame.
   const bx = depth * Math.sin(L.psi) - tx * s0, by = depth * Math.cos(L.psi) - ty * s0;

@@ -4,7 +4,7 @@ Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
 A star's edge at a vast scale, graded like film. The look takes its cue from two kinds of film: the sun as a furnace, all gold and white light, and the slow, hazy, monumental frame of large-scale science fiction.
 Five stars, from the red dwarf Proxima to the hypergiant VY Canis Majoris. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. A scale body hangs at true size: the earth beside our sun and Proxima, our sun beside the giants.
-The long lens (L) cuts the limb across the bottom left quarter of the frame; haze drifts in layers, and a small body crosses the disk: Mercury on our sun, a planet on Proxima, our sun itself on the giants.
+The long lens, the default, cuts the limb across the bottom left quarter of the frame; L opens the wide view; haze drifts in layers, and a small body crosses the disk: Mercury on our sun, a planet on Proxima, our sun itself on the giants.
 Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
 
 ## Play
@@ -14,13 +14,13 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 | Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
 | Drag | Turns the star up to 18 degrees each way; the surface follows the hand |
 | Star choice (1 to 5) | Sun, Proxima, Rigel, Betelgeuse, VY CMa |
-| Lens (L) | Zooms over about two seconds between the wide view and the long lens |
+| Lens (L) | Zooms over about two seconds between the long lens (the default) and the wide view |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
 
 - The first frame is a picture: every loop at its own stage of life.
 - The view is orthographic. The wide view is 1040 star units across on a wide stage (760 at mid widths, 520 on a phone), so the limb reads as a dome; the limb's top stands about a quarter of the way up the free stage.
-- The long lens is 560 units across (420 at mid widths, 300 on a phone). The limb runs from the middle of the foot to the middle of the left side; black space fills the rest. The tone curve presses darker and harder, the vignette deepens and three layers of haze drift at three speeds.
+- The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The limb runs from the middle of the foot to the middle of the left side; black space fills the rest. The tone curve presses darker and harder, the vignette deepens and three layers of haze drift at three speeds.
 
 ## The stars
 
