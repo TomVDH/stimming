@@ -9,9 +9,8 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
-import { buildScene, MAX_BOMB_LIGHTS } from './scene.js';
+import { buildScene, MAX_BOMB_LIGHTS, SEA } from './scene.js';
 import { makeWorld, charge, blast, step as stepWorld, busy, clear, VENT, C_SOUND } from './erupt.js';
-import { height } from './terrain.js';
 import { volcanoSound } from './sound.js';
 mark('libs');
 
@@ -110,20 +109,21 @@ async function setup() {
   canvas.addEventListener('webglcontextrestored', () => wake());
 }
 
-// The shot: from the plain, looking up at the cone; the column leaves the top.
+// The shot: a long lens from a far ridge, just over the cloud sea.
+// The peak stands out of the sea; the high deck closes the sky above it.
 function frame3() {
   const asp = cssW / cssH, tall = asp < 1;
-  cam.dist = tall ? 1750 : 1500;
-  const fov = tall ? 58 : 42;
-  const x = tall ? 0 : -160, z = cam.dist;
-  cam.pos.set(x, height(x, z) + 30, z);
+  cam.dist = tall ? 2300 : 2000;
+  const fov = tall ? 50 : 30;
+  const x = tall ? 0 : -200, z = cam.dist;
+  cam.pos.set(x, SEA.top + 85, z);
   camera.fov = fov;
   camera.aspect = asp;
   camera.updateProjectionMatrix();
-  // The vent sits below the centre, and right of it on a wide stage.
+  // The vent sits near the middle, a little right of it on a wide stage.
   const half = (fov * Math.PI) / 360;
-  const elev = Math.atan2(VENT[1] - cam.pos.y, cam.dist) + half * (tall ? 0.42 : 0.3);
-  const yaw = tall ? 0 : Math.atan(Math.tan(half) * asp * 0.16);
+  const elev = Math.atan2(VENT[1] - cam.pos.y, cam.dist) + half * (tall ? 0.15 : -0.14);
+  const yaw = tall ? 0 : Math.atan(Math.tan(half) * asp * 0.12);
   const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(elev), Math.sin(elev), -Math.cos(yaw) * Math.cos(elev));
   const toVent = new THREE.Vector3(VENT[0] - x, 0, VENT[2] - z).normalize();
   // Turn the yaw about the line to the vent.
@@ -215,7 +215,9 @@ function upload() {
   k.g.instanceCount = n;
   k.a.a.needsUpdate = k.a.b.needsUpdate = k.a.d.needsUpdate = true;
   // The hottest bombs light the ground near them.
-  lights.sort((a, b) => b.T * b.size - a.T * a.size);
+  // Bombs near the cloud sea count more: they light it from within.
+  const weight = s => s.T * s.size * (s.y < SEA.top + 200 ? 3 : 1);
+  lights.sort((a, b) => weight(b) - weight(a));
   const bl = S.terrain.bombs;
   for (let i = 0; i < MAX_BOMB_LIGHTS; i++) {
     const s = lights[i];
@@ -278,6 +280,9 @@ function step(dt) {
   const amb = frozen ? 0 : timeK;
   const sdt = live ? dt : dt * (frozen ? 0 : timeK);
   if (sdt > 0) stepWorld(W, sdt, { ambient: amb });
+  // The decks drift with the wind; the drift sleeps with the toy.
+  S.U.uWindO.value.x += (4 + 14 * W.wind) * sdt;
+  S.U.uWindO.value.y += (1 + 3 * W.wind) * sdt;
   // Rings reach the camera: the boom lands and the frame shakes.
   for (const r of W.rings) {
     if (!r.hit && r.age * C_SOUND >= cam.dist) { r.hit = true; shake = Math.max(shake, r.amp); }

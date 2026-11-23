@@ -1,9 +1,13 @@
-// Volcano scene: sky, cone, vent halo, ash puffs and glowing streaks.
+// Volcano scene: sky, cone, two cloud decks, vent halo, ash puffs and glowing streaks.
 // Each object has its own small ShaderMaterial, so each program links fast.
 import * as THREE from 'three';
 import { height, noise3 } from './terrain.js';
 
 export const MAX_BOMB_LIGHTS = 12;
+// The cloud decks in metres: a low sea the peak stands out of, and a high deck the column climbs into.
+export const SEA = { base: 150, top: 275, cover: 0.88 };
+export const HIGH = { base: 1080, top: 1330, cover: 0.6 };
+const fl = v => v.toFixed(1);
 
 // Shared uniforms: the camera, the vent light, the flash and the bolts.
 export function makeUniforms() {
@@ -16,6 +20,8 @@ export function makeUniforms() {
     uBoltPos: { value: new THREE.Vector3() },
     uHorizon: { value: new THREE.Color(0.16, 0.12, 0.13) },
     uDim: { value: 1 },
+    uNoise: { value: null },
+    uWindO: { value: new THREE.Vector2() },
   };
 }
 
@@ -53,6 +59,28 @@ vec3 haze(vec3 col, vec3 wp) {
 }
 `;
 
+// The decks' cover, and the veil they lay over a point seen from the camera.
+const DECK = /* glsl */`
+uniform sampler2D uNoise;
+uniform vec2 uWindO;
+const float SEA_BASE = ${fl(SEA.base)}, SEA_TOP = ${fl(SEA.top)}, SEA_COVER = ${SEA.cover};
+const float HIGH_BASE = ${fl(HIGH.base)}, HIGH_TOP = ${fl(HIGH.top)}, HIGH_COVER = ${HIGH.cover};
+// Cover at xz: 0 is clear, 1 is full. Kind 0 is the sea, 1 the high deck.
+float deckCover(vec2 xz, float kind, float cover) {
+  vec2 q = xz + uWindO * (0.6 + 0.8 * kind);
+  float n = texture2D(uNoise, q * 0.00019 + kind * 0.37).r * 0.6 + texture2D(uNoise, q * 0.00061 + 0.21 + kind).r * 0.4;
+  n = (n - 0.5) * 2.6 + 0.5;
+  return smoothstep(1.0 - cover, 1.3 - cover, n);
+}
+// The sea hides what sinks into it; the high deck hides what climbs into it.
+float deckVeil(vec3 p) {
+  float v = 1.0;
+  if (p.y < SEA_TOP) v *= exp(-deckCover(p.xz, 0.0, SEA_COVER) * (SEA_TOP - max(p.y, SEA_BASE)) * 0.04);
+  if (p.y > HIGH_BASE) v *= exp(-deckCover(p.xz, 1.0, HIGH_COVER) * (min(p.y, HIGH_TOP) - HIGH_BASE) * 0.03);
+  return v;
+}
+`;
+
 /* ---------- sky ---------- */
 function sky(U) {
   const mat = new THREE.ShaderMaterial({
@@ -81,7 +109,7 @@ function sky(U) {
         float s = h2(cell);
         vec2 off = vec2(h2(cell + 3.1), h2(cell + 7.7)) * 0.7 + 0.15;
         float star = step(0.993, s) * exp(-dot(g - cell - off, g - cell - off) * 26.0);
-        c += vec3(0.85, 0.9, 1.0) * star * pow(h2(cell + 1.3), 3.0) * 0.9 * smoothstep(0.08, 0.4, e) * uDim;
+        c += vec3(0.85, 0.9, 1.0) * star * pow(h2(cell + 1.3), 3.0) * 0.5 * smoothstep(0.08, 0.4, e) * uDim;
         // The vent glow and the bolt light the air.
         c += FIRE * pass(dir, 1e5, uLight, 120.0, 650.0) * (uHeat * 0.16 + uFlash * 0.9);
         c += BOLT * pass(dir, 1e5, uBoltPos, 200.0, 900.0) * uBolt * 0.25;
@@ -169,6 +197,88 @@ function terrain(U) {
   return { mesh: m, bombs };
 }
 
+/* ---------- cloud decks ---------- */
+// A deck is a stack of sheets; an outer sheet shows only where the deck is dense.
+// The vent, the bombs and the bolts light it from within, as bursts light the deck in Fireworks.
+function deck(U, bombs, kind) {
+  const D = kind ? HIGH : SEA, n = 5;
+  // The sea draws from the bottom up; the high deck from the top down.
+  const hs = Array.from({ length: n }, (_, i) => D.base + ((D.top - D.base) * (i + 0.5)) / n);
+  if (kind) hs.reverse();
+  const geo = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(30000, 30000).rotateX(-Math.PI / 2));
+  geo.setAttribute('aH', new THREE.InstancedBufferAttribute(new Float32Array(hs), 1));
+  geo.instanceCount = n;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { ...U, uBombs: { value: bombs }, uDeck: { value: new THREE.Vector4(D.base, D.top, D.cover, kind) } },
+    defines: { SEA: kind ? 0 : 1 },
+    side: THREE.DoubleSide, transparent: true, depthWrite: false,
+    blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
+    vertexShader: /* glsl */`
+      attribute float aH;
+      uniform vec4 uDeck;
+      varying vec3 vP; varying float vK;
+      void main() {
+        vP = position + vec3(0.0, aH, 0.0);
+        vK = (aH - uDeck.x) / (uDeck.y - uDeck.x);
+        gl_Position = projectionMatrix * viewMatrix * vec4(vP, 1.0);
+      }`,
+    fragmentShader: /* glsl */`
+      ${HAZE}
+      ${DECK}
+      uniform vec4 uDeck;
+      uniform vec4 uBombs[${MAX_BOMB_LIGHTS}];
+      varying vec3 vP; varying float vK;
+      void main() {
+        vec3 v = vP - uCam;
+        vec3 V = normalize(v);
+        float fade = 1.0 - smoothstep(4000.0, 11000.0, length(v.xz));
+        float D = deckCover(vP.xz, uDeck.w, uDeck.z);
+        if (D * fade < 0.01) discard;
+        vec2 q = vP.xz + uWindO * (0.6 + 0.8 * uDeck.w);
+        float b = texture2D(uNoise, q * 0.0024 + vK * 0.41).g * 0.55 + texture2D(uNoise, q * 0.0009 - vK * 0.23).r * 0.45;
+        // The outer face is lumpy: the sea's top, the high deck's base.
+        float hh = SEA == 1 ? vK : 1.0 - vK;
+        float dens = smoothstep(hh - 0.05, hh + 0.3, D * (0.3 + 1.4 * b));
+        float thick = (uDeck.y - uDeck.x) * 0.2;
+        float a = (1.0 - exp(-dens * min(thick / max(abs(V.y), 0.03), 1500.0) * 0.01)) * fade;
+        if (a < 0.003) discard;
+        // Depth into the deck from its lit face.
+        float into = SEA == 1 ? uDeck.y - vP.y : vP.y - uDeck.x;
+        float sh = exp(-into * D * 0.012);
+        vec3 lit;
+        if (SEA == 1) {
+          // Sky light on the sea; the afterglow warms its far side.
+          lit = vec3(0.05, 0.06, 0.095) * (0.3 + 0.7 * sh) + vec3(0.12, 0.06, 0.04) * smoothstep(-0.2, -0.98, V.z) * sh * 0.6;
+        } else {
+          lit = vec3(0.014, 0.017, 0.03) * (0.6 + 0.4 * b);
+        }
+        // The vent lights the deck; a light behind it makes thin parts glow.
+        vec3 d = uLight - vP;
+        // The glow falls off fast, so it pools round the peak and over the column.
+        float fall = 1.0 / (1.0 + dot(d, d) / (SEA == 1 ? 250000.0 : 490000.0));
+        fall *= fall;
+        float ph = pow(max(dot(V, normalize(d)), 0.0), 8.0) * (1.0 - 0.6 * a);
+        lit += FIRE * (uHeat * 1.4 + uFlash * 10.0) * fall * (0.12 + 0.88 * sh) * (1.0 + 3.0 * ph);
+        vec3 bd = uBoltPos - vP;
+        lit += BOLT * uBolt * 3.0 / (1.0 + dot(bd, bd) / 360000.0) * (0.35 + 0.65 * sh);
+#if SEA == 1
+        // Bombs that fall into the sea light it from within.
+        for (int i = 0; i < ${MAX_BOMB_LIGHTS}; i++) {
+          vec4 bb = uBombs[i];
+          vec3 q3 = bb.xyz - vP;
+          lit += FIRE * bb.w * 10.0 / (1.0 + dot(q3, q3) / 4900.0);
+        }
+#endif
+        vec3 col = haze(vec3(0.34, 0.33, 0.35) * lit, vP);
+        gl_FragColor = vec4(col * a, a);
+      }`,
+  });
+  const m = new THREE.Mesh(geo, mat);
+  m.renderOrder = kind ? 2.5 : 1.5;
+  m.frustumCulled = false;
+  return m;
+}
+
 /* ---------- vent halo ---------- */
 function halo(U) {
   const g = new THREE.PlaneGeometry(2, 2);
@@ -239,11 +349,12 @@ function puffs(U, max) {
   g.setAttribute('iP', a.p); g.setAttribute('iS', a.s); g.setAttribute('iL', a.l);
   g.instanceCount = 0;
   const mat = new THREE.ShaderMaterial({
-    uniforms: { ...U, uNoise: { value: noiseTexture() }, uTime: { value: 0 } },
+    uniforms: { ...U, uTime: { value: 0 } },
     transparent: true, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor,
     vertexShader: /* glsl */`
       uniform vec3 uLight;
+      ${DECK}
       attribute vec3 iP; attribute vec4 iS; attribute vec4 iL;
       varying vec2 vQ; varying vec2 vUv; varying vec4 vS; varying vec4 vL; varying vec3 vW; varying vec2 vTo;
       void main() {
@@ -257,6 +368,7 @@ function puffs(U, max) {
         vec3 tl = uLight - iP;
         vTo = normalize(vec2(dot(tl, right), dot(tl, up)) + 1e-4);
         vS = iS; vL = iL;
+        vS.z *= deckVeil(iP);
         gl_Position = projectionMatrix * viewMatrix * vec4(vW, 1.0);
       }`,
     fragmentShader: /* glsl */`
@@ -300,7 +412,7 @@ function puffs(U, max) {
 }
 
 /* ---------- glowing streaks: spatter, bombs, bolts ---------- */
-function streaks(max) {
+function streaks(U, max) {
   const g = new THREE.InstancedBufferGeometry();
   // x runs along the streak, y across it.
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, -1, 0, 1, -1, 0, 1, 1, 0, 0, 1, 0]), 3));
@@ -314,11 +426,12 @@ function streaks(max) {
   g.setAttribute('iA', a.a); g.setAttribute('iB', a.b); g.setAttribute('iD', a.d);
   g.instanceCount = 0;
   const mat = new THREE.ShaderMaterial({
-    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uMinPx: { value: 1.3 } },
+    uniforms: { uRes: { value: new THREE.Vector2(1, 1) }, uMinPx: { value: 1.3 }, uNoise: U.uNoise, uWindO: U.uWindO },
     transparent: true, depthWrite: false,
     blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
     vertexShader: /* glsl */`
       uniform vec2 uRes; uniform float uMinPx;
+      ${DECK}
       attribute vec3 iA; attribute vec3 iB; attribute vec4 iD;
       varying float vX; varying float vY; varying vec4 vD; varying float vK;
       void main() {
@@ -337,6 +450,7 @@ function streaks(max) {
         float z = mix(a.z / a.w, b.z / b.w, position.x);
         gl_Position = vec4(p / h, z, 1.0);
         vX = position.x; vY = position.y; vD = iD;
+        vD.z *= deckVeil(iA);
         // A long streak spreads its light, so it dims a little.
         vK = mix(1.0, w / (L + w), 0.45);
         // The width floor keeps tiny sparks bright enough but no brighter.
@@ -367,8 +481,10 @@ function streaks(max) {
 export function buildScene({ maxSparks, maxPuffs, maxSegs }) {
   const scene = new THREE.Scene();
   const U = makeUniforms();
+  U.uNoise.value = noiseTexture();
   const s = sky(U), t = terrain(U), h = halo(U);
-  const p = puffs(U, maxPuffs), k = streaks(maxSparks + maxSegs);
-  scene.add(s, t.mesh, h, p.mesh, k.mesh);
-  return { scene, U, sky: s, terrain: t, halo: h, puffs: p, streaks: k };
+  const sea = deck(U, t.bombs, 0), high = deck(U, t.bombs, 1);
+  const p = puffs(U, maxPuffs), k = streaks(U, maxSparks + maxSegs);
+  scene.add(s, t.mesh, sea, h, high, p.mesh, k.mesh);
+  return { scene, U, sky: s, terrain: t, halo: h, sea, high, puffs: p, streaks: k };
 }
