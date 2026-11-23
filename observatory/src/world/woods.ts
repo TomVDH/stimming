@@ -30,8 +30,8 @@ const MAX_SLOPE = 1.45;
 // The close cuts look out over these trees.
 const NEAR_KEEP = 250;
 // The view's half-width in degrees either side of south.
-// The value includes a margin.
-const HALF_VIEW = 60;
+// It covers the opening's pan, 26 degrees right of the wide view, with a margin.
+const HALF_VIEW = 90;
 // The trim tests from 10 m over the eye.
 // A taller Dev eye then still sees woods.
 const TEST_EYE_H = EYE_H + 10;

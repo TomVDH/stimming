@@ -142,10 +142,35 @@ const farMat = new ShaderMaterial({
   varying vec3 vP;
   varying float vAlt, vFade;
   varying vec2 vWest;
+  float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float vn2(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
+  }
+  // Ridged noise: rock ribs with gullies between.
+  float rid(vec2 p) {
+    float s = 0.0, a = 0.5;
+    for (int i = 0; i < 4; i++) { float n = 1.0 - abs(vn2(p) * 2.0 - 1.0); s += a * n * n; p = p * 2.07 + vec2(5.3, 1.7); a *= 0.5; }
+    return s / 0.94;
+  }
   void main() {
     vec3 d = normalize(vP - cameraPosition);
     // The rock is a dark slate of the horizon.
     vec3 body = uHor * 0.4;
+    // Relief: ribs and gullies run down from the crests.
+    // Further ranges show finer features, in degrees.
+    float az = atan(d.x, -d.z) * 57.2958, alt = asin(clamp(d.y, -1.0, 1.0)) * 57.2958;
+    float sc = mix(1.2, 2.6, vFade);
+    vec2 rp = vec2(az * sc, (alt - vWest.y) * sc * 1.3);
+    float n0 = rid(rp), slope = (rid(rp + vec2(0.05, 0.0)) - n0) / 0.05;
+    // A face that falls toward the sun's side catches light; the other falls into shade.
+    float sunAz = atan(uSun.x, -uSun.z) * 57.2958;
+    float side = sign(mod(sunAz - az + 540.0, 360.0) - 180.0);
+    float face = clamp(-slope * side * 0.45, -1.0, 1.0);
+    // The late sun shapes the faces strongly; at night only a little.
+    float k = uWarm != vec3(0.0) ? 1.0 : 0.35;
+    body *= 0.8 + 0.25 * n0 + 0.3 * face * k;
     // Toward the sunset it holds a little warm light.
     // At night uWarm is black, so the night frame skips this branch.
     if (uWarm != vec3(0.0)) {
@@ -155,10 +180,14 @@ const farMat = new ShaderMaterial({
       // In the golden hour the late sun lights the west faces.
       // The light fades from the crest down.
       body += uRidge * vWest.x * exp(-(vWest.y - vAlt) / ${WEST_DEPTH.toFixed(2)});
+      // The sunward faces of every range take the late light too.
+      body += uRidge * max(face, 0.0) * (0.6 + 0.4 * n0) * 0.8;
     }
     // Snow caps the highest crests of the back range.
     float snow = step(0.5, vFade) * smoothstep(${SNOW_ALT.toFixed(2)}, ${(SNOW_ALT + 0.8).toFixed(2)}, vWest.y)
       * (1.0 - smoothstep(0.0, ${SNOW_DEPTH.toFixed(2)}, vWest.y - vAlt));
+    // Snow lies in the gullies, not on the ribs.
+    snow *= smoothstep(0.75, 0.35, n0) * 0.6 + 0.4;
     body = mix(body, uHor * 1.5, snow * 0.7);
     // Each range fades by its distance into the sky behind it.
     vec3 col = mix(body, skyColor(d), vFade);

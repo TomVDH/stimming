@@ -10,9 +10,10 @@ import { reduced } from '../../../shared/stim.js';
 import { camera, onLeave, renderer, scene } from '../setup.ts';
 import { makeBloom } from './bloom.ts';
 import { makeDof } from './dof.ts';
+import { makeDepthTap, makeMist } from './mist.ts';
 import { makeGrade } from './grade.ts';
 
-/* ---------- post chain: render, bloom, grade, tone map ---------- */
+/* ---------- post chain: render, mist, bloom, grade, tone map ---------- */
 // Railgun's look values: the bloom's strength, radius and threshold.
 // Then the tint, the vignette and the grain.
 const POST = { bloom: [0.5, 0.5, 2.0] as const, tint: [0.0008, 0.0009, 0.0016] as [number, number, number], vig: 0.6, vigIn: 0.38, grain: 0.075 };
@@ -29,6 +30,8 @@ const composer = new EffectComposer(renderer, new WebGLRenderTarget(2, 2, { type
 // Its setPixelRatio resizes every target, so a resize would allocate twice.
 composer.setPixelRatio(1);
 composer.addPass(new RenderPass(scene, camera));
+// The tap keeps the scene's depth for the valley mist.
+composer.addPass(makeDepthTap());
 // The depth of field runs in the cuts only.
 // Off, the composer skips it.
 const dof = makeDof(camera);
@@ -36,6 +39,7 @@ dof.enabled = false;
 composer.addPass(dof);
 // Its shader compiles after the first frame, not at the first cut.
 setTimeout(() => dof.warm(renderer), 0);
+composer.addPass(makeMist(camera));
 composer.addPass(makeBloom(...POST.bloom));
 const grade = makeGrade(POST);
 composer.addPass(grade);
