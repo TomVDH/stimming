@@ -1,7 +1,7 @@
 ---
 # stimming-58zx
 title: 'Shared: lens flare after Buoy Business'
-status: in-progress
+status: completed
 type: task
 created_at: 2026-11-22T19:30:17Z
 updated_at: 2026-11-22T19:30:17Z
@@ -20,9 +20,9 @@ One shared lens flare module that the toys use, matched to Buoy Business's flare
 - [x] fxlab copy check for the Buoy Business flare: 0 / 255, raw and three.js
 - [x] Sheet for Tom: Buoy Business, the current shared flare, the new one (`fxlab/spike-flare-buoy.html`)
 - [x] Tom's pick: C, the Buoy Business flare (2026-11-22)
-- [ ] PR with /code-review, merged
+- [x] PR with /code-review, merged (TomVDH/stimming#97)
 - [x] `docs/plans/shared-shaders.md` updated
-- [ ] Adopters listed below with status; each moves in its own pass
+- [x] Adopters listed below with status; each moves in its own pass, in its own chat
 
 ## Adopters
 
