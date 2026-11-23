@@ -54,3 +54,8 @@ Edgerton, Milk Drop Coronet, 1957 (public domain): a short wide wall, about 24 p
 - Q10: frame times through one drop: median 7.6 ms, p95 8.2 ms.
 - Shader: the scene program compiles in 0.8 s on D3D11 (tools/fxc); 3.7 s before the march and the probes shared one field call.
 - Captures: docs/qa/milkcrown/.
+
+## Commits
+
+- 311caf18: the toy, toys.json entry, plan, toy doc, QA captures, intro emblem, favicon, bean.
+- 16f9f7bc: menu Lab tile and hook, icon round milkcrown-1, emblems, sheet row.
