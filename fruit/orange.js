@@ -1,63 +1,77 @@
-// Blood orange: a dimpled waxy peel with a red flush; ten segments of juice vesicles.
-// Each vesicle is real geometry: a long teardrop on its stalk, pointing out to the peel,
-// packed against its neighbours and sliced flat at the cut. The juice runs orange to crimson.
+// Blood orange: a dimpled waxy peel with a red flush.
+// The cut is one wet, translucent face: dark maroon flesh with red-orange patches.
+// Each cut juice sac is a small dome, so the studio's reflection breaks into crinkled glints.
+// Segment walls are faint; a white star at the core; a narrow pink-white albedo; a thick rind.
 import * as THREE from 'three';
 import { createNoise3D } from 'simplex-noise';
 import { bedMesh, solidMaterial, rng } from './half.js';
-import { makeArils } from './arils.js';
 
 const A = 0.84, B = 0.88, C = 0.88;
 const NS = 10;
-// The cut plane sits a hair above the face, so sliced vesicles show clean.
-const CUT = 0.004;
 // Segment walls: evenly spaced, each nudged a little.
-// One wall sits exactly at a half turn, where the angle wraps.
-const wallA = i => (i / NS) * Math.PI * 2 + (i % NS === 5 ? 0 : 0.07 * Math.sin(i * 2.3));
-const W = Array.from({ length: NS }, (_, i) => wallA(i).toFixed(4));
-// The flesh runs from the core to the albedo, in face units.
-const CORE = 0.075, ALB = 0.86;
+const W = Array.from({ length: NS }, (_, i) => ((i / NS) * Math.PI * 2 + 0.07 * Math.sin(i * 2.3)).toFixed(4));
 
 const BED = /* glsl */`
 // A membrane wanders a little along its length.
 float wallD(float a, float r) {
-  a += 0.022 * sin(r * 13.0 + a * 3.0) / max(r, 0.15) + 0.012 * (vn(vec3(r * 18.0, a * 4.0, 3.0)) - 0.5);
+  a += 0.02 * sin(r * 13.0 + a * 3.0) / max(r, 0.15) + 0.012 * (vn(vec3(r * 18.0, a * 4.0, 3.0)) - 0.5);
   float d = 9.0;
   ${W.map(w => `d = min(d, abs(mod(a - ${w} + 9.4248, 6.2832) - 3.1416) * r);`).join('\n  ')}
   return d;
 }
-vec2 sponge(vec2 f) { return cellEdge(f * 55.0); }
-// Sacs drawn per pixel: the juicy face under and between the vesicles.
-vec2 sac(float r, float a) { return cellEdge(vec2(a * r * 7.0, r * 9.0 - sin(a * 30.0) * 0.1) * vec2(4.0, 1.0)); }
-float relief(vec2 f) { return 0.001 * smoothstep(0.0, 0.25, sponge(f).x); }
+// The cut sacs: small cells, long along the ray, jittered so no rows show.
+vec2 sac(vec2 f) {
+  float r = length(f), a = atan(f.y, f.x);
+  vec2 q = vec2(a * r * 19.0, r * 8.0);
+  // A strong warp at two scales: no rows or columns survive.
+  q += vec2(vn(vec3(f * 6.0, 1.0)), vn(vec3(f * 6.0, 2.0))) * 1.8 + vec2(vn(vec3(f * 17.0, 3.0)), vn(vec3(f * 17.0, 4.0))) * 0.6;
+  return cellEdge(q);
+}
+// Where the flesh is: inside the rind, out of the core.
+float fleshMask(float r, float a) {
+  float rind = smoothstep(0.835, 0.855, r + 0.006 * sin(a * 37.0));
+  float core = 1.0 - smoothstep(0.025, 0.08, r - 0.012 * (vn(vec3(a * 3.0, 1.0, 4.0)) - 0.5) * 2.0);
+  return (1.0 - rind) * (1.0 - core);
+}
+float relief(vec2 f) {
+  float r = length(f), a = atan(f.y, f.x);
+  vec2 s = sac(f);
+  // Each sac a small dome; walls between segments a shallow groove; each segment a soft bulge.
+  float wd = wallD(a, r);
+  // Slow undulation as well, so the shine forms wet patches, not a pattern.
+  // A round dome, curved everywhere: each sac catches the light in one small spot.
+  float dome = 0.0024 * sqrt(clamp(s.x / 0.5, 0.0, 1.0)) + 0.004 * vn(vec3(f * 9.0, 4.0)) + 0.0015 * vn(vec3(f * 25.0, 5.0));
+  float seg = 0.003 * smoothstep(0.0, 0.15, wd);
+  return (dome + seg) * fleshMask(r, a) + 0.0008 * vn(vec3(f * 60.0, 6.0)) * (1.0 - fleshMask(r, a));
+}
 vec3 bed(vec2 f, float r, float a, inout float glow) {
-  // The juice: orange to crimson in patches, each sac a little different.
-  float fk = smoothstep(0.3, 0.75, vn(vec3(f * 2.6, 7.0)));
-  vec2 s = sac(r, a);
-  vec3 juice = mix(vec3(0.55, 0.13, 0.008), vec3(0.28, 0.008, 0.012), clamp(fk + (s.y - 0.5) * 0.35, 0.0, 1.0));
-  vec3 col = mix(juice * 1.35, juice, smoothstep(0.0, 0.35, s.x)) * 0.85;
-  // Pith: a soft white sponge, stained pink where the juice has soaked in.
-  vec2 sp = sponge(f);
-  vec3 pith = mix(vec3(0.62, 0.54, 0.42), vec3(0.7, 0.62, 0.48), vn(vec3(f * 16.0, 2.0)));
-  pith *= 0.88 + 0.12 * smoothstep(0.0, 0.25, sp.x);
-  // Membranes: thin and wet, wide soft edges; the juice shows through them.
-  float ww = 0.003 + 0.004 * vn(vec3(r * 9.0, a * 2.0, 5.0));
-  float wall = (1.0 - smoothstep(0.0, ww * 2.5, wallD(a, r))) * smoothstep(0.06, 0.14, r);
-  vec3 membrane = mix(pith, juice * 1.3, 0.5);
-  col = mix(col, membrane, wall * 0.7);
-  // The core: a soft pale star that fades into the flesh.
-  float core = 1.0 - smoothstep(${CORE.toFixed(3)} - 0.03, ${CORE.toFixed(3)} + 0.02, r - 0.012 * sin(a * 10.0));
-  col = mix(col, mix(pith, juice, 0.45) * 0.9, core * 0.85);
-  // The albedo: juice stains its inner edge, which wanders and fades.
-  float edge = r + 0.008 * sin(a * 37.0) + 0.012 * (vn(vec3(a * 6.0, 1.0, 2.0)) - 0.5);
-  float alb = smoothstep(${(ALB - 0.03).toFixed(3)}, ${(ALB + 0.006).toFixed(3)}, edge);
-  vec3 stained = mix(pith, juice * 1.4, (1.0 - smoothstep(${ALB.toFixed(3)}, ${(ALB + 0.035).toFixed(3)}, edge)) * 0.45);
-  col = mix(col, stained, alb);
-  // The flavedo: the thin coloured peel, oil glands dotted in it; it fades in.
-  float peel = smoothstep(0.94, 0.958, r);
-  vec3 fl = mix(vec3(0.6, 0.14, 0.005), vec3(0.42, 0.05, 0.008), vn(vec3(f * 6.0, 4.0)));
-  fl = mix(fl, vec3(0.75, 0.3, 0.02), (1.0 - smoothstep(0.1, 0.25, cells(f * 120.0).x)) * 0.5);
-  col = mix(col, fl, peel);
-  glow = (1.0 - alb) * (1.0 - wall * 0.5) * 0.8 + 0.15 * (1.0 - peel) * alb;
+  vec2 s = sac(f);
+  float m = fleshMask(r, a);
+  // Flesh: dark maroon, with red and orange patches; sacs a touch lighter at their walls.
+  float patchy = vn(vec3(f * 2.4, 7.0)) * 0.7 + vn(vec3(f * 6.0, 8.0)) * 0.3;
+  vec3 maroon = vec3(0.075, 0.003, 0.009), red = vec3(0.26, 0.012, 0.016), orange = vec3(0.46, 0.11, 0.01);
+  vec3 flesh = mix(maroon, red, smoothstep(0.42, 0.78, patchy));
+  flesh = mix(flesh, orange, smoothstep(0.75, 0.95, patchy) * 0.7);
+  // The rim of the flesh blushes red, as anthocyanin gathers at the segment edges.
+  flesh = mix(flesh, red * 1.2, smoothstep(0.7, 0.84, r) * 0.5);
+  // Fine grain: each sac a shade apart, its thin walls a little paler.
+  flesh *= 0.78 + 0.3 * s.y + 0.35 * (1.0 - smoothstep(0.0, 0.18, s.x));
+  // Faint segment walls, paler toward the middle.
+  float wd = wallD(a, r);
+  float wall = (1.0 - smoothstep(0.0, 0.009, wd)) * (1.0 - smoothstep(0.2, 0.6, r)) * 0.35 * vn(vec3(r * 12.0, a * 3.0, 9.0));
+  flesh = mix(flesh, flesh * 1.6 + vec3(0.06, 0.03, 0.02), wall);
+  // Pith: the white star at the core and the albedo, fibrous, juice-stained at its inner edge.
+  vec3 pith = mix(vec3(0.62, 0.52, 0.46), vec3(0.72, 0.62, 0.54), vn(vec3(a * 40.0, r * 8.0, 2.0)));
+  // The core: a small, soft, uneven pale knot, not a star.
+  float core = 1.0 - smoothstep(0.025, 0.08, r - 0.012 * (vn(vec3(a * 3.0, 1.0, 4.0)) - 0.5) * 2.0);
+  pith = mix(pith, vec3(0.5, 0.2, 0.17), smoothstep(0.82, 0.86, r) * (1.0 - smoothstep(0.86, 0.89, r)) * 0.8 + core * 0.5);
+  vec3 col = mix(pith, flesh, m);
+  // The flavedo: a thick orange rind, deeper at the surface, oil glands dotted in it.
+  float fl = smoothstep(0.895, 0.915, r + 0.004 * sin(a * 23.0));
+  vec3 peel = mix(vec3(0.78, 0.3, 0.02), vec3(0.6, 0.15, 0.006), smoothstep(0.92, 0.99, r));
+  peel = mix(peel, vec3(0.85, 0.42, 0.04), (1.0 - smoothstep(0.1, 0.25, cells(f * 110.0).x)) * 0.45);
+  col = mix(col, peel, fl);
+  glow = m * 0.55 + (1.0 - m) * (1.0 - fl) * 0.15;
   return col;
 }`;
 
@@ -98,52 +112,9 @@ export const orange = {
       g.add(new THREE.Mesh(n, solidMaterial(U, { col: 'vec3(0.32, 0.07, 0.005)', rough: 0.5 })));
     }
   },
-  face(U, g, R) {
-    const bed = bedMesh(U, this, BED, { bumpK: 1, wet: 0.9, depth: 0.004 });
-    // Vesicles: in each segment, rows from the core out to the albedo.
-    const list = [];
-    const flush = createNoise3D(rng(31));
-    for (let i = 0; i < NS; i++) {
-      const a0 = wallA(i), a1 = i + 1 < NS ? wallA(i + 1) : wallA(0) + Math.PI * 2;
-      let rr = CORE + 0.02;
-      while (rr < ALB - 0.04) {
-        const wid = 0.017 + rr * 0.014;
-        // The last row shortens to end at the albedo.
-        const len = Math.min(wid * 4.6, (ALB - rr) * 0.55);
-        const c = rr + len * 0.8;
-        // Vesicles reach over the membranes' edges, as in the fruit.
-        const pad = 0.006 / c;
-        const span = a1 - a0 - pad * 2;
-        const n = Math.max(1, Math.round((span * c) / (wid * 1.4)));
-        for (let j = 0; j < n; j++) {
-          const a = a0 + pad + span * (j + 0.5 + (R() - 0.5) * 0.4) / n;
-          // Staggered along the ray, so no rows show.
-          const cc = c + (R() - 0.5) * len * 0.5;
-          // They lie right at the cut, so the knife opens each down its middle.
-          list.push({ c: new THREE.Vector3(-0.001 - R() * 0.007, Math.cos(a) * cc * B, Math.sin(a) * cc * C), r: wid * B, a, stretch: Math.min(5.2, len / wid * 1.05) });
-        }
-        rr = c + len * 0.8;
-      }
-    }
-    const pulp = makeArils(U, list, R, {
-      // Each points out to the peel along its ray, a little tipped.
-      axis: (v, Rr) => new THREE.Vector3((Rr() - 0.5) * 0.15, Math.cos(v.a) + (Rr() - 0.5) * 0.15, Math.sin(v.a) + (Rr() - 0.5) * 0.15).normalize(),
-      stretch: [5.2, 0.95], point: 0.3, lumpy: 0.05, soft: 0.3,
-      // The flush runs in patches across the face; each vesicle varies on it.
-      color: (() => {
-        let k = 0;
-        return Rr => {
-          const v = list[k++];
-          const p = flush(v.c.y * 2.2, v.c.z * 2.2, 0.3);
-          const t = Math.min(1, Math.max(0, 0.5 + p * 0.9 + (Rr() - 0.5) * 0.12));
-          return [0.97 - t * 0.33, 0.4 - t * 0.38, 0.03 + t * 0.02];
-        };
-      })(),
-      sig: Rr => 0.6 + Rr() * 0.35,
-      seedK: 0, rs: 0, cut: CUT, scale: 1.0, scatter: 0.6, behind: 1.0,
-      deep: [-0.06, 0.0], deepShade: 0.92, aoMin: 0.82, detail: 2, bound: 5.3, nearK: 5.4,
-    });
-    g.add(bed, pulp);
-    return { bed, parts: [bed, pulp] };
+  face(U, g) {
+    const bed = bedMesh(U, this, BED, { bumpK: 3.5, wet: 0.75, depth: 0.0, rough: 0.55 });
+    g.add(bed);
+    return { bed, parts: [bed] };
   },
 };

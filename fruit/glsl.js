@@ -61,6 +61,8 @@ float box(vec3 d, vec3 c, float w, float h, float rough) {
 }
 vec3 studio(vec3 d, float rough) {
   vec3 c = mix(uGround, uSky, smoothstep(-0.3, 0.6, d.y)) * 0.7;
+  // A broad, dim ceiling: wet faces tipped up catch a soft sheen anywhere.
+  c += vec3(0.09, 0.09, 0.085) * smoothstep(0.15, 0.85, d.y) / (1.0 + rough * 2.0);
   c += uKeyCol * 2.2 * box(d, uKeyDir, 0.42, 0.3, rough);
   c += uRimCol * 1.6 * box(d, uRimDir, 0.1, 0.55, rough);
   c += vec3(0.5, 0.55, 0.6) * 0.35 * box(d, normalize(vec3(0.85, 0.25, 0.55)), 0.35, 0.3, rough);
