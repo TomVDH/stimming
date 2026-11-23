@@ -114,6 +114,21 @@ Four parade pieces, size XXL and up. Tom: "Gas Giant, Ship Launc, Steelworks and
 | 204 | **Steelworks** | C | XXL | A steel mill at night. Tap the blast furnace; molten iron runs the channels and lights the hall, a ladle tips into the converter, flame and sparks reach the roof. |
 | 368 | **Hurricane eye** | C | XXXL | Fly a weather plane through the eyewall: rain and slamming turbulence, then the eye opens, a sunlit stadium of cloud above a churning sea. |
 
+### Batches 7 and 8
+
+Tom queued these eight on 2026-11-23 ("Yes, queue them"), after the Tool-approved list ran out. They start when batches 5 and 6 report. Ideas 369 and 370 are held by the draft plans for Ant farm and Steel line.
+
+| # | Toy | Group | Batch | Idea |
+|---|---|---|---|---|
+| 39 | **Dichroic glass** | F | 7 | Tool-approved. Keep it apart from Glass, which has a dichroic type. |
+| 237 | **Event horizon** | B | 7 | Orbit a black hole; drop a star into the disc. |
+| 351 | **Glowworm cave** | F | 7 | Blue points on a cave roof, doubled in the water. |
+| 226 | **Rose window** | F | 7 | Scrub the sun; coloured light crawls over pillars and dust. |
+| 371 | **Milk crown** | E | 8 | A drop falls into milk in slow motion; the crown rises, beads on every point, the jet shoots back. Scrub the moment. |
+| 372 | **Forge** | E | 8 | Pump the bellows, the bar glows yellow, hammer it with sparks and ring, quench it in a roar of steam. Size L. |
+| 238 | **Solar loop** | C | 8 | Plasma loops rise off the sun's edge; tap for a flare. |
+| 209 | **Whiteout** | C | 8 | A polar hut in a blizzard; tap the door lamp. |
+
 ## Built outside the pool
 
 Built toys that never had an idea number. Tom sets the group.
