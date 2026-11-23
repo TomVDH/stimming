@@ -36,3 +36,16 @@ export function nightShiftMs(realMs: number, lstH: number, lonDeg: number): numb
   const d = ((lstH * 15 - lst(realMs, lonDeg)) % 360 + 540) % 360 - 180;
   return d / 360 * SIDEREAL_DAY_MS;
 }
+
+// The night glow's lift and four valley towns' light, by Bortle class.
+// The sky shader scales both to its own colours.
+const LIFT = [0, 0, 0.15, 0.3, 0.5, 0.75, 1.05, 1.45, 1.9];
+const TOWNS: [number, number, number, number][] = [
+  [0, 0, 0, 0], [0.25, 0, 0, 0], [0.5, 0.2, 0, 0], [0.8, 0.4, 0.2, 0], [1.1, 0.7, 0.4, 0.2],
+  [1.5, 1.0, 0.7, 0.4], [2.0, 1.4, 1.0, 0.7], [2.6, 1.9, 1.4, 1.0], [3.2, 2.4, 1.8, 1.4],
+];
+
+export function bortleGlow(b: number): { lift: number; towns: [number, number, number, number] } {
+  const i = Math.min(9, Math.max(1, Math.round(b))) - 1;
+  return { lift: LIFT[i], towns: [...TOWNS[i]] };
+}

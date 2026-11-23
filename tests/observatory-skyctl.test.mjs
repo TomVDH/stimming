@@ -1,7 +1,7 @@
 // Observatory sky controls. Run: node --test tests/observatory-skyctl.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bortleMag, nightShiftMs, NIGHTS, SITES } from '../observatory/src/core/skyctl.ts';
+import { bortleGlow, bortleMag, nightShiftMs, NIGHTS, SITES } from '../observatory/src/core/skyctl.ts';
 import { lst } from '../observatory/src/core/sky.ts';
 
 const SIDEREAL_DAY_MS = 86164091;
@@ -33,4 +33,23 @@ test('bortleMag gives the faintest star for classes 1 to 9', () => {
 
 test('bortleMag rounds and clamps its class', () => {
   assert.equal(bortleMag(0), 7.6); assert.equal(bortleMag(12), 4.0); assert.equal(bortleMag(2.4), 7.1);
+});
+
+test('bortleGlow: class 1 has no lift and no towns', () => {
+  assert.deepEqual(bortleGlow(1), { lift: 0, towns: [0, 0, 0, 0] });
+});
+
+test('bortleGlow: class 2 has one faint town and no lift', () => {
+  const g = bortleGlow(2);
+  assert.equal(g.lift, 0);
+  assert.ok(g.towns[0] > 0 && g.towns.slice(1).every(t => t === 0));
+});
+
+test('bortleGlow: the lift and every town grow with the class', () => {
+  for (let b = 2; b <= 9; b++) {
+    const a = bortleGlow(b - 1), c = bortleGlow(b);
+    assert.ok(c.lift >= a.lift, `lift ${b}`);
+    c.towns.forEach((t, i) => assert.ok(t >= a.towns[i], `town ${i} at ${b}`));
+  }
+  assert.ok(bortleGlow(9).towns.every(t => t > 0));
 });

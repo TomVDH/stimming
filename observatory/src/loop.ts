@@ -7,7 +7,9 @@ import {
   type Axis, type Limits, type Shutter,
 } from './core/dome.ts';
 import { Vector3 } from 'three';
-import { camHooks, camera, renderer, stageEl, ui } from './setup.ts';
+import { camHooks, camera, renderer, skyHooks, stageEl, ui } from './setup.ts';
+import { NIGHTS, SITES, bortleGlow, bortleMag, nightShiftMs } from './core/skyctl.ts';
+import { skyU } from './sky/haze.ts';
 import { renderPost } from './post/chain.ts';
 import { TUBE_PARK_ALT, TUBE_REST_ALT, type Dome } from './world/observatory.ts';
 import { complex } from './world/complex.ts';
@@ -27,7 +29,7 @@ import { onAim, onEsc, onTap } from './input.ts';
 import { makeClock } from './core/clock.ts';
 import { driveClock, makeOpening } from './core/opening.ts';
 import { setDusk } from './world/dusk.ts';
-import { sky, skyAt, skyReady, starAltAz, setLat, LAT, LON } from './sky/stars.ts';
+import { NIGHT_MAG, sky, skyAt, skyReady, starAltAz, setLat, setStarLimit, setStreak, LAT, LON } from './sky/stars.ts';
 import { lst, toAltAz } from './core/sky.ts';
 import type { Star } from './core/catalog.ts';
 
@@ -53,8 +55,14 @@ const SCOPE_DOME: Record<Scope, Dome> = { reflector: complex.main, refractor: co
 let bound: Scope = 'reflector';
 // The selector: hover, lock, then a choice of telescope.
 const sel = makeSelector();
-// The faintest star the sky shows; the Sky row sets it.
-let skyLimit = 99;
+// The faintest star the sky shows; the City light row sets it.
+let skyLimit = NIGHT_MAG;
+// A night or a site eases the sky over this many seconds.
+const SWING_S = 3;
+// The site's latitude eases from lat0 to lat1; latK runs 0 to 1.
+let lat0 = LAT, lat1 = LAT, latK = 1;
+// True while a swing draws streaks, so the end clears them once.
+let swinging = false;
 // The small domes start 1.5 s and 3 s after the leader.
 // In aim the leader is the beam; after a pick it is the main dome's cupola.
 // They rest shut, open that long after a pick, and shut that long after aim.
@@ -134,7 +142,7 @@ const liftView = () => ({
   restAlt: machine.target ? targetPos(machine.target).alt : machine.tubeAlt, shutter: machine.shutter01,
   cupAz: machine.cupolaAz, cupGoal: machine.target ? targetPos(machine.target).az : machine.cupolaAz,
 });
-const skyMoving = () => clock.easing() || clock.speed > 1;
+const skyMoving = () => clock.easing() || clock.speed > 1 || clock.shifting() || latK < 1 || swinging;
 
 // The laser's mouth, reused each frame.
 const mouth = new Vector3();
@@ -154,6 +162,8 @@ function pose(): void {
   // The dusk sets the look each frame until night shows once.
   if (!nightSet) {
     setDusk(opening.dusk(), opening.magLimit());
+    // The City light row caps the dusk's limit too.
+    setStarLimit(Math.min(opening.dusk() > 0 ? opening.magLimit() : NIGHT_MAG, skyLimit));
     laser.level(opening.beam());
     nightSet = opening.done;
   }
@@ -217,6 +227,7 @@ function tick(now: number): void {
     dirty = true;
   }
   clock.step(dt);
+  stepSwing(dt);
   if (skyMoving()) dirty = true;
   // The machine reads the sky as it is now.
   const tp = machine.target ? targetPos(machine.target) : { alt: 0, az: 0 };
@@ -418,6 +429,69 @@ function brightestSouth(): Star | null {
   }
   return best;
 }
+
+/* ---------- the sky rows: Night, City light, Site ---------- */
+// Sky degrees per sky second.
+const TURN_PER_S = 360 / 86164.091;
+// A streak shows the sky's turn over this many real seconds, at most STREAK_MAX degrees.
+const STREAK_S = 0.3, STREAK_MAX = 40;
+// Steps the site's latitude and the night swing's streak.
+function stepSwing(dt: number): void {
+  if (latK < 1) {
+    latK = Math.min(1, latK + dt / SWING_S);
+    const k = latK * latK * (3 - 2 * latK);
+    setLat(lat0 + (lat1 - lat0) * k);
+  }
+  // The dusk owns the streak until night shows.
+  if (!nightSet) return;
+  if (clock.shifting()) {
+    setStreak(Math.min(STREAK_MAX, Math.abs(clock.shiftRate()) * TURN_PER_S * STREAK_S));
+    swinging = true;
+  } else if (swinging) {
+    setStreak(0);
+    swinging = false;
+  }
+}
+// A night eases the sky to its sidereal time; Tonight eases back to real time.
+function setNight(id: string): void {
+  const n = NIGHTS.find(x => x.id === id);
+  if (!n) return;
+  const ms = n.lstH === null ? 0 : nightShiftMs(Date.now(), n.lstH, LON);
+  // Reduced motion jumps, with no streak.
+  clock.shiftTo(ms, reduced() ? 0 : SWING_S);
+  lastInput = performance.now();
+  dirty = true;
+  wake();
+}
+// A site eases the latitude; the hill stays.
+// The swing tilts the sky, so it draws no streak.
+function setSite(id: string, ease = !reduced()): void {
+  const s = SITES.find(x => x.id === id);
+  if (!s) return;
+  lat0 = LAT; lat1 = s.lat; latK = ease ? 0 : 1;
+  if (!ease) setLat(s.lat);
+  lastInput = performance.now();
+  dirty = true;
+  wake();
+}
+// City light: the star limit, the night glow and the valley towns.
+function setCityLight(b: number): void {
+  skyLimit = bortleMag(b);
+  const g = bortleGlow(b);
+  skyU.uLift.value = g.lift;
+  skyU.uTown.value.set(...g.towns);
+  if (nightSet) setStarLimit(skyLimit);
+  // A locked star the sky now hides lets go.
+  if (sel.star && sel.star.mag > skyLimit) release(sel);
+  dirty = true;
+  wake();
+}
+skyHooks.night = setNight;
+skyHooks.site = id => setSite(id);
+skyHooks.sky = setCityLight;
+// The rows' first values: Tonight, class 2, the stored site.
+setCityLight(2);
+setSite(String(ui.setting('site')?.value ?? 'home'), false);
 
 /* ---------- the review switch, ?cuts ---------- */
 // Tom sees the cuts on the live site with it.
@@ -629,6 +703,11 @@ window.__qa = {
   get lat() { return LAT; },
   // Moves the site's latitude, as a named site does.
   setLat(deg: number) { setLat(deg); draw(); },
+  // The sky rows, as a pick in the bar.
+  night(id: string) { setNight(id); },
+  site(id: string) { setSite(id); },
+  cityLight(b: number) { setCityLight(b); },
+  get swing() { return { shifting: clock.shifting(), rate: clock.shiftRate(), latK }; },
   skyReady,
   // A test view; a resize restores the default.
   look(v: View) { const c = renderer.domElement; applyCamera(c.width / c.height, v); draw(); },
