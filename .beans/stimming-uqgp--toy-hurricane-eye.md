@@ -34,3 +34,5 @@ Idea 368 in docs/toy-ideas.md, group C, size XXXL. Tom's pick, 2026-11-23: fly a
 | Q8 | Drag and arrows turn the head; Space restarts the run |
 | Q9 | AudioContext running after the gesture, suspended after sleep |
 | Q10 | Frame time in the wall: median 6.1 ms, 95th percentile 6.2 ms at 1280 x 800; six programs link in about 1 to 4 s |
+
+D3D11 compile per program (tools/fxc, d3dcompiler_47, level1, 2026-11-23): march 0.8 s; world 0.2 s; drops 0.2 s; cockpit 0.2 s; blur, final and bloom under 0.1 s.

@@ -57,7 +57,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 ## Passes
 
-Six small programs, so D3D11 links each fast (all six link in about 1 to 4 s on the dev PC).
+Six small programs, so D3D11 links each fast. With d3dcompiler_47 (`tools/fxc/`), the march compiles in 0.8 s, world, drops and cockpit in 0.2 s each, the rest in under 0.1 s.
 
 1. March, at half size: the wall, the floor and the haze. It skips air by a safe distance to the nearest cloud; when steps run out, the ray finishes on the smooth wall. Light: Fire's smoke shading (K3 lighting), with the sun's path through the smooth wall in closed form, three taps for the near lumps, and sky light that fades with depth into the wall.
 2. Blur: five taps each way hide the dither.
