@@ -1,7 +1,7 @@
-// Volcano scene: sky, cone, vent halo, ash puffs and glowing streaks.
+// Volcano scene: sky, range, vent halo, ash puffs and glowing streaks.
 // Each object has its own small ShaderMaterial, so each program links fast.
 import * as THREE from 'three';
-import { height, noise3 } from './terrain.js';
+import { height, noise3, EYE } from './terrain.js';
 
 export const MAX_BOMB_LIGHTS = 12;
 
@@ -20,7 +20,7 @@ export function makeUniforms() {
 }
 
 // Haze: fog toward the horizon colour, warm in-scatter round the vent, cold round a bolt.
-const HAZE = /* glsl */`
+export const HAZE = /* glsl */`
 uniform vec3 uCam, uLight, uHorizon, uBoltPos;
 uniform float uHeat, uFlash, uBolt;
 const vec3 FIRE = vec3(1.0, 0.33, 0.07);
@@ -30,7 +30,7 @@ float pass(vec3 dir, float dist, vec3 at, float r1, float r2) {
   vec3 tv = at - uCam;
   float tc = clamp(dot(tv, dir), 0.0, dist);
   float b = length(tv - dir * tc);
-  float near = smoothstep(0.0, 350.0, tc);
+  float near = smoothstep(0.0, 1500.0, tc);
   return near * (exp(-b / r1) * 0.55 + exp(-b / r2) * 0.45);
 }
 vec3 fogColour(vec3 dir) {
@@ -42,13 +42,13 @@ vec3 haze(vec3 col, vec3 wp) {
   vec3 d = wp - uCam;
   float dist = length(d);
   vec3 dir = d / dist;
-  float f = 1.0 - exp(-dist * 0.00022);
+  float f = 1.0 - exp(-dist * 0.000042);
   // A low haze layer lies on the plain; it thins with height.
-  float low = exp(-max(wp.y - 20.0, 0.0) / 90.0) * (1.0 - exp(-dist * 0.0012));
+  float low = exp(-max(wp.y - 200.0, 0.0) / 500.0) * (1.0 - exp(-dist * 0.0002));
   col = mix(col, fogColour(dir), clamp(f + low * 0.3, 0.0, 1.0));
-  float g = pass(dir, dist, uLight, 90.0, 520.0);
+  float g = pass(dir, dist, uLight, 300.0, 2000.0);
   col += FIRE * g * (uHeat * 0.16 + uFlash * 0.9);
-  col += BOLT * pass(dir, dist, uBoltPos, 180.0, 900.0) * uBolt * 0.2;
+  col += BOLT * pass(dir, dist, uBoltPos, 600.0, 3000.0) * uBolt * 0.2;
   return col;
 }
 `;
@@ -83,8 +83,8 @@ function sky(U) {
         float star = step(0.993, s) * exp(-dot(g - cell - off, g - cell - off) * 26.0);
         c += vec3(0.85, 0.9, 1.0) * star * pow(h2(cell + 1.3), 3.0) * 0.9 * smoothstep(0.08, 0.4, e) * uDim;
         // The vent glow and the bolt light the air.
-        c += FIRE * pass(dir, 1e5, uLight, 120.0, 650.0) * (uHeat * 0.16 + uFlash * 0.9);
-        c += BOLT * pass(dir, 1e5, uBoltPos, 200.0, 900.0) * uBolt * 0.25;
+        c += FIRE * pass(dir, 1e5, uLight, 400.0, 2400.0) * (uHeat * 0.16 + uFlash * 0.9);
+        c += BOLT * pass(dir, 1e5, uBoltPos, 600.0, 3000.0) * uBolt * 0.25;
         gl_FragColor = vec4(c, 1.0);
       }`,
   });
@@ -95,30 +95,32 @@ function sky(U) {
 }
 
 /* ---------- terrain ---------- */
-// A radial grid: rings close at the vent, wide at the far hills.
-function terrainGeometry(rings = 220, segs = 360, R = 7500) {
-  const pos = new Float32Array((rings * segs + 1) * 3);
-  pos[1] = height(0, 0);
-  let k = 3;
-  for (let i = 1; i <= rings; i++) {
-    const r = R * Math.pow(i / rings, 2.3);
-    for (let j = 0; j < segs; j++) {
-      const a = (j / segs) * Math.PI * 2, x = Math.cos(a) * r, z = Math.sin(a) * r;
+// A polar grid about the eye: rings close near it, wide toward the horizon.
+// It covers only the view wedge, so the far range keeps its detail.
+function terrainGeometry(rings = 340, segs = 520, R = 48000, span = 2.4) {
+  const [ex, , ez] = EYE;
+  const n = (rings + 1) * (segs + 1), pos = new Float32Array(n * 3);
+  let k = 0;
+  for (let i = 0; i <= rings; i++) {
+    const r = 40 + R * Math.pow(i / rings, 2.2);
+    for (let j = 0; j <= segs; j++) {
+      // Azimuth from the eye's line to the vent, which runs along -z.
+      const a = (j / segs - 0.5) * span;
+      const x = ex + Math.sin(a) * r, z = ez - Math.cos(a) * r;
       pos[k++] = x; pos[k++] = height(x, z); pos[k++] = z;
     }
   }
-  const idx = [];
-  for (let j = 0; j < segs; j++) idx.push(0, 1 + ((j + 1) % segs), 1 + j);
-  for (let i = 1; i < rings; i++) {
-    const a0 = 1 + (i - 1) * segs, a1 = 1 + i * segs;
+  const idx = new Uint32Array(rings * segs * 6);
+  k = 0;
+  for (let i = 0; i < rings; i++) {
     for (let j = 0; j < segs; j++) {
-      const j1 = (j + 1) % segs;
-      idx.push(a0 + j, a0 + j1, a1 + j, a0 + j1, a1 + j1, a1 + j);
+      const a = i * (segs + 1) + j, b = a + segs + 1;
+      idx[k++] = a; idx[k++] = a + 1; idx[k++] = b; idx[k++] = a + 1; idx[k++] = b + 1; idx[k++] = b;
     }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setIndex(idx);
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
   g.computeVertexNormals();
   return g;
 }
@@ -137,28 +139,28 @@ function terrain(U) {
         vec3 n = normalize(vN);
         float r = length(vW.xz);
         // Near-black basalt; the upper cone is paler ash.
-        vec3 alb = mix(vec3(0.05, 0.045, 0.043), vec3(0.085, 0.078, 0.074), smoothstep(700.0, 150.0, r));
+        vec3 alb = mix(vec3(0.05, 0.045, 0.043), vec3(0.085, 0.078, 0.074), smoothstep(3000.0, 600.0, r));
         // Sky light: dim blue from above, a warm lift from the west.
         vec3 lit = vec3(0.020, 0.025, 0.040) * (0.25 + 0.75 * n.y) + vec3(0.03, 0.018, 0.014) * max(-n.z, 0.0);
         // The vent light: above the rim, so the rim shades the flanks a little.
         vec3 L = uLight - vW;
         float d2 = dot(L, L), d = sqrt(d2);
         float wrap = max(dot(n, L / d) * 0.75 + 0.25, 0.0);
-        lit += FIRE * wrap * (uHeat * 5200.0 + uFlash * 90000.0) / (d2 + 9000.0);
+        lit += FIRE * wrap * (uHeat * 1.3e5 + uFlash * 2.2e6) / (d2 + 2.2e5);
         // The lit column overhead throws a second, softer light down the flanks.
-        vec3 L2 = uLight + vec3(0.0, 330.0, 0.0) - vW;
+        vec3 L2 = uLight + vec3(0.0, 1500.0, 0.0) - vW;
         float c2 = dot(L2, L2);
-        lit += FIRE * max(dot(n, L2 * inversesqrt(c2)) * 0.6 + 0.4, 0.0) * (max(uHeat - 0.35, 0.0) * 14000.0 + uFlash * 40000.0) / (c2 + 60000.0);
+        lit += FIRE * max(dot(n, L2 * inversesqrt(c2)) * 0.6 + 0.4, 0.0) * (max(uHeat - 0.35, 0.0) * 3.5e5 + uFlash * 1.0e6) / (c2 + 1.5e6);
         // Hot bombs light the ground round them.
         for (int i = 0; i < ${MAX_BOMB_LIGHTS}; i++) {
           vec4 b = uBombs[i];
           vec3 q = b.xyz - vW;
           float e2 = dot(q, q);
-          lit += FIRE * b.w * max(dot(n, q * inversesqrt(e2 + 1.0)) * 0.6 + 0.4, 0.0) * 160.0 / (e2 + 40.0);
+          lit += FIRE * b.w * max(dot(n, q * inversesqrt(e2 + 1.0)) * 0.6 + 0.4, 0.0) * 1600.0 / (e2 + 400.0);
         }
         // A bolt lights the land from above.
         vec3 bq = uBoltPos - vW;
-        lit += BOLT * uBolt * (0.5 + 0.5 * n.y) * 1.2e5 / (dot(bq, bq) + 4e5);
+        lit += BOLT * uBolt * (0.5 + 0.5 * n.y) * 3e6 / (dot(bq, bq) + 1e7);
         vec3 col = alb * lit;
         gl_FragColor = vec4(haze(col, vW), 1.0);
       }`,
@@ -173,7 +175,7 @@ function terrain(U) {
 function halo(U) {
   const g = new THREE.PlaneGeometry(2, 2);
   const mat = new THREE.ShaderMaterial({
-    uniforms: { ...U, uSize: { value: 340 } },
+    uniforms: { ...U, uSize: { value: 1200 } },
     transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
     vertexShader: /* glsl */`
       uniform vec3 uLight; uniform float uSize;

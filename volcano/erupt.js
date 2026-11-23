@@ -4,6 +4,8 @@ import { height, normalAt, RIM_H } from './terrain.js';
 
 export const G = 9.81;
 export const C_SOUND = 343;
+// The mountain stands at true scale: lengths grow by L, speeds by its root.
+const L = 3.5, V = Math.sqrt(L);
 export const VENT = [0, RIM_H - 20, 0];
 const rnd = (a, b) => a + Math.random() * (b - a);
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -35,11 +37,11 @@ export function blast(W, size) {
   const nb = Math.round((10 + 90 * s) * W.scale * soft);
   for (let i = 0; i < nb; i++) {
     const th = Math.min(0.9, Math.abs(gauss()) * (0.26 + 0.1 * s)), az = rnd(0, Math.PI * 2);
-    const v = (34 + 58 * s) * rnd(0.5, 1.05);
+    const v = (34 + 58 * s) * V * rnd(0.5, 1.05);
     // A bomb's skin cools slowly in flight; it fades fast only once it lands.
     addSpark(W, {
       kind: 1, v: [Math.sin(th) * Math.cos(az) * v, Math.cos(th) * v, Math.sin(th) * Math.sin(az) * v],
-      T: rnd(0.85, 1), tau: 45, tauRest: rnd(7, 22), size: rnd(2.4, 5.5), drag: rnd(0.0006, 0.0016),
+      T: rnd(0.85, 1), tau: 45, tauRest: rnd(7, 22), size: rnd(5, 11), drag: rnd(0.0003, 0.0008),
     });
   }
   // The fountain and the column run as emitters over time.
@@ -56,7 +58,7 @@ export function blast(W, size) {
 
 function addSpark(W, o) {
   if (W.sparks.length >= W.maxSparks) return;
-  const p = o.p || [VENT[0] + rnd(-8, 8), VENT[1] + rnd(0, 6), VENT[2] + rnd(-8, 8)];
+  const p = o.p || [VENT[0] + rnd(-8, 8) * L, VENT[1] + rnd(0, 6) * L, VENT[2] + rnd(-8, 8) * L];
   W.sparks.push({
     x: p[0], y: p[1], z: p[2], vx: o.v[0], vy: o.v[1], vz: o.v[2],
     px: p[0], py: p[1], pz: p[2],
@@ -98,13 +100,13 @@ function boltPath(a, b, depth, rough) {
 }
 function spawnBolt(W, s) {
   // The bolt lives in the lower column, where charge separates.
-  const cand = W.puffs.filter(p => p.kind === 0 && p.y > VENT[1] + 150 && p.y < VENT[1] + 1300);
+  const cand = W.puffs.filter(p => p.kind === 0 && p.y > VENT[1] + 150 * L && p.y < VENT[1] + 1300 * L);
   if (!cand.length) return;
   const A = cand[(Math.random() * cand.length) | 0];
   const a = [A.x + rnd(-0.4, 0.4) * A.r, A.y, A.z + rnd(-0.3, 0.3) * A.r];
   let b;
-  if (Math.random() < 0.45) b = [VENT[0] + rnd(-60, 60), VENT[1] + rnd(10, 60), VENT[2] + rnd(-40, 40)];
-  else { const B = cand[(Math.random() * cand.length) | 0]; b = [B.x + rnd(-150, 150), B.y + rnd(-200, 120), B.z + rnd(-80, 80)]; }
+  if (Math.random() < 0.45) b = [VENT[0] + rnd(-60, 60) * L, VENT[1] + rnd(10, 60) * L, VENT[2] + rnd(-40, 40) * L];
+  else { const B = cand[(Math.random() * cand.length) | 0]; b = [B.x + rnd(-150, 150) * L, B.y + rnd(-200, 120) * L, B.z + rnd(-80, 80) * L]; }
   const segs = [];
   const main = boltPath(a, b, 4, 0.22);
   for (let i = 1; i < main.length; i++) segs.push([main[i - 1], main[i], 1]);
@@ -145,21 +147,21 @@ export function step(W, dt, { ambient = 1 } = {}) {
       while (e.acc >= 1) {
         e.acc -= 1;
         const th = Math.abs(gauss()) * 0.2, az = rnd(0, Math.PI * 2);
-        const v = (22 + 62 * e.s) * (0.45 + 0.55 * k) * rnd(0.55, 1.05);
+        const v = (22 + 62 * e.s) * V * (0.45 + 0.55 * k) * rnd(0.55, 1.05);
         addSpark(W, {
           kind: 0, v: [Math.sin(th) * Math.cos(az) * v, Math.cos(th) * v, Math.sin(th) * Math.sin(az) * v],
-          T: rnd(0.75, 1), tau: rnd(0.8, 2.6), size: rnd(0.9, 2.2), drag: rnd(0.002, 0.005),
+          T: rnd(0.75, 1), tau: rnd(0.8, 2.6), size: rnd(1.8, 4.4), drag: rnd(0.0008, 0.002),
         });
       }
     } else if (e.kind === 'ash') {
       e.acc += e.rate * (0.25 + 0.75 * k) * dt;
       while (e.acc >= 1) {
         e.acc -= 1;
-        const v = (35 + 75 * e.s) * (0.5 + 0.5 * k) * rnd(0.7, 1.1);
+        const v = (35 + 75 * e.s) * V * (0.5 + 0.5 * k) * rnd(0.7, 1.1);
         addPuff(W, {
-          kind: 0, p: [VENT[0] + rnd(-12, 12), VENT[1] + rnd(0, 20), VENT[2] + rnd(-12, 12)],
-          v: [rnd(-9, 9), v, rnd(-9, 9)], r: rnd(22, 40) * (0.7 + 0.5 * e.s),
-          life: rnd(80, 140), lift: (12 + 26 * e.s) * rnd(0.7, 1.2), hot: 0.7 + 0.3 * k, dens: rnd(0.8, 1.1),
+          kind: 0, p: [VENT[0] + rnd(-12, 12) * L, VENT[1] + rnd(0, 20) * L, VENT[2] + rnd(-12, 12) * L],
+          v: [rnd(-9, 9) * V, v, rnd(-9, 9) * V], r: rnd(22, 40) * L * (0.7 + 0.5 * e.s),
+          life: rnd(80, 140) * V, lift: (12 + 26 * e.s) * V * rnd(0.7, 1.2), hot: 0.7 + 0.3 * k, dens: rnd(0.8, 1.1),
         });
       }
     } else if (e.kind === 'bolt') {
@@ -179,9 +181,9 @@ export function step(W, dt, { ambient = 1 } = {}) {
   if (W.steamT < 0 && (ambient > 0 || W.charging)) {
     W.steamT = rnd(0.5, 1.4);
     addPuff(W, {
-      kind: 1, p: [VENT[0] + rnd(-30, 30), VENT[1] + rnd(10, 25), VENT[2] + rnd(-25, 25)],
-      v: [rnd(-1, 1), rnd(3, 6) + 10 * W.pressure, rnd(-1, 1)], r: rnd(9, 16),
-      life: rnd(18, 30), lift: rnd(4, 7) + 10 * W.pressure, hot: 0.08 + 0.3 * W.pressure, dens: rnd(0.4, 0.55) + 0.35 * W.pressure,
+      kind: 1, p: [VENT[0] + rnd(-30, 30) * L, VENT[1] + rnd(10, 25) * L, VENT[2] + rnd(-25, 25) * L],
+      v: [rnd(-1, 1) * V, (rnd(3, 6) + 10 * W.pressure) * V, rnd(-1, 1) * V], r: rnd(9, 16) * L,
+      life: rnd(18, 30) * V, lift: (rnd(4, 7) + 10 * W.pressure) * V, hot: 0.08 + 0.3 * W.pressure, dens: rnd(0.4, 0.55) + 0.35 * W.pressure,
     });
   }
   stepSparks(W, dt);
@@ -265,21 +267,21 @@ function stepPuffs(W, dt) {
     if (p.age > p.life) { P.splice(i, 1); continue; }
     const hgt = p.y - VENT[1];
     // Wind grows with height and blows toward the left of the shot.
-    const wx = -wind * (3 + 28 * smooth(-100, 1200, hgt)), wz = -wind * 4 * smooth(0, 1200, hgt);
+    const wx = -wind * V * (3 + 28 * smooth(-100 * L, 1200 * L, hgt)), wz = -wind * V * 4 * smooth(0, 1200 * L, hgt);
     // Buoyant rise fades with height; ash spreads at its own level.
-    const lift = p.lift * Math.exp(-Math.max(0, hgt) / (p.kind ? 500 : 650));
+    const lift = p.lift * Math.exp(-Math.max(0, hgt) / ((p.kind ? 500 : 650) * L));
     const kv = p.kind ? 0.5 : 0.35, kh = p.kind ? 0.35 : 0.18;
     p.vy += (lift - p.vy) * (1 - Math.exp(-dt * kv));
     p.vx += (wx - p.vx) * (1 - Math.exp(-dt * kh));
     p.vz += (wz - p.vz) * (1 - Math.exp(-dt * kh));
     // Slow churn, so puffs do not move as one block.
     const c = W.t * 0.13 + p.seed * 40;
-    p.x += (p.vx + Math.sin(c) * 1.8) * dt;
+    p.x += (p.vx + Math.sin(c) * 1.8 * V) * dt;
     p.y += p.vy * dt;
-    p.z += (p.vz + Math.cos(c * 1.3) * 1.8) * dt;
+    p.z += (p.vz + Math.cos(c * 1.3) * 1.8 * V) * dt;
     // Entrainment: the puff grows with its speed through the air.
     const rel = Math.hypot(p.vx - wx, p.vy, p.vz - wz);
-    p.r = Math.min(p.kind ? 90 : 280, p.r + (0.07 * rel + (p.kind ? 1.6 : 1.5)) * dt);
+    p.r = Math.min((p.kind ? 90 : 280) * L, p.r + (0.07 * rel + (p.kind ? 1.6 : 1.5) * V) * dt);
     p.rot += p.spin * dt;
     p.hot *= Math.exp(-dt / 2.5);
   }

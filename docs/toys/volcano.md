@@ -14,7 +14,7 @@
 
 ## Idea
 
-Idea 365, group C: a volcano erupts. Bean `stimming-4wnw`. Plan: [volcano.md](../plans/volcano.md). Tom sized the full toy XXXXXL; this is the MVP cut: one shot, one eruption.
+Idea 365, group C: a volcano erupts. Bean `stimming-4wnw`. Plan: [volcano.md](../plans/volcano.md). Tom sized the full toy XXXXXL; this is the MVP cut: one shot, one eruption. Stage 2 (2026-11-23) moved it to a Java range seen from a village.
 
 ## Rules
 
@@ -24,10 +24,13 @@ Idea 365, group C: a volcano erupts. Bean `stimming-4wnw`. Plan: [volcano.md](..
 
 ## Direction
 
-- 3D, three.js 0.170. Blue hour, from the plain 1.5 km out, facing the afterglow in the west.
-- One key light: the vent. The flash, the fountain and the hot bombs light the cone, the column and the haze.
-- A Vulcanian blast that opens into a short fountain: bombs on trails, an ash column lit from below, lightning, a pressure ring.
-- Wide stage: the vent sits right of centre and below it. Tall stage: the lens widens and the camera steps back.
+- 3D, three.js 0.170, at true scale. Blue hour, from a village 8.5 km out, facing the afterglow in the west.
+- A Java range: a 2.2 km active cone, a twin cone with a cap cloud, a caldera wall, far cones in the haze.
+- Raymarched clouds: a broken collar round the summit and a broken deck overhead, for scale.
+- One key light: the vent. The flash, the fountain, the bolts and the hot bombs light the clouds, the column, the cone and the village.
+- A Vulcanian blast that opens into a short fountain: bombs on trails, an ash column, lightning, a pressure ring.
+- The ash column is a GPU fluid with Fire's smoke and flame shading.
+- Wide stage: the vent sits right of centre. Tall stage: the lens widens.
 
 ## Controls
 
@@ -58,12 +61,15 @@ Web Audio on the shared kit, muted by default. The tremor plays at once. The boo
 | `main.js` | Bar, camera, frame loop, gestures, drawing upload |
 | `terrain.js` | The height function and its noise |
 | `erupt.js` | The sim |
-| `scene.js` | three.js objects and shaders: sky, cone, halo, puffs, streaks |
+| `scene.js` | three.js objects and shaders: sky, range, halo, streaks |
+| `clouds.js` | The raymarched cloud pass and its depth composite; it also marches the plume |
+| `plume.js` | The ash column: a 3D GPU fluid (K3 from Jet hover), Fire's smoke and flame |
+| `village.js` | The village houses, one instanced mesh |
 | `sound.js` | Web Audio |
 
 ## QA
 
-Captures: `docs/qa/volcano/`. Headless Chromium with `--use-angle=gl` on the dev PC: 60 fps through a full eruption at 1280 x 800. Idle: no frames 62 s after the last input; none when hidden; none at rest under reduced motion. The audio context runs after a gesture and suspends at the end.
+Captures: `docs/qa/volcano/`. Headless Chromium with `--use-angle=gl` on the dev PC (RTX 3070): 60 fps through a full eruption at 1280 x 800, stage 2 included. Idle: no frames 62 s after the last input; none when hidden; none at rest under reduced motion. The audio context runs after a gesture and suspends at the end.
 
 ## Open
 

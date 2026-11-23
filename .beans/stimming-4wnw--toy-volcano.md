@@ -32,6 +32,7 @@ Size: XXXXXL. A three.js parade piece at Railgun scale. Tom, 2026-11-17. Not in 
 - [x] QA Q1 to Q10 at 1280 px and 375 px
 - [x] docs/toys/volcano.md
 - [ ] Blockout, signed off by Tom
+- [x] Stage 2: Java range from a village, raymarched summit collar and deck, plume on Fire's fluid and shading
 - [ ] Tom's sign-off
 
 ## QA (2026-11-22)
@@ -50,4 +51,6 @@ Headless Chromium 1.64 with `--use-angle=gl` on the dev PC. Captures in docs/qa/
 | Q8 keys | Space hold builds and erupts |
 | Q9 sound | Context runs after the gesture, suspended at the end |
 | Q10 frame rate | 60 fps through a full eruption at 1280 x 800 (SwiftShader not used; real GPU via ANGLE GL) |
+
+Stage 2 (2026-11-23): console clean; 60 fps through hold, blast and tail at 1280 x 800; idle 0 frames in 3 s at 64 s; hidden 0 frames; reduced motion 0 frames at rest. Captures 14 to 19.
 

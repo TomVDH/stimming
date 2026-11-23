@@ -18,6 +18,8 @@ Batch 3 brief: an MVP at high fidelity, with icons, the intro emblem and Bar v3.
 
 ## Defaults (open questions, answered here)
 
+The MVP's answers. Stage 2 (below) replaces the camera, the scale and the look.
+
 | Question | Default | Why |
 |---|---|---|
 | 3D or flat | 3D: three.js 0.170, the Scene stack type | Tom sized it as a three.js parade piece. Light that falls on a cone and a cloud needs depth. The later stages move the camera. |
@@ -99,3 +101,22 @@ Delayed sound follows the batch rules: the audio clock, a handle per node, mute 
 3. Bar v3, sound.
 4. Icon round `volcano-1` (Current, A, D), emblems, intro emblem, Lab tile and hook, `toys.json`.
 5. QA Q1 to Q10; `docs/toys/volcano.md`; commits.
+
+## Stage 2: a Java range seen from a village (Tom, 2026-11-23)
+
+Tom: "a realistic range, perhaps inspired by the big Indonesian ones; we want the ring clouds; we want the light to react; volumetric, raymarched; think Tornado alley and Railgun."
+Then: "clouds around its summit and in the skies above to convey scale, with the volcano in the background to a small village in the foreground", and "Fire toy fire and smoke shader".
+Two tries came first and were dropped. A Villeneuve spire with sheet decks looked bad (branch `wip/volcano-villeneuve`). Mount Doom with card mountains was a step toward this stage.
+
+References (Wikimedia Commons): Bromo and Semeru at sunrise from Penanjakan; Sumbing, Sindoro and Andong from Merbabu; Merapi from Merbabu over a sea of cloud.
+
+| Part | Built |
+|---|---|
+| Scale | True. The active cone stands 2.2 km over the lowland on a 5.2 km base, fluted by ribs as Batok is, with a breach gully down the right flank as Semeru has. |
+| Range | A twin cone behind on the left (Sumbing), an arc of caldera wall on the right (Tengger), far cones 25 to 36 km out. |
+| Eye | 14 m over a village terrace, 8.5 km from the vent. The boom comes about 25 s after the flash. |
+| Village | About 90 houses, 70 to 770 m out: plaster walls under hipped terracotta roofs, lit windows. One instanced mesh (`village.js`). |
+| Clouds | One raymarched pass at half size (`clouds.js`, after Railgun's cloud pass): a broken collar round the summit's flanks, a cap on the twin, a broken deck at 3.9 to 4.7 km. A composite writes their depth, so the cones and the clouds hide each other. |
+| Column | A 3D fluid on the GPU (`plume.js`, K3 from Jet hover's port of Fire): 48 x 72 x 48 cells of 70 m over the vent. The vent's jet loads heat and ash; buoyancy, wind and vorticity carry them into the deck. |
+| Shading | The column takes Fire's smoke light (shadow taps, multi-scatter, powder, Henyey-Greenstein) and Fire's wood flame ramp, broken by the smoke's noise. It marches in the cloud pass and joins the clouds front to back by distance. |
+| Light | The vent, the flash, the bolts and the hot bombs light the collar, the deck, the column and the village walls, with falloff by distance. |

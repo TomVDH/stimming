@@ -9,9 +9,12 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
-import { buildScene, MAX_BOMB_LIGHTS } from './scene.js';
+import { buildScene, MAX_BOMB_LIGHTS, HAZE } from './scene.js';
+import { makeClouds } from './clouds.js';
+import { makePlume } from './plume.js';
+import { makeVillage } from './village.js';
 import { makeWorld, charge, blast, step as stepWorld, busy, clear, VENT, C_SOUND } from './erupt.js';
-import { height } from './terrain.js';
+import { height, EYE } from './terrain.js';
 import { volcanoSound } from './sound.js';
 mark('libs');
 
@@ -41,7 +44,7 @@ const ui = initPage({ id: ID, bar: {
   actions: [{ verb: 'erupt', label: 'Erupt', key: 'Space', hold: true, onDown: () => press('key'), onUp: () => release('key') }],
   slider: { label: 'Wind', min: 0, max: 1, step: 0.01, value: wind, onInput: v => { wind = v; W.wind = v; save('wind', v); touch(); } },
   quality: true,
-  reset: () => { clear(W); wind = WIND0; W.wind = wind; save('wind', wind); ui.slider?.set(wind); snd.cancel(); touch(); },
+  reset: () => { clear(W); plume?.clear(); wind = WIND0; W.wind = wind; save('wind', wind); ui.slider?.set(wind); snd.cancel(); touch(); },
   keys: [['hold', 'build pressure'], ['release', 'erupt'], ['space', 'erupt']],
   help: [
     ['hold', 'Hold to build pressure under the vent'],
@@ -55,7 +58,7 @@ const kit = audioKit({ sleepMs: 1500 });
 const snd = volcanoSound(kit);
 
 /* ---------- three ---------- */
-let renderer = null, composer = null, bloom = null, grade = null, S = null, camera = null;
+let renderer = null, composer = null, bloom = null, grade = null, S = null, camera = null, clouds = null, plume = null;
 let cssW = 1, cssH = 1;
 const cam = { pos: new THREE.Vector3(), aim: new THREE.Vector3(), dist: 1150 };
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
@@ -96,7 +99,7 @@ async function setup() {
   const canvas = renderer.domElement;
   canvas.setAttribute('aria-hidden', 'true');
   stage.append(canvas);
-  camera = new THREE.PerspectiveCamera(42, 1.6, 2, 20000);
+  camera = new THREE.PerspectiveCamera(42, 1.6, 5, 90000);
   S = buildScene({ maxSparks: MAX_SPARKS, maxPuffs: MAX_PUFFS, maxSegs: MAX_SEGS });
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   composer = new EffectComposer(renderer, rt);
@@ -106,6 +109,12 @@ async function setup() {
   grade = new ShaderPass(GRADE);
   composer.addPass(grade);
   composer.addPass(new OutputPass());
+  S.scene.add(makeVillage(S.U, HAZE));
+  plume = makePlume(renderer);
+  clouds = makeClouds(renderer, S.scene, S.U, S.terrain.mesh, S.terrain.bombs, HAZE, plume);
+  // The ash column is the plume's volume now; the sim's puffs only place the bolts.
+  S.puffs.mesh.visible = false;
+  if (globalThis.__volcano) globalThis.__plume = plume;
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); halt(); });
   canvas.addEventListener('webglcontextrestored', () => wake());
 }
@@ -113,23 +122,19 @@ async function setup() {
 // The shot: from the plain, looking up at the cone; the column leaves the top.
 function frame3() {
   const asp = cssW / cssH, tall = asp < 1;
-  cam.dist = tall ? 1750 : 1500;
-  const fov = tall ? 58 : 42;
-  const x = tall ? 0 : -160, z = cam.dist;
-  cam.pos.set(x, height(x, z) + 30, z);
+  cam.pos.set(EYE[0], EYE[1], EYE[2]);
+  cam.dist = Math.hypot(EYE[0] - VENT[0], EYE[2] - VENT[2]);
+  const fov = tall ? 66 : 50;
   camera.fov = fov;
   camera.aspect = asp;
   camera.updateProjectionMatrix();
-  // The vent sits below the centre, and right of it on a wide stage.
+  // The village fills the foot of the frame; the column and the deck have the sky.
   const half = (fov * Math.PI) / 360;
-  const elev = Math.atan2(VENT[1] - cam.pos.y, cam.dist) + half * (tall ? 0.42 : 0.3);
-  const yaw = tall ? 0 : Math.atan(Math.tan(half) * asp * 0.16);
-  const dir = new THREE.Vector3(-Math.sin(yaw) * Math.cos(elev), Math.sin(elev), -Math.cos(yaw) * Math.cos(elev));
-  const toVent = new THREE.Vector3(VENT[0] - x, 0, VENT[2] - z).normalize();
-  // Turn the yaw about the line to the vent.
-  const base = Math.atan2(toVent.x, -toVent.z);
-  dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), -base);
-  cam.aim.copy(cam.pos).addScaledVector(dir, 1000);
+  const elev = Math.atan2(VENT[1] - cam.pos.y, cam.dist) + half * (tall ? 0.2 : -0.05);
+  const base = Math.atan2(VENT[0] - EYE[0], -(VENT[2] - EYE[2]));
+  // On a wide stage the vent sits right of centre.
+  const yaw = base - (tall ? 0 : Math.atan(Math.tan(half) * asp * 0.12));
+  cam.aim.set(Math.sin(yaw) * Math.cos(elev), Math.sin(elev), -Math.cos(yaw) * Math.cos(elev)).multiplyScalar(1000).add(cam.pos);
 }
 
 let Wpx = 0, Hpx = 0;
@@ -160,7 +165,7 @@ const tmp = new THREE.Vector3();
 let shake = 0, frameNo = 0;
 function lightPos() {
   // The light stands over the rim, higher while the fountain plays.
-  return tmp.set(VENT[0], VENT[1] + 45 + 90 * clamp(W.heat - 0.2, 0, 1.4), VENT[2]);
+  return tmp.set(VENT[0], VENT[1] + 140 + 280 * clamp(W.heat - 0.2, 0, 1.4), VENT[2]);
 }
 function upload() {
   const U = S.U;
@@ -236,8 +241,8 @@ function upload() {
     PS[i * 4] = p.r; PS[i * 4 + 1] = p.rot; PS[i * 4 + 2] = p.dens * fin * fout * thin; PS[i * 4 + 3] = p.kind;
     const dl = Math.hypot(p.x - L.x, p.y - L.y, p.z - L.z);
     let bl2 = 0;
-    for (const b of W.bolts) bl2 += b.glow * b.s * 2.2 / (1 + ((p.x - b.x) ** 2 + (p.y - b.y) ** 2 + (p.z - b.z) ** 2) / 160000);
-    PL[i * 4] = lightK / (1 + (dl / 330) ** 2);
+    for (const b of W.bolts) bl2 += b.glow * b.s * 2.2 / (1 + ((p.x - b.x) ** 2 + (p.y - b.y) ** 2 + (p.z - b.z) ** 2) / 2e6);
+    PL[i * 4] = lightK / (1 + (dl / 1150) ** 2);
     PL[i * 4 + 1] = bl2;
     PL[i * 4 + 2] = p.hot * Math.exp(-Math.max(0, p.y - VENT[1]) / 130);
     PL[i * 4 + 3] = p.seed;
@@ -266,6 +271,7 @@ function render(now) {
   upload();
   bloom.strength = 0.6 + 0.5 * Math.min(1, W.flash * 2);
   grade.uniforms.uGrain.value = frozen ? 0 : frameNo % 97;
+  clouds.draw(camera, W.t);
   composer.render();
 }
 
@@ -294,6 +300,25 @@ function step(dt) {
   return live || shake > 0.01;
 }
 
+/* ---------- the plume ---------- */
+// The vent feeds the plume: the blast's ash jet, and the crater's steam.
+const RS = Math.sqrt(3.5);
+function drivePlume(dt) {
+  const sdt = Math.min(dt, 1 / 30) * (frozen && !busy(W) ? 0 : 1);
+  if (sdt <= 0) return;
+  const ash = W.emitters.find(e => e.kind === 'ash');
+  const lean = [-0.05 * wind, 1, 0];
+  if (ash) {
+    const k = Math.max(0, 1 - ash.age / ash.dur), s = ash.s;
+    plume.jet(0, VENT, 80 + 70 * s, lean, 450 + 500 * s * k, (35 + 75 * s) * RS * (0.5 + 0.5 * k), 2 + 8 * k, (1.5 + 3 * s) * (0.3 + 0.7 * k));
+  } else plume.jet(0, VENT, 1, [0, 1, 0], 0, 0, 0, 0);
+  // The crater steams; the hold thickens it.
+  const pr = W.pressure;
+  plume.jet(1, [VENT[0], VENT[1] - 20, VENT[2]], 70 + 40 * pr, [0, 1, 0], 160, 10 + 40 * pr, 0.5 + 2 * pr, (0.08 + 0.5 * pr) * timeK);
+  plume.U.uWind.value.set(-wind * RS * 14, -wind * RS * 2);
+  plume.step(sdt);
+}
+
 /* ---------- frame loop ---------- */
 let visible = true, raf = 0, timer = 0, last = 0;
 function frame(now) {
@@ -306,6 +331,7 @@ function frame(now) {
     const idle = (now - lastInput) / 1000;
     timeK = idle < 60 ? 1 : Math.max(0, 1 - (idle - 60) / 2);
     const live = step(dt);
+    drivePlume(dt);
     render(now);
     D.frame(dt);
     frameNo++;
