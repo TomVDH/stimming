@@ -1,6 +1,6 @@
 # Contour map (`contour`)
 
-Status: built, 2026-11-22. Waits on Tom: the look, the Dutch name, sign-off. Bean `stimming-79us`, under `stimming-oh7b`. Idea 52, group B.
+Status: on the main shelf, 2026-11-23 (number 73, Science fair). Lakes, rivers, summit marks and Smooth added on Tom's ask. Waits on Tom: the Dutch name, sign-off. Bean `stimming-79us`, under `stimming-oh7b`. Idea 52, group B.
 Tom's brief: "MVP at high fidelity, with icons for the lab and intro as well, bar v3".
 
 ## The toy
@@ -51,3 +51,19 @@ Shader type: raw WebGL2 on `shared/gl.js`, one program.
 
 Lively while a press is down, the land settles, the flood runs or labels ease. No ambient motion: the loop sleeps when all four stop.
 Reduced motion: the flood fills in one step, labels jump, no front.
+
+## The water and the shelf move (2026-11-23)
+
+Tom: "lets promote this to main -- let's ensure we add enough interactivity -- let's refine the water infill effect when creating lakes etc". He picked Summit marks and the Smooth tool, and the series Science fair. Beans `stimming-0n2b` and `stimming-j2fh`.
+
+| Part | How |
+|---|---|
+| Lakes | A priority flood from the sheet's edges, in a module worker (`fill.js`), at most ten times a second |
+| The infill | A hollow under the brush stays dry; on release the level rises from the bottom, a pale band on the advancing shore |
+| Drain | A breached lake sinks to its new level in about a second, on its old shore |
+| Rivers | From a full lake's outlet down the steepest fall to the sea or the next lake; they meander on flat ground |
+| A new land | Small pits filled with a slight fall; the six largest basins stay as lakes |
+| Summit marks | Peaks over 120 m with 55 m of rise: a triangle and the live height |
+| Smooth | A third pick (S): each cell moves toward the mean of its neighbours |
+| Shelf | Number 73, series science, version 1.5, stage alpha; the tile moves from the Lab; a still |
+
