@@ -3,17 +3,12 @@
 // It loads while the cuts play and draws once it opens.
 import { reduced } from '../../../shared/stim.js';
 import type { Star } from '../core/catalog.ts';
-import type { Circle, Through } from './cuts.ts';
+import type { Through } from './cuts.ts';
 import { stageEl } from '../setup.ts';
-
 import type { Scope } from '../core/selector.ts';
 
 // The bundle sits in dist/; the page sits next to dist/.
 const PAGE = new URL('../sim.html', import.meta.url).href;
-// The view fades in over this share of the push.
-const IN_FROM = 0.3, IN_TO = 0.85;
-// The iris stays this share inside the glass's rim.
-const RIM = 0.92;
 // From black, the view fades up in this many seconds.
 const UP_S = 0.45;
 // The bar's way in: the stage dips to black in this many seconds.
@@ -26,8 +21,6 @@ let frame: HTMLIFrameElement | null = null;
 let loaded: { hip: number; scope: Scope } | null = null;
 // true once the view starts to open: the frame then draws.
 let going = false;
-// true once the push's iris has drawn the frame.
-let irised = false;
 // The black over the stage for the bar's way in.
 let veil: HTMLDivElement | null = null;
 // The bar's chip for the way in, found once.
@@ -36,11 +29,6 @@ let lookChip: HTMLElement | null = null;
 export const LOOK = 'Look through';
 let onOpen: () => void = () => {};
 let onClose: () => void = () => {};
-
-const smooth = (a: number, b: number, x: number): number => {
-  const k = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return k * k * (3 - 2 * k);
-};
 
 function post(msg: 'go'): void {
   frame?.contentWindow?.postMessage({ obsSim: msg }, location.origin);
@@ -51,7 +39,6 @@ function drop(): void {
   frame = null;
   loaded = null;
   going = false;
-  irised = false;
 }
 
 // The frame says it is ready or asks to close.
@@ -77,7 +64,6 @@ function close(): void {
   frame = null;
   loaded = null;
   going = false;
-  irised = false;
   // The bar's veil lifts itself; the cuts lift their own black.
   const v = veil;
   veil = null;
@@ -138,7 +124,7 @@ export const scopeView = {
   // The loop sets what follows an open and a close.
   onOpen(fn: () => void): void { onOpen = fn; },
   onClose(fn: () => void): void { onClose = fn; },
-  // The hooks the cuts call at their end.
+  // The hooks the cuts call through their dip to black.
   hooks: {
     begin(): void {
       if (!frame) return;
@@ -146,24 +132,12 @@ export const scopeView = {
       frame.style.visibility = 'visible';
       post('go');
     },
-    // The push's iris: the view opens in the glass.
-    // c: null for reduced motion.
-    step(k: number, c: Circle | null): void {
-      if (!frame) return;
-      irised = true;
-      frame.style.opacity = String(smooth(IN_FROM, IN_TO, k));
-      frame.style.clipPath = c ? `circle(${(c.r * RIM).toFixed(1)}px at ${c.x.toFixed(1)}px ${c.y.toFixed(1)}px)` : 'none';
-    },
-    // After the iris the view is in; from black it fades up.
+    // The stage is black: the view fades up over it.
     done(): void {
       if (!frame) return;
-      if (irised) frame.style.opacity = '1';
-      else {
-        // The start style must land before the fade.
-        void frame.offsetWidth;
-        fade(frame, 1, UP_S, 'ease-out');
-      }
-      frame.style.clipPath = 'none';
+      // The start style must land before the fade.
+      void frame.offsetWidth;
+      fade(frame, 1, UP_S, 'ease-out');
       frame.focus();
       onOpen();
     },

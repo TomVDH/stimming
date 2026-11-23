@@ -139,7 +139,7 @@ Tom: "also lacking an action to go into the telescope itself -- though we want t
 - [x] Bar action "Look through · Little Observatory" or "· Big Observatory" (key L) while the chosen telescope holds a star; the stage dips to black and the view fades up (view/through.ts)
 - [x] The view loads for either telescope: sim.html?embed&scope=small|big; the Big Observatory opens the 1 m's program
 - [x] The bar leaves while the view shows and comes back after Back to the dome; the monogram stays
-- [ ] The cuts end in the dip to black, then the view fades up from it, for both observatories: view/cuts.ts, owned by the cuts chat (local_fddee57f); through.ts fades up from black when no iris ran
+- [x] The cuts end in the dip to black, then the view fades up from it, for both observatories: the cuts chat's 592ecf9e in view/cuts.ts; through.ts drops the push's iris
 - [ ] Tom sees the way in
 
 Merged to main on 2026-11-22 (5e9c4a6a, 7937852b).
