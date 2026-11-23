@@ -19,4 +19,4 @@ Stack type: Scene (three.js 0.170). Folder `humpyard/`. Plan: `docs/plans/humpya
 - [x] toys.json Lab entry, toy doc, plan, QA captures
 - [ ] Tom's look
 - [ ] True turnouts
-- [ ] Menu tile, icon round, favicon
+- [x] Menu tile, icon round, favicon (stimming-ygvc)

@@ -9,8 +9,8 @@ Tom picked it on 2026-11-23, third of three traffic toys. It starts in the Lab. 
 - [x] Sim: one avenue, ten signals on one cycle with an offset, the driver model, amber rule, side streets.
 - [x] Scene: wet avenue at night, city blocks with lit windows, street lamps, mast-arm signals, cars, streaks and pools on the wet road.
 - [x] Bar v3: Wave, Offset, Traffic in Settings. Tap to brake, hold to stop.
+- [x] Icon round greenwave-1, intro emblem, favicon, Lab tile from A (bean `stimming-ygvc`).
 
 ## Next, each after Tom's look
 
 1. Tom's look at the long lens, the city and the wet road.
-2. Menu tile, icon round and favicon.

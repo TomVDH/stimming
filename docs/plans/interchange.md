@@ -19,9 +19,9 @@ A motorway interchange at night, from straight above, as a long exposure. Headli
 - [x] A swap: the map cross-fades, the old trails fade fast.
 - [x] Bar v3: Design, Clear, Traffic. Tap to brake, hold to stop.
 - [x] Megastack: five deck levels, carpool flyovers, U-turn loops (Tom: "a multialyered LA-like or shenzen type situation").
+- [x] Icon round interchange-1, intro emblem, favicon, Lab tile from A (bean `stimming-ygvc`).
 
 ## Next, each after Tom's look
 
 1. Tom's look at the four designs and the trail colours.
 2. The diverging diamond: the east-west road becomes an arterial on a bridge, with two signals where it crosses over.
-3. Menu tile, icon round and favicon.

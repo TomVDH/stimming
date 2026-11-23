@@ -12,6 +12,7 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |
+| Emblem | `shared/emblems/interchange.svg`, from A of icon round interchange-1 |
 | Accent | `oklch(0.8 0.13 70)`, headlight amber |
 | Sound | Yes |
 | Legacy build | No |
@@ -126,7 +127,7 @@ QA captures: `docs/qa/interchange/`. Captured in headless Edge on D3D11.
 
 ## Known issues
 
-- No favicon and no menu tile yet.
+- The menu tile is A of icon round interchange-1, with no pick yet.
 - The diverging diamond, the fourth design in the bean, is not built.
 
 ## Legacy build

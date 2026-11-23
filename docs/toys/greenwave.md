@@ -12,6 +12,7 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |
+| Emblem | `shared/emblems/greenwave.svg`, from A of icon round greenwave-1 |
 | Accent | `oklch(0.8 0.2 150)`, signal green |
 | Sound | Yes |
 | Legacy build | No |
@@ -96,7 +97,7 @@ QA captures: `docs/qa/greenwave/`.
 
 ## Known issues
 
-- No favicon and no menu tile yet.
+- The menu tile is A of icon round greenwave-1, with no pick yet.
 - The wet road has streaks and pools, not true reflections.
 
 ## Legacy build

@@ -20,6 +20,6 @@ Stack type: Shader (raw WebGL2, Canvas 2D map). Folder `interchange/`. Plan: `do
 - [x] toys.json Lab entry, toy doc, plan, QA captures
 - [ ] Tom's look
 - [ ] Diverging diamond
-- [ ] Menu tile, icon round, favicon
+- [x] Menu tile, icon round, favicon (stimming-ygvc)
 
 - [x] Megastack design: multi-level, LA or Shenzhen type (Tom, 2026-11-23: "we'd want a multialyered LA-like or shenzen type situation also")

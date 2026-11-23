@@ -18,4 +18,4 @@ Stack type: Scene (three.js 0.170). Folder `greenwave/`. Plan: `docs/plans/green
 - [x] Bar v3, gestures, sound
 - [x] toys.json Lab entry, toy doc, plan, QA captures
 - [ ] Tom's look
-- [ ] Menu tile, icon round, favicon
+- [x] Menu tile, icon round, favicon (stimming-ygvc)

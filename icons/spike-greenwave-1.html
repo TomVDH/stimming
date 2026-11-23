@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Green wave 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Green wave 1</h1>
+<p class="lede">Green wave, round 1. No pick yet; A goes on the menu until Tom picks. A: three signal heads step back up the avenue, all on green. D: the heads on posts along a slab of wet avenue.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  // The toy's tokens: wet slate housings, three lamps, the signal green.
+  const HOUSE = [[0, 'oklch(0.46 0.03 225)'], [0.5, 'oklch(0.28 0.022 235)'], [1, 'oklch(0.16 0.015 245)']];
+  const TOPC = [[0, 'oklch(0.56 0.03 220)'], [1, 'oklch(0.38 0.025 230)']];
+  const SIDEC = [[0, 'oklch(0.22 0.018 240)'], [1, 'oklch(0.12 0.012 250)']];
+  const VISORC = [[0, 'oklch(0.5 0.03 222)'], [1, 'oklch(0.18 0.015 245)']];
+  // Each lamp: an off lens, an on lens, and its light colour.
+  const LAMP = {
+    r: { off: [[0, 'oklch(0.36 0.1 25)'], [1, 'oklch(0.17 0.05 25)']], on: [[0, 'oklch(0.96 0.05 50)'], [0.35, 'oklch(0.7 0.23 30)'], [1, 'oklch(0.5 0.2 25)']], glow: 'oklch(0.66 0.23 28)' },
+    a: { off: [[0, 'oklch(0.42 0.09 75)'], [1, 'oklch(0.2 0.05 65)']], on: [[0, 'oklch(0.98 0.06 95)'], [0.35, 'oklch(0.86 0.17 78)'], [1, 'oklch(0.66 0.16 62)']], glow: 'oklch(0.82 0.17 75)' },
+    g: { off: [[0, 'oklch(0.36 0.07 155)'], [1, 'oklch(0.16 0.04 165)']], on: [[0, 'oklch(0.99 0.06 150)'], [0.35, 'oklch(0.86 0.2 150)'], [1, 'oklch(0.6 0.17 152)']], glow: 'oklch(0.8 0.2 150)' },
+  };
+  const ORDER = ['r', 'a', 'g'];
+  const HAZE = 'oklch(0.16 0.012 275)';
+  const { cos, sin, PI } = Math;
+  // A rounded rectangle as a path.
+  const rr = (x, y, w, h, r) => `M${f(x + r)} ${f(y)}H${f(x + w - r)}Q${f(x + w)} ${f(y)} ${f(x + w)} ${f(y + r)}V${f(y + h - r)}Q${f(x + w)} ${f(y + h)} ${f(x + w - r)} ${f(y + h)}H${f(x + r)}Q${f(x)} ${f(y + h)} ${f(x)} ${f(y + h - r)}V${f(y + r)}Q${f(x)} ${f(y)} ${f(x + r)} ${f(y)}Z`;
+  // The visor: a hood over the top of a lens, deep at the crown.
+  const visor = (x, y, r) => {
+    const P = (a, rx, ry, oy) => `${f(x + rx * cos(a))} ${f(y + oy + ry * sin(a))}`;
+    const a0 = -PI * 0.93, a1 = -PI * 0.07;
+    return `M${P(a0, r * 1.36, r * 1.42, -r * 0.08)}A${f(r * 1.36)} ${f(r * 1.42)} 0 0 1 ${P(a1, r * 1.36, r * 1.42, -r * 0.08)}L${P(a1, r * 1.04, r * 1.04, 0)}A${f(r * 1.04)} ${f(r * 1.04)} 0 0 0 ${P(a0, r * 1.04, r * 1.04, 0)}Z`;
+  };
+  // One lamp: the off lens, the on layer, a glint, the visor.
+  // The on layer carries data-h (the head) and data-c (the colour).
+  const lamp = (u, h, c, x, y, r, on) => `
+        <circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="url(#${u}${c}0)"/>
+        <g data-h="${h}" data-c="${c}" opacity="${on ? 1 : 0}"><circle cx="${f(x)}" cy="${f(y)}" r="${f(r * 2.2)}" fill="url(#${u}${c}s)"/><circle cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="url(#${u}${c}1)"/></g>
+        <ellipse cx="${f(x - r * 0.36)}" cy="${f(y - r * 0.4)}" rx="${f(r * 0.32)}" ry="${f(r * 0.18)}" transform="rotate(-32 ${f(x - r * 0.36)} ${f(y - r * 0.4)})" fill="#fff" opacity="0.55"/>
+        <path d="${visor(x, y, r)}" fill="url(#${u}visor)"/>
+        <path d="${visor(x, y, r)}" fill="url(#${u}lit)"/>`;
+  // A halo behind a lamp; it shows with the lamp.
+  const halo = (u, h, c, x, y, r, on) => `<circle data-h="${h}" data-c="${c}" cx="${f(x)}" cy="${f(y)}" r="${f(r)}" fill="url(#${u}${c}h)" filter="url(#${u}h)" opacity="${on ? 1 : 0}"/>`;
+  const defs = u => `${light(u)}${blur(`${u}h`, 5)}${blur(`${u}b`, 2.4)}${blur(`${u}w`, 1.6)}
+          ${lg(`${u}house`, HOUSE, 'x1="0.1" y1="0" x2="0.7" y2="1"')}${lg(`${u}top`, TOPC, 'x1="0" y1="1" x2="0.3" y2="0"')}
+          ${lg(`${u}side`, SIDEC)}${lg(`${u}visor`, VISORC)}
+          ${ORDER.map(c => rg(`${u}${c}0`, LAMP[c].off, 'cx="0.42" cy="0.4" r="0.62"') + rg(`${u}${c}1`, LAMP[c].on, 'cx="0.42" cy="0.4" r="0.62"')
+            + rg(`${u}${c}s`, [[0, LAMP[c].glow, 0.7], [0.45, LAMP[c].glow, 0.22], [1, LAMP[c].glow, 0]]) + rg(`${u}${c}h`, [[0, LAMP[c].glow, 0.85], [0.5, LAMP[c].glow, 0.3], [1, LAMP[c].glow, 0]])).join('')}`;
+
+  // The wave: the heads go amber, then red, then green one after another.
+  // At rest every head shows green.
+  const run = (svg, n, lean) => {
+    const sel = (h, c) => svg.querySelectorAll(`[data-h="${h}"][data-c="${c}"]`);
+    const heads = [...svg.querySelectorAll('.head')];
+    let tl = null;
+    const wave = () => {
+      const t = gsap.timeline({ repeat: -1, repeatDelay: 0.3 });
+      for (let h = 0; h < n; h++) {
+        t.set(sel(h, 'g'), { opacity: 0 }, 0.2 + h * 0.22).set(sel(h, 'a'), { opacity: 1 }, 0.2 + h * 0.22)
+          .set(sel(h, 'a'), { opacity: 0 }, 0.8 + h * 0.22).set(sel(h, 'r'), { opacity: 1 }, 0.8 + h * 0.22)
+          .set(sel(h, 'r'), { opacity: 0 }, 1.9 + h * 0.34)
+          .fromTo(sel(h, 'g'), { opacity: 0.2, scale: 0.7, transformOrigin: '50% 50%' }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(2.4)' }, 1.9 + h * 0.34);
+      }
+      return t.to({}, { duration: 1.2 });
+    };
+    return {
+      enter(p) {
+        if (tl) tl.kill();
+        tl = wave();
+        if (p) this.move(p);
+      },
+      // Each head leans toward the pointer; near heads lean more.
+      move(p) {
+        if (!p) return;
+        heads.forEach(g => gsap.to(g, { rotation: -(p[0] - 64) * lean * (1 - g.dataset.n * 0.28), svgOrigin: g.dataset.o, duration: 0.6, ease: 'power2.out', overwrite: 'auto' }));
+      },
+      leave() {
+        if (tl) tl.kill();
+        tl = null;
+        for (let h = 0; h < n; h++) {
+          gsap.to([...sel(h, 'r'), ...sel(h, 'a')], { opacity: 0, duration: 0.25, overwrite: true });
+          gsap.to(sel(h, 'g'), { opacity: 1, scale: 1, duration: 0.3, overwrite: true });
+        }
+        heads.forEach(g => gsap.to(g, { rotation: 0, svgOrigin: g.dataset.o, duration: 0.9, ease: 'elastic.out(1, 0.4)', overwrite: 'auto' }));
+      },
+    };
+  };
+
+  /* ================= Current ================= */
+
+  // Green wave is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // Three hanging signal heads step back up the avenue, each smaller and higher.
+  // ox, oy: the hanger's top; s: the scale; z: the haze share.
+  const HEADS_A = [[36, 22, 1, 0], [79, 14, 0.74, 0.14], [109, 8, 0.54, 0.28]];
+  const headA = (u, h, [ox, oy, s, z], emb = false) => {
+    const X = v => ox + v * s, Y = v => oy + v * s;
+    const x0 = X(-15), y0 = Y(8), w = 30 * s, ht = 78 * s, r = 7 * s, dx = 7 * s, dy = -5 * s;
+    const hanger = rr(X(-5), Y(0), 10 * s, 11 * s, 2 * s);
+    const back = rr(x0 + dx, y0 + dy, w, ht, r);
+    const top = poly([[x0 + r, y0], [x0 + r + dx, y0 + dy], [x0 + w - r + dx, y0 + dy], [x0 + w - r, y0]]);
+    const side = poly([[x0 + w, y0 + r], [x0 + w + dx, y0 + r + dy], [x0 + w + dx, y0 + ht - r + dy], [x0 + w, y0 + ht - r]]);
+    const front = rr(x0, y0, w, ht, r);
+    const L = ORDER.map((c, k) => [c, X(0), Y(21 + k * 26), 9.6 * s]);
+    if (emb) {
+      return `<path d="${hanger}" fill="#fff"/><path d="${back}" fill="#9a9a9a"/><path d="${top}" fill="#d0d0d0"/><path d="${side}" fill="#9a9a9a"/><path d="${front}" fill="#fff"/>`
+        + L.map(([c, x, y, lr]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(lr)}" fill="#000"/>${c === 'g' ? `<circle cx="${f(x)}" cy="${f(y)}" r="${f(lr * 0.7)}" fill="#fff"/>` : ''}<path d="${visor(x, y, lr)}" fill="#fff"/>`).join('');
+    }
+    return `<g class="head" data-n="${h}" data-o="${f(ox)} ${f(oy)}">
+        <path d="${hanger}" fill="url(#${u}side)"/><path d="${hanger}" fill="url(#${u}lit)"/>
+        <path d="${back}" fill="url(#${u}side)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <path d="${side}" fill="url(#${u}side)"/>
+        ${body(front, u, 'house')}
+        ${z ? `<path d="${front}" fill="${HAZE}" opacity="${z}"/><path d="${top}" fill="${HAZE}" opacity="${z}"/><path d="${side}" fill="${HAZE}" opacity="${z}"/>` : ''}
+        ${L.map(([c, x, y, lr]) => lamp(u, h, c, x, y, lr, c === 'g')).join('')}
+      </g>`;
+  };
+  // The halos sit behind every head, so light spills round the housings.
+  const halosA = u => HEADS_A.map(([ox, oy, s], h) => ORDER.map((c, k) => halo(u, h, c, ox, oy + (21 + k * 26) * s, 26 * s, c === 'g')).join('')).join('');
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [20, 6, 102, 102],
+    idea: 'Three hanging signal heads step back up the wet avenue, each smaller and higher, all on green: the wave. Slate housings with a top and a side face, deep visors over the lenses, the lit green lens with a glint and a halo. The pointer runs the wave: the heads go amber and red one after another, then the green runs from the near head to the far one; the heads lean toward the pointer on their hangers.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${defs(u)}</defs>${halosA(u)}${HEADS_A.map((g, h) => headA(u, h, g)).reverse().join('')}`;
+      return run(svg, 3, 0.09);
+    },
+    emblem: `${EMB_HEAD}${HEADS_A.map((g, h) => headA('', h, g, true)).reverse().join('')}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // A slab of the avenue is the block: wet asphalt, lane paint, a pavement strip.
+  // The three heads stand on posts along the pavement, one behind the other.
+  const CY = 78, HALF = 28, T = 12;
+  const iso = (gx, gy, z = 0) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5 - z];
+  const N = iso(-HALF, -HALF), Ea = iso(HALF, -HALF), S = iso(HALF, HALF), Wd = iso(-HALF, HALF);
+  const down = p => [p[0], p[1] + T];
+  const quad = (a, b, c, d) => poly([iso(...a), iso(...b), iso(...c), iso(...d)]);
+  // The pavement and the lane dashes, in ground units.
+  const WALK = quad([10, -HALF], [HALF, -HALF], [HALF, HALF], [10, HALF]);
+  const DASH = [-15, -2].map(gx => Array.from({ length: 5 }, (_, i) => { const y0 = -HALF + 3 + i * 11.4; return quad([gx - 1.5, y0], [gx + 1.5, y0], [gx + 1.5, y0 + 6.5], [gx - 1.5, y0 + 6.5]); }).join('')).join('');
+  // Each head: its face at gy, from gx 11 to 25, on a post 12 high.
+  const HEADS_D = [14, -6, -26];
+  const HW = 14, HD = 6, HB = 12, HH = 38;
+  const headD = (u, h, g, emb = false) => {
+    const g0 = 11, g1 = g0 + HW, pc = 18, z1 = HB + HH;
+    const postL = quad([pc - 2, g - 1, 0], [pc + 2, g - 1, 0], [pc + 2, g - 1, HB], [pc - 2, g - 1, HB]);
+    const postR = quad([pc + 2, g - 1, 0], [pc + 2, g - 5, 0], [pc + 2, g - 5, HB], [pc + 2, g - 1, HB]);
+    const front = quad([g0, g, HB], [g1, g, HB], [g1, g, z1], [g0, g, z1]);
+    const side = quad([g1, g, HB], [g1, g - HD, HB], [g1, g - HD, z1], [g1, g, z1]);
+    const top = quad([g0, g, z1], [g1, g, z1], [g1, g - HD, z1], [g0, g - HD, z1]);
+    const o = iso(g0, g, z1);
+    // The face frame: u runs along the face, v runs down.
+    const frame = `matrix(0.866 0.5 0 1 ${f(o[0])} ${f(o[1])})`;
+    const L = ORDER.map((c, k) => [c, HW / 2, 7.2 + k * 11.8, 4.9]);
+    if (emb) {
+      return `<path d="${postL}" fill="#fff"/><path d="${postR}" fill="#9a9a9a"/><path d="${side}" fill="#9a9a9a"/><path d="${top}" fill="#d0d0d0"/><path d="${front}" fill="#fff"/>`
+        + `<g transform="${frame}">${L.map(([c, x, y, lr]) => `<circle cx="${f(x)}" cy="${f(y)}" r="${f(lr)}" fill="#000"/>${c === 'g' ? `<circle cx="${f(x)}" cy="${f(y)}" r="${f(lr * 0.7)}" fill="#fff"/>` : ''}<path d="${visor(x, y, lr)}" fill="#fff"/>`).join('')}</g>`;
+    }
+    const base = iso(pc, g - 3, 0);
+    return `<g class="head" data-n="${h}" data-o="${f(base[0])} ${f(base[1])}">
+        <path d="${postL}" fill="oklch(0.34 0.02 240)"/><path d="${postR}" fill="oklch(0.18 0.015 245)"/>
+        <path d="${side}" fill="url(#${u}side)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <path d="M${f(iso(g0, g, z1)[0])} ${f(iso(g0, g, z1)[1])}L${f(iso(g0, g - HD, z1)[0])} ${f(iso(g0, g - HD, z1)[1])}L${f(iso(g1, g - HD, z1)[0])} ${f(iso(g1, g - HD, z1)[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="1.5" fill="none" stroke-linejoin="round"/>
+        ${body(front, u, 'house')}
+        <g transform="${frame}">
+          ${L.map(([c, x, y, lr]) => halo(u, h, c, x, y, lr * 2.6, c === 'g')).join('')}
+          ${L.map(([c, x, y, lr]) => lamp(u, h, c, x, y, lr, c === 'g')).join('')}
+        </g>
+      </g>`;
+  };
+  // Wet road: each lit lamp drops a soft streak straight down the asphalt.
+  const streaks = u => HEADS_D.map((g, h) => {
+    const p = iso(18, g + 1, 0);
+    return ORDER.map(c => `<ellipse data-h="${h}" data-c="${c}" cx="${f(p[0] - 9)}" cy="${f(p[1] + 7)}" rx="2.6" ry="7.5" fill="url(#${u}${c}h)" filter="url(#${u}w)" opacity="${c === 'g' ? 1 : 0}"/>`).join('');
+  }).join('');
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [15, 9, 98, S[1] + T - 9],
+    idea: 'A slab of the avenue is the block at 30 degrees: wet blue asphalt on the top with bold lane dashes and a pavement strip, mid and dark faces, a rim on the top edges. Three signal heads stand on posts along the pavement, one behind the other, all on green, each green lens dropping a soft streak down the wet road. The pointer runs the wave as A does: amber, red, then the green runs up the avenue; the heads lean toward the pointer.',
+    art(svg, u) {
+      const topP = poly([N, Ea, S, Wd]);
+      svg.innerHTML = `<defs>${defs(u)}
+          ${lg(`${u}road`, [[0, 'oklch(0.36 0.025 245)'], [1, 'oklch(0.24 0.025 255)']], 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+          ${lg(`${u}L`, [[0, 'oklch(0.4 0.02 250)'], [1, 'oklch(0.32 0.02 252)']])}${lg(`${u}R`, [[0, 'oklch(0.26 0.02 255)'], [1, 'oklch(0.19 0.02 258)']])}</defs>
+        <path d="${poly([Ea, S, Wd, down(Wd), down(S), down(Ea)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([Wd, S, down(S), down(Wd)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, Ea, down(Ea), down(S)])}" fill="url(#${u}R)"/>
+        <path d="${topP}" fill="url(#${u}road)"/>
+        <path d="${WALK}" fill="oklch(0.5 0.015 245)"/>
+        <path d="${DASH}" fill="oklch(0.88 0.02 95)" opacity="0.85"/>
+        ${streaks(u)}
+        <path d="${topP}" fill="url(#${u}lit)"/>
+        <path d="M${f(Wd[0])} ${f(Wd[1])}L${f(N[0])} ${f(N[1])}L${f(Ea[0])} ${f(Ea[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(Wd[0])} ${f(Wd[1])}L${f(S[0])} ${f(S[1])}L${f(Ea[0])} ${f(Ea[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        ${[...HEADS_D].map((g, h) => headD(u, h, g)).reverse().join('')}`;
+      return run(svg, 3, 0.05);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([Wd, S, down(S), down(Wd)])}" fill="#5a5a5a"/><path d="${poly([S, Ea, down(Ea), down(S)])}" fill="#3a3a3a"/><path d="${poly([N, Ea, S, Wd])}" fill="#8a8a8a"/><path d="${WALK}" fill="#b0b0b0"/><path d="${DASH}" fill="#d8d8d8"/>${HEADS_D.map((g, h) => headD('', h, g, true)).reverse().join('')}</svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Green wave';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-greenwave';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `greenwave-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    const A = DIRS.find(d => d.l === 'A');
+    const m = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' });
+    A.art(m, 'greenwave-');
+    fitIcon(m, A.box);
+    m.setAttribute('class', 'art');
+    pre.textContent = JSON.stringify({ ...window.EMBLEMS, menu: m.outerHTML });
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

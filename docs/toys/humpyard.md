@@ -12,6 +12,7 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |
+| Emblem | `shared/emblems/humpyard.svg`, from A of icon round humpyard-1 |
 | Accent | `oklch(0.78 0.14 65)`, sodium amber |
 | Sound | Yes |
 | Legacy build | No |
@@ -102,7 +103,7 @@ QA captures: `docs/qa/humpyard/`.
 
 ## Known issues
 
-- No favicon and no menu tile yet.
+- The menu tile is A of icon round humpyard-1, with no pick yet.
 - The switch ladder uses S-curves, not true turnouts.
 
 ## Legacy build
