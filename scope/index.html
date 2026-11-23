@@ -922,6 +922,8 @@ const SONGS = {
     ],
   },
 };
+// FUGUE: the Toccata song from the fugue's first entry, at 153.75 s.
+SONGS.fugue = { ...SONGS.toccata, from: 153.6, title: 'Fugue in D minor, BWV 565' };
 // Chunks of CH seconds; control steps every millisecond.
 // The main voice starts at MAIN_START on its bar, -5 dB, in every song.
 // The main figure fills MAIN_SCALE divisions, inside the ring of minis.
@@ -1005,6 +1007,11 @@ async function loadSong(id) {
   const S = SONGS[id], res = await fetch(S.url);
   if (!res.ok) throw new Error(`no ${S.url}`);
   const midi = readMidi(await res.arrayBuffer()), { tracks, beat } = midi;
+  // A song with from starts there: earlier notes drop, the rest move back.
+  if (S.from) {
+    for (const [nm, list] of tracks) tracks.set(nm, list.filter(x => x[0] >= S.from).map(([a, b, k, v]) => [a - S.from, b - S.from, k, v]));
+    midi.dur -= S.from;
+  }
   // A looped song repeats its notes every loop[0] seconds, loop[1] times in all.
   if (S.loop) {
     const [L, times] = S.loop;
