@@ -44,6 +44,7 @@ Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jeth
 - [x] Fidelity pass on steam, smoke and heat haze: K3 (Fire's volume fluid) ported to WebGL2 in jethover/fluid.js (Tom, 2026-11-22: "consult the fire toy fire shader"); replaced on 2026-11-23 by jethover/gas.js
 - [x] WebGPU move: three.js 0.186.1, Fire's fluid and volume copied into jethover/gas.js for steam and exhaust (Tom, 2026-11-23: "truster will become webgpu", "fire shader for smoke and exhaust")
 - [x] Villeneuve shot: long lens from 150 m at eye height, far ranges in haze (Tom, 2026-11-23: "more villeneuveian the camera and positioning")
+- [x] Slow billows: the gas clock at 0.55 of real time, a soft wall jet, more steam (Tom, 2026-11-23: "Slower, like Fire")
 - [ ] Craft model fidelity (Tom, 2026-11-22: "low fi blockout"); not started
 - [ ] Blockout, signed off by Tom
 - [ ] Tom's sign-off

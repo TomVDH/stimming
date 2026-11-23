@@ -91,7 +91,7 @@ async function setup() {
   // No point emitters: the jets and the damp floor feed the gas.
   u.emitTemperature.value = 0;
   u.buoyancy.value = 0.35; u.weight.value = -0.05;
-  u.turbulence.value = 4.0; u.turbFrequency.value = 5.0; u.vorticity.value = 7.0;
+  u.turbulence.value = 4.0; u.turbFrequency.value = 10.0; u.vorticity.value = 7.0;
   u.velDamping.value = 0.35; u.cooling.value = 1.6; u.dissipation.value = 0.32;
   u.intensity.value = 3.0; u.glowSpread.value = 2.8; u.glowGain.value = 1.0; u.glowAge.value = 2.0;
   u.startColor.value.setRGB(1.0, 0.86, 0.62); u.midColor.value.setRGB(1.0, 0.42, 0.1); u.endColor.value.setRGB(0.22, 0.05, 0.05);
@@ -146,6 +146,9 @@ let clock = 0, lastInput = performance.now(), timeK = 1, shake = 0, flick = 1;
 let visible = true, raf = 0, timer = 0, last = 0, frameNo = 0;
 let simAcc = 0;
 const SIM_DT = 1 / 60;
+// The gas runs slow, as Fire's smoke does: heavy rolls, a long-lens feel.
+const GAS_K = 0.55;
+let gasClock = 0;
 const tmp = new THREE.Vector3(), axis = new THREE.Vector3();
 const jets = [0, 1, 2].map(() => ({ n: new THREE.Vector3(), c: new THREE.Vector3(), a: new THREE.Vector3(0, -1, 0) }));
 const throttle = () => (eng.hand || eng.key || eng.blip > 0 ? 1 : eng.base);
@@ -174,7 +177,12 @@ function step(dt) {
   pose();
   // The gas steps on a fixed clock, two steps a frame at most.
   simAcc = Math.min(simAcc + tdt, SIM_DT * 2);
-  while (simAcc >= SIM_DT) { gas.u.time.value = clock % 1000; gas.step(SIM_DT); simAcc -= SIM_DT; }
+  while (simAcc >= SIM_DT) {
+    gasClock = (gasClock + SIM_DT * GAS_K) % 1000;
+    gas.u.time.value = gasClock;
+    gas.step(SIM_DT * GAS_K);
+    simAcc -= SIM_DT;
+  }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
   return busy;
 }
@@ -204,7 +212,7 @@ function pose() {
     // The gas: each jet drives its core down; the hot ones heat it.
     u.jetP[i].value.copy(j.n);
     u.jetA[i].value.set(axis.x, axis.y, axis.z, len);
-    u.jetK[i].value.set((i === 2 ? 9 : 16) * (0.35 + 0.75 * eng.rpm), i === 2 ? 0 : (6 + 26 * eng.rpm) * flick, (i === 2 ? 0.8 : 7) * (0.4 + eng.rpm), i === 2 ? 0.75 : 0.5);
+    u.jetK[i].value.set((i === 2 ? 9 : 16) * (0.35 + 0.75 * eng.rpm), i === 2 ? 0 : (6 + 26 * eng.rpm) * flick, (i === 2 ? 1.2 : 11) * (0.4 + eng.rpm), i === 2 ? 0.75 : 0.5);
     // The apron: a hot pool under each nozzle; the fan's pool is cold.
     const hot = i === 2 ? 0 : (0.25 + 1.5 * thr * thr) * clamp(1.4 - j.n.y / 10, 0.3, 1);
     S.U.hot[i].value.set(j.c.x, 0, j.c.z, hot);
@@ -336,7 +344,7 @@ try {
   ready = true;
   resize(true);
   // The gas runs for five seconds, so the first frame is a picture.
-  for (let i = 0; i < 300; i++) step(1 / 60);
+  for (let i = 0; i < Math.round(300 / GAS_K); i++) step(1 / 60);
   await renderer.compileAsync(S.scene, camera);
   render();
   render();

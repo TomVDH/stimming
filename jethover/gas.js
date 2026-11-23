@@ -410,8 +410,9 @@ export function createFire({
       const rr = d.length().add(1e-3);
       const hgt = worldPos.y.sub(floorY);
       const band = float(1.0).sub(smoothstep(0.25, 1.4, hgt)).mul(smoothstep(0.2, 1.0, rr)).mul(rr.div(4.5).negate().exp());
-      const out = vec3(d.x.div(rr), 0.12, d.y.div(rr)).mul(K.x.mul(0.75));
-      newVel.assign(mix(newVel, out, band.mul(relax).mul(0.6)));
+      // A soft wall jet: the steam rolls out, it is not thrown.
+      const out = vec3(d.x.div(rr), 0.15, d.y.div(rr)).mul(K.x.mul(0.6));
+      newVel.assign(mix(newVel, out, band.mul(relax).mul(0.45)));
     }
 
     // Velocity fades near the box walls.
