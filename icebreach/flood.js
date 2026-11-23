@@ -90,7 +90,7 @@ export function stepFlood(W, dt, level) {
     if (Math.abs(flow) > 2e-5) live = true;
     let d = h[c] + flow;
     // Snow soaks some up; the rest lies and slowly freezes.
-    d = Math.max(0, d - dt * 0.004);
+    d = Math.max(0, d - dt * 0.0015);
     h[c] = d;
     W.vx[c] = ((i > 0 ? fR[c - 1] : 0) - fL[c] + fR[c] - (i < NX - 1 ? fL[c + 1] : 0)) / (2 * CELL * Math.max(d, 0.02));
     W.vz[c] = ((j > 0 ? fB[c - NX] : 0) - fT[c] + fB[c] - (j < NZ - 1 ? fT[c + NX] : 0)) / (2 * CELL * Math.max(d, 0.02));

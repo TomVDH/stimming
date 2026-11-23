@@ -28,7 +28,7 @@ Tom, 2026-11-23: "we had a akula model -- pls use that". The toy loads that GLB 
 
 ## 2. The full toy (XXL): stages in order
 
-The scene: a flat floe on the Arctic Ocean at polar night. A low moon behind the sail and to the left, out of frame. Pressure ridges on the horizon. The camera is a long lens (17 degrees across) 5 m over the floe, as from a pressure ridge, 115 m from the sail.
+The scene: a flat floe on the Arctic Ocean at polar night. A low moon behind the sail and to the left, out of frame. Pressure ridges on the horizon. The camera is a long lens (17 degrees across) 7 m over the floe, as from a pressure ridge, 115 m from the sail.
 
 | Stage | What it adds |
 |---|---|

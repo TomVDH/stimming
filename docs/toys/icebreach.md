@@ -19,14 +19,14 @@ Idea 240, batch 9, grown to XXL: Tom's pick of 2026-11-23. Bean `stimming-ri97`.
 ## Rules
 
 - One fixed shot, one sub, one floe. Metres and seconds.
-- Before the breach the floe is whole: the slabs pose on a cone over the sail and the cracks open in a star. After the breach every slab is a rigid body: buoyancy, the hull's push, the pack's pull back home, slab on slab.
+- Before the breach the floe is whole: the slabs pose on a cone over the sail and the cracks open in a star. It gives once the sail top reaches the ice top: the sail lurches through and throws the slabs over it off to both sides. After the breach every slab is a rigid body: buoyancy, the hull's push, the pack's pull back home, slab on slab.
 - A release before the breach sends her down again. After the breach she comes up by herself; a tap dives.
 - The slabs lock seven seconds after the sub stops, up or down. With the sub down, the hole freezes over in 50 s; then the floe heals whole.
 
 ## Direction
 
 - 3D, three.js 0.170. Polar night: a low moon behind the sub and to the left, out of frame; stars; pressure ridges on the horizon in haze.
-- A long lens: 17 degrees across from 115 m, the eye 5 m over the floe, as from a pressure ridge.
+- A long lens: 17 degrees across from 115 m, the eye 7 m over the floe, as from a pressure ridge.
 - References: the ICEX surfacings on Wikimedia Commons (USS Annapolis 2009, USS Connecticut 2018, USS Hampton) and the Akula photos and side plan. Slabs lean on the sail's base and ride its top.
 - The sub: the Akula from Buoy Business (`akula.glb`, 546 KB; source havoc `lab/ocean/assets`, cleared by Tom for the public repo on 2026-11-23: "Yes, it's cleared"), loaded as havoc loads it: bow to +x, 110 m long, the black core on the axis. The masts over the sail roof split off and rise once she is up. The paint is black anechoic tile, wet from the sea, with water running off as she rises.
 - The floe: about 120 Voronoi slabs in a star round the sail, 1.0 m of ice under 0.24 m of snow by default. Snow tops with sastrugi and glints; blue cut faces with brine layers; algae-brown undersides.
@@ -71,11 +71,11 @@ Web Audio on the shared kit, muted by default: the ballast's hiss, the floe's gr
 
 ## QA
 
-Captures: `docs/qa/icebreach/` (01 blockout to 12 Lab tile). Headless Edge on D3D11 (RTX 3070), 1280 x 800: under 1 ms of render CPU a frame; the slab step is about 8 ms through the breach and stops when the pack locks. Console clean, sound on and off. At rest the page draws no frames; with reduced motion it stops once the pack locks.
+Captures: `docs/qa/icebreach/` (01 blockout to 14; 13 is the breach in four frames, 0.45 s apart). Headless Edge on D3D11 (RTX 3070), 1280 x 800: under 1 ms of render CPU a frame; the slab step is about 8 ms through the breach and stops when the pack locks. Console clean, sound on and off. At rest the page draws no frames; with reduced motion it stops once the pack locks.
 
 ## Open
 
 - Tom's look at the shot, the breach and the flood.
 - The icon round `icebreach-1` has no pick yet; A is on the menu.
-- The flood reads only as a dark band from this eye height.
+- The flood reads as dark bands from this eye height, not as a sheet.
 - Later stages are in the plan; none is built.

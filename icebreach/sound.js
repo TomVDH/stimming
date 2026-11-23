@@ -59,7 +59,7 @@ export function breachSound(kit) {
     const out = gain(ac, 1);
     out.connect(kit.out);
     // The groan: a low resonant creak whose pitch wanders.
-    const gr = gain(ac), grBp = filt(ac, 'bandpass', 70, 9), grBp2 = filt(ac, 'bandpass', 140, 6), saw = ac.createOscillator(), sawG = gain(ac, 0.05);
+    const gr = gain(ac), grBp = filt(ac, 'bandpass', 70, 9), grBp2 = filt(ac, 'bandpass', 140, 6), saw = ac.createOscillator(), sawG = gain(ac, 0.12);
     saw.type = 'sawtooth'; saw.frequency.value = 38;
     saw.connect(sawG).connect(grBp);
     src(0.3).connect(grBp);
@@ -91,7 +91,7 @@ export function breachSound(kit) {
     const want = bed ? bed.g + bed.r + bed.w > 0.01 : false;
     if (!ac || !bed) return;
     const t = ac.currentTime;
-    bed.gr.gain.setTargetAtTime(0.55 * bed.g, t, 0.15);
+    bed.gr.gain.setTargetAtTime(1.6 * bed.g, t, 0.15);
     // The groan's pitch wanders as the strain shifts.
     if (t > groanT) {
       groanT = t + jit(0.45, 0.5);
@@ -111,7 +111,7 @@ export function breachSound(kit) {
     // The ballast blows: a long hiss far below.
     blow() {
       const ac = live(); if (!ac) return;
-      noise(ac, 0.1, { chain: [filt(ac, 'bandpass', 900, 0.6), filt(ac, 'lowpass', 1400, 0.5)], level: 0.12, attack: 0.4, hold: 1.2, decay: 1.6 });
+      noise(ac, 0.1, { chain: [filt(ac, 'bandpass', 900, 0.6), filt(ac, 'lowpass', 1400, 0.5)], level: 0.22, attack: 0.4, hold: 1.2, decay: 1.6 });
     },
     // The vents open for the dive: a roar of air, then the sea closing.
     vent() {
@@ -126,7 +126,7 @@ export function breachSound(kit) {
     },
     crack(k, x) {
       const ac = live(); if (!ac) return;
-      crack(ac, x, 0, k);
+      crack(ac, x, 0, Math.min(1.4, k * 1.5));
     },
     // The breach: a deep boom, a volley of cracks, the slabs heaving off.
     breach() {

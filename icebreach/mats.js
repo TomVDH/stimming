@@ -85,7 +85,8 @@ export function iceMaterial(batched) {
           float d = vCrack.x * vCrack.y;
           gCrack = smoothstep(0.08, 0.0, d) * step(vCrack.z, uFront);
           c = mix(c, vec3(0.05, 0.09, 0.13), gCrack * 0.85);
-          c = mix(c, c * vec3(0.55, 0.6, 0.66), stain);
+          // Wet slush: grey-blue where the sea ran.
+          c = mix(c, c * vec3(0.36, 0.42, 0.5), stain);
           c = mix(c, vec3(0.006, 0.009, 0.013), gWater);
         } else if (vKind < 1.5) {
           // Cut face: dense blue ice, brine layers, a snow cap, a darker wet foot.
@@ -120,11 +121,12 @@ export function iceMaterial(batched) {
         if (vKind < 0.5 && gWater < 0.5) {
           vec2 cell = floor(vHome * 22.0);
           float r = ih(cell);
-          if (r > 0.93) {
+          if (r > 0.965) {
             vec3 nr = normalize(normal + (vec3(ih(cell + 1.3), ih(cell + 2.9), ih(cell + 7.1)) - 0.5) * 1.3);
             vec3 L = directionalLights[0].direction, V = normalize(vViewPosition);
             float sp = pow(max(dot(reflect(V, nr), L), 0.0), 900.0);
-            reflectedLight.directSpecular += uMoonCol * sp * 60.0 * (1.0 - gCrack);
+            // Glints fade on slabs tipped toward the eye, where a cell grows large.
+            reflectedLight.directSpecular += uMoonCol * sp * 25.0 * (1.0 - gCrack) * (1.0 - smoothstep(0.35, 0.6, abs(dot(normal, normalize(vViewPosition)))));
           }
         }
         // Backlit cut faces glow blue through the ice.

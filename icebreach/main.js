@@ -196,9 +196,9 @@ const GRADE = {
     }`,
 };
 
-// The shot: a long lens from a pressure ridge, 5 m over the floe, 115 m from the sail.
-const EYE = new THREE.Vector3(0, 5, 115);
-const AIM = new THREE.Vector3(2, 2.6, 0);
+// The shot: a long lens from a pressure ridge, 7 m over the floe, 115 m from the sail.
+const EYE = new THREE.Vector3(0, 7, 115);
+const AIM = new THREE.Vector3(2, 2.1, 0);
 function frame3() {
   const asp = cssW / cssH;
   const hfov = asp < 1 ? 19 : 17;
@@ -272,7 +272,7 @@ function setIce(v) {
 function stepSub(dt) {
   const P = SUBS.phase;
   let goal = 0;
-  if (P === 'rise') goal = bulge > 0 ? 0.3 : 1.4;
+  if (P === 'rise') goal = bulge > 0 ? 0.5 : 1.4;
   else if (P === 'breach') goal = SUBS.yc < UP_Y - 1.5 ? 1.25 : Math.max(0.05, (UP_Y - SUBS.yc) * 0.8);
   else if (P === 'dive') goal = SUBS.yc > restY() + 1 ? -1.0 : Math.min(-0.05, (restY() - SUBS.yc) * 0.8);
   SUBS.vy += (goal - SUBS.vy) * Math.min(1, dt * 2.2);
@@ -285,12 +285,13 @@ function stepSub(dt) {
   if (!broken) {
     const was = bulge;
     bulge = Math.max(0, top - F.bot);
-    const brk = 0.3 + 0.35 * thick;
+    // The floe gives once the sail top is up at the ice top: it tents a long way first.
+    const brk = F.T + 0.15 + 0.1 * thick;
     const k = Math.min(1, bulge / brk);
     const was2 = front;
     front = Math.max(front, 24 * k * k);
     // The floe tents higher than the sail's push: it bends before it breaks.
-    poseBulge(F, bulge * 1.8);
+    poseBulge(F, Math.min(bulge * 1.8, bulge + 0.5));
     snd.groan(SUBS.phase === 'rise' && bulge > 0 ? 0.25 + 0.75 * k : 0);
     // Each new ring of cracks snaps.
     if (Math.floor(front / 3) > Math.floor(was2 / 3)) snd.crack(0.35 + 0.5 * k, Math.random() * 0.6 - 0.3);
@@ -306,9 +307,19 @@ function stepSub(dt) {
 function breakIce() {
   broken = true;
   SUBS.phase = 'breach';
+  // The sail blows through: a lurch up, the slabs over it thrown off to the sides.
+  SUBS.vy = 2.4;
   for (const s of F.slabs) {
     s.awake = true; s.still = 0;
-    s.v.y = s.e < 12 ? SUBS.vy * (1 - s.e / 12) : 0;
+    s.v.y = s.e < 12 ? 2.4 * (1 - s.e / 12) : 0;
+    if (s.e < 7) {
+      const dz = s.cz - CZ || 0.1, k = 1 - s.e / 7;
+      // Off the sail's sides, across the hull, tumbling outward.
+      s.v.y += 1.6 * k;
+      s.v.z += Math.sign(dz) * (1.8 + 1.4 * k);
+      s.v.x += (s.cx - CX) * 0.12;
+      s.w.x += Math.sign(dz) * 1.4 * k;
+    }
   }
   front = 99;
   breakAt = simT;
@@ -327,7 +338,9 @@ function stepWater(dt) {
   const P = SUBS.phase;
   // The rising hull lifts the sea in the hole; the dive pulls it down.
   let goal = 0;
-  if (P === 'breach') goal = F.top + 0.1 + 0.14 * Math.min(1, SUBS.vy);
+  if (P === 'breach') goal = F.top + 0.16 + 0.14 * Math.min(1, SUBS.vy);
+  // The settling hull keeps the sea over the floe a while after.
+  else if (P === 'up' && simT - breakAt < 14) goal = F.top + 0.16 * (1 - (simT - breakAt) / 14);
   else if (P === 'dive' && simT - diveAt < 3) goal = -0.25;
   lvlV += ((goal - lvl) * 5 - lvlV * 1.1) * dt;
   lvl += lvlV * dt;
@@ -366,9 +379,11 @@ function drivePlume(dt) {
   // Jet 0: powder thrown up along the sail as it punches through.
   const since = simT - breakAt;
   if (broken && since < 6 && (P === 'breach' || since < 1.5)) {
-    const k = (since < 0.8 ? 0.35 : 0.12 * Math.min(1, SUBS.vy)) * cut;
-    toWorld(-9, F.top + 0.6, 0, tW); toWorld(6, F.top + 0.6, 0, tW2);
-    plume.jet(0, tW.toArray(), tW2.toArray(), 3.2, [0, 3.5 + 3 * Math.max(0, 1 - since), 0], 0.4, k, 0);
+    const k = (since < 0.8 ? 0.25 : 0.1 * Math.min(1, SUBS.vy)) * cut;
+    // Powder rises along both sides of the sail, so the sail stays in sight.
+    const side = Math.floor(simT * 10) % 2 ? 3.6 : -3.6;
+    toWorld(-9, F.top + 0.6, side, tW); toWorld(6, F.top + 0.6, side, tW2);
+    plume.jet(0, tW.toArray(), tW2.toArray(), 2.4, [0, 3.5 + 3 * Math.max(0, 1 - since), side * 0.5], 0.4, k, 0);
     on = true;
   } else plume.off(0);
   // Jets 1 and 2: puffs where slabs strike the hull or each other.
