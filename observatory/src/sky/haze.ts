@@ -11,9 +11,8 @@ import { disposeTree, onLeave, scene } from '../setup.ts';
 // The horizon glows a little.
 export const ZENITH = new Color(0.0035, 0.0048, 0.011);
 export const HORIZON = new Color(0.022, 0.024, 0.034);
-// The night haze holds faint, cool moonlight.
-// So the mist in the valleys glows a little and shows their depth.
-export const HAZE_C = new Color(0.046, 0.054, 0.078);
+// The haze takes the horizon colour, a little darker.
+export const HAZE_C = HORIZON.clone().multiplyScalar(0.9);
 // Haze density at the valley floor, per metre.
 const HAZE_D = 0.003;
 // The haze thins by e every 40 m of height.
