@@ -155,7 +155,7 @@ On a slate table stand the beer's own glass, full and backlit, and its bottle. T
 
 ## Refinement pass (2026-11-23)
 
-Status: active · Bean: `stimming-tptn` (task, under `stimming-fvs3`)
+Status: done · Bean: `stimming-tptn` (task, under `stimming-fvs3`)
 
 Tom, 2026-11-23: "we'd like to spin up the beer pour toy and really refine and bring about all new shader improvements there".
 The effect families and their best toys come from [shared-kit.md](shared-kit.md).
@@ -172,7 +172,7 @@ Also: the jet carries capillary ripples that grow into beads as it falls. Cold g
 
 - [x] Lifts 1 to 5, checked at 1280 x 800, 375 x 812, 812 x 375 and in reduced motion; idle sleep holds.
 - [x] Tom's look at the captures (`docs/qa/beer/r00` to `r07`): "Yes, push it".
-- [ ] Tom's answer on the brand names below.
+- [x] Tom's answer on the brand names below: "Keep the names" (2026-11-23). Names, prints, labels and shapes stay.
 
 ### Brand names and trade dress (hard rule 11)
 
@@ -185,7 +185,7 @@ Tom's 2026-11-09 exception allows real beer names in this toy; the toy's own nam
 | 3 | Bottle labels with the beer's name in capitals | `drawLabel()` | The style name on a plain label in the beer's colours |
 | 4 | Glass and bottle outlines measured from product photos; Kwak's coachman glass in its wooden stand | `data/silhouettes.json`, `data/bottles.json`, `buildStand()` | Keep the shapes (glass types are generic) and drop only the names, or soften the most recognisable ones |
 
-Nothing is removed until Tom answers.
+Tom, 2026-11-23: "Keep the names". All four rows stay as they are.
 
 ### Shared modules (no edit here; hard rule 3)
 

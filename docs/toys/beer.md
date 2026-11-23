@@ -53,6 +53,6 @@ three.js 0.170, WebGL2, custom shaders. Three layers: the room behind (blurred),
 
 ## Open
 
-- Brand names and trade dress: see the plan's Refinement pass. Waiting for Tom.
+- Brand names: Tom keeps the real beer names, prints and labels (2026-11-23).
 - The menu icon is thin: for the icon pass.
 - Not checked: a real phone, real touch, the sound by ear.
