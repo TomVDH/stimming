@@ -23,7 +23,6 @@ float skH(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32);
 vec3 skDusk(vec3 dir, vec3 sun, vec3 zen, vec3 mid, vec3 band, vec3 anti) {
   float up = max(dir.y, 0.0);
   float az = dot(normalize(dir.xz + vec2(1e-5)), normalize(sun.xz));
-  // At the anti-sun point az can round below -1: pow of a negative base is NaN.
   float sw = pow(max(0.5 + 0.5 * az, 0.0), 3.0);
   vec3 hor = mix(anti, band, sw);
   vec3 m = mix(anti, mid, sw);
