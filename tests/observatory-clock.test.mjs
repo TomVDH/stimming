@@ -70,3 +70,42 @@ test('a wake while the loop runs does nothing', () => {
   assert.equal(c.easing(), false);
   assert.ok(Math.abs(c.skyMs() - r.now()) <= 1);
 });
+
+/* ---------- shiftTo: a named night eases the sky to another sidereal time ---------- */
+test('shiftTo eases the sky to the shift over easeS, then runs at speed 1', () => {
+  const r = fake(), c = makeClock(r.now);
+  c.shiftTo(3600000, 3);
+  assert.equal(c.shifting(), true);
+  for (let i = 0; i < 30; i++) { r.add(100); c.step(0.1); }
+  assert.equal(c.shifting(), false);
+  assert.ok(Math.abs(c.skyMs() - (r.now() + 3600000)) <= 1);
+  const a = c.skyMs(); r.add(1000); c.step(1);
+  assert.ok(Math.abs(c.skyMs() - a - 1000) <= 1);
+});
+
+test('shiftTo with easeS 0 jumps', () => {
+  const r = fake(), c = makeClock(r.now);
+  c.shiftTo(-7200000, 0);
+  assert.equal(c.shifting(), false);
+  assert.ok(Math.abs(c.skyMs() - (r.now() - 7200000)) <= 1);
+});
+
+test('shiftRate is sky seconds per real second during the ease, 0 after', () => {
+  const r = fake(), c = makeClock(r.now);
+  c.shiftTo(3600000, 2);
+  r.add(1000); c.step(1);
+  // At the ease's middle the smoothstep's slope is 1.5 times the mean.
+  assert.ok(Math.abs(c.shiftRate() - 1.5 * 1800) < 1, `rate ${c.shiftRate()}`);
+  r.add(1500); c.step(1.5);
+  assert.equal(c.shiftRate(), 0);
+});
+
+test('a wake after a shift keeps the sky continuous', () => {
+  const r = fake(), c = makeClock(r.now);
+  c.shiftTo(3600000, 0);
+  c.step(0.016);
+  const shown = c.skyMs();
+  r.add(5000); c.wake();
+  // The wake eases from the shown time; it never adds the shift twice.
+  assert.ok(Math.abs(c.skyMs() - shown) <= 1, `jump ${c.skyMs() - shown}`);
+});

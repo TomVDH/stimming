@@ -21,6 +21,9 @@ export type Clock = {
   easing(): boolean;
   wake(): void;
   step(dtReal: number): void;
+  shiftTo(ms: number, easeS: number): void;
+  shifting(): boolean;
+  shiftRate(): number;
 };
 
 export function makeClock(nowMs: () => number): Clock {
@@ -35,13 +38,17 @@ export function makeClock(nowMs: () => number): Clock {
   // The wake catch-up: the sky starts off0 ms behind.
   // It closes the gap over EASE_S.
   let off0 = 0, p = 1;
+  // The named night: the sky runs shift ms from real time.
+  // A change eases from sh0 to sh1 over shS seconds.
+  let sh0 = 0, sh1 = 0, shS = 0, q = 1;
 
   const base = (): number => anchorSky + (nowMs() - anchorReal) * speed;
   const offset = (): number => {
     const k = Math.min(1, p);
     return off0 * (1 - k * k * (3 - 2 * k));
   };
-  const skyMs = (): number => base() + offset();
+  const shift = (): number => sh0 + (sh1 - sh0) * smooth(q);
+  const skyMs = (): number => base() + offset() + shift();
 
   return {
     skyMs,
@@ -63,11 +70,27 @@ export function makeClock(nowMs: () => number): Clock {
     easing: () => p < 1,
     wake() {
       if (!stepped || nowMs() - lastStepReal < SLEEP_GAP_MS) return;
-      off0 = shown - base(); p = 0;
+      // The shift is in the shown time already.
+      off0 = shown - base() - shift(); p = 0;
     },
     step(dtReal) {
       if (p < 1) p = Math.min(1, p + dtReal / EASE_S);
+      // A float sum of steps can stop just short of 1.
+      if (q < 1) { q += dtReal / shS; if (q > 1 - 1e-9) q = 1; }
       lastStepReal = nowMs(); shown = skyMs(); stepped = true;
     },
+    shiftTo(ms, easeS) {
+      // A new shift starts from where the old one stands.
+      sh0 = shift(); sh1 = ms; shS = easeS;
+      q = easeS > 0 ? 0 : 1;
+    },
+    shifting: () => q < 1,
+    // The smoothstep's slope times the mean rate, in sky s per real s.
+    shiftRate: () => (q < 1 ? 6 * q * (1 - q) * (sh1 - sh0) / 1000 / shS : 0),
   };
+}
+
+// Ease in and out over 0 to 1.
+function smooth(k: number): number {
+  return k * k * (3 - 2 * k);
 }
