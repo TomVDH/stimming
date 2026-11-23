@@ -1,4 +1,4 @@
-// Jellyfish tank: the sim. Moon jellies pulse and drift on a round flow.
+// Jellyfish tank: the sim. Four kinds of jelly and a starfield of small ones drift on a round flow.
 // World units: the drum axis is z, the drum radius is T.R, y is up.
 
 export const T = {
@@ -11,6 +11,15 @@ export const T = {
   wave: 9,         // speed of a tap's pressure ring, units per second
 };
 export const CHAINS = T.G + T.A;
+
+// Four kinds of large jelly; scene.js holds their look.
+// tent and arm are chain lengths in bell sizes; dome scales the bell height.
+export const SPECIES = {
+  moon: { kind: 0, dome: 1.0, tent: [0.95, 1.2], arm: [0.8, 1.0], flare: 0.42, kt: 2.6, ka: 4.5, period: [1.5, 2.1] },
+  nettle: { kind: 1, dome: 1.45, tent: [2.6, 3.4], arm: [1.7, 2.2], flare: 0.16, kt: 1.4, ka: 2.2, period: [1.2, 1.6] },
+  stripe: { kind: 2, dome: 1.2, tent: [2.0, 2.6], arm: [2.2, 2.8], flare: 0.2, kt: 1.5, ka: 2.0, period: [1.4, 1.9] },
+  yolk: { kind: 3, dome: 0.8, tent: [1.7, 2.3], arm: [0.9, 1.2], flare: 0.3, kt: 1.8, ka: 3.0, period: [1.8, 2.4] },
+};
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const mix = (a, b, t) => a + (b - a) * t;
@@ -54,32 +63,38 @@ function rng(seed) {
 }
 
 // First places: a picture with near and far bells, none at the rim.
+// Each row: x, y, z, size, tilt, species.
 const START = [
-  [-1.9, 1.3, 0.7, 1.25, 0.5], [2.1, 2.2, -0.8, 1.0, -1.7], [2.4, -1.5, 0.9, 1.15, 2.5],
-  [-0.9, -2.4, -0.2, 1.05, 0.9], [-3.3, -0.6, -1.4, 0.85, -2.7], [0.4, 0.2, -1.8, 0.78, 1.8],
-  [-1.2, 3.3, -1.2, 0.75, -0.6], [3.6, 0.6, -1.5, 0.72, 3.0], [-3.9, 1.3, 0.2, 0.8, -1.2],
+  [-2.0, 2.0, 0.6, 1.05, 0.4, 'nettle'], [2.3, 1.0, -0.6, 0.95, -1.4, 'moon'], [1.4, 3.2, 0.7, 0.85, 2.6, 'stripe'],
+  [-1.0, -1.6, -0.3, 0.95, 1.0, 'yolk'], [3.2, -0.9, -1.4, 0.8, -2.5, 'nettle'], [-3.4, -0.2, -1.4, 0.8, -2.4, 'moon'],
+  [0.3, 0.6, -1.8, 0.7, 1.8, 'stripe'],
 ];
+const pick = (r, [a, b]) => a + (b - a) * r();
 
-export function makeTank(count = 7) {
+// The starfield: small jellies through the whole drum.
+export const SMALL = { size: [0.03, 0.065] };
+
+export function makeTank(count = 6, smalls = 420) {
   const r = rng(80);
   const jellies = [];
   for (let i = 0; i < count; i++) {
-    const [x, y, z, size, tilt] = START[i % START.length];
+    const [x, y, z, size, tilt, sp] = START[i % START.length];
+    const S = SPECIES[sp];
     const j = {
-      i, size,
+      i, size, sp, kind: S.kind, S,
       p: [x, y, z], v: [0, 0, 0],
       ax: [Math.sin(tilt), Math.cos(tilt), 1.2 * (r() - 0.5)],
       wander: tilt, wz: 0, seed: r() * 100,
-      phase: r(), period: 1.5 + r() * 0.6, depth: 0.55 + r() * 0.2,
+      phase: r(), period: pick(r, S.period), depth: 0.55 + r() * 0.2,
       c: 0, flinch: 0, fdir: [0, 1, 0], hit: new Set(),
       // Chains: position and last position per point.
       X: new Float32Array(CHAINS * T.N * 3), O: new Float32Array(CHAINS * T.N * 3),
       len: new Float32Array(CHAINS),
     };
-    for (let g = 0; g < CHAINS; g++) j.len[g] = (g < T.G ? 0.95 + 0.25 * r() : 0.8 + 0.2 * r()) * size;
+    for (let g = 0; g < CHAINS; g++) j.len[g] = pick(r, g < T.G ? S.tent : S.arm) * size;
     jellies.push(j);
   }
-  const tank = { jellies, taps: [], events: [], flow: 0.5, F: 0.35, t: 0, flowT: 0, calm: false };
+  const tank = { jellies, small: makeSmall(smalls, r), taps: [], events: [], flow: 0.5, F: 0.35, t: 0, flowT: 0, calm: false };
   // Hang the chains straight, then let them settle into the flow.
   for (const j of jellies) { roots(j); hang(j); }
   for (let k = 0; k < 90; k++) step(tank, 1 / 30, 1);
@@ -88,6 +103,28 @@ export function makeTank(count = 7) {
 }
 
 export function setFlow(tank, f) { tank.flow = f; tank.F = 0.08 + 0.55 * f; }
+
+// Small jellies live in flat arrays: no chains, one axis each.
+function makeSmall(n, r) {
+  const s = {
+    n, P: new Float32Array(n * 3), V: new Float32Array(n * 3), A: new Float32Array(n * 3),
+    W: new Float32Array(n), ph: new Float32Array(n), per: new Float32Array(n), size: new Float32Array(n),
+    c: new Float32Array(n), fl: new Float32Array(n), F: new Float32Array(n * 2), seed: new Float32Array(n),
+  };
+  for (let i = 0; i < n; i++) {
+    const rad = Math.sqrt(r()) * (T.R - 0.6), th = r() * Math.PI * 2;
+    s.P[i * 3] = Math.cos(th) * rad;
+    s.P[i * 3 + 1] = Math.sin(th) * rad;
+    s.P[i * 3 + 2] = T.zBack + 0.4 + r() * (T.zFront - T.zBack - 0.9);
+    const w = r() * Math.PI * 2;
+    s.W[i] = w;
+    s.A[i * 3] = Math.sin(w); s.A[i * 3 + 1] = Math.cos(w); s.A[i * 3 + 2] = 0;
+    s.ph[i] = r(); s.per[i] = 0.8 + r() * 0.7;
+    s.size[i] = pick(r, SMALL.size) * (r() < 0.1 ? 1.8 : 1);
+    s.seed[i] = r();
+  }
+  return s;
+}
 
 /* ---------- frames ---------- */
 // The bell's frame: local y is the swim axis; z of the world is the ref.
@@ -113,7 +150,7 @@ function roots(j) {
       lx = Math.cos(a) * b.rr * s * 0.98; ly = -0.02 * s; lz = Math.sin(a) * b.rr * s * 0.98;
     } else {
       const a = ((g - T.G) / T.A) * Math.PI * 2 + Math.PI / 4;
-      lx = Math.cos(a) * 0.07 * s; ly = b.h * s * 0.42; lz = Math.sin(a) * 0.07 * s;
+      lx = Math.cos(a) * 0.07 * s; ly = b.h * j.S.dome * s * 0.42; lz = Math.sin(a) * 0.07 * s;
     }
     const o = g * T.N * 3;
     j.X[o] = j.p[0] + E1[0] * lx + ax[0] * ly + E2[0] * lz;
@@ -249,6 +286,73 @@ function sub(tank, dt, amb) {
 
     chains(j, dt, F, calm ? 0 : amb);
   }
+  smallStep(tank, dt, amb, F);
+}
+
+/* ---------- the starfield ---------- */
+const A3 = [0, 0, 0];
+function smallStep(tank, dt, amb, F) {
+  const s = tank.small, calm = tank.calm, n = s.n, P = s.P, V = s.V, A = s.A;
+  // A ring hits each small jelly once, as its front passes.
+  for (const tp of tank.taps) {
+    const f1 = (tank.t - tp.t0) * T.wave, f0 = f1 - dt * T.wave;
+    if (f0 > 16) continue;
+    for (let i = 0; i < n; i++) {
+      const dx = P[i * 3] - tp.x, dy = P[i * 3 + 1] - tp.y, dz = P[i * 3 + 2] - tp.z;
+      const d = Math.hypot(dx, dy, dz);
+      if (d <= f0 || d > f1) continue;
+      const k = tp.k * Math.exp(-Math.max(0, d - 0.8) / 1.4) * (calm ? 0.6 : 1);
+      if (k < 0.1) continue;
+      const l = d || 1;
+      s.F[i * 2] = dx / l; s.F[i * 2 + 1] = dy / l;
+      s.fl[i] = Math.max(s.fl[i], k);
+      const p = s.ph[i] - Math.floor(s.ph[i]);
+      if (p > 0.18) s.ph[i] = Math.ceil(s.ph[i]);
+      const push = 0.9 * k;
+      V[i * 3] += dx / l * push; V[i * 3 + 1] += dy / l * push; V[i * 3 + 2] += dz / l * push * 0.4;
+    }
+  }
+  const dr = 1 - Math.exp(-dt * (calm ? 2.6 : 1.1));
+  const wr = calm ? 0 : amb;
+  for (let i = 0; i < n; i++) {
+    const o = i * 3, fl = s.fl[i];
+    // The pulse: as for the large bells, but quicker.
+    const mid = s.ph[i] - Math.floor(s.ph[i]) > 1e-6;
+    const rate = calm ? (fl > 0.02 || mid ? 1 : 0) : amb;
+    const before = s.ph[i];
+    let ph = before + dt / mix(s.per[i], 0.38, Math.min(1, fl * 1.3)) * rate;
+    if (calm && fl <= 0.02 && Math.floor(ph) > Math.floor(before)) ph = Math.floor(ph);
+    if (calm && fl <= 0.02 && before === Math.floor(before)) ph = before;
+    s.ph[i] = ph;
+    const c = stroke(ph) * mix(0.7, 1, Math.min(1, fl * 1.5));
+    const th = Math.max(0, c - s.c[i]) * 0.22;
+    s.c[i] = c;
+    V[o] += A[o] * th; V[o + 1] += A[o + 1] * th; V[o + 2] += A[o + 2] * th;
+    flowAt(P[o], P[o + 1], P[o + 2], F, FL);
+    for (let d = 0; d < 3; d++) V[o + d] += (FL[d] - V[o + d]) * dr;
+    V[o + 1] -= 0.01 * dt * wr;
+    // Soft walls.
+    const r = Math.hypot(P[o], P[o + 1]), lim = T.R - 0.5;
+    if (r > lim) { const k = (r - lim) * 2 * dt; V[o] -= P[o] / r * k; V[o + 1] -= P[o + 1] / r * k; }
+    const zf = T.zFront - 0.45, zb = T.zBack + 0.35;
+    if (P[o + 2] > zf) V[o + 2] -= (P[o + 2] - zf) * 2 * dt;
+    if (P[o + 2] < zb) V[o + 2] -= (P[o + 2] - zb) * 2 * dt;
+    for (let d = 0; d < 3; d++) P[o + d] += V[o + d] * dt;
+    // The axis wanders; a flinch turns it away from the tap.
+    s.W[i] += Math.sin(tank.t * 0.13 + s.seed[i] * 60) * 0.12 * dt * wr;
+    let tx = Math.sin(s.W[i]), ty = Math.cos(s.W[i]);
+    const inw = smooth(lim - 1, lim + 0.3, r);
+    if (inw > 0) { tx = mix(tx, -P[o] / r, inw * 0.7); ty = mix(ty, -P[o + 1] / r, inw * 0.7); }
+    const fk = Math.min(1, fl * 1.6);
+    tx = mix(tx, s.F[i * 2], fk); ty = mix(ty, s.F[i * 2 + 1], fk);
+    A3[0] = tx; A3[1] = ty; A3[2] = 0.5 * Math.sin(tank.t * 0.07 + s.seed[i] * 40);
+    const turn = 1 - Math.exp(-dt * (0.4 * wr + 4 * fl));
+    for (let d = 0; d < 3; d++) A[o + d] += (A3[d] - A[o + d]) * turn;
+    const al = Math.hypot(A[o], A[o + 1], A[o + 2]) || 1;
+    A[o] /= al; A[o + 1] /= al; A[o + 2] /= al;
+    if (fl > 0.05) s.W[i] = Math.atan2(A[o], A[o + 1]);
+    s.fl[i] = fl > 0.005 ? fl * Math.exp(-dt / (calm ? 0.6 : 1.4)) : 0;
+  }
 }
 
 /* ---------- chains ---------- */
@@ -263,7 +367,7 @@ function chains(j, dt, F, amb) {
     let rx = X[o] - p[0], ry = X[o + 1] - p[1], rz = X[o + 2] - p[2];
     const ra = rx * ax[0] + ry * ax[1] + rz * ax[2];
     rx -= ax[0] * ra; ry -= ax[1] * ra; rz -= ax[2] * ra;
-    const rl = Math.hypot(rx, ry, rz) || 1, fl = arm ? 0.12 : 0.42;
+    const rl = Math.hypot(rx, ry, rz) || 1, fl = arm ? 0.12 : j.S.flare;
     let dx = -ax[0] + rx / rl * fl, dy = -ax[1] + ry / rl * fl, dz = -ax[2] + rz / rl * fl;
     const dl = Math.hypot(dx, dy, dz);
     dx /= dl; dy /= dl; dz /= dl;
@@ -275,7 +379,7 @@ function chains(j, dt, F, amb) {
       const bend = sw * s * s;
       const tx = X[o] + (dx + j.e1[0] * bend) * L * k, ty = X[o + 1] + (dy + j.e1[1] * bend) * L * k, tz = X[o + 2] + (dz + j.e1[2] * bend) * L * k;
       // Stiff at the root, loose at the tip; arms are stiffer.
-      const ks = 1 - Math.exp(-dt * (arm ? 4.5 : 2.6) * (1 - 0.8 * s));
+      const ks = 1 - Math.exp(-dt * (arm ? j.S.ka : j.S.kt) * (1 - 0.8 * s));
       const T3 = [tx, ty, tz];
       for (let d = 0; d < 3; d++) {
         const w = FL[d] * dt, x = X[q + d];
@@ -302,6 +406,12 @@ export function busy(tank) {
     if (Math.hypot(...j.v) > 0.004) return true;
     const p = j.phase - Math.floor(j.phase);
     if (tank.calm && p > 1e-6) return true;
+  }
+  const s = tank.small;
+  for (let i = 0; i < s.n; i++) {
+    if (s.fl[i] > 0) return true;
+    if (Math.abs(s.V[i * 3]) + Math.abs(s.V[i * 3 + 1]) + Math.abs(s.V[i * 3 + 2]) > 0.006) return true;
+    if (tank.calm && s.ph[i] - Math.floor(s.ph[i]) > 1e-6) return true;
   }
   return tank.taps.some(tp => (tank.t - tp.t0) < 3);
 }

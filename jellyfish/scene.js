@@ -10,7 +10,22 @@ import { T, CHAINS, bellShape, pack } from './sim.js';
 
 const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
 const FOV = 30;
-const SNOW = 900;
+const SNOW = 500;
+
+// The look of each kind, by SPECIES.kind: margin lobes, tentacles, arms.
+// tents: count, length share [min, span], width in pixels, colour.
+const LOOK = [
+  // Moon jelly: a fine short fringe, eight notches, pale blue.
+  { lobes: 8, lobeD: 0.04, lobeP: 24, tents: [128, 0.28, 0.4, 1.0, [0.38, 0.6, 0.85]], arm: [0.2, [0.37, 0.54, 0.75]] },
+  // Sea nettle: 32 lappets, 24 long rust tentacles, long cream arms.
+  { lobes: 32, lobeD: 0.05, lobeP: 6, tents: [24, 0.75, 0.25, 2.2, [0.85, 0.26, 0.08]], arm: [0.15, [0.75, 0.55, 0.32]] },
+  // Purple-striped jelly: 8 dark tentacles, long pink frilled arms.
+  { lobes: 32, lobeD: 0.04, lobeP: 6, tents: [8, 0.8, 0.2, 1.7, [0.5, 0.24, 0.6]], arm: [0.26, [0.7, 0.34, 0.78]] },
+  // Egg-yolk jelly: 16 lobes, bunches of fine pale tentacles.
+  { lobes: 16, lobeD: 0.06, lobeP: 4, tents: [96, 0.45, 0.55, 1.0, [0.62, 0.58, 0.4]], arm: [0.22, [0.85, 0.62, 0.25]] },
+];
+// The starfield's colours: soft, like stars of mixed heat.
+const PAL = [[0.6, 0.85, 1.0], [1.0, 0.6, 0.82], [0.78, 0.62, 1.0], [1.0, 0.8, 0.5], [0.6, 1.0, 0.86], [0.92, 0.95, 1.0]];
 
 const NOISE = /* glsl */`
   float hh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -72,15 +87,15 @@ export function createScene(canvas, { onLost } = {}) {
         float r = length(q);
         // The back wall: blue at the top under the lamps, near black below.
         float ly = clamp(q.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 deep = vec3(0.0004, 0.0025, 0.016);
-        vec3 lit = vec3(0.01, 0.065, 0.32);
+        vec3 deep = vec3(0.0002, 0.0012, 0.007);
+        vec3 lit = vec3(0.004, 0.028, 0.15);
         vec3 col = mix(deep, lit, pow(ly, 2.3));
-        col += vec3(0.006, 0.045, 0.2) * exp(-dot(q - vec2(0.0, 0.62), q - vec2(0.0, 0.62)) * 2.2);
+        col += vec3(0.003, 0.022, 0.1) * exp(-dot(q - vec2(0.0, 0.62), q - vec2(0.0, 0.62)) * 2.2);
         // Light shafts fan down from the lamps over the drum.
         vec2 s = q - vec2(0.0, 1.9);
         float ang = atan(s.x, -s.y);
         float sh = vn(vec2(ang * 13.0 + uTime * 0.04, uTime * 0.025)) * vn(vec2(ang * 29.0 - uTime * 0.03, 3.1 + uTime * 0.02));
-        col += vec3(0.01, 0.06, 0.24) * sh * sh * 1.6 * smoothstep(-0.7, 0.9, q.y) * (1.0 - smoothstep(0.85, 1.0, r));
+        col += vec3(0.005, 0.032, 0.13) * sh * sh * 1.6 * smoothstep(-0.7, 0.9, q.y) * (1.0 - smoothstep(0.85, 1.0, r));
         // The drum wall between the back rim and the glass: curved, darker.
         float wall = smoothstep(uBackK - 0.02, uBackK + 0.05, r);
         float wl = clamp((r - uBackK) / (1.0 - uBackK), 0.0, 1.0);
@@ -90,7 +105,7 @@ export function createScene(canvas, { onLost } = {}) {
         side += vec3(0.002, 0.014, 0.06) * vn(vec2(ap * 9.0, wl * 2.0)) * pow(ly, 2.5);
         col = mix(col, side, wall);
         // A faint bright seam where the back meets the wall.
-        col += vec3(0.006, 0.03, 0.12) * exp(-pow((r - uBackK) / 0.005, 2.0)) * pow(ly, 1.8);
+        col += vec3(0.004, 0.02, 0.08) * exp(-pow((r - uBackK) / 0.005, 2.0)) * pow(ly, 1.8);
         gl_FragColor = vec4(col, 1.0);
       }`,
   }));
@@ -176,15 +191,15 @@ export function createScene(canvas, { onLost } = {}) {
   }
   const bellVS = /* glsl */`
     attribute vec2 aUV;
-    uniform float uA, uRho, uFlat, uSize, uC, uWave;
+    uniform float uA, uRho, uFlat, uSize, uC, uWave, uLobes, uLobeD, uLobeP;
     varying vec3 vN, vV, vW;
     varying vec2 vUV;
     vec3 shape(float u, float ang) {
       // The margin closes first: a wave runs out along the bell.
       float th = u * uA + uWave * sin(u * 3.14159) * 0.06;
       float r = uRho * sin(th);
-      // Eight shallow notches on the margin hold the sense organs.
-      r *= 1.0 - 0.04 * smoothstep(0.86, 1.0, u) * pow(abs(cos(ang * 4.0)), 24.0);
+      // Notches or lappets cut the margin; each kind has its own count.
+      r *= 1.0 - uLobeD * smoothstep(0.86, 1.0, u) * pow(abs(cos(ang * uLobes * 0.5)), uLobeP);
       float y = uRho * (cos(th) - cos(uA)) * uFlat;
       return vec3(cos(ang) * r, y, sin(ang) * r) * uSize;
     }
@@ -203,7 +218,7 @@ export function createScene(canvas, { onLost } = {}) {
       gl_Position = projectionMatrix * mv;
     }`;
   const bellFS = /* glsl */`
-    uniform float uFog0, uC, uGlow;
+    uniform float uFog0, uC, uGlow, uKind;
     varying vec3 vN, vV, vW;
     varying vec2 vUV;
     ${NOISE}
@@ -215,6 +230,40 @@ export function createScene(canvas, { onLost } = {}) {
       vec2 q = vec2(cos(ang), sin(ang)) * u;
       // Thin clear jelly shows most where the eye grazes it.
       float rim = pow(1.0 - f, 2.6);
+      float lamp = lampAt(vW);
+      float far = exp(-max(0.0, length(vV) - uFog0) * 0.2);
+      float speck = vn(q * 38.0) * 0.25 + 0.75;
+      float marg = smoothstep(0.9, 1.0, u);
+      // Sixteen radial bands, centred on the canals.
+      float k = fract(ang / 6.28318 * 16.0 + 0.5) - 0.5;
+      if (uKind > 0.5) {
+        vec3 col;
+        if (uKind < 1.5) {
+          // Sea nettle: amber jelly, thick at the top, rust bands and lappets.
+          vec3 amber = vec3(1.0, 0.46, 0.12);
+          float band = exp(-pow(k / 0.13, 2.0)) * smoothstep(0.12, 0.5, u);
+          col = amber * (0.1 + 0.75 * rim) * speck * (1.0 - 0.4 * band);
+          col += amber * 0.2 * exp(-u * u / 0.09) * (0.4 + 0.6 * f);
+          col += vec3(0.7, 0.16, 0.04) * (0.12 * band * f + 0.35 * marg);
+          col += vec3(1.0, 0.7, 0.4) * 0.12 * vn(q * 9.0) * smoothstep(0.7, 0.2, u) * f;
+        } else if (uKind < 2.5) {
+          // Purple-striped jelly: pale jelly, sixteen purple stripes from a ring.
+          vec3 pale = vec3(0.8, 0.74, 1.0);
+          float stripe = exp(-pow(k / (0.04 + 0.12 * u), 2.0)) * smoothstep(0.08, 0.3, u);
+          float ring = exp(-pow((u - 0.14) / 0.05, 2.0));
+          col = pale * (0.05 + 0.6 * rim) * speck;
+          col += vec3(0.6, 0.16, 0.95) * (stripe * (0.3 + 0.35 * f) + ring * 0.4 * f + marg * 0.35);
+        } else {
+          // Egg-yolk jelly: clear white jelly round a yellow centre.
+          vec3 pale = vec3(0.82, 0.84, 0.95);
+          float yolk = smoothstep(0.5, 0.28, u + 0.05 * vn(q * 6.0));
+          col = pale * (0.04 + 0.62 * rim) * speck;
+          col += vec3(1.0, 0.62, 0.1) * yolk * (0.3 + 0.4 * f) * (0.8 + 0.2 * vn(q * 20.0));
+          col += pale * (0.05 * exp(-pow(k / 0.08, 2.0)) * smoothstep(0.5, 0.7, u) + 0.25 * marg);
+        }
+        gl_FragColor = vec4(col * lamp * far * uGlow, 1.0);
+        return;
+      }
       // Four gonad horseshoes, open toward the centre.
       float gon = 0.0;
       for (int i = 0; i < 4; i++) {
@@ -226,15 +275,11 @@ export function createScene(canvas, { onLost } = {}) {
         gon += ring * (0.35 + 0.65 * open);
       }
       // Sixteen radial canals and the ring canal near the margin.
-      float k = fract(ang / 6.28318 * 16.0 + 0.5) - 0.5;
       float canal = exp(-pow(k * 6.28318 / 16.0 * u / 0.008, 2.0)) * smoothstep(0.42, 0.62, u);
       float ringc = exp(-pow((u - 0.93) / 0.012, 2.0));
       // The sense organs: eight bright dots in the notches.
       float rho = exp(-pow((u - 0.985) / 0.012, 2.0)) * pow(abs(cos(ang * 4.0)), 60.0);
-      float marg = smoothstep(0.95, 1.0, u);
-      float speck = vn(q * 38.0) * 0.25 + 0.75;
-      float lamp = lampAt(vW);
-      float far = exp(-max(0.0, length(vV) - uFog0) * 0.2);
+      marg = smoothstep(0.95, 1.0, u);
       vec3 jelly = vec3(0.3, 0.56, 1.0);
       vec3 col = jelly * (0.03 + 0.75 * rim) * speck;
       col += vec3(0.6, 0.68, 1.0) * gon * (0.24 + 0.36 * f);
@@ -246,7 +291,7 @@ export function createScene(canvas, { onLost } = {}) {
   /* ---------- tentacles and oral arms ---------- */
   // Chain points live in a float texture: one row per chain.
   let J = 0, tex = null, texData = null;
-  const PER = 128, SEG = 22;
+  const SEG = 22;
   function ribbonGeo(seg) {
     const g = new THREE.InstancedBufferGeometry();
     const a = [], idx = [];
@@ -272,10 +317,11 @@ export function createScene(canvas, { onLost } = {}) {
     transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: /* glsl */`
       attribute vec2 aS;
-      attribute vec4 aT;
+      attribute vec4 aT, aK;
       uniform vec2 uRes;
       uniform float uW, uTime, uFog0;
       varying float vA, vSide;
+      varying vec3 vCol;
       ${CHAIN}
       ${LIGHT}
       vec3 tent(float s) {
@@ -294,7 +340,8 @@ export function createScene(canvas, { onLost } = {}) {
         vec2 d = (c1.xy / c1.w - c0.xy / c0.w) * uRes;
         d = length(d) > 1e-4 ? normalize(d) : vec2(1.0, 0.0);
         // Under one device pixel the ribbon fades rather than thins.
-        float want = uW * mix(1.0, 0.4, s);
+        float want = uW * aK.w * mix(1.0, 0.4, s);
+        vCol = aK.rgb;
         float wpx = max(want, 1.0);
         c0.xy += vec2(-d.y, d.x) * aS.y * wpx / uRes * c0.w;
         gl_Position = c0;
@@ -305,9 +352,10 @@ export function createScene(canvas, { onLost } = {}) {
     fragmentShader: /* glsl */`
       uniform float uGlow;
       varying float vA, vSide;
+      varying vec3 vCol;
       void main() {
         float a = vA * (1.0 - vSide * vSide * 0.6) * uGlow;
-        gl_FragColor = vec4(vec3(0.45, 0.7, 1.0) * a * 0.85, 1.0);
+        gl_FragColor = vec4(vCol * a, 1.0);
       }`,
   }));
   const armMat = keep(new THREE.ShaderMaterial({
@@ -315,10 +363,11 @@ export function createScene(canvas, { onLost } = {}) {
     transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     vertexShader: /* glsl */`
       attribute vec2 aS;
-      attribute vec4 aT;
+      attribute vec4 aT, aK;
       uniform float uTime, uFog0;
       varying float vA, vS;
       varying vec2 vQ;
+      varying vec3 vCol;
       ${CHAIN}
       ${LIGHT}
       void main() {
@@ -336,11 +385,13 @@ export function createScene(canvas, { onLost } = {}) {
         float far = exp(-max(0.0, -mv.z - uFog0) * 0.2);
         vA = far * lampAt(P) * smoothstep(1.0, 0.75, s);
         vS = s; vQ = vec2(aS.y, s * 30.0 + aT.w * 10.0);
+        vCol = aK.rgb;
       }`,
     fragmentShader: /* glsl */`
       uniform float uGlow;
       varying float vA, vS;
       varying vec2 vQ;
+      varying vec3 vCol;
       ${NOISE}
       void main() {
         // Ruffled edges: the cut wanders, and folded edges glow brighter.
@@ -350,9 +401,107 @@ export function createScene(canvas, { onLost } = {}) {
         float fold = smoothstep(edge - 0.25, edge, x);
         float mid = exp(-x * x / 0.02) * 0.6;
         float a = vA * (0.18 + 0.8 * fold + mid) * (0.75 + 0.25 * vn(vQ * vec2(6.0, 1.5)));
-        gl_FragColor = vec4(vec3(0.5, 0.72, 1.0) * a * 0.75 * uGlow, 1.0);
+        gl_FragColor = vec4(vCol * a * uGlow, 1.0);
       }`,
   }));
+  /* ---------- the starfield ---------- */
+  // Small jellies as quads turned to the screen, the bell drawn per pixel.
+  // aA: position and size. aB: axis and contraction. aC: colour and seed.
+  const smallMat = keep(new THREE.ShaderMaterial({
+    uniforms: { ...U, uGlow: { value: 1 } },
+    transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending,
+    vertexShader: /* glsl */`
+      attribute vec2 aQ;
+      attribute vec4 aA, aB, aC;
+      uniform vec2 uRes;
+      uniform float uFog0;
+      varying vec2 vL;
+      varying float vFs, vC, vA, vSeed, vRp;
+      varying vec3 vCol;
+      ${LIGHT}
+      void main() {
+        mat4 vp = projectionMatrix * viewMatrix;
+        vec4 c0 = vp * vec4(aA.xyz, 1.0);
+        vec4 c1 = vp * vec4(aA.xyz + aB.xyz * aA.w, 1.0);
+        vec2 h = 0.5 * uRes;
+        vec2 s0 = c0.xy / c0.w * h, s1 = c1.xy / c1.w * h;
+        float rpx = aA.w * projectionMatrix[0][0] * h.x / c0.w;
+        // Below a pixel and a half the bell fades rather than shrinks.
+        float rp = max(rpx, 1.5);
+        vec2 up = s1 - s0;
+        float ul = length(up);
+        vFs = clamp(ul / max(rpx, 1e-3), 0.0, 1.0);
+        vec2 dir = ul > 1e-3 ? up / ul : vec2(0.0, 1.0);
+        vec2 side = vec2(dir.y, -dir.x);
+        vL = vec2(aQ.x * 1.4, mix(-3.4, 1.4, aQ.y * 0.5 + 0.5));
+        vec2 p = s0 + (side * vL.x + dir * vL.y) * rp;
+        gl_Position = vec4(p / h * c0.w, c0.z, c0.w);
+        float far = exp(-max(0.0, c0.w - uFog0) * 0.2);
+        vA = far * lampAt(aA.xyz) * min(1.0, rpx / 1.5);
+        vC = aB.w; vCol = aC.rgb; vSeed = aC.w; vRp = rp;
+      }`,
+    fragmentShader: /* glsl */`
+      uniform float uGlow, uTime;
+      varying vec2 vL;
+      varying float vFs, vC, vA, vSeed, vRp;
+      varying vec3 vCol;
+      void main() {
+        // Side on, the bell is a dome; from above, a disc.
+        float w = 1.0 - 0.22 * vC, hgt = 0.8 - 0.2 * vC;
+        float hv = mix(w, hgt, vFs), hb = mix(w, 0.07, vFs);
+        vec2 L = vL;
+        float e = length(vec2(L.x / w, L.y / (L.y > 0.0 ? hv : hb)));
+        float bell = smoothstep(1.12, 0.9, e);
+        float glow = bell * (0.1 + 0.9 * pow(min(e, 1.0), 5.0)) + exp(-pow((e - 1.0) / 0.16, 2.0)) * 0.35;
+        glow += exp(-dot(L, L) / 0.06) * 0.3 * (1.0 - vFs);
+        // Four tentacles trail below a side-on bell, each a pixel wide.
+        // Lines in pixels keep a small bell from a haze of fine stripes.
+        float tent = 0.0, tl = 3.0 * vFs, ty = -L.y;
+        if (ty > 0.0 && tl > 0.05) {
+          float x = L.x / w + 0.07 * ty * sin(ty * 2.6 + uTime * 1.7 + vSeed * 40.0);
+          float dpx = abs(fract(x / 0.4) - 0.5) * 0.4 * w * vRp;
+          float line = exp(-dpx * dpx / 0.3) * step(abs(x), 0.8);
+          tent = line * (1.0 - smoothstep(0.0, tl, ty)) * 0.5;
+        }
+        // The closing bell flares: the twinkle of the field.
+        float a = (glow * (0.6 + 0.9 * vC) + tent) * vA * uGlow;
+        gl_FragColor = vec4(vCol * a, 1.0);
+      }`,
+  }));
+  let smallGeo = null, sA = null, sB = null;
+  function buildSmall(tank) {
+    const s = tank.small, n = s.n;
+    smallGeo = keep(new THREE.InstancedBufferGeometry());
+    smallGeo.setAttribute('aQ', new THREE.Float32BufferAttribute([-1, -1, 1, -1, 1, 1, -1, 1], 2));
+    smallGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(12), 3));
+    smallGeo.setIndex([0, 1, 2, 0, 2, 3]);
+    sA = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4);
+    sB = new THREE.InstancedBufferAttribute(new Float32Array(n * 4), 4);
+    sA.setUsage(THREE.DynamicDrawUsage); sB.setUsage(THREE.DynamicDrawUsage);
+    const c = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const p = PAL[Math.floor(s.seed[i] * 997) % PAL.length], v = 0.6 + 0.4 * ((s.seed[i] * 7919) % 1);
+      c[i * 4] = p[0] * v; c[i * 4 + 1] = p[1] * v; c[i * 4 + 2] = p[2] * v; c[i * 4 + 3] = s.seed[i];
+    }
+    smallGeo.setAttribute('aA', sA);
+    smallGeo.setAttribute('aB', sB);
+    smallGeo.setAttribute('aC', new THREE.InstancedBufferAttribute(c, 4));
+    smallGeo.instanceCount = n;
+    const m = new THREE.Mesh(smallGeo, smallMat);
+    m.frustumCulled = false;
+    m.renderOrder = -1;
+    scene.add(m);
+  }
+  function syncSmall(tank) {
+    const s = tank.small, a = sA.array, b = sB.array;
+    for (let i = 0; i < s.n; i++) {
+      const o = i * 3, q = i * 4;
+      a[q] = s.P[o]; a[q + 1] = s.P[o + 1]; a[q + 2] = s.P[o + 2]; a[q + 3] = s.size[i];
+      b[q] = s.A[o]; b[q + 1] = s.A[o + 1]; b[q + 2] = s.A[o + 2]; b[q + 3] = s.c[i];
+    }
+    sA.needsUpdate = sB.needsUpdate = true;
+  }
+
   const tentGeo = keep(ribbonGeo(SEG));
   const armGeo = keep(ribbonGeo(26));
   let tents = null, arms = null;
@@ -366,29 +515,46 @@ export function createScene(canvas, { onLost } = {}) {
     tentMat.uniforms.uTex.value = tex;
     armMat.uniforms.uTex.value = tex;
     // Tentacle instances: the jelly's first row, a place round the rim, a length, a seed.
-    const t = new Float32Array(J * PER * 4);
+    // aK holds the colour and the width.
+    const t = [], tk = [];
     let s = 11;
     const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
-    for (let j = 0; j < J; j++) for (let k = 0; k < PER; k++) {
-      const o = (j * PER + k) * 4;
-      t[o] = j * CHAINS; t[o + 1] = ((k + rnd() * 0.6) / PER) * T.G % T.G; t[o + 2] = 0.28 + 0.4 * rnd() * rnd(); t[o + 3] = rnd();
-    }
-    tentGeo.setAttribute('aT', new THREE.InstancedBufferAttribute(t, 4));
-    tentGeo.instanceCount = J * PER;
-    const a = new Float32Array(J * T.A * 4);
-    for (let j = 0; j < J; j++) for (let k = 0; k < T.A; k++) {
-      const o = (j * T.A + k) * 4;
-      a[o] = j * CHAINS + T.G + k; a[o + 1] = 0; a[o + 2] = 0.2 * tank.jellies[j].size; a[o + 3] = rnd();
-    }
-    armGeo.setAttribute('aT', new THREE.InstancedBufferAttribute(a, 4));
-    armGeo.instanceCount = J * T.A;
+    tank.jellies.forEach((jl, j) => {
+      const [n, l0, l1, w, col] = LOOK[jl.kind].tents;
+      // Egg-yolk tentacles hang in sixteen bunches; the rest spread evenly.
+      const bunch = jl.kind === 3;
+      for (let k = 0; k < n; k++) {
+        const g = bunch ? (Math.floor(k / (n / 16)) + 0.5 + (rnd() - 0.5) * 0.35) : (k + rnd() * 0.6) / n * T.G;
+        const v = 0.75 + 0.25 * rnd();
+        t.push(j * CHAINS, g % T.G, l0 + l1 * (jl.kind === 0 ? rnd() * rnd() : rnd()), rnd());
+        tk.push(col[0] * v, col[1] * v, col[2] * v, w);
+      }
+    });
+    tentGeo.setAttribute('aT', new THREE.InstancedBufferAttribute(new Float32Array(t), 4));
+    tentGeo.setAttribute('aK', new THREE.InstancedBufferAttribute(new Float32Array(tk), 4));
+    tentGeo.instanceCount = t.length / 4;
+    const a = [], ak = [];
+    tank.jellies.forEach((jl, j) => {
+      const [w, col] = LOOK[jl.kind].arm;
+      for (let k = 0; k < T.A; k++) {
+        a.push(j * CHAINS + T.G + k, 0, w * jl.size, rnd());
+        ak.push(...col, 1);
+      }
+    });
+    armGeo.setAttribute('aT', new THREE.InstancedBufferAttribute(new Float32Array(a), 4));
+    armGeo.setAttribute('aK', new THREE.InstancedBufferAttribute(new Float32Array(ak), 4));
+    armGeo.instanceCount = a.length / 4;
     tents = new THREE.Mesh(tentGeo, tentMat);
     arms = new THREE.Mesh(armGeo, armMat);
     tents.frustumCulled = arms.frustumCulled = false;
     scene.add(arms, tents);
     for (const j of tank.jellies) {
+      const L = LOOK[j.kind];
       const m = keep(new THREE.ShaderMaterial({
-        uniforms: { ...U, uA: { value: 1 }, uRho: { value: 1 }, uFlat: { value: 0.6 }, uSize: { value: j.size }, uC: { value: 0 }, uWave: { value: 0 }, uGlow: { value: 1 } },
+        uniforms: {
+          ...U, uA: { value: 1 }, uRho: { value: 1 }, uFlat: { value: 0.6 }, uSize: { value: j.size }, uC: { value: 0 }, uWave: { value: 0 }, uGlow: { value: 1 },
+          uKind: { value: j.kind }, uLobes: { value: L.lobes }, uLobeD: { value: L.lobeD }, uLobeP: { value: L.lobeP },
+        },
         vertexShader: bellVS, fragmentShader: bellFS,
         transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
       }));
@@ -440,7 +606,7 @@ export function createScene(canvas, { onLost } = {}) {
         float aa = 1.5 / uRad;
         float inside = smoothstep(1.0 + aa, 1.0 - aa, r);
         float ly = clamp(q.y * 0.35 + 0.5, 0.0, 1.0);
-        vec3 wall = vec3(0.0028, 0.0032, 0.0048) + vec3(0.003, 0.014, 0.06) * exp(-(r - 1.0) * 4.5) * (0.5 + 0.5 * ly);
+        vec3 wall = vec3(0.0028, 0.0032, 0.0048) + vec3(0.002, 0.009, 0.04) * exp(-(r - 1.0) * 4.5) * (0.5 + 0.5 * ly);
         // A dark seal hugs the glass, then the wall.
         wall *= smoothstep(1.0, 1.045, r) * 0.85 + 0.15;
         col = mix(wall, col, inside);
@@ -509,14 +675,15 @@ export function createScene(canvas, { onLost } = {}) {
   /* ---------- sync ---------- */
   const M = new THREE.Matrix4();
   function update(tank, glow = 1) {
-    if (!tents) build(tank);
+    if (!tents) { build(tank); buildSmall(tank); }
     pack(tank, texData);
     tex.needsUpdate = true;
-    tentMat.uniforms.uGlow.value = armMat.uniforms.uGlow.value = glow;
+    syncSmall(tank);
+    tentMat.uniforms.uGlow.value = armMat.uniforms.uGlow.value = smallMat.uniforms.uGlow.value = glow;
     tank.jellies.forEach((j, i) => {
       const b = bellShape(j.c), m = bells[i];
       const u = m.material.uniforms;
-      u.uA.value = b.a; u.uRho.value = b.rho; u.uFlat.value = b.flat; u.uC.value = j.c; u.uGlow.value = glow;
+      u.uA.value = b.a; u.uRho.value = b.rho; u.uFlat.value = b.flat * j.S.dome; u.uC.value = j.c; u.uGlow.value = glow;
       u.uWave.value = Math.sin((j.phase % 1) * Math.PI * 2) * Math.min(1, j.c * 2);
       const e1 = j.e1, a = j.ax, e2 = j.e2;
       M.set(e1[0], a[0], e2[0], j.p[0], e1[1], a[1], e2[1], j.p[1], e1[2], a[2], e2[2], j.p[2], 0, 0, 0, 1);

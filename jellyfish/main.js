@@ -1,4 +1,4 @@
-// Jellyfish tank: moon jellies pulse on a round flow; tap the glass.
+// Jellyfish tank: coloured jellies and a starfield of small ones on a round flow; tap the glass.
 // Plan: docs/plans/jellyfish.md. Toy doc: docs/toys/jellyfish.md.
 import { initPage, whenVisible, reduced, onReducedChange, onQuality, pixelRatio, audioKit, sound, stage as mark, pageReady } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
@@ -38,7 +38,7 @@ const ui = initPage({ id: ID, bar: {
 /* ---------- tank ---------- */
 const stage = document.getElementById('stage');
 const narrow = () => stage.clientWidth < 640;
-const tank = makeTank(narrow() ? 6 : 7);
+const tank = makeTank(narrow() ? 5 : 6, narrow() ? 420 : 700);
 tank.calm = calm;
 setFlow(tank, flow);
 // Reduced motion opens on still bells: they finish their stroke first.
