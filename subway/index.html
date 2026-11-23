@@ -126,6 +126,7 @@ const OCC = [
 const NW = WIN.length, NO = OCC.length;
 
 const U = {
+  uZero: { value: 0 },
   uTravel: { value: 0 },
   uSmear: { value: 0 },
   uJolt: { value: 0 },
@@ -139,15 +140,20 @@ const U = {
   uOcc: { value: OCC.map(o => new THREE.Vector4(...o)) },
 };
 
-const GLSL = /* glsl */`
+// Shared GLSL: uniforms, hashes, noise and the lamp layout.
+const GLSL_BASE = /* glsl */`
 #define NW ${NW}
 #define NO ${NO}
+// Loop counts add a uniform zero, so the D3D compiler keeps them as loops.
+// It fails to unroll these nests and spends minutes retrying.
+uniform int uZero;
+#define DYN(n) ((n) + uZero)
 uniform float uTravel, uSmear, uJolt, uTime, uMix;
 uniform vec3 uCam, uColA;
 uniform vec4 uWin[NW];
 uniform vec4 uOcc[NO];
 const float GAP = ${GAP.toFixed(3)}, LY = ${LAMP_Y.toFixed(3)}, LZ = ${LAMP_Z.toFixed(3)}, TUBE = ${TUBE.toFixed(3)};
-const float HALF = ${HALF.toFixed(3)}, ROOF = ${ROOF.toFixed(3)}, POWER = 22.0;
+const float HALF = ${HALF.toFixed(3)}, ROOF = ${ROOF.toFixed(3)}, POWER = 16.0;
 
 float hash1(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
 float hash2(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -176,7 +182,7 @@ vec2 lampAt(float id, float sg, out vec3 col) {
   float n = mod(id, 256.0) + (sg > 0.0 ? 256.0 : 0.0);
   float bt = hash1(floor(n / 8.0) * 3.7 + 11.0);
   float dark = step(bt, 0.3), dense = step(0.72, bt);
-  float on = step(hash1(n), mix(mix(0.8, 0.14, dark), 1.0, dense));
+  float on = step(hash1(n), mix(mix(0.4, 0.05, dark), 0.75, dense));
   float x = id * GAP + (hash1(n + 0.37) - 0.5) * mix(2.4, 0.4, dense) + (sg > 0.0 ? GAP * 0.5 : 0.0) - uTravel;
   float h = mix(hash1(n + 0.71), hash1(floor(n / 8.0) + 0.53), dense);
   // A lone lamp in a dark run burns brighter.
@@ -186,6 +192,12 @@ vec2 lampAt(float id, float sg, out vec3 col) {
 }
 // The lamp id nearest to cabin x on side sg.
 float lampId(float x, float sg) { return floor((x + uTravel - (sg > 0.0 ? GAP * 0.5 : 0.0)) / GAP + 0.5); }
+// A filter weight: 1 when a pattern of scale g is sharp, 0 when it is sub-pixel.
+float sharp(vec2 g) { return clamp(1.5 - 1.2 * max(length(fwidth(g)), 0.0), 0.0, 1.0); }
+`;
+
+// Cabin light: the tunnel lamps through the windows, and the roof strips.
+const GLSL_LIGHT = /* glsl */`
 
 // The lamp x range that a vertical slot [a, b] lets through to P.
 // t is where the ray crosses the slot's plane, from P (0) to the lamp line (1).
@@ -194,11 +206,11 @@ float overlap(vec2 a, vec2 b) { return max(0.0, min(a.y, b.y) - max(a.x, b.x)); 
 
 // Tunnel light at P: each lamp is a box in x, its tube plus the shutter's travel.
 // Each window passes one interval of lamp x; each occluder takes one away.
-void tunnelLight(vec3 P, vec3 N, vec3 V, float shin, out vec3 dif, out vec3 spe) {
+void tunnelLight(vec3 P, vec3 N, vec3 V, float rough, vec3 F0, out vec3 dif, out vec3 spe) {
   dif = vec3(0.0);
   spe = vec3(0.0);
   float ly = LY + uJolt;
-  for (int s = 0; s < 2; s++) {
+  for (int s = 0; s < DYN(2); s++) {
     float sg = s == 0 ? -1.0 : 1.0;
     float zl = LZ * sg, dz = zl - P.z;
     float tw = (HALF * sg - P.z) / dz;
@@ -206,22 +218,15 @@ void tunnelLight(vec3 P, vec3 N, vec3 V, float shin, out vec3 dif, out vec3 spe)
     if (tw < 0.002) continue;
     float yw = P.y + tw * (ly - P.y);
     float ew = tw * 0.14 + 0.004;
-    // The occluder tests that do not depend on the lamp run once per side.
-    float ot[NO], oh[NO];
-    for (int k = 0; k < NO; k++) {
-      float t = (uOcc[k].x - P.z) / dz;
-      oh[k] = (t > 0.002 && t < 1.0) ? band(P.y + t * (ly - P.y), -1.0, uOcc[k].w, t * 0.14 + 0.004) : 0.0;
-      ot[k] = t;
-    }
     float i0 = lampId(P.x, sg);
-    for (int j = -2; j <= 2; j++) {
+    for (int j = -2; j <= DYN(2); j++) {
       float id = i0 + float(j);
       vec3 col;
       vec2 l = lampAt(id, sg, col);
       if (l.y < 0.5) continue;
       vec2 box = vec2(l.x - TUBE * 0.5, l.x + TUBE * 0.5 + uSmear);
       float lit = 0.0, mid = 0.0;
-      for (int w = 0; w < NW; w++) {
+      for (int w = 0; w < DYN(NW); w++) {
         vec4 o = uWin[w];
         float v = band(yw, o.z, o.w, ew);
         if (v <= 0.0) continue;
@@ -230,9 +235,15 @@ void tunnelLight(vec3 P, vec3 N, vec3 V, float shin, out vec3 dif, out vec3 spe)
         float len = I.y - I.x;
         if (len <= 0.0) continue;
         float keep = 1.0;
-        for (int k = 0; k < NO; k++) {
-          if (oh[k] <= 0.0) continue;
-          keep *= 1.0 - oh[k] * min(1.0, overlap(I, slot(P, ot[k], uOcc[k].y, uOcc[k].z)) / len);
+        // Each occluder takes its slot out of the interval.
+        // The test runs inline: a local array makes the D3D compiler fail to unroll.
+        for (int k = 0; k < DYN(NO); k++) {
+          vec4 oc = uOcc[k];
+          float t = (oc.x - P.z) / dz;
+          if (t <= 0.002 || t >= 1.0) continue;
+          float h = band(P.y + t * (ly - P.y), -1.0, oc.w, t * 0.14 + 0.004);
+          if (h <= 0.0) continue;
+          keep *= 1.0 - h * min(1.0, overlap(I, slot(P, t, oc.y, oc.z)) / len);
         }
         float c = len * v * keep;
         lit += c;
@@ -243,8 +254,16 @@ void tunnelLight(vec3 P, vec3 N, vec3 V, float shin, out vec3 dif, out vec3 spe)
       float d2 = dot(L, L);
       vec3 Ln = L * inversesqrt(d2);
       vec3 e = col * (lit / (box.y - box.x)) / d2;
-      dif += e * max(dot(N, Ln), 0.0);
-      if (shin > 0.0) spe += e * pow(max(dot(N, normalize(Ln + V)), 0.0), shin) * (shin + 2.0) * 0.125;
+      float nl = max(dot(N, Ln), 0.0);
+      dif += e * nl;
+      // GGX lobe, Schlick fresnel, Kelemen visibility: one microfacet term per lamp.
+      vec3 H = normalize(Ln + V);
+      float nh = max(dot(N, H), 0.0), vh = max(dot(V, H), 0.0);
+      float a2 = rough * rough * rough * rough;
+      float dd = nh * nh * (a2 - 1.0) + 1.0;
+      vec3 F = F0 + (1.0 - F0) * pow(1.0 - vh, 5.0);
+      // The lamps are small: 0.2 keeps the peak near the old Blinn highlight.
+      spe += e * nl * F * (a2 / (3.14159265 * dd * dd)) * 0.05 / max(vh * vh, 0.04);
     }
   }
   dif *= POWER;
@@ -254,13 +273,17 @@ void tunnelLight(vec3 P, vec3 N, vec3 V, float shin, out vec3 dif, out vec3 spe)
 // The dim cabin: two warm diffuser strips along the roof.
 vec3 cabinLight(vec3 P, vec3 N) {
   float irr = 0.0;
-  for (int i = 0; i < 2; i++) {
+  for (int i = 0; i < DYN(2); i++) {
     vec2 d = vec2(ROOF - 0.04 - P.y, (i == 0 ? -0.55 : 0.55) - P.z);
     irr += max(dot(N.yz, normalize(d)), 0.0) * 0.5 / (dot(d, d) + 0.4);
   }
   return vec3(1.0, 0.78, 0.55) * (irr + 0.1) * 0.035;
 }
 
+`;
+
+// The tunnel seen through the glass. Only the glass shader uses it.
+const GLSL_TUNNEL = /* glsl */`
 // A box filter of stripes w wide every p metres, over a window s wide.
 float stripes(float x, float p, float w, float s) {
   s = max(s, 0.002);
@@ -272,22 +295,25 @@ float stripes(float x, float p, float w, float s) {
 
 // The tunnel seen through an opening on side sg.
 // glow is the lamp light that falls on the glass itself.
-vec3 tunnel(vec3 P, float sg, out vec3 glow) {
+// bk blurs the view: grease on the pane scatters it.
+// lamp is the brightest lamp's image on the pane (x, y) and its strength.
+vec3 tunnel(vec3 P, float sg, float bk, out vec3 glow, out vec3 lamp) {
   glow = vec3(0.0);
+  lamp = vec3(0.0);
   vec3 d = normalize(P - uCam);
   if (d.z * sg <= 0.001) return vec3(0.0);
   float ly = LY + uJolt;
   // The lamps hang on brackets in front of the tunnel wall.
   vec3 q = P + d * ((2.75 * sg - P.z) / d.z);
   vec3 ql = P + d * ((LZ * sg - P.z) / d.z);
-  float xt = q.x + uTravel, s = uSmear;
+  float xt = q.x + uTravel, s = uSmear + bk * 0.25;
   // The lining: rings every 1.3 m and cable runs along the wall.
   float alb = 0.11 + 0.06 * vnoise(vec2(xt * 1.2 / (1.0 + s * 4.0), q.y * 6.0));
   alb *= 1.0 - 0.5 * stripes(xt, 1.3, 0.16, s);
   alb *= 1.0 - 0.7 * (band(q.y, 0.42, 0.47, 0.01) + band(q.y, 0.52, 0.56, 0.01) + band(q.y, 1.32, 1.37, 0.01));
   vec3 c = vec3(0.0);
   float i0 = lampId(q.x, sg);
-  for (int j = -1; j <= 1; j++) {
+  for (int j = -1; j <= DYN(1); j++) {
     float id = i0 + float(j);
     vec3 col;
     vec2 l = lampAt(id, sg, col);
@@ -296,15 +322,21 @@ vec3 tunnel(vec3 P, float sg, out vec3 glow) {
     float hw = (TUBE + s) * 0.5, cx = l.x + s * 0.5;
     float dx = max(abs(q.x - cx) - hw, 0.0), dy = q.y - ly;
     float d2 = dx * dx + dy * dy + 0.25;
-    c += col * alb * 2.2 / (d2 * sqrt(d2));
+    c += col * alb * 1.2 / (d2 * sqrt(d2));
     // The lamp itself: a capsule of light along the travel.
     float lx = max(abs(ql.x - cx) - hw, 0.0), lyy = ql.y - ly;
-    float r = 0.035;
+    // A wide, soft lamp: the outside blurs the way a moving window does.
+    float r = 0.09 + 0.16 * bk;
     float k = (TUBE + r) / (TUBE + r + s);
-    c += col * (exp(-(lx * lx + lyy * lyy) / (r * r)) * 40.0 + exp(-(lx * lx + lyy * lyy) / 0.05) * 0.6) * k;
+    c += col * (exp(-(lx * lx + lyy * lyy) / (r * r)) * 9.0 * 0.09 / r + exp(-(lx * lx + lyy * lyy) / 0.2) * 0.3) * k;
     // The same lamp lights the pane, 0.85 m away.
     float gx = max(abs(P.x - cx) - hw, 0.0), gy = P.y - ly;
     glow += col / (gx * gx + gy * gy + 0.7);
+    // The lamp's image sits where the line from the eye to it crosses the glass.
+    vec3 Lw = vec3(cx, ly, LZ * sg);
+    vec2 lp = uCam.xy + (Lw.xy - uCam.xy) * ((HALF * sg - uCam.z) / (Lw.z - uCam.z));
+    float lk = dot(col, vec3(0.3, 0.5, 0.2)) * k;
+    if (lk > lamp.z) lamp = vec3(lp, lk);
   }
   return c;
 }
@@ -339,20 +371,130 @@ const PLAIN_VERT = /* glsl */`
     gl_Position = projectionMatrix * viewMatrix * w;
   }`;
 
+// Glass marks: grease, wipes, a print, scratches. Only the glass shader uses them.
+const GLASS_FN = /* glsl */`
+    // fbm that turns each octave, so no lattice shows.
+    float fbm(vec2 p) {
+      float s = 0.0, a = 0.5;
+      for (int i = 0; i < DYN(5); i++) { s += a * vnoise(p); p = mat2(0.8, -0.6, 0.6, 0.8) * p * 2.03 + 1.7; a *= 0.5; }
+      return s;
+    }
+
+    // Grease from hands: warped patches, after Train Ride's smudges.
+    float smudges(vec2 p, float seed) {
+      vec2 w = vec2(fbm(p * 2.5 + seed), fbm(p * 2.5 + seed + 5.2));
+      return smoothstep(0.56, 0.8, fbm(p * 4.0 + w * 1.3 + seed * 1.7));
+    }
+
+    // A hand pressed flat on the glass: the heel of the palm and four fingertips.
+    float handPrint(vec2 q, float seed) {
+      if (hash1(seed + 9.1) < 0.5) return 0.0;
+      vec2 h = vec2((hash1(seed + 3.3) - 0.5) * 0.5, (hash1(seed + 4.4) - 0.6) * 0.3);
+      float a = (hash1(seed + 5.5) - 0.5) * 0.9;
+      vec2 p = mat2(cos(a), sin(a), -sin(a), cos(a)) * (q - h);
+      float m = smoothstep(1.0, 0.2, length(p / vec2(0.035, 0.04)));
+      for (int i = 0; i < DYN(4); i++) {
+        float fi = float(i);
+        vec2 f = vec2(-0.03 + 0.02 * fi, 0.075 + 0.012 * sin(fi * 1.9));
+        m = max(m, smoothstep(1.0, 0.25, length((p - f) / vec2(0.008, 0.011))));
+      }
+      // Skin oil is patchy at the millimetre scale.
+      vec2 g = p * 300.0;
+      return m * (0.6 + 0.4 * mix(0.5, vnoise(g), sharp(g)));
+    }
+
+    // Cloth wipes: arcs swept about an elbow below the pane.
+    // Returns the grease; str is the fibre-line strength, t the line direction.
+    float wipes(vec2 q, float seed, out float str, out vec2 t) {
+      float m = 0.0;
+      str = 0.0;
+      t = vec2(1.0, 0.0);
+      // The pixel's footprint, taken outside the loop: a derivative inside forces an unroll.
+      float fq = length(fwidth(q));
+      for (int i = 0; i < DYN(3); i++) {
+        float s = seed + float(i) * 7.31;
+        if (hash1(s + 0.7) < 0.3) continue;
+        vec2 c = vec2((hash1(s) - 0.5) * 1.4, -0.45 - 0.5 * hash1(s + 1.1));
+        float R = 0.55 + 0.45 * hash1(s + 2.3), w = 0.05 + 0.09 * hash1(s + 3.7);
+        vec2 d = q - c;
+        float r = length(d), ang = atan(d.y, d.x);
+        float a0 = 0.8 + 0.9 * hash1(s + 4.9), span = 0.4 + 0.8 * hash1(s + 6.1);
+        // The band's edges are ragged, and it thins where the cloth lifted.
+        float rag = (vnoise(vec2(ang * 9.0, s)) - 0.5) * 0.05;
+        float across = smoothstep(w, w * 0.4, abs(r - R + rag));
+        float along = smoothstep(a0, a0 + 0.2, ang) * smoothstep(a0 + span, a0 + span - 0.3, ang);
+        float k = across * along * (0.35 + 0.65 * vnoise(vec2(ang * 4.0, s + 3.0)));
+        if (k <= m) continue;
+        // Fibre lines: fast across the radius, slow along the arc.
+        vec2 g = vec2((r - R) * 320.0, ang * R * 6.0 + s);
+        m = k;
+        // Two scales of noise space the lines unevenly, as cloth fibres do.
+        float fib = vnoise(g) * 0.6 + vnoise(g * vec2(2.7, 1.3) + 3.1) * 0.4;
+        // g changes 320 per metre across the arc and 6R/r along it.
+        float sh = clamp(1.5 - 1.2 * fq * length(vec2(320.0, 6.0 * R / max(r, 0.05))), 0.0, 1.0);
+        str = k * smoothstep(0.58, 0.82, mix(0.5, fib, sh));
+        t = vec2(-d.y, d.x) / max(r, 1e-4);
+      }
+      return m;
+    }
+
+    // Hairline scratches, cleaning swirls and wipe fibres, after Train Ride.
+    // Each line glints where it lies across the line to the lamp.
+    vec3 marks(vec2 p, vec2 q, float seed, vec3 lp, float str, vec2 wt) {
+      float fw = max(fwidth(p.x), 1e-6);
+      vec3 lc = vec3(1.0, 0.82, 0.6) * lp.z;
+      vec2 r = p - lp.xy;
+      float dist = length(r);
+      vec2 rn = r / max(dist, 1e-4);
+      // Away from a lamp the marks stay all but invisible.
+      vec3 amb = vec3(1.0, 0.8, 0.6) * 0.0015;
+      vec3 s = vec3(0.0);
+      for (int l = 0; l < DYN(3); l++) {
+        float cs = l == 0 ? 0.006 : l == 1 ? 0.011 : 0.024;
+        vec2 g = p / cs + float(l) * 17.3 + seed;
+        // The cell id wraps at 512, so the hash keeps its precision.
+        vec2 id = mod(floor(g), 512.0), f = fract(g) - 0.5;
+        if (hash2(id + 3.1) > (l == 2 ? 0.12 : 0.3)) continue;
+        float a = hash2(id) * 3.14159;
+        vec2 t = vec2(cos(a), sin(a));
+        float along = dot(f, t), across = dot(f, vec2(-t.y, t.x));
+        // Long scratches bow a little.
+        across += along * along * (hash2(id + 7.7) - 0.5) * 0.5;
+        float w = fw / cs * (l == 2 ? 1.5 : 1.1);
+        float line = smoothstep(w, 0.0, abs(across)) * smoothstep(0.5, 0.2, abs(along)) * (0.35 + 0.65 * hash2(id + 1.3));
+        float al = dot(rn, t);
+        s += line * (amb * (l == 2 ? 0.55 : 0.3) + lc * exp(-al * al * 90.0) * exp(-dist / 0.15) * 0.5);
+      }
+      // Cleaning swirls: broken arcs round one centre per pane, left by a cloth.
+      vec2 sc = q - vec2(hash1(seed + 11.0) - 0.5, hash1(seed + 12.0) - 0.5) * vec2(0.8, 0.4);
+      float rr = length(sc), ring = floor(rr / 0.005);
+      float seg = floor((atan(sc.y, sc.x) + 3.14159) * 5.0 + hash1(ring * 1.3 + seed) * 9.0);
+      if (hash1(ring * 3.1 + seg * 7.7 + seed) < 0.16) {
+        float arc = smoothstep(fw / 0.005 * 1.2, 0.0, abs(fract(rr / 0.005) - 0.5)) * smoothstep(0.22, 0.02, rr);
+        float al = dot(rn, vec2(-sc.y, sc.x) / max(rr, 1e-4));
+        s += arc * (amb * 0.18 + lc * exp(-al * al * 60.0) * exp(-dist / 0.2) * 0.35);
+      }
+      // Wipe fibres: long curved lines that light up across the lamp's line.
+      float al = dot(rn, wt);
+      s += str * lc * exp(-al * al * 30.0) * exp(-dist / 0.35) * 0.25;
+      return s;
+    }
+`;
+
 // Every surface shares one shader; kind picks the detail of each part.
 const KIND = { plain: 0, wall: 1, floor: 2, roof: 3, seat: 4, end: 5, grille: 6, ticket: 7 };
-function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VERT } = {}) {
+// spec is [strength, Blinn-style shine]; the shine maps to GGX roughness in the shader.
+function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VERT, metal = 0 } = {}) {
   return new THREE.ShaderMaterial({
-    uniforms: { ...U, uAlb: { value: new THREE.Color(...albedo) }, uKind: { value: KIND[kind] }, uSide: { value: side }, uSpec: { value: new THREE.Vector2(...spec) } },
+    uniforms: { ...U, uAlb: { value: new THREE.Color(...albedo) }, uKind: { value: KIND[kind] }, uSide: { value: side }, uSpec: { value: new THREE.Vector2(...spec) }, uMetal: { value: metal } },
     vertexShader: vert,
     fragmentShader: /* glsl */`
     uniform vec3 uAlb;
-    uniform float uKind, uSide;
+    uniform float uKind, uSide, uMetal;
     uniform vec2 uSpec;
     varying vec3 vW, vN;
-    ${GLSL}
-    // A filter weight: 1 when a pattern of scale g is sharp, 0 when it is sub-pixel.
-    float sharp(vec2 g) { return clamp(1.5 - 1.2 * max(length(fwidth(g)), 0.0), 0.0, 1.0); }
+    ${GLSL_BASE}
+    ${GLSL_LIGHT}
 
     // The ad strip over the windows: backlit cards with blocks of art and lines of copy.
     vec3 adCard(vec2 p, float id) {
@@ -364,7 +506,7 @@ function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VER
       vec2 q = vec2(mix(p.x, 1.0 - p.x, left), p.y);
       c = mix(c, base * 1.6 + 0.1, band(q.x, 0.06, 0.36, 0.01) * band(q.y, 0.15, 0.85, 0.02));
       // The copy: three pale lines of different length.
-      for (int i = 0; i < 3; i++) {
+      for (int i = 0; i < DYN(3); i++) {
         float y = 0.72 - float(i) * 0.2;
         float len = 0.25 + 0.3 * hash1(id * 3.0 + float(i));
         c = mix(c, vec3(0.85), band(q.y, y - 0.04, y + 0.04, 0.01) * band(q.x, 0.45, 0.45 + len, 0.01) * (i == 0 ? 1.0 : 0.6));
@@ -376,15 +518,15 @@ function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VER
       vec3 P = vW, N = normalize(vN);
       vec3 V = normalize(uCam - P);
       vec3 alb = uAlb, emit = vec3(0.0);
-      float ks = uSpec.x, shin = uSpec.y, ao = 1.0;
+      float ks = uSpec.x, shin = uSpec.y, ao = 1.0, metal = uMetal;
 
       if (uKind == 1.0) {
         // ---- Side wall ----
         float ax = abs(P.x);
         bool door = ax > 3.98 && ax < 5.42;
-        // Openings show the tunnel through dirty glass.
+        // Openings: the glass is its own material, so the wall leaves them open.
         float sd = 1e3;
-        for (int w = 0; w < NW; w++) {
+        for (int w = 0; w < DYN(NW); w++) {
           vec4 o = uWin[w];
           sd = min(sd, sdBox(P.xy, vec2(o.x + o.y, o.z + o.w) * 0.5, vec2(o.y - o.x, o.w - o.z) * 0.5, 0.07));
         }
@@ -392,18 +534,8 @@ function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VER
         float stk = 1.0;
         if (door) stk = length(vec2(abs(ax - 4.36) < 0.35 ? ax - 4.36 : ax - 5.04, P.y - 1.12)) - 0.055;
         bool sticker = sd < 0.0 && stk < 0.0;
-        if (sd < 0.0 && !sticker) {
-          vec3 glow;
-          vec3 c = tunnel(P, uSide, glow);
-          // Dried drips and a smear of hand grease show only when a lamp passes.
-          float grime = vnoise(vec2(P.x * 28.0, P.y * 2.5)) * 0.6 + vnoise(P.xy * 9.0) * 0.4;
-          grime = smoothstep(0.35, 0.9, grime) * (0.5 + 0.5 * smoothstep(1.3, 1.0, P.y));
-          c += glow * grime * 0.05;
-          // The glass holds a faint reflection of the warm roof strips.
-          c += vec3(1.0, 0.8, 0.6) * (0.01 + 0.02 * smoothstep(1.2, 1.9, P.y));
-          gl_FragColor = vec4(c, 1.0);
-          return;
-        }
+        // The glass shows through; the wall keeps only the door stickers there.
+        if (sd < 0.0 && !sticker) discard;
         if (sticker) {
           vec2 q = vec2(abs(ax - 4.36) < 0.35 ? ax - 4.36 : ax - 5.04, P.y - 1.12);
           alb = stk > -0.012 ? vec3(0.6, 0.04, 0.03) : vec3(0.75, 0.72, 0.66);
@@ -418,7 +550,7 @@ function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VER
         else if (sd < 0.028) { alb = vec3(0.02); ks = 0.3; shin = 20.0; }
         else if (sd < 0.07) {
           // An aluminium frame with a bevel that turns toward the opening.
-          alb = vec3(0.5, 0.5, 0.52); ks = 0.8; shin = 40.0;
+          alb = vec3(0.5, 0.5, 0.52); ks = 0.8; shin = 40.0; metal = 1.0;
         } else if (sd < 0.1) ao = 0.6 + 4.0 * (sd - 0.07);
         if (sd >= 0.07) {
           if (door && P.y < 2.0) {
@@ -564,9 +696,14 @@ function mat(albedo, kind = 'plain', { side = 0, spec = [0, 0], vert = PLAIN_VER
         ao = 0.6;
       }
 
+      // Roughness: the shine sets the base; grime and wear roughen it per pixel.
+      float rough = sqrt(2.0 / (shin + 2.0));
+      rough = clamp(rough + 0.12 * (vnoise(P.xy * 7.0 + P.z * 5.0) - 0.5), 0.05, 1.0);
+      // Dielectrics reflect 4% at normal incidence, scaled by strength; metals tint with albedo.
+      vec3 F0 = mix(vec3(0.48 * ks), alb * ks, metal);
       vec3 dif, spe;
-      tunnelLight(P, N, V, shin, dif, spe);
-      vec3 col = alb * (cabinLight(P, N) * ao + dif) + spe * ks + emit;
+      tunnelLight(P, N, V, rough, F0, dif, spe);
+      vec3 col = alb * (1.0 - metal) * (cabinLight(P, N) * ao + dif) + spe + emit;
       gl_FragColor = vec4(col, 1.0);
     }`,
   });
@@ -580,12 +717,67 @@ add(new THREE.PlaneGeometry(LEN, HALF * 2).rotateX(-Math.PI / 2), mat(FLOOR, 'fl
 add(new THREE.PlaneGeometry(LEN, HALF * 2).rotateX(Math.PI / 2), mat(WALLC, 'roof'), 0, ROOF, 0);
 add(new THREE.PlaneGeometry(LEN, ROOF).translate(0, ROOF / 2, 0), mat(WALLC, 'wall', { side: -1 }), 0, 0, -HALF);
 add(new THREE.PlaneGeometry(LEN, ROOF).translate(0, ROOF / 2, 0).rotateY(Math.PI), mat(WALLC, 'wall', { side: 1 }), 0, 0, HALF);
+// The window glass has its own shader, so the cabin shader compiles fast.
+// One quad per opening sits 4 mm outside each wall and fills what the wall leaves open.
+function glassMat(side) {
+  return new THREE.ShaderMaterial({
+    uniforms: { ...U, uSide: { value: side } },
+    vertexShader: PLAIN_VERT,
+    fragmentShader: /* glsl */`
+    uniform float uSide;
+    varying vec3 vW, vN;
+    ${GLSL_BASE}
+    ${GLSL_TUNNEL}
+    ${GLASS_FN}
+    void main() {
+      vec3 P = vW;
+      // The nearest opening gives the pane: its index, centre and half size.
+      float sd = 1e3, pid = 0.0;
+      vec4 pane = vec4(0.0);
+      for (int w = 0; w < DYN(NW); w++) {
+        vec4 o = uWin[w];
+        vec4 b = vec4(vec2(o.x + o.y, o.z + o.w) * 0.5, vec2(o.y - o.x, o.w - o.z) * 0.5);
+        float s = sdBox(P.xy, b.xy, b.zw, 0.07);
+        if (s < sd) { sd = s; pid = float(w); pane = b; }
+      }
+      // The quad's corners lie outside the rounded opening; the wall's frame covers them.
+      if (sd >= 0.0) discard;
+      // Pane space: metres from this pane's centre; each pane has its own seed.
+      vec2 q = P.xy - pane.xy;
+      // Seeds stay under 10: large noise coordinates lose float precision and band.
+      float seed = fract(pid * 0.1713 + uSide * 0.371 + 0.05) * 10.0;
+      float str;
+      vec2 wt;
+      float wipe = wipes(q, seed, str, wt);
+      float grease = max(wipe * 0.7, smudges(P.xy, seed) * (0.15 + 0.85 * band(P.y, 1.15, 1.75, 0.3)));
+      grease = max(grease, handPrint(q, seed) * 0.9);
+      // Dust settles along the sill; its top edge is ragged.
+      float dust = smoothstep(0.1, 0.0, P.y - (pane.y - pane.w) - 0.02 + (fbm(P.xy * 9.0 + seed) - 0.5) * 0.08);
+      // Grease scatters the view, so the tunnel blurs behind it.
+      vec3 glow, lp;
+      vec3 c = tunnel(P, uSide, grease + dust * 0.5, glow, lp);
+      c *= (1.0 - 0.3 * grease) * (1.0 - 0.5 * dust);
+      // The lamp lights the film itself: a milky veil, brightest in the grease.
+      c += glow * (0.01 + grease * 0.05 + dust * 0.04);
+      c += marks(P.xy, q, seed, lp, str, wt);
+      // The glass holds a faint reflection of the warm roof strips; grease spreads it.
+      c += vec3(1.0, 0.8, 0.6) * (0.01 + 0.02 * smoothstep(1.2, 1.9, P.y)) * (1.0 + 0.6 * grease);
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+  });
+}
+for (const sg of [-1, 1]) {
+  const g = mergeGeometries(WIN.map(([x0, x1, y0, y1]) => new THREE.PlaneGeometry(x1 - x0, y1 - y0).translate((x0 + x1) / 2, (y0 + y1) / 2, 0)));
+  // The near wall's quads turn to face into the cabin; the openings are symmetric in x.
+  if (sg > 0) g.rotateY(Math.PI);
+  add(g, glassMat(sg), 0, 0, sg * (HALF + 0.004));
+}
 const endM = mat(WALLC, 'end', { spec: [0.15, 16] });
 add(new THREE.PlaneGeometry(HALF * 2, ROOF).translate(0, ROOF / 2, 0).rotateY(Math.PI / 2), endM, -LEN / 2, 0, 0);
 add(new THREE.PlaneGeometry(HALF * 2, ROOF).translate(0, ROOF / 2, 0).rotateY(-Math.PI / 2), endM, LEN / 2, 0, 0);
 // Benches run along both walls between the doors.
 const seatM = mat(SEAT, 'seat'), grilleM = mat(BASE, 'grille');
-const poleM = mat(POLE, 'plain', { spec: [0.3, 36] }), steelM = mat([0.5, 0.5, 0.52], 'plain', { spec: [0.9, 40] });
+const poleM = mat(POLE, 'plain', { spec: [0.9, 36], metal: 1 }), steelM = mat([0.5, 0.5, 0.52], 'plain', { spec: [0.9, 40], metal: 1 });
 for (const sg of [-1, 1]) {
   add(new THREE.BoxGeometry(BENCH * 2, 0.1, 0.45), seatM, 0, 0.41, sg * (HALF - 0.225));
   add(new THREE.BoxGeometry(BENCH * 2, 0.36, 0.36), grilleM, 0, 0.18, sg * (HALF - 0.2));
@@ -721,7 +913,7 @@ return {
   lively: () => speed > 0.05 || mk < 1 || Math.abs(swingV) > 0.003 || Math.abs(swing) > 0.003 || (!brake && target > 0 && speed < target * 0.99),
   // A new shot is a hard cut.
   setShot(v) { shot = SHOTS[v] || SHOTS.straps; frame(); },
-  post: { bloom: [0.75, 0.55, 0.85], tint: [0.0008, 0.0007, 0.0009], vig: 0.5, vigIn: 0.4, grain: 0.035 },
+  post: { bloom: [0.22, 0.5, 0.92], tint: [0.0008, 0.0007, 0.0009], vig: 0.5, vigIn: 0.4, grain: 0.035 },
 };
 }
 
