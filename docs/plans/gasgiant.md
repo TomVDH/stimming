@@ -1,6 +1,6 @@
 # Gas giant dive (`gasgiant`) plan
 
-Status: active (Tom approved 2026-11-23; defaults Q1 to Q5 hold) · Bean: `stimming-vxno`
+Status: active (Tom approved 2026-11-23; defaults Q1 to Q5 hold; the dive now runs to 640 km) · Bean: `stimming-vxno`
 
 Idea 367, group C, size XXXL (Tom's picks, 2026-11-23): "Fall from orbit past the rings into the cloud bands. A great storm turns, lightning flashes deep down, and the light fails as the pressure builds."
 Tom approved the plan on 2026-11-23. The MVP is in the build.
@@ -122,6 +122,23 @@ From 60 km the ammonia deck read smooth: its top faded over 2 to 3 km, as deep a
 | Light | Sun 0.85 (was 0.6), diffuse 0.2 + 0.8 open² (was 0.25 + 1.0), so the heads show a lit side and a shaded side. |
 
 Dive at 7.6 ms a frame (median), 8.2 ms p90, with the cabin pass; shader links 0.9 s.
+
+## The abyssal dive (Tom, 2026-11-23)
+
+Tom: "Yes, low side sun -- also we are doing a deep majestic abyssal dive into the gas giant layers -- so the dive lasts longer before crush depth and total darkness -- and also there will be a lot of variance in layers -- we'll update the window effects later".
+
+| Part | Change |
+|---|---|
+| Sun | 65 degrees east of north, 10 degrees up: at the side of the view. It stands 14 degrees over the ring plane, so the rings still show their unlit face. Four sun taps reach 33 km, for the long shadows. |
+| Depth | The column runs to 640 km down, about 1,000 bar on an adiabat (22 bar at -150 km). The hull fails there. |
+| Layers | Fourteen, in `LAYERS` (world.js): decks, voids with towers, sheets and a veil, each with its own shape and colour. The table is in the toy doc. Tower cells scale from 48 to 150 km. |
+| Light | It fades slowly through the abyss, tinted by each layer, and fails under the last deck at -500 km. The eye opens up to 8 times (was 4.5); flashes dim to match. |
+| Haze | The voids and the gaps between sheets stay clear, 100 to 290 km, so far shapes show. |
+| Pace | Decks 2.4 km/s, voids 5 km/s. A held dive: the deck at 37 s, the indigo deck at 97 s, the last deck at 171 s, crush depth at 200 s. |
+| Lightning | In the water, indigo, salt and last decks, weaker deeper; none in the dark. |
+| Window | The glass weather waits for Tom's later pass. |
+
+Frame time 7.7 ms median at 60, -200 and -300 km.
 
 ## 4. Tech
 

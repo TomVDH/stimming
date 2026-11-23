@@ -1,7 +1,12 @@
-// Gas giant dive: lightning in the water deck, 75 km under the 1 bar level.
+// Gas giant dive: lightning in the decks marked bolts in LAYERS, from 64 to 500 km down.
 // Burst timing after Railgun (railgun/src/clouds/lightning.ts): 1 to 5 strokes, log-normal brightness.
 // From above, a flash is a soft patch under the deck; from inside, it lights the cloud round you.
-import { R } from './world.js';
+import { R, LAYERS } from './world.js';
+
+// The lightning decks, top down.
+const STORMS = LAYERS.filter(l => l.bolts);
+// The deck that holds the eye, or the next one under it.
+const stormFor = alt => STORMS.find(l => alt > l.bot) || null;
 
 export const MAX_FLASH = 4;
 // Never more than three flash starts in one second.
@@ -29,12 +34,14 @@ export function stepBolts(B, dt, { alt, aim, soft, live, deck = 0 }) {
   B.starts = B.starts.filter(t => now - t < 1);
   // More bursts deeper down, where the water deck is near.
   const deep = Math.max(0, Math.min(1, (40 - alt) / 110));
+  // Under the last deck no lightning starts: the dark is total.
+  const st = stormFor(alt);
   // Inside a deck the storm is all round: flashes come three times as often.
-  const rate = (0.22 + 0.55 * deep) * (1 + 2 * deck) * (soft ? 0.5 : 1);
+  const rate = st ? (0.22 + 0.55 * deep) * (1 + 2 * deck) * st.bolts * (soft ? 0.5 : 1) : 0;
   B.next -= dt;
-  if (live && B.next <= 0) {
+  if (live && rate > 0 && B.next <= 0) {
     B.next = -Math.log(1 - Math.random()) / rate;
-    burst(B, alt, aim, soft, now, deep);
+    burst(B, alt, aim, soft, now, deep, st);
   }
   for (const s of B.strokes) {
     s.wait -= dt;
@@ -48,8 +55,8 @@ export function stepBolts(B, dt, { alt, aim, soft, live, deck = 0 }) {
   B.strokes = B.strokes.filter(s => !s.on || s.age < 0.9);
 }
 
-function burst(B, alt, aim, soft, now, deep) {
-  let x, z, h = rnd(-86, -64);
+function burst(B, alt, aim, soft, now, deep, st) {
+  let x, z, h = rnd(st.bot + 4, st.top - 2);
   if (alt > 0) {
     // From above: somewhere on the deck ahead, near the view's aim.
     const d = Math.hypot(aim[0], aim[1]) || 300;

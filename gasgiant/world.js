@@ -8,25 +8,43 @@ const LAT = -35 * Math.PI / 180;
 export const AXIS = [0, Math.sin(LAT), -Math.cos(LAT)];
 
 const norm = a => { const l = Math.hypot(...a); return a.map(x => x / l); };
-// Mid-morning sun, 35 degrees east of north, 28 degrees up.
-// It stands 19 degrees over the ring plane, so the A ring's shadow lies on the deck ahead.
-const AZ = 35 * Math.PI / 180, EL = 28 * Math.PI / 180;
+// A low sun at the side of the view: 65 degrees east of north, 10 degrees up.
+// Its long light throws the heads' shadows across the deck.
+// It stands 14 degrees over the ring plane, so the rings still show their unlit face.
+const AZ = 65 * Math.PI / 180, EL = 10 * Math.PI / 180;
 export const SUN = norm([Math.sin(AZ) * Math.cos(EL), Math.sin(EL), -Math.cos(AZ) * Math.cos(EL)]);
 
-// The descent column, km.
-export const ALT_TOP = 260, ALT_DEEP = -150;
-// The pressure at an altitude, for the docs and the sound. 20 bar at -150 km.
-export const bar = h => Math.exp(-h / (h > 0 ? 27 : 50));
+// The descent column, km. The hull fails at about 1,000 bar, 640 km down.
+export const ALT_TOP = 260, ALT_DEEP = -640;
+// The pressure at an altitude, for the docs and the sound.
+// Under the 1 bar level the gas warms on an adiabat: 22 bar at -150 km, 1,000 bar at -640 km.
+export const bar = h => h > 0 ? Math.exp(-h / 27) : Math.pow(1 - h / 105.6, 3.5);
 
-// The decks, km over the 1 bar level.
-export const DECKS = {
-  ammonia: [0, 22],
-  hydrosulfide: [-46, -22],
-  water: [-92, -56],
-};
+// The layers, top down, km over the 1 bar level.
+// kind: deck (heaped cloud), void (towers), sheets (thin layers), haze (gauze), dark (clear gas).
+// bolts: lightning starts in it. The march in clouds.js holds the same bounds.
+export const LAYERS = [
+  { id: 'ammonia', kind: 'deck', top: 22, bot: 0 },
+  { id: 'upper void', kind: 'void', top: 0, bot: -24 },
+  { id: 'brown', kind: 'deck', top: -24, bot: -38 },
+  { id: 'lower void', kind: 'void', top: -38, bot: -64 },
+  { id: 'water', kind: 'deck', top: -64, bot: -92, bolts: 1 },
+  { id: 'shelves', kind: 'sheets', top: -92, bot: -140 },
+  { id: 'veil', kind: 'haze', top: -140, bot: -158 },
+  { id: 'nave', kind: 'void', top: -158, bot: -230 },
+  { id: 'indigo', kind: 'deck', top: -230, bot: -262, bolts: 1 },
+  { id: 'abyss', kind: 'void', top: -262, bot: -360 },
+  { id: 'salt', kind: 'deck', top: -360, bot: -385, bolts: 0.6 },
+  { id: 'stairs', kind: 'sheets', top: -385, bot: -470 },
+  { id: 'last', kind: 'deck', top: -470, bot: -500, bolts: 0.3 },
+  { id: 'dark', kind: 'dark', top: -500, bot: -640 },
+];
+/** The layer that holds altitude h. */
+export const layerAt = h => LAYERS.find(l => h > l.bot) || LAYERS[LAYERS.length - 1];
 
 // The light table: diffuse light by altitude, rgb, from the keyframes below.
-// The light turns teal in the ammonia deck, green in the brown deck, violet in the water deck, then fails.
+// Each layer tints the light: teal, green, violet, magenta, deep teal, indigo, jade, violet.
+// The light fades slowly through the abyss and fails under the last deck, at -500 km.
 // Values interpolate in log space.
 const KEYS = [
   [300, [1, 1, 1]],
@@ -34,16 +52,22 @@ const KEYS = [
   [15, [0.86, 0.95, 0.93]],
   [0, [0.5, 0.66, 0.62]],
   [-24, [0.3, 0.48, 0.38]],
-  [-38, [0.16, 0.3, 0.2]],
-  [-50, [0.11, 0.14, 0.16]],
-  [-64, [0.07, 0.05, 0.12]],
-  [-80, [0.03, 0.012, 0.05]],
-  [-100, [0.008, 0.002, 0.014]],
-  [-125, [0.0012, 0.0002, 0.002]],
-  [-150, [0.00012, 0.00002, 0.0002]],
-  [-170, [0.00002, 0.000003, 0.00003]],
+  [-38, [0.18, 0.32, 0.22]],
+  [-64, [0.1, 0.1, 0.16]],
+  [-92, [0.08, 0.06, 0.12]],
+  [-140, [0.075, 0.045, 0.1]],
+  [-158, [0.065, 0.04, 0.085]],
+  [-230, [0.04, 0.062, 0.066]],
+  [-262, [0.036, 0.034, 0.07]],
+  [-360, [0.026, 0.038, 0.04]],
+  [-385, [0.022, 0.036, 0.024]],
+  [-470, [0.016, 0.012, 0.024]],
+  [-500, [0.005, 0.0035, 0.0075]],
+  [-540, [0.0004, 0.00025, 0.0006]],
+  [-600, [0.00002, 0.00001, 0.00003]],
+  [-660, [0.000002, 0.000001, 0.000003]],
 ];
-export const LUT_LO = -170, LUT_HI = 300, LUT_N = 256;
+export const LUT_LO = -660, LUT_HI = 300, LUT_N = 512;
 
 /** The light at altitude h: [r, g, b, direct], direct is the share of the beam. */
 export function lightAt(h) {

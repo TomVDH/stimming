@@ -1,5 +1,5 @@
 // Gas giant dive, pass 3: the cloud march at half size.
-// Three decks: ammonia (white), ammonium hydrosulfide (brown), water (grey, with lightning).
+// Fourteen layers to 640 km down: decks, voids with towers, sheets, a veil. LAYERS in world.js lists them.
 // Light follows Fire's smoke: HG phase, Beer with multiple scatter and powder, a shadow ambient.
 // Output: one RGBA16F target. rgb is the light in front of the sky, a is the cover.
 import { COMMON } from './world.js';
@@ -58,7 +58,7 @@ uniform vec4 uFlash[4];
 ${COMMON}
 ${CLOUDS}
 const float SIG = 1.1;
-const float TOP = 34.0, BOT = -96.0;
+const float TOP = 34.0, BOT = -505.0;
 const vec3 FLASH_C = vec3(0.64, 0.74, 1.0);
 const vec3 SKY_C = vec3(0.07, 0.14, 0.17);
 vec4 lut(float h) { return textureLod(uLut, vec2(clamp((h - LUT_LO) / (LUT_HI - LUT_LO), 0.0, 1.0), 0.5), 0.0); }
@@ -71,22 +71,34 @@ vec4 mapAt(vec2 xz) {
 vec3 gAlb = vec3(1.0);
 float gOpen = 0.0;
 vec3 th3(vec2 c) { vec3 p = vec3(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)), dot(c, vec2(419.2, 371.9))); return fract(sin(p) * 43758.5453); }
-// A tower in a void: one per 48 km cell at most, joining the floor to the ceiling.
+// A tower in a void: one per cs km cell at most, joining the floor to the ceiling.
 // It flares at both ends, pinches in the middle, leans and twists a little.
-float tower(vec3 p, float h, float flo, float cei, float seed, float nb, out float f) {
-  const float CS = 48.0;
-  vec2 cell = floor(p.xz / CS);
+// fill is the share of cells with a tower; the tower scales with its cell.
+float tower(vec3 p, float h, float flo, float cei, float seed, float nb, float cs, float fill, out float f) {
+  vec2 cell = floor(p.xz / cs);
   vec3 r = th3(cell + seed);
+  float k = cs / 48.0;
   f = clamp((h - flo) / (cei - flo), 0.0, 1.0);
-  float lean = (f - 0.5) * (r.z - 0.5) * 9.0;
-  vec2 c = (cell + 0.25 + 0.5 * r.xy) * CS + vec2(lean, lean * 0.6) + 2.0 * vec2(sin(f * 7.0 + r.x * 6.0), cos(f * 5.0 + r.y * 6.0));
+  float lean = (f - 0.5) * (r.z - 0.5) * 9.0 * k;
+  vec2 c = (cell + 0.25 + 0.5 * r.xy) * cs + vec2(lean, lean * 0.6) + 2.0 * k * vec2(sin(f * 7.0 + r.x * 6.0), cos(f * 5.0 + r.y * 6.0));
   float e = abs(2.0 * f - 1.0);
-  float rad = (1.6 + 2.4 * r.y) * (0.45 + 1.5 * e * e * e) * (0.75 + 0.5 * nb);
-  float on = step(0.5, r.z);
-  return on * smoothstep(0.0, 1.6, rad - length(p.xz - c));
+  float rad = k * (1.6 + 2.4 * r.y) * (0.45 + 1.5 * e * e * e) * (0.75 + 0.5 * nb);
+  float on = step(1.0 - fill, r.z);
+  return on * smoothstep(0.0, 1.6 * k, rad - length(p.xz - c));
 }
+// Thin sheets stacked from bot up, one in each gap km.
+// Each sheet has its own height, thickness and cover; id names it.
+float sheets(float h, float bot, float gap, float thick, float nb, float hole, float lod, out vec3 id) {
+  float s = (h - bot) / gap;
+  id = th3(vec2(floor(s), bot));
+  float y = (fract(s) - 0.35 - 0.3 * id.x) * gap + 0.12 * gap * (nb - 0.5);
+  float th = thick * (0.5 + id.y);
+  float cov = smoothstep(0.0, 0.12, hole - 0.25 - 0.45 * id.z);
+  return (1.0 - smoothstep(th * 0.3, th + 0.4 + lod, abs(y))) * cov;
+}
+float band(float h, float lo, float hi, float w) { return smoothstep(lo - w, lo + w, h) * (1.0 - smoothstep(hi - w, hi + w, h)); }
 // Density at p, 0 to 1. It sets gAlb, the albedo, and gOpen, how near a top it lies.
-// Layers, km: ammonia 2 to 22, void, brown 24 to 38 down, void, water 64 to 92 down.
+// The branches follow LAYERS in world.js, top down. No cloud lies under -500 km.
 // fine scales the small billows; lod grows with distance.
 float dens(vec3 p, float lod, float fine) {
   float h = altOf(p);
@@ -149,7 +161,7 @@ float dens(vec3 p, float lod, float fine) {
       gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0) * ao;
     } else if (h > -24.0) {
       // The upper void: towers stand between the brown floor and the white ceiling.
-      d = tower(p, h, -24.0, 2.0, 3.1, nb, f) * (0.6 + 0.4 * n1.b);
+      d = tower(p, h, -24.0, 2.0, 3.1, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.5 + 0.3 * n1.a), pal(0.1), f);
       gOpen = f;
     } else if (h > -38.0) {
@@ -161,10 +173,10 @@ float dens(vec3 p, float lod, float fine) {
       gOpen = clamp(1.0 - (-24.0 - h) / 6.0, 0.0, 1.0);
     } else if (h > -64.0) {
       // The lower void: darker towers from the water deck to the brown ceiling.
-      d = tower(p, h, -64.0, -38.0, 7.7, nb, f) * (0.6 + 0.4 * n1.b);
+      d = tower(p, h, -64.0, -38.0, 7.7, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.95 + 0.15 * n1.a), pal(0.45), f);
       gOpen = f;
-    } else {
+    } else if (h > -92.0) {
       // The water deck, heaped where the storm's wake churns.
       float top = -64.0 + 22.0 * m.a * n1.a + 5.0 * (nb - 0.5);
       float sh = min(top - h, (h + 92.0) * 0.8);
@@ -172,17 +184,74 @@ float dens(vec3 p, float lod, float fine) {
       d = smoothstep(0.0, 1.6 + lod, sh) * (0.5 + 0.5 * n1.b) * cov;
       gAlb = mix(vec3(0.72, 0.66, 0.84), pal(0.9), 0.4 * n1.a);
       gOpen = clamp(1.0 - (top - h) / 8.0, 0.0, 1.0);
+    } else if (h > -140.0) {
+      // The shelves: violet sheets 16 km apart, some whole, some lace.
+      vec3 id;
+      d = sheets(h, -140.0, 16.0, 1.6, nb, nc.a, lod, id) * (0.5 + 0.5 * n1.b);
+      gAlb = pal(0.9 + 0.3 * id.x + 0.1 * n1.a);
+      gOpen = 0.6 + 0.4 * id.y;
+    } else if (h > -158.0) {
+      // The veil: a thin purple gauze, combed into streaks.
+      d = 0.14 * smoothstep(0.35, 0.75, nb) * band(h, -158.0, -140.0, 3.0);
+      gAlb = mix(pal(1.0), pal(1.15), n1.a);
+      gOpen = 0.5;
+    } else if (h > -230.0) {
+      // The nave: a forest of columns 72 km tall, close set.
+      d = tower(p, h, -230.0, -158.0, 11.3, nb, 64.0, 0.75, f) * (0.55 + 0.45 * n1.b);
+      gAlb = mix(pal(0.55 + 0.1 * n1.a), pal(0.95), f);
+      gOpen = 0.3 + 0.7 * f;
+    } else if (h > -262.0) {
+      // The indigo deck: heaped on top, pouches hang from its base.
+      float pop = max(n2.b - 0.4, 0.0) / 0.6;
+      float top = -230.0 + 6.0 * (nb - 0.5) + 5.0 * pop * pop;
+      float base = -262.0 + 3.0 * (nb - 0.5) - 6.0 * pop * pop;
+      float sh = min(top - h, (h - base) * 0.8);
+      float cov = smoothstep(0.22, 0.42, nc.a + 0.12);
+      d = smoothstep(0.0, 1.2 + lod, sh) * (0.5 + 0.5 * n1.b) * cov;
+      gAlb = mix(vec3(0.36, 0.34, 0.74), pal(0.5), 0.35 * n1.a);
+      gOpen = clamp(1.0 - (top - h) / 8.0, 0.0, 1.0);
+    } else if (h > -360.0) {
+      // The abyss: colossal towers 150 km apart, and a few floating shelves.
+      d = tower(p, h, -360.0, -262.0, 5.9, nb, 150.0, 0.45, f) * (0.55 + 0.45 * n1.b);
+      vec3 id;
+      float sv = sheets(h, -360.0, 33.0, 1.0, nb, nc.a - 0.25, lod, id);
+      gAlb = mix(mix(pal(0.45), pal(0.15), f), pal(1.05 + 0.15 * id.x), step(d, sv));
+      d = max(d, sv * 0.8);
+      gOpen = 0.3 + 0.7 * f;
+    } else if (h > -385.0) {
+      // The salt deck: pale jade, flat, its top in long wave rows.
+      float top = -360.0 + 3.0 * sin(qr.x / 9.0 + 4.0 * n1.r) * (0.6 + 0.4 * nb);
+      float base = -385.0 + 3.0 * (nb - 0.5);
+      float sh = min(top - h, (h - base) * 0.8);
+      d = smoothstep(0.0, 1.0 + lod, sh) * (0.6 + 0.4 * n1.b) * smoothstep(0.12, 0.3, nc.a + 0.1);
+      gAlb = mix(pal(0.08), pal(0.25), n1.a);
+      gOpen = clamp(1.0 - (top - h) / 5.0, 0.0, 1.0);
+    } else if (h > -470.0) {
+      // The stairs: thin laminae 9 km apart, teal and violet by turns.
+      vec3 id;
+      d = sheets(h, -470.0, 9.0, 0.9, nb, nc.a + 0.15, lod, id) * (0.55 + 0.45 * n1.b);
+      gAlb = pal(mod(floor((h + 470.0) / 9.0), 2.0) < 0.5 ? 0.5 + 0.15 * id.x : 0.95 + 0.15 * id.x);
+      gOpen = 0.6 + 0.4 * id.y;
+    } else {
+      // The last deck: dark magenta, churned, with tall heads.
+      float pop = max(n2.b - 0.4, 0.0) / 0.6;
+      float top = -470.0 + 10.0 * (nb - 0.5) + 8.0 * pop;
+      float sh = min(top - h, (h + 500.0) * 0.8);
+      d = smoothstep(0.0, 1.4 + lod, sh) * (0.5 + 0.5 * n1.b) * smoothstep(0.2, 0.4, nc.a + 0.1);
+      gAlb = mix(pal(1.12), pal(0.95), n1.a) * 0.8;
+      gOpen = clamp(1.0 - (top - h) / 10.0, 0.0, 1.0);
     }
   }
   return d;
 }
-// Optical depth toward the sun over three growing taps.
+// Optical depth toward the sun over four growing taps, to 33 km.
+// A low sun needs the reach: a 6 km head throws a 34 km shadow.
 float sunOD(vec3 p, float lod) {
   float od = 0.0, st = 1.2;
-  for (int j = 0; j < 3; j++) {
+  for (int j = 0; j < 4; j++) {
     p += SUN * st;
     od += dens(p, lod + 1.0, 0.0) * st;
-    st *= 3.0;
+    st *= 2.6;
   }
   return od;
 }
@@ -245,7 +314,10 @@ void main() {
       // Clear gas between the clouds: a thin haze that thickens with depth.
       if (inWin && dn <= 0.003) {
         float hg = altOf(p);
-        float sg = 1.0 / mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg));
+        // The voids and the gaps between sheets stay clear, so far shapes show.
+        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 80.0 * band(hg, -230.0, -158.0, 8.0) + 120.0 * band(hg, -360.0, -262.0, 8.0)
+          + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -385.0, 6.0) + 40.0 * step(hg, -500.0);
+        float sg = 1.0 / mfp;
         float ag = 1.0 - exp(-sg * ds * 1.6);
         col += T * lut(hg).rgb * vec3(0.38, 0.42, 0.44) * ag;
         T *= 1.0 - ag;

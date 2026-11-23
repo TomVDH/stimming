@@ -14,13 +14,14 @@
 
 ## Idea
 
-Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `stimming-vxno`. Plan: [gasgiant.md](../plans/gasgiant.md). Tom sized the full toy XXXL; this is the MVP cut, "the plunge": from 260 km over the cloud tops to the dark at 20 bar.
+Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `stimming-vxno`. Plan: [gasgiant.md](../plans/gasgiant.md). Tom sized the full toy XXXL; this is the MVP cut, "the plunge": from 260 km over the cloud tops to crush depth, 640 km down at about 1,000 bar.
 
 ## Rules
 
 - One descent column. The capsule hangs where the hand lets go; the Depth slider takes it back up.
+- A held dive takes about 3 min 20 s to crush depth: fast in the sky, slow in the decks, a glide through the voids.
 - Units are km and seconds; altitude counts from the 1 bar level. Thunder runs at 1.2 km/s, the speed of sound in hydrogen.
-- No more than three flash starts a second, always.
+- No more than three flash starts a second, always. Lightning starts in four decks (water, indigo, salt, last); none under the last deck.
 - The loop runs at full rate while the hand dives, the capsule moves or a flash runs. The bands flow and the storm turns at 30 fps until the toy sleeps.
 
 ## Direction
@@ -29,10 +30,30 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Entry: between 200 and 110 km, while the capsule falls fast, plasma streams past the pane in Fire's flame colours. It lights the cabin and melts the frost.
 - A fictional giant in green, teal and purple (Tom, 2026-11-23): mint zones, jade and teal belts, a purple storm with a magenta heart and teal filaments.
 - Bright rings arch over the northern sky, seen from their unlit side. Their shadow lies on the deck.
+- A low sun at the side, 10 degrees up (Tom, 2026-11-23): the heads on the deck throw long shadows.
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
 - Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
 - Three decks with a void under each of the upper two (Tom, 2026-11-23). Hourglass towers join each floor to its ceiling, far off in the haze.
-- The light fails with depth: teal, then green, then violet, then black. The eye adapts only part of the way.
+- A deep, majestic, abyssal dive with much variance in the layers (Tom, 2026-11-23). Fourteen layers, top down:
+
+| km | Layer | Kind |
+|---|---|---|
+| 22 to 0 | Ammonia | White deck, popcorn heads and ridges |
+| 0 to -24 | Upper void | Hourglass towers |
+| -24 to -38 | Brown | Deck |
+| -38 to -64 | Lower void | Towers |
+| -64 to -92 | Water | Deck, lightning |
+| -92 to -140 | Shelves | Violet sheets 16 km apart, some whole, some lace |
+| -140 to -158 | Veil | Purple gauze |
+| -158 to -230 | Nave | A forest of columns 72 km tall |
+| -230 to -262 | Indigo | Heaped deck, pouches under it, lightning |
+| -262 to -360 | Abyss | Colossal towers 150 km apart, floating shelves |
+| -360 to -385 | Salt | Pale jade deck in long wave rows, lightning |
+| -385 to -470 | Stairs | Laminae 9 km apart, teal and violet by turns |
+| -470 to -500 | Last | Dark magenta deck, tall heads, rare lightning |
+| -500 to -640 | Dark | Clear gas; the light fails; the hull fails at -640 |
+
+- Each layer tints the light. The light fades slowly through the abyss and fails under the last deck. The eye opens up to 8 times as the light fails; flashes dim to match.
 - The outer pane carries the weather: frost high up, drops that bead and race up in the decks, veils of hue and brightness in the air, heat shimmer deep down.
 - Inside a deck, wisps tear past the glass in three layers and flashes come three times as often.
 

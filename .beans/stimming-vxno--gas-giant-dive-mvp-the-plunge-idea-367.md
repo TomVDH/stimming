@@ -5,13 +5,13 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T20:55:00Z
+updated_at: 2026-11-23T21:25:00Z
 parent: stimming-oh7b
 ---
 
 Idea 367, group C, size XXXL (Tom's picks, 2026-11-23). Plan: docs/plans/gasgiant.md (Tom approved 2026-11-23, defaults Q1 to Q5 hold).
 
-MVP: the plunge from 260 km over the cloud deck to 20 bar. Raw WebGL2 on shared/gl.js, five passes with one output each.
+MVP: the plunge from 260 km over the cloud deck to crush depth, 640 km down (Tom, 2026-11-23: a deep, majestic, abyssal dive). Raw WebGL2 on shared/gl.js, five passes with one output each.
 
 ## Tasks
 - [x] Plan doc docs/plans/gasgiant.md
@@ -25,6 +25,8 @@ MVP: the plunge from 260 km over the cloud deck to 20 bar. Raw WebGL2 on shared/
 - [x] Intro emblem shared/emblems/gasgiant.svg, favicon, toys.json, Lab li and hook
 - [x] QA Q1 to Q10, docs/toys/gasgiant.md
 - [ ] Tom's look pass: the capsule interior crop, the storm, the decks
+- [x] Tom, 2026-11-23: low side sun; the abyssal dive to 640 km, fourteen layers
+- [ ] Tom's later pass: the window effects for the deep layers
 - [ ] Record link times, frame times and the session cost
 
 
@@ -45,3 +47,8 @@ Spiral storm with arms, lanes and folds; hue drift; exposure 0.3; saturation lif
 ## Look pass: the near deck, 2026-11-23
 
 Tom: "Yes, near deck". Popcorn heads, folded ridges along the bands, a crisp top near the eye, darker and deeper-coloured valleys, more sun and less diffuse. Dive 7.6 ms a frame median, 8.2 p90 (with the cabin pass); links 0.9 s. Stills 09 and 10 in docs/qa/gasgiant/.
+
+
+## The abyssal dive, 2026-11-23
+
+Low side sun (az 65, el 10), four sun taps. Fourteen layers to -500 km, dark gas to crush depth at -640 km (about 1,000 bar). Light fades slowly and fails under the last deck; eye gain up to 8; flashes dim to match. A held dive takes 200 s. Frame 7.7 ms median at 60, -200 and -300 km. Stills 11 to 15.

@@ -7,7 +7,7 @@ import { TRI_VS, program, linked, target, bind, tri, free, onContextLoss } from 
 import { bloomChain } from '../shared/glow.js';
 import { loadWatch } from '../shared/loadwatch.js';
 import { pruneGLSL } from '../shared/glsl-prune.js';
-import { R, SUN, ALT_TOP, ALT_DEEP, lightAt, lightTable, luma, LUT_N } from './world.js';
+import { R, SUN, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, MARCH_FS } from './clouds.js';
 import { COMPOSITE_FS, FINAL_FS } from './post.js';
@@ -181,8 +181,8 @@ function aimOnDeck(b) {
 let timeK = 1, lastInput = performance.now();
 function step(dt) {
   const sdt = dt * timeK;
-  // The fall: fast through the empty sky, slow in the decks.
-  const vMax = 2.4 + 7.5 * smooth(10, 90, S.alt);
+  // The fall: fast through the empty sky, slow in the decks, a glide through the voids.
+  const vMax = 2.4 + 7.5 * smooth(10, 90, S.alt) + 2.6 * (1 - deckAt(S.alt)) * (1 - smooth(-10, 10, S.alt));
   if (S.slideTo != null) {
     const gap = S.slideTo - S.alt;
     const want = clamp(gap * 1.6, -22, 22);
@@ -224,9 +224,13 @@ function step(dt) {
   return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01;
 }
 
+// The eye's gain: it opens as the light fails, up to 8 times.
+const gainAt = lum => clamp(Math.pow(Math.max(lum, 1e-7), -0.5), 1, 8);
 // How deep in a deck the eye is: 0 in the air and the voids, 1 inside cloud.
 const bump = (a, b, x) => smooth(a - 1, a + 2, x) * (1 - smooth(b - 2, b + 1, x));
-const deckAt = h => Math.min(1, bump(2, 22, h) + bump(-38, -24, h) + bump(-92, -64, h));
+// Decks and the veil count whole; sheets count in part.
+const DECK_K = { deck: 1, haze: 1, sheets: 0.4 };
+const deckAt = h => Math.min(1, LAYERS.reduce((a, l) => a + (DECK_K[l.kind] || 0) * bump(l.bot + (l.id === 'ammonia' ? 2 : 0), l.top, h), 0));
 
 /* ---------- render ---------- */
 let frameNo = 0, mapAge = 1e9;
@@ -262,6 +266,9 @@ function render(dt) {
   gl.uniform1f(u.uWin, 220);
   gl.uniform1f(u.uSeed, frameNo % 64);
   flashUniform(B, flash);
+  // Deep down the eye opens wider; the flashes dim to match, as they show at the water deck.
+  const fk = Math.min(1, 2.2 / gainAt(S.lum));
+  for (let i = 3; i < 16; i += 4) flash[i] *= fk;
   gl.uniform4fv(u.uFlash, flash);
   tri(gl, T.march, vao);
   // Pass 4: the composite.
@@ -300,7 +307,7 @@ function render(dt) {
   gl.useProgram(P.fin.p);
   // ?out shows the outside alone, for look work.
   bind(gl, P.fin, 'uScene', 0, QS.has('out') ? T.scene : T.cabin);
-  gl.uniform1f(P.fin.u.uExp, 0.3 * clamp(Math.pow(Math.max(S.lum, 1e-6), -0.32), 1, 4.5));
+  gl.uniform1f(P.fin.u.uExp, 0.3 * gainAt(S.lum));
   gl.uniform1f(P.fin.u.uSeed, frameNo % 97);
   gl.uniform1f(P.fin.u.uAsp, W / H);
   tri(gl, null, vao);
