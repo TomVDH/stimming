@@ -3,6 +3,7 @@ import type { Material, Object3D } from 'three';
 import { initPage, pageReady, stage } from '../../shared/stim.js';
 import { intro as playIntro } from '../../shared/intro.js';
 import { loadStars } from './core/catalog.ts';
+import { NIGHTS, SITES } from './core/skyctl.ts';
 
 // The ?cuts review skips the intro, so it starts at once.
 // initPage waits for the intro, so the element goes first.
@@ -15,15 +16,31 @@ export const camHooks: { set?(key: string, v: number): void; copy?(): void; shot
 const camRow = (key: string, label: string, min: number, max: number, step: number) =>
   ({ type: 'slider' as const, id: `cam-${key}`, group: 'Cut camera', label, min, max, step, value: 0, onInput: (v: number) => camHooks.set?.(key, v) });
 
+// The sky rows' hooks; loop.ts fills them after load.
+export const skyHooks: { night?(id: string): void; sky?(b: number): void; site?(id: string): void } = {};
+
 export const ui = initPage({
   id: 'observatory',
   bar: {
+    // Night: tonight's real sky, or a season's sky at about 22:00.
+    choice: {
+      label: 'Night', value: 'tonight',
+      options: NIGHTS.map(n => ({ value: n.id, label: n.label })),
+      onPick: (v: string) => skyHooks.night?.(v),
+    },
+    // City light: the Bortle class, 1 a pristine sky, 9 a city sky.
+    slider: { label: 'City light', min: 1, max: 9, step: 1, value: 2, onInput: (v: number) => skyHooks.sky?.(v) },
+    // Site: the latitude the sky turns over; the hill stays.
+    settings: [
+      { type: 'choice', id: 'site', label: 'Site', display: 'segments', persist: true, value: 'home',
+        options: SITES.map(s => ({ value: s.id, label: s.label })), onPick: (v: string) => skyHooks.site?.(v) },
+    ],
     // Dev: the camera of the shot that shows, with ?dev.
     // Pause a shot, then move a row; Copy gives the lines for the code.
     dev: [
       // The shot that shows, 1 to 5; a pick replays the cuts from that shot.
       { type: 'choice', id: 'cam-shot', group: 'Cut camera', label: 'Shot', display: 'segments', value: 'edge',
-        options: ['edge', 'slit', 'lift', 'roll', 'glass'].map((v, i) => ({ value: v, label: String(i + 1) })), onPick: (v: string) => camHooks.shot?.(v) },
+        options: ['edge', 'slit', 'lift', 'roll', 'glass', 'mirror'].map((v, i) => ({ value: v, label: String(i + 1) })), onPick: (v: string) => camHooks.shot?.(v) },
       camRow('ex', 'Eye forward', -2, 10, 0.05),
       camRow('ey', 'Eye right', -6, 6, 0.05),
       camRow('ez', 'Eye up', -2, 4, 0.05),
@@ -36,9 +53,10 @@ export const ui = initPage({
     ],
     // Bar v3 lists every input in How to play: one instruction per row.
     help: [
-      ['move', 'Aim the beam'],
-      ['click', 'Select a star'],
-      ['esc', 'Skip ahead'],
+      ['move', 'Find a star'],
+      ['click', 'Lock it, then choose a telescope'],
+      ['1 2', 'Choose a telescope'],
+      ['esc', 'Let go, or skip ahead'],
     ],
   },
 });

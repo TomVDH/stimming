@@ -36,7 +36,7 @@ type Lamp = (k: number) => void;
 export type Lights = { count: number; set(level: number, lamp?: (i: number, n: number) => number): void };
 
 export function buildLights(c: Complex): Lights {
-  const domes = [c.main, ...c.small];
+  const domes = c.domes;
   const glow = (m: MeshBasicMaterial, i: number): Lamp => (k) => { m.color.copy(off[i]).lerp(on[i], k); };
   const off = [PANE_OFF, LAMP_OFF];
   const on = [PANE_ON, LAMP_ON];
@@ -86,7 +86,7 @@ export function buildLights(c: Complex): Lights {
   // The order they come on at dusk.
   // People light the hall and the domes first.
   // Then the road lamps come on from the top down.
-  const lamps: Lamp[] = [panes[1], doors[0], panes[0], doors[1], panes[2], doors[2], ...roadLamps];
+  const lamps: Lamp[] = [panes[1], doors[0], panes[0], doors[1], panes[2], doors[2], doors[3], ...roadLamps];
   return {
     count: lamps.length,
     set(level, lamp) {

@@ -2,7 +2,7 @@
 import '../setup.ts';
 // The haze amount is copied from railgun/src/sky/k2-haze.glsl.
 // The night colours come from railgun/src/sky/sun.ts.
-import { BackSide, Color, FogExp2, Mesh, ShaderChunk, ShaderMaterial, SphereGeometry, Vector2, Vector3 } from 'three';
+import { BackSide, Color, FogExp2, Mesh, ShaderChunk, ShaderMaterial, SphereGeometry, Vector2, Vector3, Vector4 } from 'three';
 import { disposeTree, onLeave, scene } from '../setup.ts';
 
 /* ---------- the night air: a moonless sky, a faint horizon glow, low haze ---------- */
@@ -64,10 +64,13 @@ scene.fog = fog;
 // y is how fast it fades with height.
 // The golden hour spreads it wider and higher.
 // uRidge is the late sun on the far ridges, black after the golden hour.
+// uLift and uTown are the Sky row's light pollution, from core/skyctl bortleGlow.
+// uLift lifts the whole night sky; uTown lights four valley towns.
 export const skyU = {
   uZen: { value: ZENITH.clone() }, uHor: { value: HORIZON.clone() },
   uWarm: { value: new Color(0, 0, 0) }, uSun: { value: new Vector3(-1, 0, 0) },
   uGlow: { value: new Vector2(0.75, 10) }, uRidge: { value: new Color(0, 0, 0) },
+  uLift: { value: 0 }, uTown: { value: new Vector4() },
 };
 // The sky's colour in direction d.
 // The far ridges share it.
@@ -75,11 +78,29 @@ export const skyU = {
 export const SKY_GLSL = /* glsl */`
 uniform vec3 uZen, uHor, uWarm, uSun;
 uniform vec2 uGlow;
+uniform float uLift;
+uniform vec4 uTown;
+// The towns' azimuths, in the south-facing frame, in radians.
+const vec4 TOWN_AZ = vec4(158.0, 199.0, 216.0, 143.0) * 0.0174533;
+// The towns' widths in radians.
+const vec4 TOWN_W = vec4(0.10, 0.07, 0.12, 0.06);
+// Sodium light, scaled to the night sky's linear colours.
+const vec3 TOWN_C = vec3(0.020, 0.011, 0.005);
 vec3 skyColor(vec3 d) {
   float up = max(d.y, 0.0);
   vec3 col = mix(uHor, uZen, pow(up, 0.45));
   // The glow gathers in a thin band on the horizon.
   col = mix(col, uHor * 1.15, exp(-up * 14.0) * 0.55);
+  // Light pollution: a warm lift, stronger low; light domes over the towns.
+  // In a dark sky both are zero, so the branch is skipped.
+  if (uLift > 0.0 || uTown.x > 0.0) {
+    col += uLift * vec3(0.010, 0.008, 0.006) * (0.35 + 0.65 * exp(-up * 3.0));
+    float az = atan(d.x, -d.z);
+    az += az < 0.0 ? 6.2831853 : 0.0;
+    vec4 da = (vec4(az) - TOWN_AZ) / TOWN_W;
+    vec4 dome = uTown * exp(-da * da) * exp(-up * 9.0);
+    col += TOWN_C * (dome.x + dome.y + dome.z + dome.w);
+  }
   // The sunset glow lies low and spreads wide round the sun.
   // At night uWarm is black, so the night frame skips this branch.
   if (uWarm != vec3(0.0)) {

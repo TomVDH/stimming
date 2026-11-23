@@ -2,20 +2,21 @@
 import '../world/hero.ts';
 import { Box3, MathUtils, Matrix4, Ray, Texture, Vector3 } from 'three';
 import { reduced } from '../../../shared/stim.js';
-import { cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
+import { MIRROR_PUSH, cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
 import { AXES_UP, D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
 import type { Phase } from '../core/machine.ts';
+import type { Dome } from '../world/observatory.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
 import { azDelta } from '../core/dome.ts';
-import { sky } from '../sky/stars.ts';
+import { setStarLift, sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { CLEAR, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
-import { hero, heroSlitAz } from '../world/hero.ts';
+import { hero, heroSlitAz, type HeroOf } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
 import { applyCamera, applyShot } from './camera.ts';
-import { cutFocus, cutGrain } from '../post/chain.ts';
+import { cutFocus, cutGrain, cutMist } from '../post/chain.ts';
 
 /* ---------- the pick sequence: locked cuts of the main dome ---------- */
 // A pick from rest cuts to close shots of the main dome.
@@ -41,7 +42,7 @@ const DOME_R1 = 3.3;
 // The focus lies on the look point, on the moving part.
 type Point = [number, number, number];
 type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean; aperture: number };
-const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
+const PLANS: Record<Exclude<Shot, 'glass' | 'mirror'>, Plan> = {
   // a. Low and close on the slit's right: the dome looms, its crown on the stars.
   // The locked camera holds while the cupola turns and the leaves slowly part.
   edge: { eye: [2.7, 0.8, -0.25], look: [0.3, 0.15, 0.62], aperture: 0.008 },
@@ -66,6 +67,11 @@ const PLANS: Record<Exclude<Shot, 'glass'>, Plan> = {
 // The edge shot locks up to this many degrees ahead of the slit.
 // The slit then turns through the frame, not out of it.
 const EDGE_LEAD = 4.5;
+// The big dome's floor lies a third of a radius under the centre.
+// Its lift shot stands higher, behind the fork, on the tube's middle.
+const BIG_LIFT: Plan = { eye: [-0.55, -0.45, -0.2], look: [0.2, 0, 0.5], tall: [0.15, 0, 0.45], inside: true, aperture: 0.012 };
+// A shot's plan in the dome the cuts show.
+const planOf = (shot: Exclude<Shot, 'glass' | 'mirror'>): Plan => (shot === 'lift' && dome.big ? BIG_LIFT : PLANS[shot]);
 // The eye turns about the cupola by these steps to clear a building.
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
@@ -100,7 +106,7 @@ const ease = (k: number): number => k * k * (3 - 2 * k);
 // glass: the glass shot's eye distance, in metres.
 // Its eye follows the glass's place of rest each frame.
 // focus: metres from the eye to the sharp plane.
-type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number } };
+type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number }; mirror?: boolean };
 
 const centre = new Vector3();
 const ray = new Ray();
@@ -108,27 +114,39 @@ const tmp = new Vector3();
 const UP = new Vector3(0, 1, 0);
 // The cupola's radius in metres, set at the pick.
 let R = 1;
+// The dome the cuts show, set at the pick.
+// The hero model stands in only for the main dome.
+let dome: Dome = complex.main;
+// The hero's telescope, when the cuts show the main dome.
+// The chosen dome's close model; null for a dome without one.
+let heroNow: HeroOf | null = hero.of(complex.main);
+const heroScope = () => heroNow?.scope ?? null;
+const heroReady = (): boolean => !!heroNow?.ready;
 
-// Inside the drum, the eye keeps clear of the hero's fixed parts.
+// Inside the dome, the eye keeps clear of the hero's fixed parts.
 // The values come from world/hero.ts and world/hero-scope.ts.
 // They are in dome units, in the main dome's own frame.
-// The floor's height and the plastered wall's radius.
-const FLOOR_Y = 1.8, IN_R = 2.84;
-// [x, z, radius]: the pier, the ladder, the red work lamp.
-const KEEP_OUT: [number, number, number][] = [[0, 0.42, 0.6], [-0.99, 2.11, 0.5], [0.94, 2.58, 0.4]];
+// floor: the floor's height. wall: the inner wall's radius.
+// keep: [x, z, radius] of each part to clear.
+type Room = { floor: number; wall: number; keep: [number, number, number][] };
+// The classic drum: the pier, the ladder, the red work lamp.
+const CLASSIC: Room = { floor: 1.8, wall: 2.84, keep: [[0, 0.42, 0.6], [-0.99, 2.11, 0.5], [0.94, 2.58, 0.4]] };
+// The big dome: the reflector's fork, the red work lamp.
+const BIG: Room = { floor: 1.71, wall: 3.15, keep: [[0, 0, 0.9], [1.09, 2.99, 0.4]] };
 const local = new Vector3();
 // True when an inside eye clears the wall, floor and parts.
 function clearInside(eye: Vector3): boolean {
-  complex.main.root.worldToLocal(local.copy(eye));
-  if (Math.hypot(local.x, local.z) > IN_R - 0.25 || local.y < FLOOR_Y + 0.15) return false;
-  return KEEP_OUT.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
+  const room = dome.big ? BIG : CLASSIC;
+  dome.root.worldToLocal(local.copy(eye));
+  if (Math.hypot(local.x, local.z) > room.wall - 0.25 || local.y < room.floor + 0.15) return false;
+  return room.keep.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
 }
 
 // The boxes of everything in the complex that can stand before the dome.
 // They are set at the pick.
 let boxes: Box3[] = [];
 function setBoxes(): void {
-  boxes = complex.root.children.filter(o => o !== complex.main.root)
+  boxes = complex.root.children.filter(o => o !== dome.root)
     .map(o => new Box3().setFromObject(o).expandByScalar(BOX_PAD));
 }
 // True when a box stands between a point and the eye.
@@ -157,15 +175,15 @@ function slitPoint(p: Point, a: number, out: Vector3): Vector3 {
 
 // The slit's azimuth in degrees, read from the posed cupola.
 // The cuts frame the hero's slit, which turns past the light model's.
-const slitNow = (): number => heroSlitAz(complex.main);
+const slitNow = (): number => heroSlitAz(dome);
 
 // Places the eye of one cut so nothing blocks the dome.
 // az: the slit's azimuth in degrees.
 // aspect: the frame's width over its height.
 // The look point turns with the slit, not with the eye.
 function place(cut: Cut, az: number, aspect: number): Framed {
-  if (cut.shot === 'glass') return placeGlass(cut, aspect);
-  const plan = PLANS[cut.shot];
+  if (cut.shot === 'glass' || cut.shot === 'mirror') return placeGlass(cut, aspect);
+  const plan = planOf(cut.shot);
   const look = slitPoint(plan.look, az * DEG, new Vector3());
   const { fov, tall } = lens(cut.fov, aspect);
   const aim = tall && plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
@@ -186,6 +204,9 @@ function place(cut: Cut, az: number, aspect: number): Framed {
   slitPoint(plan.eye, az * DEG, eye).lerp(look, 1 - NEAR[NEAR.length - 1]);
   return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture };
 }
+
+// These shots stand inside the dome, so they take no mist.
+const INDOOR = new Set<Shot>(['lift', 'glass', 'mirror']);
 
 /* ---------- the glass shot: locked on the glass's place of rest ---------- */
 // Copied from world/hero-scope.ts, in dome units.
@@ -214,14 +235,17 @@ const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 // The maths follow the mount in world/hero-scope.ts.
 // The real model never moves for it.
 function glassAt(alt: number, az: number): void {
+  // The big dome's reflector gives its own pose.
+  const sc = heroScope();
+  if (sc?.restGlass) { sc.restGlass(alt, az, gp, ga, gu); return; }
   // The joint angles come from core/clearance.ts, as the hero's do.
   const p = targetPose(alt, az, 0);
-  gm.makeTranslation(0, complex.main.turnY + AXES_UP, 0)
+  gm.makeTranslation(0, dome.turnY + AXES_UP, 0)
     .multiply(gr.makeRotationX(LAT * DEG - Math.PI / 2))
     .multiply(gr.makeRotationY(p.ra))
     .multiply(gr.makeRotationX(p.dec))
     .multiply(gr.makeTranslation(D_OFF, 0, TUBE_SHIFT))
-    .premultiply(complex.main.root.matrixWorld);
+    .premultiply(dome.root.matrixWorld);
   gp.set(0, 0, GLASS_Z).applyMatrix4(gm);
   ga.set(0, 0, 1).transformDirection(gm);
   // Up lies across the axis, toward the sky.
@@ -232,10 +256,11 @@ function glassAt(alt: number, az: number): void {
 // A landscape frame holds the glass at GLASS_FILL of its height.
 // A portrait frame holds it at GLASS_FILL_TALL of its width.
 function placeGlass(cut: Cut, aspect: number): Framed {
-  const d = GLASS_D * complex.main.root.scale.x;
+  // The reflector frames its front ring; the refractor, its glass.
+  const d = heroScope()?.aperture ?? GLASS_D * dome.root.scale.x;
   const dist = d / GLASS_FILL / 2 / Math.tan(cut.fov * DEG / 2);
   const fov = aspect < 1 ? 2 * Math.atan(d / GLASS_FILL_TALL / aspect / 2 / dist) / DEG : cut.fov;
-  return { eye: new Vector3(), aim: new Vector3(), fov, focus: dist, aperture: GLASS_APERTURE, glass: { dist } };
+  return { eye: new Vector3(), aim: new Vector3(), fov, focus: dist, aperture: GLASS_APERTURE, glass: { dist }, mirror: cut.shot === 'mirror' };
 }
 
 // Puts the glass shot's eye before the glass's place of rest.
@@ -250,6 +275,52 @@ function glassEye(s: Framed, v: View): void {
   s.aim.copy(gp);
 }
 
+/* ---------- the mirror shot: the disk wipe onto the reflector's primary ---------- */
+// Tom, 2026-11-23: the secondary's white disk crests over the camera as a wipe.
+// The push starts on the glass shot's framing and lasts MIRROR_PUSH.
+// The lens widens to the mirror cut's lens.
+// The primary then fills MIRROR_FILL of the band's height.
+const MIRROR_FILL = 0.95;
+// A shallow focus: the passing disk goes soft, the primary stays sharp.
+const MIRROR_APERTURE = 0.03;
+// The focus pulls from the disk to the primary over this share of the push.
+const PULL_A = 0.3, PULL_B = 0.7;
+const smooth = (a: number, b: number, x: number): number => ease(Math.min(1, Math.max(0, (x - a) / (b - a))));
+// t: seconds in the shot.
+// The eye keeps off the axis, midway between the housing and the ring.
+// It turns from under the axis to between two vanes before it reaches them.
+function mirrorEye(s: Framed, v: View, t: number): void {
+  const sc = heroScope();
+  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined || sc.frontDist === undefined) { glassEye(s, v); return; }
+  sc.restGlass(v.restAlt, v.tubeAz, gp, ga, gu);
+  const k = ease(Math.min(1, t / MIRROR_PUSH));
+  const fov0 = cutOf('glass').fov, fov1 = cutOf('mirror').fov;
+  s.fov = fov0 + (fov1 - fov0) * k;
+  const d0 = sc.aperture / GLASS_FILL / 2 / Math.tan(fov0 * DEG / 2);
+  const d1 = sc.mirrorR / MIRROR_FILL / Math.tan(fov1 * DEG / 2);
+  const d = d0 + (d1 - d0) * k;
+  const o = Math.max(d * Math.tan(GLASS_UNDER), (sc.secR + sc.aperture / 2) / 2);
+  const turn = Math.min(1, k * 2) * Math.PI / 4;
+  side.crossVectors(ga, gu);
+  off.copy(gu).multiplyScalar(-Math.cos(turn)).addScaledVector(side, Math.sin(turn));
+  s.eye.copy(gp).addScaledVector(ga, d).addScaledVector(off, o);
+  s.aim.copy(gp);
+  // The focus starts on the disk at the tube's front, then pulls to the primary.
+  const toMirror = s.eye.distanceTo(gp), toDisk = Math.max(0.3, d - sc.frontDist);
+  s.focus = toDisk + (toMirror - toDisk) * smooth(PULL_A, PULL_B, k);
+  s.aperture = MIRROR_APERTURE;
+}
+
+// Tom, 2026-11-23: realistic stars in the mirror.
+// The stars keep their true size; the mirror shot draws them LIFT_GAIN times as bright.
+const LIFT_GAIN = 1.5;
+let lifted = false;
+function starLift(on: boolean): void {
+  if (on === lifted) return;
+  lifted = on;
+  setStarLift(1, on ? LIFT_GAIN : 1);
+}
+
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
 const bars = [0, 1].map(i => {
   const b = document.createElement('div');
@@ -261,7 +332,37 @@ still.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-
 // The dip's black lies over the frame and the bars.
 const dip = document.createElement('div');
 dip.style.cssText = 'position:absolute;inset:0;background:#000;pointer-events:none;display:none';
-renderer.domElement.after(still, ...bars, dip);
+
+/* ---------- frame blending: each beat fades in over the one before ---------- */
+// Tom, 2026-11-23: blend the 30 fps beats, so the motion runs smoother.
+// Two canvases hold the last two beats.
+// The older one lies over the frame and fades out until the next beat.
+// A hard cut never blends: the new shot shows at once.
+const beats = [0, 1].map(() => {
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;pointer-events:none;display:none';
+  return c;
+});
+// beatN: the beats kept since the last drop.
+// beatShot: the newest beat's shot. blending: the older beat shows.
+let beatN = 0, beatShot: Shot | null = null, blending = false;
+// Keeps the frame just rendered; the beat before it goes on top.
+function keepBeat(shot: Shot): void {
+  const c = renderer.domElement, now = beats[beatN % 2], prev = beats[(beatN + 1) % 2];
+  if (now.width !== c.width || now.height !== c.height) { now.width = c.width; now.height = c.height; }
+  now.getContext('2d')!.drawImage(c, 0, 0);
+  now.style.display = 'none';
+  blending = beatN > 0 && shot === beatShot && prev.width === c.width && prev.height === c.height;
+  prev.style.display = blending ? 'block' : 'none';
+  prev.style.opacity = '1';
+  beatShot = shot;
+  beatN++;
+}
+function dropBeats(): void {
+  for (const b of beats) b.style.display = 'none';
+  beatN = 0; beatShot = null; blending = false;
+}
+renderer.domElement.after(...beats, still, ...bars, dip);
 
 // k: 0 clear, 1 black.
 function black(k: number): void {
@@ -301,6 +402,8 @@ let dipT = 0, dipWide = false;
 // The wide shot fades down in DIP_DOWN.
 // The first shot fades up in DIP_UP.
 let inT = 0;
+// The shot the last frame rendered, or null for the wide shot.
+let rendered: Shot | null = null;
 // The shot the dip holds.
 let lastShot: Shot = 'glass';
 // The locked cameras: each cut sets its own on its first frame.
@@ -327,24 +430,26 @@ const mouthAt = new Vector3();
 function swap(on: boolean): void {
   if (on !== heroOn) {
     heroOn = on;
-    hero.show(on);
-    complex.main.show(!on);
+    heroNow?.show(on);
+    dome.show(!on);
   }
-  if (on) hero.follow(complex.main);
+  if (on) heroNow?.follow(dome);
 }
 
 // The catalog waits here until the hero's glass can take it.
 // The glass bakes its star map once, in about 30 ms.
 // That happens while the wide shot shows.
-let stars: readonly Star[] | null = null, starsSet = false;
+// Each dome's model takes the catalog once.
+let stars: readonly Star[] | null = null;
+const fed = new WeakSet<object>();
 // Hands the glass its stars once.
 // It hands it the sky's turn while the hero shows.
 function feedGlass(show: boolean): void {
-  const sc = hero.scope;
+  const sc = heroScope();
   if (!sc) return;
-  if (stars && !starsSet) {
+  if (stars && !fed.has(sc)) {
     sc.setStars(stars);
-    starsSet = true;
+    fed.add(sc);
     // The star map goes to the GPU now, not in the glass shot.
     // Before the hero's warm-up, the warm-up uploads it.
     const u = (renderer.properties.get(sc.glass.material) as { uniforms?: Record<string, { value: unknown }> }).uniforms;
@@ -356,8 +461,11 @@ function feedGlass(show: boolean): void {
 
 function toWide(): void {
   mode = 'off';
+  starLift(false);
+  dropBeats();
   cutFocus(null);
   cutGrain(0);
+  cutMist(true);
   showBars(false);
   black(0);
   still.style.display = 'none';
@@ -373,6 +481,7 @@ function stepDip(dt: number): void {
   if (!dipWide) {
     // The frame is black now, so the change to the wide shot does not show.
     dipWide = true;
+    dropBeats();
     showBars(false);
     beam(true);
     applyCamera(camera.aspect);
@@ -380,6 +489,7 @@ function stepDip(dt: number): void {
     black(1);
     cutFocus(null);
     cutGrain(0);
+    cutMist(true);
     return;
   }
   const k = Math.min(1, (dipT - DIP_DOWN) / DIP_UP);
@@ -408,7 +518,7 @@ export const cuts = {
   // Seconds since the pick.
   get time(): number { return seq.total; },
   // True while the picture runs on the film beat.
-  // That is the five shots and the dip down.
+  // That is the shots and the dip down.
   get film(): boolean { return mode === 'cuts' || (mode === 'dip' && !dipWide); },
   // The loop hands over the catalog once it loads.
   setStars(s: readonly Star[]): void { stars = s; },
@@ -417,22 +527,27 @@ export const cuts = {
   // An open shutter starts with the lift shot.
   // v: the tube and its lift.
   // target: the picked star.
-  start(phase: Phase, v: View, target: AltAz): void {
-    const main = complex.main;
-    main.root.updateMatrixWorld(true);
-    main.cupola.getWorldPosition(centre);
-    R = DOME_R1 * main.root.scale.x;
+  // d: the dome the cuts show; the main dome by default.
+  start(phase: Phase, v: View, target: AltAz, d: Dome = complex.main): void {
+    // The old dome's model goes before the dome changes.
+    swap(false);
+    dome = d;
+    heroNow = hero.of(d);
+    d.root.updateMatrixWorld(true);
+    d.cupola.getWorldPosition(centre);
+    R = DOME_R1 * d.root.scale.x;
     setBoxes();
     view = v;
-    seq = startSeq(phase, v);
+    // The reflector adds the mirror shot.
+    seq = startSeq(phase, v, heroReady() && !!heroScope()?.restGlass);
     // Reduced motion waits in the wide shot until the tube rests.
     mode = reduced() ? 'wait' : 'cuts';
     stillT = 0;
     inT = 0;
     locks.clear();
-    useHero = hero.ready;
+    useHero = heroReady();
     cutShot = null;
-    hero.scope?.setTarget(altAzDir(target), TARGET_K);
+    heroScope()?.setTarget(altAzDir(target), TARGET_K);
   },
   // A tap or Esc: straight to the wide shot.
   skip(): void {
@@ -483,25 +598,32 @@ export const cuts = {
     const shot: Shot = mode === 'cuts' ? seq.shot : mode === 'dip' ? lastShot : 'glass';
     // A new cut is a hard cut, so the model may change there.
     // The choice waits for the cut's first close frame, after the dip.
-    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = hero.ready; }
+    if (close && mode === 'cuts' && shot !== cutShot) { cutShot = shot; useHero = heroReady(); }
     // The swap happens in the frame that changes the shot.
-    swap(close ? useHero : held && hero.ready);
+    swap(close ? useHero : held && heroReady());
     feedGlass(close ? useHero : held);
     // The close shots come after a pick, so the beam leaves the hero's laser.
-    const sc = hero.scope;
+    const sc = heroScope();
     if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
+    rendered = close ? shot : null;
     if (!close) {
+      starLift(false);
       cutFocus(null);
       cutGrain(0);
+      cutMist(true);
       if (inDown) black((inT / DIP_DOWN) ** 2);
       return;
     }
     const s = locks.of(cutOf(shot));
-    if (s.glass) glassEye(s, view);
+    // Only the mirror shot lifts the stars.
+    starLift(!!s.mirror);
+    if (s.mirror) mirrorEye(s, view, mode === 'cuts' ? seq.t : MIRROR_PUSH);
+    else if (s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     // The film lens fills the band between the bars.
     applyShot(camera.aspect, s.eye, s.aim, renderFov(s.fov, camera.aspect));
     cutFocus(s);
+    cutMist(!INDOOR.has(shot));
     // The dip fades down to black, and the cuts' grain eases back.
     if (mode === 'dip') { const k = Math.min(1, dipT / DIP_DOWN); black(k * k); cutGrain(1 - k); }
     else cutGrain(1);
@@ -511,11 +633,20 @@ export const cuts = {
     beam(false);
     showBars(true);
   },
+  // Fades the older beat as the next comes due.
+  // k: the share of the beat gone, 0 to 1.
+  blend(k: number): void {
+    if (blending) beats[beatN % 2].style.opacity = String(Math.max(0, 1 - k));
+  },
   // QA: keeps the hero model in outside the cuts, for stills.
   // The beam hides as in the close shots.
   hold(on: boolean): void { held = on; beam(!on); },
   // Copies the last close frame onto the still, then shows the wide shot under it.
   afterRender(): void {
+    // A film beat is kept for the blend.
+    const film = mode === 'cuts' || (mode === 'dip' && !dipWide);
+    if (rendered && film && !reduced()) keepBeat(rendered);
+    else if (beatN) dropBeats();
     if (!grab) return;
     grab = false;
     const c = renderer.domElement;
@@ -537,15 +668,15 @@ export const camDev = {
   // The values of a shot, for the rows.
   get(shot: Shot): Partial<Record<CamKey, number>> {
     const fov = cutOf(shot).fov;
-    if (shot === 'glass') return { fov };
-    const p = PLANS[shot];
+    if (shot === 'glass' || shot === 'mirror') return { fov };
+    const p = planOf(shot);
     return { ex: p.eye[0], ey: p.eye[1], ez: p.eye[2], lx: p.look[0], ly: p.look[1], lz: p.look[2], fov, blur: p.aperture };
   },
   // Sets one value; the shot re-locks its camera on the next frame.
   set(shot: Shot, key: CamKey, v: number): void {
     if (key === 'fov') cutOf(shot).fov = v;
-    else if (shot !== 'glass') {
-      const p = PLANS[shot];
+    else if (shot !== 'glass' && shot !== 'mirror') {
+      const p = planOf(shot);
       if (key === 'blur') p.aperture = v;
       else (key[0] === 'e' ? p.eye : p.look)['xyz'.indexOf(key[1])] = v;
     } else return;
@@ -557,8 +688,8 @@ export const camDev = {
     const pt = (a: Point): string => `[${a.map(r).join(', ')}]`;
     const c = cutOf(shot);
     const cut = `{ shot: '${shot}', fov: ${r(c.fov)}, phase: '${c.phase}' },`;
-    if (shot === 'glass') return cut;
-    const p = PLANS[shot];
+    if (shot === 'glass' || shot === 'mirror') return cut;
+    const p = planOf(shot);
     const tall = p.tall ? `, tall: ${pt(p.tall)}` : '';
     const inside = p.inside ? ', inside: true' : '';
     return `${shot}: { eye: ${pt(p.eye)}, look: ${pt(p.look)}${tall}${inside}, aperture: ${r(p.aperture)} },\n${cut}`;

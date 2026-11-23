@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   CUTS, lightLevel, lightGoal, makeLocks, lens, startSeq, stepSeq, skipSeq, cadence, CUT_FPS,
-  EDGE_CUT, SLIT_CUT, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
+  EDGE_CUT, SLIT_CUT, MIRROR_S, LIFT_CUT, ROLL_MIN, ROLL_MAX, GLASS_ENTER, GLASS_RISE, GLASS_HOLD, MIN_SHOT, SETTLE,
 } from '../observatory/src/core/sequence.ts';
 import { makeMachine, TUBE } from '../observatory/src/core/machine.ts';
 import { SHUTTER_S } from '../observatory/src/core/dome.ts';
@@ -50,7 +50,7 @@ const names = (r) => r.shots.map(x => x.shot).join(',');
 const of = (r, shot) => r.shots.find(x => x.shot === shot);
 
 test('five shots in order, each a locked camera with one lens', () => {
-  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll', 'glass']);
+  assert.deepEqual(CUTS.map(c => c.shot), ['edge', 'slit', 'lift', 'roll', 'glass', 'mirror']);
   for (const c of CUTS) {
     assert.equal(typeof c.fov, 'number', `${c.shot}: fov is one number`);
     // The inside shot needs a wider lens: the room is small.
@@ -195,29 +195,29 @@ function beats(hz, secs, jitter = 0) {
   }
   return at;
 }
-test('cadence: the cuts render 24 frames a second at 60, 120 and 144 Hz', () => {
-  assert.equal(CUT_FPS, 24);
+test('cadence: the cuts render 30 frames a second at 60, 120 and 144 Hz', () => {
+  assert.equal(CUT_FPS, 30);
   for (const hz of [60, 120, 144]) {
     const at = beats(hz, 4);
     const fps = (at.length - 1) / (at[at.length - 1] - at[0]);
-    assert.ok(Math.abs(fps - 24) <= 1, `${hz} Hz: ${fps.toFixed(2)} fps`);
+    assert.ok(Math.abs(fps - CUT_FPS) <= 1, `${hz} Hz: ${fps.toFixed(2)} fps`);
     // Each gap is the beat, give or take one display frame.
     for (let i = 1; i < at.length; i++) {
       const gap = at[i] - at[i - 1];
-      assert.ok(Math.abs(gap - 1 / 24) <= 1 / hz + 1e-6, `${hz} Hz: gap ${(gap * 1000).toFixed(1)} ms`);
+      assert.ok(Math.abs(gap - 1 / CUT_FPS) <= 1 / hz + 1e-6, `${hz} Hz: gap ${(gap * 1000).toFixed(1)} ms`);
     }
   }
 });
-test('cadence: at 120 and 144 Hz every beat lands on the same spacing', () => {
-  for (const hz of [120, 144]) {
+test('cadence: at 60 and 120 Hz every beat lands on the same spacing', () => {
+  for (const hz of [60, 120]) {
     const at = beats(hz, 4);
-    for (let i = 1; i < at.length; i++) assert.ok(Math.abs(at[i] - at[i - 1] - 1 / 24) < 1e-6, `${hz} Hz gap ${at[i] - at[i - 1]}`);
+    for (let i = 1; i < at.length; i++) assert.ok(Math.abs(at[i] - at[i - 1] - 1 / CUT_FPS) < 1e-6, `${hz} Hz gap ${at[i] - at[i - 1]}`);
   }
 });
-test('cadence: jittered 60 Hz frames still give 24 a second; a long stall does not burst', () => {
+test('cadence: jittered 60 Hz frames still give 30 a second; a long stall does not burst', () => {
   const at = beats(60, 4, 0.0015);
   const fps = (at.length - 1) / (at[at.length - 1] - at[0]);
-  assert.ok(Math.abs(fps - 24) <= 1, `${fps}`);
+  assert.ok(Math.abs(fps - CUT_FPS) <= 1, `${fps}`);
   const c = { acc: 0 };
   assert.equal(cadence(c, 0.5), true);
   // After the stall, the next frame waits for the next beat.
@@ -254,4 +254,16 @@ test('lightLevel in slew dims from 1 to 0.35 and stays there', () => {
 test('lightLevel never overshoots on a big step', () => {
   assert.equal(lightLevel('aim', 0.9, 10), 1);
   assert.equal(lightLevel('track', 0.1, 10), 0);
+});
+
+test('the reflector adds the mirror shot after the glass shot; the refractor does not', () => {
+  const v = lift(15).at;
+  const plain = play(v);
+  assert.equal(names(plain), 'edge,slit,lift,roll,glass');
+  let s = startSeq('open', v(0), true);
+  const shots = [s.shot];
+  let t = 0;
+  while (!s.done && t < 60) { t += 0.01; s = stepSeq(s, 0.01, v(t)); if (s.shot !== shots[shots.length - 1]) shots.push(s.shot); }
+  assert.equal(shots.join(','), 'edge,slit,lift,roll,glass,mirror');
+  assert.ok(Math.abs(t - plain.end - MIRROR_S) < 0.03, `ends ${t} vs ${plain.end} + ${MIRROR_S}`);
 });

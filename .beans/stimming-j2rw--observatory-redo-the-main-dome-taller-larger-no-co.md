@@ -5,9 +5,10 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-22T09:43:50Z
-updated_at: 2026-11-23T00:52:23Z
+updated_at: 2026-11-23T20:32:01Z
 parent: stimming-wqq9
 ---
+
 
 Redo the main dome of the observatory in observatory/src/world/observatory.ts and its hero twin in world/hero.ts. Direction from Tom: a smaller complex, but a larger and taller observatory; the stone-block drum goes, plain render instead. Reference: Observatoire des Baronnies Provençales (OSM footprints, scratch sheet). Child of stimming-wqq9.
 
@@ -42,4 +43,4 @@ Tom: a big scientific observatory, like the Keck telescopes.
 - [x] Keck-style hero model for the cuts (base, doors, louvres, track, skirt, vents, cap, rails, ladders, shutters, inside)
 - [x] Outside cut cameras retuned for the big dome: edge and slit eyes on the summit, slit lens 17 degrees, sight lines across the frame clear the mast
 - [ ] Inside cut (lift) retuned for the big hero: its floor, wall and keep-out values are the classic hero's
-- [ ] Open truss telescope visible through the opening
+- [x] Open truss telescope visible through the opening (the 1 m reflector in the big dome, stimming-5oab)

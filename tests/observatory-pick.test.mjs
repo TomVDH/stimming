@@ -1,7 +1,7 @@
 // Observatory star pick. Run: node --test tests/observatory-pick.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { pickStar } from '../observatory/src/core/pick.ts';
+import { nearStar, pickStar } from '../observatory/src/core/pick.ts';
 import { toAltAz, toRaDec } from '../observatory/src/core/sky.ts';
 
 const LAT = 51, LST = 100;
@@ -32,4 +32,28 @@ test('a star under 5 degrees is never picked', () => {
   // A brighter low star does not hide a fainter high star.
   const low = at(1, 4, 200, -1), high = at(2, 6.5, 200, 3);
   assert.equal(pickStar([low, high], { alt: 5.2, az: 200 }, LST, LAT).hip, 2);
+});
+
+/* ---------- nearStar: the star a hover shows, and a tap locks ---------- */
+test('nearStar: a faint star close to the aim beats a bright star near the edge', () => {
+  const faint = at(1, 40.2, 180, 5), bright = at(2, 41.4, 180, 1);
+  assert.equal(nearStar([bright, faint], { alt: 40, az: 180 }, LST, LAT).hip, 1);
+});
+
+test('nearStar: of two stars at the same place, the brighter wins', () => {
+  const a = at(1, 40.3, 180, 3), b = at(2, 40.3, 180, 2);
+  assert.equal(nearStar([a, b], { alt: 40, az: 180 }, LST, LAT).hip, 2);
+});
+
+test('nearStar: nothing inside 1.5 degrees gives null', () => {
+  assert.equal(nearStar([at(1, 41.6, 180, -1)], { alt: 40, az: 180 }, LST, LAT), null);
+});
+
+test('nearStar: a star under 5 degrees gives null', () => {
+  assert.equal(nearStar([at(1, 4, 180, -1)], { alt: 4, az: 180 }, LST, LAT), null);
+});
+
+test('nearStar: a star fainter than the sky limit is skipped', () => {
+  const hidden = at(1, 40.1, 180, 5.5), shown = at(2, 40.8, 180, 3);
+  assert.equal(nearStar([hidden, shown], { alt: 40, az: 180 }, LST, LAT, 1.5, 5).hip, 2);
 });

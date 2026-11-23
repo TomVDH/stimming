@@ -9,8 +9,15 @@ import { dirAltAz, lst, shellDir, skyRows, turn, type AltAz } from '../core/sky.
 import type { Star } from '../core/catalog.ts';
 
 /* ---------- tonight's real sky: the catalog stars at the site, by sidereal time ---------- */
-// The site: 51 N, 0 E.
-export const LAT = 51, LON = 0;
+// The site: 51 N, 0 E at first.
+// A named site moves the latitude; the hill stays.
+export let LAT = 51;
+export const LON = 0;
+// Sets the site's latitude and turns the sky at the last sky time.
+export function setLat(deg: number): void {
+  LAT = deg;
+  skyAt(lastMs);
+}
 // The star shell stays inside the camera far plane.
 const RADIUS = 4000;
 // A star fades in over this many magnitudes past the limit.
@@ -48,6 +55,8 @@ const vert = /* glsl */ `
   attribute vec3 tint;
   attribute vec3 look; // x: size in CSS px, y: brightness, z: magnitude
   uniform float uDpr, uMagLim;
+  // x: the size's lift, y: the brightness's lift.
+  uniform vec2 uLift;
   varying vec3 vColor;
   varying float vUp;
   void main() {
@@ -61,7 +70,8 @@ const vert = /* glsl */ `
     // At dusk a star fades in as the limit passes its magnitude.
     // A star at the limit or brighter shows in full.
     vColor *= clamp(1.0 + (uMagLim - look.z) / ${FADE_MAG.toFixed(2)}, 0.0, 1.0);
-    gl_PointSize = look.x * uDpr;
+    vColor *= uLift.y;
+    gl_PointSize = look.x * uDpr * uLift.x;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
@@ -169,6 +179,10 @@ export function setStarDpr(dpr: number): void { starDpr.value = dpr; }
 export const NIGHT_MAG = 99;
 const magLim = { value: NIGHT_MAG };
 export function setStarLimit(mag: number): void { magLim.value = mag; }
+// The stars' lift: the cuts' mirror shot sets it, so the stars read in the mirror.
+// 1 and 1 draw the stars as they are.
+const liftU = { value: new Vector2(1, 1) };
+export function setStarLift(size: number, gain: number): void { liftU.value.set(size, gain); }
 // The streak's turn in radians, and its gain.
 // Both rest at night.
 const turnU = { value: 0 }, gainU = { value: 1 };
@@ -214,7 +228,7 @@ export const skyReady: Promise<void> = starFile.then((stars) => {
   geo.setAttribute('tint', new BufferAttribute(col, 3));
   geo.setAttribute('look', new BufferAttribute(look, 3));
   // The stars add over the sky's glow.
-  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr, uMagLim: magLim }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
+  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr, uMagLim: magLim, uLift: liftU }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
   pts.matrixAutoUpdate = false;
   pts.frustumCulled = false;
   scene.add(pts);

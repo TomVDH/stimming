@@ -2,7 +2,7 @@
 import './grade.ts';
 // Copied from railgun/src/post/chain.ts and settings.ts.
 // FXAA and the Dev rows are trimmed.
-import { ACESFilmicToneMapping, DepthTexture, HalfFloatType, WebGLRenderTarget } from 'three';
+import { ACESFilmicToneMapping, DepthTexture, HalfFloatType, Scene, WebGLRenderTarget } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
@@ -10,9 +10,10 @@ import { reduced } from '../../../shared/stim.js';
 import { camera, onLeave, renderer, scene } from '../setup.ts';
 import { makeBloom } from './bloom.ts';
 import { makeDof } from './dof.ts';
+import { makeDepthTap, makeMist } from './mist.ts';
 import { makeGrade } from './grade.ts';
 
-/* ---------- post chain: render, bloom, grade, tone map ---------- */
+/* ---------- post chain: render, mist, beam, bloom, grade, tone map ---------- */
 // Railgun's look values: the bloom's strength, radius and threshold.
 // Then the tint, the vignette and the grain.
 const POST = { bloom: [0.5, 0.5, 2.0] as const, tint: [0.0008, 0.0009, 0.0016] as [number, number, number], vig: 0.6, vigIn: 0.38, grain: 0.075 };
@@ -29,6 +30,8 @@ const composer = new EffectComposer(renderer, new WebGLRenderTarget(2, 2, { type
 // Its setPixelRatio resizes every target, so a resize would allocate twice.
 composer.setPixelRatio(1);
 composer.addPass(new RenderPass(scene, camera));
+// The tap keeps the scene's depth for the valley mist.
+composer.addPass(makeDepthTap());
 // The depth of field runs in the cuts only.
 // Off, the composer skips it.
 const dof = makeDof(camera);
@@ -36,6 +39,14 @@ dof.enabled = false;
 composer.addPass(dof);
 // Its shader compiles after the first frame, not at the first cut.
 setTimeout(() => dof.warm(renderer), 0);
+const mist = makeMist(camera);
+composer.addPass(mist);
+// The laser beam draws after the mist and the clouds, so they never cover it.
+// It tests itself against the scene's depth, so land and domes still hide it.
+export const beamScene = new Scene();
+const beamPass = new RenderPass(beamScene, camera);
+beamPass.clear = false;
+composer.addPass(beamPass);
 composer.addPass(makeBloom(...POST.bloom));
 const grade = makeGrade(POST);
 composer.addPass(grade);
@@ -67,6 +78,12 @@ export function cutFocus(f: { focus: number; aperture: number } | null): void {
 export function cutGrain(k: number): void {
   grade.uniforms.uGrain.value = POST.grain * (1 + k);
   grade.uniforms.uCell.value = 1 + 0.6 * k;
+}
+
+// The cuts turn the mist off inside a dome.
+// Inside air holds no valley mist.
+export function cutMist(on: boolean): void {
+  mist.enabled = on;
 }
 
 // Draws one frame through the chain.
