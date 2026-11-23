@@ -48,6 +48,8 @@ const vert = /* glsl */ `
   attribute vec3 tint;
   attribute vec3 look; // x: size in CSS px, y: brightness, z: magnitude
   uniform float uDpr, uMagLim;
+  // x: the size's lift, y: the brightness's lift.
+  uniform vec2 uLift;
   varying vec3 vColor;
   varying float vUp;
   void main() {
@@ -61,7 +63,8 @@ const vert = /* glsl */ `
     // At dusk a star fades in as the limit passes its magnitude.
     // A star at the limit or brighter shows in full.
     vColor *= clamp(1.0 + (uMagLim - look.z) / ${FADE_MAG.toFixed(2)}, 0.0, 1.0);
-    gl_PointSize = look.x * uDpr;
+    vColor *= uLift.y;
+    gl_PointSize = look.x * uDpr * uLift.x;
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
@@ -169,6 +172,10 @@ export function setStarDpr(dpr: number): void { starDpr.value = dpr; }
 export const NIGHT_MAG = 99;
 const magLim = { value: NIGHT_MAG };
 export function setStarLimit(mag: number): void { magLim.value = mag; }
+// The stars' lift: the cuts' mirror shot sets it, so the stars read in the mirror.
+// 1 and 1 draw the stars as they are.
+const liftU = { value: new Vector2(1, 1) };
+export function setStarLift(size: number, gain: number): void { liftU.value.set(size, gain); }
 // The streak's turn in radians, and its gain.
 // Both rest at night.
 const turnU = { value: 0 }, gainU = { value: 1 };
@@ -214,7 +221,7 @@ export const skyReady: Promise<void> = starFile.then((stars) => {
   geo.setAttribute('tint', new BufferAttribute(col, 3));
   geo.setAttribute('look', new BufferAttribute(look, 3));
   // The stars add over the sky's glow.
-  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr, uMagLim: magLim }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
+  const pts = new Points(geo, new ShaderMaterial({ uniforms: { uDpr: starDpr, uMagLim: magLim, uLift: liftU }, vertexShader: vert, fragmentShader: frag, depthWrite: false, blending: AdditiveBlending }));
   pts.matrixAutoUpdate = false;
   pts.frustumCulled = false;
   scene.add(pts);

@@ -8,7 +8,7 @@ import type { Phase } from '../core/machine.ts';
 import type { Star } from '../core/catalog.ts';
 import type { AltAz } from '../core/sky.ts';
 import { azDelta } from '../core/dome.ts';
-import { sky } from '../sky/stars.ts';
+import { setStarLift, sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
 import { CLEAR, TREELINE, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
@@ -256,9 +256,10 @@ const side = new Vector3(), off = new Vector3();
 // The eye keeps off the axis, midway between the housing and the ring.
 // It turns from under the axis to between two vanes before it reaches them.
 // So the secondary crests over the camera and the vanes pass beside it.
-function pushEye(s: Framed, v: View, t: number): void {
+// It returns the push's eased share, 0 to 1.
+function pushEye(s: Framed, v: View, t: number): number {
   const sc = hero.scope;
-  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined) { glassEye(s, v); return; }
+  if (!sc?.restGlass || sc.mirrorR === undefined || sc.secR === undefined || sc.aperture === undefined) { glassEye(s, v); return 0; }
   sc.restGlass(v.restAlt, v.tubeAz, gp, ga, gu);
   const k = ease(Math.min(1, t / MIRROR_PUSH));
   const fov0 = cutOf('mirror').fov;
@@ -272,6 +273,18 @@ function pushEye(s: Framed, v: View, t: number): void {
   s.eye.copy(gp).addScaledVector(ga, d).addScaledVector(off, o);
   s.aim.copy(gp);
   s.focus = s.eye.distanceTo(gp);
+  return k;
+}
+
+// Tom, 2026-11-23: lift the stars in the mirror shot.
+// At full push the stars draw LIFT_SIZE times as large, LIFT_GAIN times as bright.
+const LIFT_SIZE = 2.6, LIFT_GAIN = 2.2;
+let lifted = 0;
+// k: 0 draws the stars as they are, 1 lifts them in full.
+function starLift(k: number): void {
+  if (k === lifted) return;
+  lifted = k;
+  setStarLift(1 + (LIFT_SIZE - 1) * k, 1 + (LIFT_GAIN - 1) * k);
 }
 
 /* ---------- the overlay: letterbox bars and the crossfade still ---------- */
@@ -412,6 +425,7 @@ function feedGlass(show: boolean): void {
 
 function toWide(): void {
   mode = 'off';
+  starLift(0);
   dropBeats();
   cutFocus(null);
   cutGrain(0);
@@ -550,14 +564,16 @@ export const cuts = {
     if (close && heroOn && sc) laser.foot(sc.laserMouth(mouthAt));
     rendered = close ? shot : null;
     if (!close) {
+      starLift(0);
       cutFocus(null);
       cutGrain(0);
       if (inDown) black((inT / DIP_DOWN) ** 2);
       return;
     }
     const s = locks.of(cutOf(shot));
-    if (s.push) pushEye(s, view, mode === 'cuts' ? seq.t : MIRROR_PUSH);
-    else if (s.glass) glassEye(s, view);
+    // Only the mirror shot lifts the stars.
+    starLift(s.push ? pushEye(s, view, mode === 'cuts' ? seq.t : MIRROR_PUSH) : 0);
+    if (!s.push && s.glass) glassEye(s, view);
     // The projection follows the canvas, so a resize never stretches the frame.
     // The film lens fills the band between the bars.
     applyShot(camera.aspect, s.eye, s.aim, renderFov(s.fov, camera.aspect));
