@@ -40,8 +40,10 @@ vec4 bands(vec2 q) {
   float top = mix(0.62, 0.28, belt) + 0.2 * fil + 0.08 * fil2;
   // Belts take jade or teal by turns; filaments shift the hue along them.
   float kind = smoothstep(-0.3, 0.3, sin(zw / 520.0 + 0.3));
-  float hue = mix(0.06, mix(0.36, 0.7, kind), belt) + 0.14 * fil + 0.06 * fil2;
-  float sat = clamp(mix(0.22, 0.85, belt) * (0.75 + 0.35 * fil), 0.0, 1.0);
+  // A slow drift of hue across the disc, so no two regions match.
+  float drift = 0.22 * fbm(q * 0.00035 + 4.0);
+  float hue = mix(0.06 + drift, mix(0.36, 0.7, kind) + drift, belt) + 0.16 * fil + 0.07 * fil2;
+  float sat = clamp(mix(0.5, 0.95, belt) * (0.75 + 0.35 * fil), 0.0, 1.0);
   // White ovals ride one latitude of the belt edge.
   vec2 oc = vec2(mod(q.x, 1300.0) - 650.0, q.y + 1650.0 + 120.0 * gn(vec2(floor(q.x / 1300.0), 1.7)));
   float oval = smoothstep(1.0, 0.55, length(oc / vec2(160.0, 100.0)));
@@ -59,25 +61,34 @@ void main() {
   vec4 b1 = bands(xz - vec2(u * f1 * PH, 0.0));
   vec4 b2 = bands(xz - vec2(u * f2 * PH, 0.0) + vec2(5100.0, 0.0));
   vec4 m = mix(b1, b2, abs(2.0 * f1 - 1.0));
-  // The storm: concentric streaks that turn at their own rate.
+  // The storm: spiral arms on angle and log radius, as in the cloud volume.
+  // The arms trail by a twist; the collar turns fastest; folds bend each filament.
   vec2 e = (xz - ST_C) / ST_AX;
   float q = length(e), a = atan(e.y, e.x);
-  // Slow at the eye, fastest in the collar, still outside.
   float om = 0.0014 * smoothstep(0.0, 0.75, q) * (1.0 - smoothstep(0.85, 1.25, q)) + 0.0002;
-  float ar = a + om * uT + 2.4 * q;
-  vec2 sp = vec2(q * 34.0, 0.0) + vec2(cos(ar), sin(ar)) * 1.6;
-  float st = fbm(sp) + 0.45 * fbm(sp * 2.3 + vec2(cos(ar), sin(ar)) * 2.0);
-  float core = 1.0 - smoothstep(0.55, 0.92, q);
-  float collar = smoothstep(0.7, 0.9, q) * (1.0 - smoothstep(0.98, 1.18, q));
+  float lr = log(max(q, 0.02));
+  float ar = a + om * uT - 2.6 * lr;
+  vec2 cs = vec2(cos(ar), sin(ar));
+  vec2 sp = cs * 1.8 + vec2(lr * 5.0, 0.0);
+  // Folds: a warp of the spiral point, so filaments kink and roll up into small eddies.
+  sp += 0.55 * vec2(fbm(sp * 0.8 + 1.3), fbm(sp * 0.8 + 6.1));
+  float st = fbm(sp * 1.2) + 0.5 * fbm(sp * 3.1 + 2.2);
+  // Arms: two broad bands round the spiral, with dark lanes between them.
+  float arm = 0.5 + 0.5 * sin(2.0 * ar + 1.4 * st);
+  float core = 1.0 - smoothstep(0.5, 0.9, q);
+  float heart = 1.0 - smoothstep(0.0, 0.3, q);
+  float collar = smoothstep(0.72, 0.9, q) * (1.0 - smoothstep(0.98, 1.18, q));
   float inS = 1.0 - smoothstep(0.95, 1.25, q);
   vec4 sm = vec4(0.0);
-  sm.r = clamp(0.78 + 0.18 * st - 0.25 * collar + 0.12 * core, 0.0, 1.0);
-  // A purple core, magenta at its heart, teal filaments, a pale mint collar.
-  float hs = mix(0.84, 1.06, core * smoothstep(-0.2, 0.5, st));
-  hs = mix(hs, 0.66, clamp(-st, 0.0, 1.0) * 0.7);
-  sm.g = mix(hs, 0.08, collar);
-  sm.b = clamp(mix(0.4, 0.78, core) * (1.0 - 0.8 * collar), 0.0, 1.0);
-  sm.a = 0.05;
+  // Tops: a dome, arms high and lanes low, a dimple at the quiet heart.
+  sm.r = clamp(0.62 + 0.3 * arm * (1.0 - collar) + 0.22 * st + 0.18 * core - 0.2 * heart - 0.2 * collar, 0.0, 1.0);
+  // Hue: magenta heart, purple core, teal in the lanes and outer filaments, a mint collar.
+  float hs = mix(0.88, 1.15, heart) + 0.1 * st;
+  hs = mix(hs, 0.62, (1.0 - arm) * 0.55 * (0.4 + 0.6 * core));
+  hs = mix(hs, 0.7, smoothstep(0.55, 0.85, q) * smoothstep(0.1, 0.6, st) * 0.7);
+  sm.g = mix(hs, 0.1, collar);
+  sm.b = clamp(mix(0.5, 0.95, core) * (0.7 + 0.3 * arm) * (1.0 - 0.75 * collar), 0.0, 1.0);
+  sm.a = 0.05 + 0.1 * (1.0 - arm) * core;
   m = mix(m, sm, inS);
   // The wake: a turbulent band west of the storm, full of towers and lightning.
   vec2 wk = (xz - ST_C - vec2(-2300.0, 350.0)) / vec2(1700.0, 600.0);

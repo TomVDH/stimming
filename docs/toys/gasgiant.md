@@ -72,7 +72,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `bolts.js` | Lightning timing |
 | `sound.js` | Web Audio |
 
-Links: `?alt=-14` starts at that height; `?qa` exposes the state as `__gg` and times each shader link.
+Links: `?alt=-14` starts at that height; `?out` shows the outside with no cabin; `?qa` exposes the state as `__gg` and times each shader link.
 
 ## QA
 

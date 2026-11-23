@@ -32,6 +32,9 @@ ${GRADE}
 ${OUTPUT}
 void main() {
   vec3 c = texture(uScene, vUv).rgb;
+  // A mild lift of colour, so the palette holds through the film curve.
+  float lu = dot(c, vec3(0.2126, 0.7152, 0.0722));
+  c = max(mix(vec3(lu), c, 1.3), 0.0);
   c = gdGrade(c * uExp, vUv, uAsp, gl_FragCoord.xy + vec2(uSeed * 37.0, uSeed * 91.0), vec3(0.0005, 0.0004, 0.0006), 0.42, 0.45, 0.035);
   o = vec4(ouFilmAces(c, 1.0, gl_FragCoord.xy), 1.0);
 }`;

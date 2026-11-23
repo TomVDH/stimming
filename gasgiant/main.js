@@ -153,7 +153,7 @@ function basis() {
   // The look: yaw about Y, then pitch about X, in capsule axes.
   // The eye sits left of the window and looks across it, as in Window seat.
   // A narrow stage eases the angle and moves the eye back, so the whole window shows.
-  const wide = smooth(0.6, 1.4, W / H);
+  const wide = QS.has('out') ? 0 : smooth(0.6, 1.4, W / H);
   const ly = (S.yaw + 21 * wide) * DEG, lp = (S.pitch - 3) * DEG;
   const cy = Math.cos(ly), sy = Math.sin(ly), cp = Math.cos(lp), sp = Math.sin(lp);
   const look = [cy, 0, -sy, sy * sp, cp, cy * sp, sy * cp, -sp, cy * cp];
@@ -298,8 +298,9 @@ function render(dt) {
   gl.uniform2f(c.uShake, a * (Math.sin(ph * 37) + 0.5 * Math.sin(ph * 61)), a * (Math.sin(ph * 41 + 1) + 0.5 * Math.sin(ph * 73)));
   tri(gl, T.cabin, vao);
   gl.useProgram(P.fin.p);
-  bind(gl, P.fin, 'uScene', 0, T.cabin);
-  gl.uniform1f(P.fin.u.uExp, 0.55 * clamp(Math.pow(Math.max(S.lum, 1e-6), -0.32), 1, 4.5));
+  // ?out shows the outside alone, for look work.
+  bind(gl, P.fin, 'uScene', 0, QS.has('out') ? T.scene : T.cabin);
+  gl.uniform1f(P.fin.u.uExp, 0.3 * clamp(Math.pow(Math.max(S.lum, 1e-6), -0.32), 1, 4.5));
   gl.uniform1f(P.fin.u.uSeed, frameNo % 97);
   gl.uniform1f(P.fin.u.uAsp, W / H);
   tri(gl, null, vao);

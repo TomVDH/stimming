@@ -98,6 +98,19 @@ Tom: "window seat has an angled view -- let's have some GI inside -- also the cl
 | Washing | Inside a deck, three layers of wisps at 1, 4 and 12 m tear up past the glass at their own speeds. Flashes come three times as often and light the wisps and the cabin. |
 | Flash cap | Still three flash starts a second at most (photosensitive safety). Each flash is soft, never a full-frame white. |
 
+## Look pass: the storm and the outside (Tom, 2026-11-23)
+
+Tom picked "Storm and outside" for the next pass. `?out` shows the outside alone, with no cabin, for this work.
+
+| Part | Change |
+|---|---|
+| Storm | The map's storm lies on angle and log radius, as the volume does: two spiral arms trail by a twist, a warp folds the filaments into small eddies, dark teal lanes run between violet arms, the heart is magenta and dimpled. Tops follow the arms, so the low sun shades the lanes. |
+| Colour | A slow hue drift across the disc; zones carry at least half their colour; the billows vary the hue inside the cloud. |
+| Light | Exposure 0.3 at the top, so the deck sits in the mid-tones; a 1.3 saturation lift before the film curve; thinner haze over the deck. |
+| Shade | Three sun taps to 15 km; less multiple-scatter floor, so billows show a shaded side. Taller billows in the zones and the storm; 17 km convective cells on the tops. |
+| Holes | They open in the low belts; zones and the storm stay closed. |
+| Next | The near deck from 60 km still reads smooth. It needs cloud-top relief at Juno's scale: folded ridges and popcorn cells sharp enough to cast shadows. |
+
 ## 4. Tech
 
 ### Renderer

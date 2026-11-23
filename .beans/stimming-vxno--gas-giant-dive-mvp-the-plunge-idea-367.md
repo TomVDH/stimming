@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-23T09:38:54Z
-updated_at: 2026-11-23T10:30:11Z
+updated_at: 2026-11-23T10:44:20Z
 parent: stimming-oh7b
 ---
 
@@ -35,3 +35,8 @@ MVP: the plunge from 260 km over the cloud deck to 20 bar. Raw WebGL2 on shared/
 - Q6: reduced motion, shake 0. Q7: one action, one slider. Q8: Space dives (9.9 km/s at 6 s).
 - Q9: the context is suspended at the end. Q10: 6.1 ms a frame during the dive (median and p90), before the cabin pass grew.
 - Stills: docs/qa/gasgiant/.
+
+
+## Look pass: storm and outside, 2026-11-23
+
+Spiral storm with arms, lanes and folds; hue drift; exposure 0.3; saturation lift; three sun taps; holes in the belts. Links 1.1 s on D3D11. Next: cloud-top relief at Juno's scale for the near deck.

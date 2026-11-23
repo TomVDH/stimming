@@ -121,13 +121,17 @@ float dens(vec3 p, float lod, float fine) {
     float f = 0.0;
     if (h > 0.0) {
       // The ammonia deck: tops follow the map; billows stand on them; a lumpy ceiling below.
-      float top = 4.0 + 20.0 * m.r + 6.0 * (nb - 0.5) * (1.0 + m.a);
+      // Billows stand taller in the zones and the storm, where the cloud is thick.
+      float top = 4.0 + 20.0 * m.r + (6.0 + 5.0 * m.r) * (nb - 0.5) * (1.0 + m.a);
+      // Convective cells 17 km across heap the tops, as in Juno's close views.
+      top += fine * 5.0 * (n2.b - 0.45) * (0.4 + 0.6 * m.r);
       float base = 2.0 + 3.0 * (nb - 0.5);
       float sh = min(top - h, (h - base) * 0.7);
-      float cov = smoothstep(0.3, 0.5, nc.a + 0.3 * (m.r - 0.5) + 0.08 * (nb - 0.5));
+      // Holes open in the low belts; zones and the storm stay closed.
+      float cov = smoothstep(0.22, 0.42, nc.a + 0.55 * (m.r - 0.45) + 0.08 * (nb - 0.5));
       d = smoothstep(0.0, 1.2 + lod, sh) * (0.45 + 0.55 * n1.b) * cov;
       // Hue drifts a little with the billows, so the colours blend in the cloud.
-      gAlb = mix(vec3(0.9, 0.93, 0.91), pal(m.g + 0.12 * (n1.a - 0.5)), m.b);
+      gAlb = mix(vec3(0.86, 0.9, 0.88), pal(m.g + 0.22 * (n1.a - 0.5) + 0.12 * (n2.a - 0.5)), m.b);
       gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0);
     } else if (h > -24.0) {
       // The upper void: towers stand between the brown floor and the white ceiling.
@@ -158,10 +162,10 @@ float dens(vec3 p, float lod, float fine) {
   }
   return d;
 }
-// Optical depth toward the sun over two growing taps.
+// Optical depth toward the sun over three growing taps.
 float sunOD(vec3 p, float lod) {
-  float od = 0.0, st = 1.4;
-  for (int j = 0; j < 2; j++) {
+  float od = 0.0, st = 1.2;
+  for (int j = 0; j < 3; j++) {
     p += SUN * st;
     od += dens(p, lod + 1.0, 0.0) * st;
     st *= 3.0;
@@ -203,9 +207,9 @@ void main() {
         // Fire's smoke: Beer, multiple scatter, powder, a shadow ambient.
         float tau = SIG * (lod < 2.5 ? sunOD(p, lod) : 0.0);
         float beer = exp(-tau);
-        float lit = beer + 0.5 * exp(-0.25 * tau);
+        float lit = beer + 0.3 * exp(-0.25 * tau);
         float powder = 1.0 - exp(-2.0 * tau - 0.6);
-        lit = mix(lit, lit * powder, 0.35) + 0.04;
+        lit = mix(lit, lit * powder, 0.35) + 0.025;
         float ring = ringShadow(p);
         vec3 sun = L.rgb * L.a * lit * ph * ring * 0.6;
         vec3 diffuse = L.rgb * (1.0 - L.a) * (0.25 + 1.0 * open * open);
@@ -254,7 +258,7 @@ void main() {
     // Haze over the deck seen from above.
     if (!inWin && tHit > 0.0) {
       float hz = 1.0 - exp(-(tHit - t0) / 2600.0);
-      col = mix(col, vec3(0.34, 0.58, 0.6) * 0.7 * al, hz * 0.7);
+      col = mix(col, vec3(0.3, 0.55, 0.6) * 0.6 * al, hz * 0.45);
     }
     res = vec4(col, al);
   }
