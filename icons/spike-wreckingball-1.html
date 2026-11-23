@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Wrecking ball 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Wrecking ball 1</h1>
+<p class="lede">Wrecking ball, round 1. No pick yet; A goes on the menu until Tom picks. A: a pear-shaped steel ball on a chain lead, pulled back beside a short brick wall. D: the wall as an isometric block, the ball beside it. Point at either: the ball swings into the wall and two bricks pop out; leave, and the bricks lay back as the ball swings home.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  // The toy's tokens: fired-clay bricks, pale mortar, dark cast steel, a worn chain.
+  const BRICK = [[0, 'oklch(0.62 0.15 38)'], [1, 'oklch(0.48 0.14 32)']];
+  const BRICK_TOP = [[0, 'oklch(0.72 0.12 45)'], [1, 'oklch(0.6 0.13 40)']];
+  const BRICK_R = [[0, 'oklch(0.42 0.12 32)'], [1, 'oklch(0.34 0.1 30)']];
+  const MORTAR = 'oklch(0.8 0.025 75)';
+  const STEEL = [[0, 'oklch(0.62 0.012 250)'], [0.55, 'oklch(0.38 0.012 250)'], [1, 'oklch(0.22 0.01 250)']];
+  const CHAIN = [[0, 'oklch(0.78 0.01 250)'], [1, 'oklch(0.5 0.012 250)']];
+  const RUST = 'oklch(0.5 0.1 45)';
+
+  // The pear: a round body, a neck that tapers to a flat crown, a lug.
+  // Local frame: the pivot is at the origin, the ball hangs down +y.
+  const pear = (L, R) => {
+    const pts = [];
+    for (let i = 0; i <= 28; i++) {
+      const a = -Math.PI * 0.22 + (i / 28) * Math.PI * 1.44;
+      pts.push([Math.cos(a) * R, L + Math.sin(a) * R]);
+    }
+    // The neck: from the left shoulder up to the crown and down the right.
+    const sh = pts[pts.length - 1], so = pts[0];
+    return 'M' + [...pts, [-R * 0.42, L - R * 1.12], [R * 0.42, L - R * 1.12], so].map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  };
+  // Chain links from the crown up to the pivot: flat ovals, then edge-on bars.
+  const chain = (u, L, R, n, s = 1) => {
+    let out = '';
+    const top = L - R * 1.12 - 5 * s, step = (top + 2) / n;
+    for (let i = 0; i < n; i++) {
+      const y = top - (i + 0.5) * step;
+      out += i % 2
+        ? `<rect x="${f(-2.2 * s)}" y="${f(y - step * 0.62)}" width="${f(4.4 * s)}" height="${f(step * 1.24)}" rx="${f(2.2 * s)}" fill="url(#${u}chain)"/>`
+        : `<rect x="${f(-4.6 * s)}" y="${f(y - step * 0.6)}" width="${f(9.2 * s)}" height="${f(step * 1.2)}" rx="${f(4.6 * s)}" fill="none" stroke="url(#${u}chain)" stroke-width="${f(3 * s)}"/>`;
+    }
+    return out;
+  };
+  const lug = (L, R) => `<path d="${poly([[-3, L - R * 1.12 + 1], [-3, L - R * 1.12 - 7], [3, L - R * 1.12 - 7], [3, L - R * 1.12 + 1]])}" fill="oklch(0.3 0.01 250)"/>`;
+
+  // The shared motion. st.k swings the ball in; st.p pops the two bricks out.
+  // Enter swings in; the hit pops the bricks. Leave lays them back and swings home.
+  const run = draw => {
+    const st = { k: 0, p: 0, live: false, last: 0, hit: false };
+    const step = time => {
+      const dt = Math.min(0.1, time - (st.last || time));
+      st.last = time;
+      if (st.live) {
+        // The ball falls in like a pendulum: slow off the top, fast at the wall.
+        st.k = Math.min(1, st.k + dt * 2.4);
+        if (st.k >= 1) st.hit = true;
+        if (st.hit) st.p = Math.min(1, st.p + dt * 1.9);
+      } else {
+        st.k = Math.max(0, st.k - dt * 1.4);
+        st.p = Math.max(0, st.p - dt * 2.2);
+        if (st.p <= 0) st.hit = false;
+      }
+      draw(st);
+      if (!st.live && st.k <= 0 && st.p <= 0) { st.last = 0; draw(st); loop.stop(); }
+    };
+    const loop = clock(step);
+    draw(st);
+    return {
+      enter() { st.live = true; loop.start(); },
+      move() {},
+      leave() { st.live = false; loop.start(); },
+    };
+  };
+  // Pendulum ease: sin from the top, so the ball speeds up into the wall.
+  const swingE = k => Math.sin(k * Math.PI / 2) ** 1.6;
+  // A brick's pop: up and out on an arc, turning, then down.
+  const popAt = (p, dx, up, down, rot) => {
+    const e = p < 1 ? 1 - (1 - p) ** 2 : 1;
+    return `translate(${f(dx * e)} ${f(-up * 4 * e * (1 - e) + down * e * e)}) rotate(${f(rot * e)})`;
+  };
+
+  // An emblem fills the 128 box: its drawing box scales to 120 on the long side.
+  const fitG = (box, inner) => {
+    const k = 120 / Math.max(box[2], box[3]), tx = 64 - (box[0] + box[2] / 2) * k, ty = 64 - (box[1] + box[3] / 2) * k;
+    return `<g transform="translate(${f(tx)} ${f(ty)}) scale(${f(k)})">${inner}</g>`;
+  };
+
+  /* ================= Current ================= */
+
+  // Wrecking ball is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // A short wall seen face on, with a thin top and a dark end.
+  // The ball hangs from a pivot above the box, pulled back to the left.
+  const PIV = [44, -2], LA = 73, RA = 24, REST = -11, HIT = 1.5;
+  const WX0 = 66, WX1 = 119, WY0 = 52, WY1 = 114, CH = 12.4, DX = 8, DY = -6;
+  // Courses: each a row of bricks; odd rows start with a half brick.
+  const BW = (WX1 - WX0) / 3;
+  const courses = [];
+  for (let c = 0; c < 5; c++) {
+    const y1 = WY1 - c * CH, y0 = y1 - CH, row = [];
+    let x = WX0;
+    const parts = c % 2 ? [BW / 2, BW, BW, BW / 2] : [BW, BW, BW];
+    for (const w of parts) { row.push([x, y0, x + w, y1]); x += w; }
+    courses.push(row);
+  }
+  const J = 1.1;
+  const brickD = ([x0, y0, x1, y1]) => poly([[x0 + J, y0 + J], [x1 - J, y0 + J], [x1 - J, y1 - J], [x0 + J, y1 - J]]);
+  // The two bricks that pop: the top course's first, and the next course's first.
+  const POP = [[4, 0, 30, 16, 26, 80], [3, 1, 22, 10, 38, -60]];
+  const isPop = (c, i) => POP.some(([pc, pi]) => pc === c && pi === i);
+  const wallTop = poly([[WX0, WY0], [WX1, WY0], [WX1 + DX, WY0 + DY], [WX0 + DX, WY0 + DY]]);
+  const wallEnd = poly([[WX1, WY0], [WX1 + DX, WY0 + DY], [WX1 + DX, WY1 + DY], [WX1, WY1]]);
+  const wallFace = poly([[WX0, WY0], [WX1, WY0], [WX1, WY1], [WX0, WY1]]);
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [5, -3, 123, 121],
+    idea: 'A pear-shaped steel ball of dark cast iron on a chain lead, pulled back to the left beside a short wall of four brick courses with pale mortar. Point at it: the ball swings into the wall and two top bricks pop out and tumble. Leave, and the bricks lay back as the ball swings home.',
+    art(svg, u) {
+      const bricks = courses.map((row, c) => row.map((b, i) => isPop(c, i) ? '' : `<path d="${brickD(b)}" fill="url(#${u}brick)"/>`).join('')).join('');
+      const popped = POP.map(([c, i], k) => {
+        const b = courses[c][i], cx = (b[0] + b[2]) / 2, cy = (b[1] + b[3]) / 2;
+        return `<g class="pop${k}" data-cx="${f(cx)}" data-cy="${f(cy)}"><path d="${brickD(b)}" fill="url(#${u}brick)"/><path d="${brickD(b)}" fill="url(#${u}lit)" opacity="0.6"/></g>`;
+      }).join('');
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 3)}
+          ${lg(`${u}brick`, BRICK, 'x1="0" y1="0" x2="0.4" y2="1"')}${lg(`${u}btop`, BRICK_TOP)}${lg(`${u}bend`, BRICK_R)}
+          ${rg(`${u}steel`, STEEL, 'cx="0.36" cy="0.3" r="0.8"')}${lg(`${u}chain`, CHAIN, 'x1="0" y1="0" x2="1" y2="0"')}</defs>
+        <ellipse cx="${f((WX0 + WX1) / 2 + 2)}" cy="${WY1 + 3}" rx="30" ry="5" fill="oklch(0.05 0.01 240)" opacity="0.6" filter="url(#${u}b)"/>
+        <path d="${wallEnd}" fill="url(#${u}bend)"/>
+        <path d="${wallTop}" fill="url(#${u}btop)"/>
+        <path d="${wallFace}" fill="${MORTAR}"/>
+        ${bricks}
+        <path d="${wallFace}" fill="url(#${u}lit)"/>
+        <path d="${wallFace}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+        ${popped}
+        <g class="swing">
+          <ellipse class="bshadow" cx="0" cy="${LA + RA + 6}" rx="16" ry="3.5" fill="oklch(0.05 0.01 240)" opacity="0"/>
+          ${chain(u, LA, RA, 7)}
+          ${lug(LA, RA)}
+          ${body(pear(LA, RA), u, 'steel')}
+          <path d="M${f(-RA * 0.55)} ${f(LA + RA * 0.35)}Q${f(-RA * 0.1)} ${f(LA + RA * 0.85)} ${f(RA * 0.55)} ${f(LA + RA * 0.55)}" fill="none" stroke="${RUST}" stroke-width="2.4" stroke-linecap="round" opacity="0.55"/>
+        </g>`;
+      const sw = svg.querySelector('.swing'), pops = POP.map((_, k) => svg.querySelector(`.pop${k}`));
+      return run(st => {
+        const a = lerp(REST, HIT, swingE(st.k));
+        sw.setAttribute('transform', `translate(${PIV[0]} ${PIV[1]}) rotate(${f(-a)})`);
+        POP.forEach(([, , dx, up, down, rot], k) => {
+          const g = pops[k], cx = +g.dataset.cx, cy = +g.dataset.cy;
+          g.setAttribute('transform', `${popAt(st.p, dx, up, down, 0)} rotate(${f(rot * st.p)} ${cx} ${cy})`);
+        });
+      });
+    },
+    // The emblem: the wall face white with its joints cut, the ball white, a gap between.
+    emblem: (() => {
+      const bricks = courses.map(row => row.map(b => `<path d="${brickD(b)}" fill="#fff"/>`).join('')).join('');
+      const tf = `translate(${PIV[0]} ${PIV[1]}) rotate(${-REST})`;
+      return `${EMB_HEAD}${fitG([5, -3, 123, 121], `<path d="${wallEnd}" fill="#5a5a5a"/><path d="${wallTop}" fill="#8a8a8a"/><path d="${wallFace}" fill="#000"/>${bricks}<g transform="${tf}"><path d="${pear(LA, RA)}" fill="#000" stroke="#000" stroke-width="7" stroke-linejoin="round"/>${chain('e', LA, RA, 7, 1.3).replace(/url\(#echain\)/g, '#fff')}<path d="${poly([[-3, LA - RA * 1.12 + 1], [-3, LA - RA * 1.12 - 7], [3, LA - RA * 1.12 - 7], [3, LA - RA * 1.12 + 1]])}" fill="#fff"/><path d="${pear(LA, RA)}" fill="#fff"/></g>`)}</svg>`;
+    })(),
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The wall is the block: light top, the long brick face mid, the end dark.
+  const CY = 58, GL = 46, GW = 9, GH = 46;
+  const iso = (gx, gy, up = 0) => [70 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5 - up];
+  // The long face looks to the lower left: gy = GW, gx from -GL to GL.
+  const DCH = GH / 4, DBW = 23;
+  const faceBrick = (gx0, gx1, h0, h1) => {
+    const jx = 1.3, jh = 1.1;
+    return poly([iso(gx0 + jx, GW, h0 + jh), iso(gx1 - jx, GW, h0 + jh), iso(gx1 - jx, GW, h1 - jh), iso(gx0 + jx, GW, h1 - jh)]);
+  };
+  const dCourses = [];
+  for (let c = 0; c < 4; c++) {
+    const h0 = c * DCH, h1 = h0 + DCH, row = [];
+    let x = -GL;
+    const parts = c % 2 ? [DBW / 2, DBW, DBW, DBW, DBW / 2] : [DBW, DBW, DBW, DBW];
+    for (const w of parts) { row.push([x, x + w, h0, h1]); x += w; }
+    dCourses.push(row);
+  }
+  const DPOP = [[3, 1, 16, 12, 22, 60], [2, 1, 10, 7, 34, -50]];
+  const dIsPop = (c, i) => DPOP.some(([pc, pi]) => pc === c && pi === i);
+  const DPIV = [36, -8], DLA = 74, DRA = 21, DREST = -9, DHIT = 8;
+  const dTop = poly([iso(-GL, -GW, GH), iso(GL, -GW, GH), iso(GL, GW, GH), iso(-GL, GW, GH)]);
+  const dFace = poly([iso(-GL, GW, GH), iso(GL, GW, GH), iso(GL, GW, 0), iso(-GL, GW, 0)]);
+  const dEnd = poly([iso(GL, GW, GH), iso(GL, -GW, GH), iso(GL, -GW, 0), iso(GL, GW, 0)]);
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [2, 6, 124, 106],
+    idea: 'The wall as an isometric block of brick: a light top, the long brick face mid with pale joints, the end dark, a rim on the top edges. The ball hangs on its chain off the face\'s left end. Point at it: the ball swings in and two bricks pop out; leave, and they lay back.',
+    art(svg, u) {
+      const bricks = dCourses.map((row, c) => row.map(([a, b, h0, h1], i) => dIsPop(c, i) ? '' : `<path d="${faceBrick(a, b, h0, h1)}" fill="url(#${u}brick)"/>`).join('')).join('');
+      const popped = DPOP.map(([c, i], k) => {
+        const [a, b, h0, h1] = dCourses[c][i], m = iso((a + b) / 2, GW, (h0 + h1) / 2);
+        return `<g class="pop${k}" data-cx="${f(m[0])}" data-cy="${f(m[1])}"><path d="${faceBrick(a, b, h0, h1)}" fill="url(#${u}brick)"/><path d="${faceBrick(a, b, h0, h1)}" fill="url(#${u}lit)" opacity="0.6"/></g>`;
+      }).join('');
+      const S = iso(GL, GW, 0), W = iso(-GL, GW, 0), E = iso(GL, -GW, 0);
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 3)}
+          ${lg(`${u}brick`, BRICK, 'x1="0" y1="0" x2="0.4" y2="1"')}${lg(`${u}top`, BRICK_TOP)}${lg(`${u}end`, BRICK_R)}
+          ${rg(`${u}steel`, STEEL, 'cx="0.36" cy="0.3" r="0.8"')}${lg(`${u}chain`, CHAIN, 'x1="0" y1="0" x2="1" y2="0"')}</defs>
+        <path d="${poly([W, S, E, [E[0], E[1] + 6], [S[0], S[1] + 6], [W[0], W[1] + 6]])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)"/>
+        <path d="${dEnd}" fill="url(#${u}end)"/>
+        <path d="${dFace}" fill="${MORTAR}"/>
+        ${bricks}
+        <path d="${dFace}" fill="url(#${u}lit)"/>
+        <path d="${dTop}" fill="url(#${u}top)"/>
+        <path d="${dTop}" fill="url(#${u}lit)"/>
+        <path d="M${poly([iso(-GL, GW, GH), iso(-GL, -GW, GH), iso(GL, -GW, GH)]).slice(1, -1)}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${poly([iso(-GL, GW, GH), iso(GL, GW, GH), iso(GL, -GW, GH)]).slice(1, -1)}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        ${popped}
+        <g class="swing">
+          ${chain(u, DLA, DRA, 7, 0.92)}
+          ${lug(DLA, DRA)}
+          ${body(pear(DLA, DRA), u, 'steel')}
+          <path d="M${f(-DRA * 0.55)} ${f(DLA + DRA * 0.35)}Q${f(-DRA * 0.1)} ${f(DLA + DRA * 0.85)} ${f(DRA * 0.55)} ${f(DLA + DRA * 0.55)}" fill="none" stroke="${RUST}" stroke-width="2.4" stroke-linecap="round" opacity="0.55"/>
+        </g>`;
+      const sw = svg.querySelector('.swing'), pops = DPOP.map((_, k) => svg.querySelector(`.pop${k}`));
+      return run(st => {
+        const a = lerp(DREST, DHIT, swingE(st.k));
+        sw.setAttribute('transform', `translate(${DPIV[0]} ${DPIV[1]}) rotate(${f(-a)})`);
+        DPOP.forEach(([, , dx, up, down, rot], k) => {
+          const g = pops[k], cx = +g.dataset.cx, cy = +g.dataset.cy;
+          g.setAttribute('transform', `${popAt(st.p, -dx * 0.5, up, down, 0)} translate(${f(-dx * 0.6 * (1 - (1 - st.p) ** 2))} ${f(dx * 0.35 * (1 - (1 - st.p) ** 2))}) rotate(${f(rot * st.p)} ${cx} ${cy})`);
+        });
+      });
+    },
+    emblem: (() => {
+      const bricks = dCourses.map(row => row.map(([a, b, h0, h1]) => `<path d="${faceBrick(a, b, h0, h1)}" fill="#fff"/>`).join('')).join('');
+      const tf = `translate(${DPIV[0]} ${DPIV[1]}) rotate(${-DREST})`;
+      return `${EMB_HEAD}${fitG([2, 6, 124, 106], `<path d="${dEnd}" fill="#5a5a5a"/><path d="${dFace}" fill="#000"/>${bricks}<path d="${dTop}" fill="#8a8a8a"/><g transform="${tf}"><path d="${pear(DLA, DRA)}" fill="#000" stroke="#000" stroke-width="7" stroke-linejoin="round"/>${chain('e', DLA, DRA, 7, 1.2).replace(/url\(#echain\)/g, '#fff')}<path d="${pear(DLA, DRA)}" fill="#fff"/></g>`)}</svg>`;
+    })(),
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Wrecking ball';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-wreckingball';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `wreckingball-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems, and the A tile for the menu, for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    const A = DIRS.find(d => d.l === 'A'), svg = el('svg', { viewBox: '0 0 128 128', class: 'art', 'aria-hidden': 'true' });
+    A.art(svg, 'wreckingball-');
+    fitIcon(svg, A.box);
+    pre.textContent = JSON.stringify({ emblems: window.EMBLEMS, menu: svg.outerHTML });
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

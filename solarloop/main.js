@@ -1,0 +1,328 @@
+// Solar loop: the sun's edge in extreme-ultraviolet light.
+// Loops rise, brighten and drain; a tap flares a region; a drag turns the sun.
+// Plan: docs/plans/solarloop.md. Toy doc: docs/toys/solarloop.md.
+import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { onContextLoss } from '../shared/gl.js';
+import { detail } from '../shared/detail.js';
+import { R, BANDS, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE } from './sun.js';
+import { makeRender } from './render.js';
+import { makeSound } from './sound.js';
+mark('libs');
+
+const ID = 'solarloop';
+const stage = document.getElementById('stage');
+const fail = stage.querySelector('.fail');
+const store = {
+  get(k) { try { return localStorage.getItem(`stimming.${ID}.${k}`); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(`stimming.${ID}.${k}`, String(v)); } catch { /* private mode */ } },
+};
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+
+/* ---------- state ---------- */
+const savedBand = store.get('band');
+const savedAct = Number(store.get('activity'));
+const st = {
+  band: BANDS[savedBand] ? savedBand : 'gold',
+  activity: savedAct >= 0 && savedAct <= 100 && store.get('activity') !== null ? savedAct : 60,
+  // The ambient clock: it runs while the toy drifts and stops asleep.
+  time: 34,
+  pitch: 0, yaw: 0,
+  next: 0,
+};
+const sun = makeSun();
+
+let gl = null, ren = null, raf = 0, timer = 0, visible = true, last = 0, frameNo = 0, calm = reduced();
+let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
+
+/* ---------- the view: a telescope, so an orthographic projection ---------- */
+const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1 };
+function fitView(w, h, top = 0, bottom = 0) {
+  const asp = w / h;
+  const narrow = asp < 0.8;
+  view.hw = narrow ? 112 : asp < 1.2 ? 165 : 215;
+  view.hh = view.hw / asp;
+  const free = Math.max(0.4 * h, h - top - bottom);
+  const m = 2 * view.hh / h;
+  // The limb stands a third of the way up the free part of the stage.
+  const yb = bottom + (narrow ? 0.34 : 0.3) * free;
+  view.cx = 0;
+  view.cy = R + view.hh - yb * m;
+}
+// Rotation, sun frame to view frame: a pitch about x after a yaw about y.
+let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+function setRot() {
+  const cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), cy = Math.cos(st.yaw), sy = Math.sin(st.yaw);
+  const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
+  const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
+  M = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
+}
+setRot();
+const toView = p => [0, 1, 2].map(r => M[r][0] * p[0] + M[r][1] * p[1] + M[r][2] * p[2]);
+// A view point to stage CSS pixels, y down.
+const toCss = v => [((v[0] - view.cx) / view.hw * 0.5 + 0.5) * cssW, (0.5 - (v[1] - view.cy) / view.hh * 0.5) * cssH];
+// The sun hides a point behind it.
+const hidden = v => Math.hypot(v[0], v[1]) < R && v[2] < 0;
+// The point a region shows: its centre on the near side, its loop tops behind the limb.
+function regionPoint(rg) {
+  const c = toView(rg.c.map(x => x * R));
+  if (!hidden(c)) return { v: c, front: true };
+  return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
+}
+
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, flare: i => flareAt(sun.regions[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+
+/* ---------- bar ---------- */
+const ui = initPage({ id: ID, bar: {
+  choice: {
+    label: 'Band',
+    value: st.band,
+    options: [
+      { value: 'gold', label: 'Gold', dot: 'oklch(0.8 0.15 80)', key: '1' },
+      { value: 'teal', label: 'Teal', dot: 'oklch(0.78 0.12 195)', key: '2' },
+      { value: 'red', label: 'Red', dot: 'oklch(0.66 0.2 35)', key: '3' },
+    ],
+    onPick: v => { if (!BANDS[v]) return; st.band = v; store.set('band', v); poke(); },
+  },
+  actions: [
+    { verb: 'flare', key: 'Space', onPress: () => flareNext() },
+  ],
+  slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
+  quality: true,
+  keys: [['click', 'flare'], ['drag', 'turn']],
+  help: [
+    ['click', 'Tap a region to flare it'],
+    ['drag', 'Drag to turn the sun'],
+  ],
+} });
+const introDone = playIntro({ ready: pageReady() });
+const kit = audioKit({ keys: new Set([' ']), sleepMs: 3000 });
+const snd = makeSound(kit);
+
+/* ---------- GL ---------- */
+const canvas = document.createElement('canvas');
+canvas.setAttribute('aria-hidden', 'true');
+stage.prepend(canvas);
+const D = detail({ maxDpr: 2, budget: 2.6e6, steps: 2, settle: 2, onChange: () => resize(true) });
+
+let sizeKey = '';
+function resize(force = false) {
+  if (!gl || !ren) return;
+  const r = stage.getBoundingClientRect();
+  cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
+  const dpr = D.dpr(cssW, cssH);
+  const c = ui.cover?.() || { top: 0, bottom: 0 };
+  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung].map(v => Math.round(v * 100)).join();
+  if (!force && key === sizeKey) return;
+  sizeKey = key;
+  view.W = Math.round(cssW * dpr); view.H = Math.round(cssH * dpr);
+  ren.resize(view.W, view.H);
+  fitView(cssW, cssH, c.top || 0, c.bottom || 0);
+  draw();
+}
+
+/* ---------- acts ---------- */
+function flareAt(rg) {
+  if (!rg) return;
+  const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
+  const p = regionPoint(rg);
+  snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.band, fl.k);
+  fl.snapped = 0;
+  poke();
+}
+// Space flares each region in turn, the ones in view first.
+const ORDER = [0, 1, 3, 2, 4];
+function flareNext() {
+  for (let i = 0; i < ORDER.length; i++) {
+    const rg = sun.regions[ORDER[(st.next + i) % ORDER.length]];
+    if (sun.flares.some(f => f.rg === rg && f.t < 12)) continue;
+    st.next = (st.next + i + 1) % ORDER.length;
+    flareAt(rg);
+    return;
+  }
+}
+function flareNear(x, y) {
+  let best = null, bd = Infinity;
+  for (const rg of sun.regions) {
+    const [px, py] = toCss(regionPoint(rg).v);
+    const d = Math.hypot(px - x, py - y);
+    if (d < bd) { bd = d; best = rg; }
+  }
+  flareAt(best);
+}
+
+/* ---------- frame state for the renderer ---------- */
+const frameState = {
+  view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
+  regs: new Float32Array(20), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
+  sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
+};
+function makeFrame() {
+  const f = frameState;
+  f.view.set([view.cx, view.cy, view.hw, view.hh]);
+  // Column-major: the rot columns are M's columns; toSun is M transposed.
+  f.rot.set([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]);
+  f.toSun.set([M[0][0], M[0][1], M[0][2], M[1][0], M[1][1], M[1][2], M[2][0], M[2][1], M[2][2]]);
+  const act = st.activity / 100;
+  sun.regions.forEach((rg, k) => {
+    const fl = sun.flares.find(q => q.rg === rg);
+    const boost = fl ? 1 + 1.2 * Math.exp(-fl.t / 6) : 1;
+    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost], k * 4);
+  });
+  f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
+  sun.flares.forEach((fl, k) => {
+    const fv = flareView(fl, st.band);
+    f.fl.set([...toView(fv.c), 0], k * 4);
+    f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
+    f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
+    // The saturated core shows where the kernel is in view; behind the limb, the arcade top shines.
+    let v = toView(fv.c.map(x => x * (R + fv.kernel[0])));
+    let S = fv.kernel[1];
+    if (hidden(v)) { v = toView(fv.c.map(x => x * (R + fl.rg.span[1] * 0.8))); S *= hidden(v) ? 0 : 0.45; }
+    const sx = ((v[0] - view.cx) / view.hw * 0.5 + 0.5) * view.W;
+    const sy = ((v[1] - view.cy) / view.hh * 0.5 + 0.5) * view.H;
+    f.sat.set([sx, sy, calm ? S * 0.6 : S, 0], k * 4);
+  });
+  f.time = st.time;
+  f.band = BANDS[st.band];
+  f.count = strands(sun, st.time, { band: st.band, activity: act }, ren.data);
+  f.data = ren.data;
+  f.bloomLevels = D.rung >= 2 ? 3 : 5;
+  f.frameNo = calm ? 0 : frameNo;
+  f.sc = Math.max(1, view.H / 900);
+  return f;
+}
+function draw() {
+  if (!ren) return;
+  ren.frame(makeFrame());
+}
+
+/* ---------- frame loop ---------- */
+// Lively while a flare runs or a drag turns the sun; drifting at 30 fps; asleep after 60 s.
+function frame(now) {
+  raf = 0;
+  if (!visible || !gl || !started) return;
+  const t0 = performance.now();
+  const dt = Math.max(0, Math.min(1 / 15, (now - last) / 1000));
+  last = Math.max(last, now);
+  let again = true, lively = true;
+  try {
+    const idleFor = (t0 - lastInput) / 1000;
+    drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
+    st.time += dt * drifting;
+    stepFlares(sun, dt * (calm ? 0.8 : 1));
+    for (const fl of sun.flares) cueArcade(fl);
+    draw();
+    D.frame(dt);
+    frameNo++;
+    lively = sun.flares.length > 0 || pointer.drag;
+    again = lively || drifting > 0;
+  } finally {
+    // A thrown error still leaves the loop able to wake.
+    if (again) schedule(lively ? 0 : t0 + 33 - performance.now()); else rest();
+  }
+}
+// Each arcade loop that snaps in plays its note once.
+function cueArcade(fl) {
+  while (fl.snapped < ARCADE && fl.t >= flareCurve.born(fl.snapped)) {
+    const p = regionPoint(fl.rg);
+    snd.snap(fl.snapped, clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.band);
+    fl.snapped++;
+  }
+}
+function rest() {
+  snd.quiet();
+  kit.rest(() => !raf && !timer && !snd.busy);
+}
+// One frame at most is ever pending, so loops never stack.
+function schedule(delay = 0) {
+  if (raf || timer || !visible || !gl || !started) return;
+  if (delay > 4) timer = setTimeout(() => { timer = 0; schedule(); }, delay - 2);
+  else raf = requestAnimationFrame(frame);
+}
+function poke() {
+  lastInput = performance.now();
+  if (!raf && !timer) last = performance.now();
+  if (timer) { clearTimeout(timer); timer = 0; }
+  if (!started) { draw(); return; }
+  schedule();
+}
+function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; }
+
+/* ---------- pointer: tap flares, drag turns ---------- */
+// A press becomes a drag after 8 px; otherwise a tap.
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0 };
+const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+stage.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
+  try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
+  const [x, y] = local(e);
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  poke();
+});
+stage.addEventListener('pointermove', e => {
+  if (e.pointerId !== pointer.id) return;
+  const [x, y] = local(e);
+  const now = performance.now();
+  const speed = Math.hypot(x - pointer.x, y - pointer.y) / Math.max(1, now - pointer.at) * 1000;
+  pointer.x = x; pointer.y = y; pointer.at = now;
+  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) pointer.drag = true;
+  if (!pointer.drag) return;
+  snd.turn(speed);
+  // The surface follows the hand, like a ball rolled under it.
+  const k = 0.75 / Math.max(320, cssH);
+  st.pitch = clamp(pointer.p0 + (y - pointer.y0) * k, -0.32, 0.32);
+  st.yaw = clamp(pointer.w0 + (x - pointer.x0) * k, -0.32, 0.32);
+  setRot();
+  poke();
+});
+function endPointer(e) {
+  if (e.pointerId !== pointer.id) return;
+  const tap = e.type === 'pointerup' && !pointer.drag;
+  if (pointer.drag) snd.endTurn();
+  pointer.id = null; pointer.drag = false;
+  if (tap) flareNear(pointer.x, pointer.y);
+  poke();
+}
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, endPointer));
+
+/* ---------- life cycle ---------- */
+whenVisible(stage, on => {
+  visible = on;
+  if (on) { last = performance.now(); schedule(); }
+  else { halt(); pointer.id = null; pointer.drag = false; snd.quiet(); }
+});
+onReducedChange(on => { calm = on; poke(); });
+sound.onChange(on => { if (on) poke(); else snd.quiet(); });
+new ResizeObserver(() => resize()).observe(stage);
+ui.onCover?.(() => resize());
+
+async function setup() {
+  gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('no webgl2');
+  ren = await makeRender(gl);
+  sizeKey = '';
+}
+onContextLoss(canvas, {
+  lost: () => { halt(); gl = null; ren = null; },
+  restored: async () => { await setup(); resize(true); poke(); },
+  failed: () => fail.removeAttribute('hidden'),
+});
+
+mark('build');
+try {
+  await setup();
+  // The first frame is a picture: loops at every stage of their lives.
+  resize(true);
+  draw();
+  gl.finish();
+  canvas.classList.add('on');
+  mark('first-frame');
+  await introDone;
+  started = true;
+  poke();
+} catch (err) {
+  console.error(err);
+  fail.removeAttribute('hidden');
+  ui.hideControls?.();
+}

@@ -2,6 +2,7 @@
 import '../sky/impacts.ts';
 import * as THREE from 'three';
 import { reduced } from '../../../shared/stim.js';
+import { CLOUDS, clShaftGate } from '../../../shared/clouds.js';
 import { state, type ShaftCloud } from '../state.ts';
 import { rad } from '../setup.ts';
 import { U } from '../world/uniforms.ts';
@@ -36,12 +37,9 @@ uniform float uOccV[${SHAFT_N}];
 uniform int uOccN;
 uniform vec4 uTr[${SHAFT_TR}];
 uniform int uTrN;
+${CLOUDS}
 // The ray's length inside the dust layer, from t0 to t1.
-// The layer is even from the ground to uShaft.y.
-float shM(vec3 ro, vec3 rd, float t0, float t1) {
-  if (rd.y > 1e-5) t1 = min(t1, (uShaft.y - ro.y) / rd.y);
-  return max(t1 - t0, 0.0);
-}
+float shM(vec3 ro, vec3 rd, float t0, float t1) { return clVeil(ro, rd, t0, t1, uShaft.y); }
 // Clip the span iv to the part where a + b t is below zero.
 vec2 shSide(vec2 iv, float a, float b) {
   if (abs(b) < 1e-6) return a < 0.0 ? iv : vec2(1.0, 0.0);
@@ -129,20 +127,10 @@ vec2 shafts(vec3 ro, vec3 rd, float L) {
   }
   return vec2(1.0 - min(dark / max(all_, 1.0), 1.0), all_);
 }
-// Shadow bands dim the sky; lit dust adds a sunward glow.
+// The shared look: shadow bands and a sunward glow.
 vec3 shaftSky(vec3 c, vec3 rd, float L) {
   if (uShaft.x < 0.001) return c;
-  vec2 sh = shafts(cameraPosition, rd, L);
-  float cs = dot(rd, uSunD), g = 0.62;
-  float ph = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * cs, 1.5) * 0.08 + 0.05;
-  // The bands stay off the horizon.
-  // The heaps' low shadows pile up there.
-  float dk = 1.1 * (1.0 - sh.x) * smoothstep(0.015, 0.07, rd.y);
-  // A long path through lit dust stops adding light.
-  float lit = 1.0 - exp(-sh.y * sh.x / 40000.0);
-  // Shade loses the warm sunlight first: it turns cool, then dim.
-  float k = min(dk * uShaft.x, 0.85);
-  return mix(c, c * vec3(0.5, 0.58, 0.74), k) + uGlowC * ph * lit * 0.4 * uShaft.x;
+  return clShaftLook(c, rd, shafts(cameraPosition, rd, L), uSunD, uGlowC, uShaft.x);
 }`;
 // Each cloud's world centre, as the cloud vertex shader drifts it.
 export const hs1 = (n: number) => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
@@ -153,8 +141,7 @@ state.shaftOcc = null;
 const shaftV = new THREE.Vector3();
 export function updateShafts() {
   const up = U.uSunD.value.y, u = SHAFT_U;
-  // The rays need a low sun: dawn and late day only.
-  const k = state.shaftGain * sstep(up, -0.06, 0.0) * (1 - sstep(up, 0.3, 0.55)) * (1 - U.uStars.value);
+  const k = state.shaftGain * clShaftGate(up, U.uStars.value);
   u.uShaft.value.x = reduced() ? 0.6 * k : k;
   // The clouds take the shade at any sun height; not by night.
   u.uCShade.value = 1 - U.uStars.value;

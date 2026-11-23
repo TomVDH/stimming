@@ -19,3 +19,11 @@ Questions for the toy's chat:
 - Is the cause the D3D shader compiler on the shared surface shader (loop unrolling)?
 
 Probe: probe5.mjs in the session scratchpad; the harness is subway-qa.mjs in the session notes folder.
+
+## Cause found (2026-11-23, stimming-os3c)
+
+The D3D compiler (fxc) tries to unroll the fixed-count loops in Subway's shaders and fails (error X3511). ANGLE then compiles twice more: with skip validation, then with skip optimization. The program info log shows all three attempts.
+
+Fix in Subway: each loop count adds a uniform zero (`DYN(n)`), so fxc keeps the loops. First frame with the pane on screen: 4.1 s; the committed page had a blank stage after 61 s. An isolated link took 0.8 s for the cabin shader.
+
+Not checked: Train ride. Its chat can test the same fix.

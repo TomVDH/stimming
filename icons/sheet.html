@@ -56,6 +56,18 @@ h3 { margin: 40px 0 0; padding-bottom: 10px; color: var(--muted); font-size: 11p
 h3 span { color: var(--faint); }
 .row { padding: 12px 0; border-top: 1px solid var(--line); }
 .row h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; }
+.row h2 small { display: block; margin-top: 2px; color: var(--faint); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; }
+/* An earlier round sits under its toy, quieter, with no Current tile. */
+.row.old { padding-top: 0; border-top: 0; }
+.row.old h2 small { margin: 0; text-align: right; }
+.row .none { width: var(--tile); }
+/* All rounds: every icon of every round, wrapped in a wide third column. */
+.all .wrap { max-width: 1180px; }
+.all .cols, .all .row { grid-template-columns: minmax(0, 160px) var(--tile) minmax(0, 1fr); }
+.all .alts { grid-template-columns: minmax(0, 1fr); }
+.all .alts .slot { grid-column: 1; }
+.all .cols .two { display: block; }
+.all .alts iframe { height: calc(var(--tile) + 24px); }
 .cell { position: relative; display: grid; gap: 6px; width: var(--tile); border-radius: 14px; cursor: pointer; }
 .tile, .logo, .slot { width: var(--tile); aspect-ratio: 1; border-radius: 14px; }
 /* The Current column sits on its own panel. */
@@ -101,6 +113,10 @@ h3 span { color: var(--faint); }
         <button id="v-trans" type="button" aria-pressed="false">Intro logo</button>
         <button id="v-both" type="button" aria-pressed="false">Both</button>
       </div>
+      <div class="seg" role="group" aria-label="Rounds">
+        <button id="r-all" type="button" aria-pressed="true">All rounds</button>
+        <button id="r-latest" type="button" aria-pressed="false">Latest A and D</button>
+      </div>
       <div class="marks"><span id="count"></span><button class="chip" id="copy" type="button" hidden>Copy marks</button><button class="chip" id="clear" type="button" hidden>Clear</button></div>
     </div>
     <div class="cols"><span>Toy</span><span>Current</span><span class="two"><span>Shaded object</span><span>Isometric block<em>The alt style</em></span></span></div>
@@ -112,17 +128,94 @@ h3 span { color: var(--faint); }
 // The gallery that holds each toy's two alt styles.
 // In every gallery, A is the Shaded object and D is the Isometric block.
 const GALLERY = {
-  chladni: 1, walker: 1, fire: 1, rain: 2, tvtree: 2, balloons: 2, morpher: 3, pop: 3, neon: 4, glass: 4,
-  fidget: 5, pendulum: 5, ferro: 6, pool: 6, kaleido: 7, soap: 7, prism: 8, domino: 8, magnet: 9, putty: 9,
-  pins: 10, scope: 10, galaxy: 11, bubbles: 12, trails: 13, oilslick: 'oilslick-1', foil: 15, fireworks: 17, sonar: 18,
+  chladni: 1, walker: 1, fire: 1, rain: 2, tvtree: 2, balloons: 2, morpher: [3, 'morpher-1'], pop: [3, 'pop-1'], neon: 4, glass: 4,
+  fidget: 5, pendulum: 5, ferro: [6, 'ferro-1'], pool: 6, kaleido: [7, 'kaleido-1'], soap: 7, prism: 8, domino: [8, 'domino-1'], magnet: 9, putty: 9,
+  pins: [10, 'pins-1'], scope: 10, galaxy: [11, 'galaxy-1'], bubbles: 12, trails: 13, oilslick: 'oilslick-1', foil: 15, fireworks: 17, sonar: 18,
   windmap: 19, window: 20, vortex: 24, launch: 31, dijkstra: 'dijkstra-1', spark: 'spark-16', washline: 'washline-1', cauldron: 'cauldron-1',
   meshball: 'meshball-1', washer: 'washer-2', ladder: 'ladder-1', windtunnel: 'windtunnel-1', schlieren: 'schlieren-1',
   lichtenberg: 'lichtenberg-2', steelwool: 'steelwool-1', lanterns: 'lanterns-1', tornado: 'tornado-3', drone: 'drone-1',
   terrarium: 'terrarium-1', wires: 'wires-1', subway: 'subway-1', bowl: 'bowl-1', marble: 'marble-1', plasma: 'plasma-1', snow: 'snow-1', postcard: 'postcard-2', rupert: 'rupert-2',
-  windfarm: 'windfarm-1', harmono: 'harmono-1', carwash: 'carwash-2',
+  windfarm: 'windfarm-1', harmono: 'harmono-1', carwash: 'carwash-2', rainstick: 'rainstick-1',
+  calmjar: 'calmjar-1',
+  deepvent: 'vent-1',
+  spillway: 'spillway-1',
+  aquarium: 'aquarium-1',
+  chemgarden: 'chemgarden-1',
+  moire: 'moire-1',
+  waterwheel: 'waterwheel-1',
+  volcano: 'volcano-1',
+  shiplaunch: 'shiplaunch-1',
+  spectrogram: 'spectrogram-1',
+  bz: 'bz-1',
+  jethover: 'jethover-1',
+  peapod: 'peapod-1',
+  calving: 'calving-1',
+  doubleslit: 'doubleslit-1',
+  aurora: 'aurora-1',
+  hookloop: 'hookloop-1',
+  geoboard: 'geoboard-1',
+  wavemachine: 'wavemachine-1',
+  epicycles: 'epicycles-1',
+  piwalk: 'piwalk-1',
+  traffic: 'traffic-1',
+  contour: 'contour-1',
+  sorting: 'sorting-1',
+  jellyfish: 'jellyfish-1',
+  wheat: 'wheat-1',
+  leafshadows: 'leafshadows-1',
+  desirepaths: 'desirepaths-1',
+  supercon: 'supercon-1',
+  lavacoast: 'lavacoast-1',
+  gasgiant: 'gasgiant-1',
+  hurricane: 'hurricane-1',
+  steelworks: 'steelworks-1',
+  lava: ['lava-1', 'lava-2'],
+  eyes: 'eyes-1',
+  shadyos: 'shadyos-1',
+  chamber: 'chamber-1',
+  ink: 'ink-1',
+  frietkot: 'frietkot-5',
+  railgun: ['railgun-1', 'railgun-2', 'railgun-3'],
+  trainride: 'trainride-3',
+  motorway: ['motorway-1', 'motorway-2'],
+  kintsugi: 'kintsugi-1',
+  crossing: 'crossing-1',
+  observatory: ['observatory-1', 'observatory-3'],
+  nvg: 'nvg-1',
+  tide: 'tide-1',
+  tablecloth: 'tablecloth-1',
+  eclipse: 'eclipse-1',
+  cloudbottle: 'cloudbottle-1',
+  wreckingball: 'wreckingball-1',
+  opal: 'opal-1',
+  pickle: 'pickle-1',
+  chromatography: 'chromatography-1',
+  stirbar: 'stirbar-1',
+  forge: 'forge-1',
+  milkcrown: 'milkcrown-1',
+  whiteout: 'whiteout-1',
+  glowworm: 'glowworm-1',
+  eventhorizon: 'eventhorizon-1',
+  dichroic: 'dichroic-1',
+  rosewindow: 'rosewindow-1',
+  solarloop: 'solarloop-1',
 };
-// A gallery that lacks one of the two letters.
-const LACKS = { launch: ['a'], wires: ['d'] };
+// A toy with more rounds lists them oldest first; the newest leads its row.
+// Earlier rounds stay on the sheet under it, for comparison.
+const ALL = !new URLSearchParams(location.search).has('latest');
+// rounds.json keeps every gallery a toy ever had; the All view shows each one.
+const archive = await fetch('rounds.json').then(r => r.json()).then(j => j.rounds || {}).catch(() => ({}));
+const voted = id => [].concat(GALLERY[id] ?? []).map(String);
+const rounds = id => {
+  if (!ALL) return voted(id);
+  const v = voted(id), all = [...(archive[id] || []).map(String)];
+  for (const r of v) if (!all.includes(r)) all.push(r);
+  // The newest voted round always leads.
+  if (v.length) { all.splice(all.indexOf(v.at(-1)), 1); all.push(v.at(-1)); }
+  return all;
+};
+// A gallery that lacks one of the two letters, by round.
+const LACKS = { 31: ['a'], 'wires-1': ['d'] };
 const COLS = [['a', 'Shaded object'], ['d', 'Isometric block']];
 const KEY = 'stimming.icons.marks';
 
@@ -150,9 +243,34 @@ section > .row, section > .dirs { display: contents !important; }
   color: oklch(0.42 0.02 275); font: 500 10px/1.35 Gabarito, system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; }
 .dir.marked .t128, .dir.marked .s128, .dir.marked .glass, .dir.slot.marked { outline: 2px solid oklch(0.85 0.14 85) !important; outline-offset: -2px; border-radius: 14px; }
 `;
+// The All view lifts every card's 128 tile into one wrapping grid, each with its name under it.
+const ALL_CSS = `
+html, body { background: transparent !important; }
+body { margin: 0 !important; padding: 0 !important; overflow: hidden; }
+body > :not(#every) { display: none !important; }
+#every { display: grid; grid-template-columns: repeat(auto-fill, var(--tile)); gap: 10px var(--gap); align-items: start; }
+.pick2 { position: relative; display: grid; gap: 4px; width: var(--tile); cursor: pointer; }
+.pick2 > .t128, .pick2 > .t128 svg, .pick2 > .s128, .pick2 > .s128 svg { display: block !important; width: var(--tile) !important; height: var(--tile) !important; outline: none !important; border-radius: 14px; }
+.pick2 > p { margin: 0; overflow: hidden; color: oklch(0.6 0.02 275); font: 500 10px/1.3 Gabarito, system-ui, sans-serif; letter-spacing: 0.04em; white-space: nowrap; text-overflow: ellipsis; }
+.pick2 > p b { color: oklch(0.95 0.008 275); font-weight: 700; }
+.pick2 .emb, .pick2 .embs { display: none !important; }
+.pick2 .glass { position: relative; display: grid; place-items: center; width: var(--tile) !important; height: var(--tile) !important; border-radius: 14px; background: oklch(0.12 0.01 275) !important; overflow: hidden; }
+.pick2 .glass::before, .pick2 .glass::after { display: none !important; }
+.pick2 .glass i, .pick2 .glass .em { display: block; width: 70% !important; height: auto !important; aspect-ratio: 1; background: #fff; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; -webkit-mask: var(--emblem) center / contain no-repeat; }
+body.trans .pick2 > .t128, body.trans .pick2 > .s128 { display: none !important; }
+body.trans .pick2 .emb, body.both .pick2 .emb, body.trans .pick2 .embs, body.both .pick2 .embs { display: block !important; }
+body.trans .pick2 .flash, body.both .pick2 .flash { display: none !important; }
+.pick2.cut > .t128, .pick2.cut > .s128 { opacity: 0.35; }
+.pick2.marked > .t128, .pick2.marked > .s128, .pick2.marked .glass { outline: 2px solid oklch(0.85 0.14 85) !important; outline-offset: -2px; }
+`;
 
 const $ = id => document.getElementById(id);
 const marks = (() => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } })();
+// A mark from before rounds names no round: it was on the first round.
+for (const k of [...marks]) {
+  const m = k.match(/^(.+)-([ad])$/);
+  if (m && voted(m[1]).length) { marks.delete(k); marks.add(`${k}@${voted(m[1])[0]}`); }
+}
 const docs = [];
 let view = 'icon';
 
@@ -177,21 +295,34 @@ const toys = links.size
   : listed.map(id => ({ id, lab: names[id].number == null }));
 const nameOf = id => names[id]?.name ?? menu?.querySelector(`a.toy#${id}`)?.textContent.trim() ?? id;
 // have: the gallery holds it. cut: Tom cut it. none: nobody drew it.
-const stateOf = (id, l) => (GALLERY[id] == null || LACKS[id]?.includes(l) ? 'none' : gone.has(`${id}-${l}`) ? 'cut' : 'have');
+// Tom's cuts date from the first round on the sheet, so only that round has them.
+const newest = id => rounds(id).at(-1);
+const stateOf = (id, l, r = newest(id)) => (r == null || LACKS[r]?.includes(l) ? 'none' : r === voted(id)[0] && gone.has(`${id}-${l}`) ? 'cut' : 'have');
 const WORD = { have: '', cut: 'Cut', none: 'To draw' };
+// An earlier round with no such letter shows an empty slot: nothing is left to draw there.
+const wordOf = (id, s, r) => (s === 'none' && r !== newest(id) ? '' : WORD[s]);
+// A mark names the toy, the letter and the round.
+const keyOf = (id, l, r) => `${id}-${l}@${r}`;
 
 // Rows: the name, the Current icon, then the two alt slots.
-const slot = (id, l, s) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${id}-${l}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}">${WORD[s]}</div>`;
+// An earlier round gets a row of its own: its name, no Current, its two slots.
+const slot = (id, l, s, r) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${keyOf(id, l, r)}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}, round ${r}">${wordOf(id, s, r)}</div>`;
+// The All view knows its cards only once the gallery loads; it holds one waiting slot.
+const alts = (id, r) => (ALL ? `<div class="alts"><div class="slot load">${r}</div></div>` : `<div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l, r), r)).join('')}</div>`);
 const row = ({ id }) => {
-  const emb = names[id]?.emblem;
-  return `<section class="row" id="row-${id}" data-toy="${id}">
-    <h2>${nameOf(id)}</h2>
+  const emb = names[id]?.emblem, rs = rounds(id), r = rs.at(-1);
+  return `<section class="row" id="row-${id}" data-toy="${id}" data-round="${r ?? ''}">
+    <h2>${nameOf(id)}${rs.length > 1 ? `<small>${r}</small>` : ''}</h2>
     <div class="cell" data-key="${id}-current" tabindex="0" role="button" aria-label="${nameOf(id)}, Current">
       <div class="tile"></div>
       <div class="logo">${emb ? `<i style="--emblem: url(../${emb})"></i>` : ''}</div>
     </div>
-    <div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l))).join('')}</div>
-  </section>`;
+    ${alts(id, r)}
+  </section>` + rs.slice(0, -1).reverse().map(o => `<section class="row old" data-toy="${id}" data-round="${o}">
+    <h2><small>${o}</small></h2>
+    <div class="none"></div>
+    ${alts(id, o)}
+  </section>`).join('');
 };
 const group = (title, list) => (list.length ? `<h3>${title} <span>· ${list.length}</span></h3>${list.map(row).join('')}` : '');
 $('list').innerHTML = group('Main shelf', toys.filter(t => !t.lab)) + group('Lab', toys.filter(t => t.lab));
@@ -244,7 +375,8 @@ const place = () => {
   for (const [id, a] of tiles) a.style.setProperty('top', `${document.querySelector(`#row-${id} .cell`).offsetTop}px`, 'important');
 };
 const count = l => toys.filter(t => stateOf(t.id, l) === 'have').length;
-$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric`;
+const older = toys.reduce((n, t) => n + Math.max(0, rounds(t.id).length - 1), 0);
+$('sum').innerHTML = `<b>${toys.length}</b> toys · <b>${count('a')}</b> shaded · <b>${count('d')}</b> isometric${older ? ` · <b>${older}</b> earlier rounds` : ''}`;
 
 // The tile size fits three columns; the name moves above them on phones.
 const layout = () => {
@@ -258,10 +390,18 @@ const layout = () => {
 };
 
 // Marks: a click toggles one; the list goes out as JSON.
+// The All view learns each card's own name as it mounts.
+const titles = new Map();
 const output = () => {
   const o = {};
   for (const { id } of toys) {
-    const ls = ['current', 'a', 'd'].filter(l => marks.has(`${id}-${l}`)).map(l => ({ current: 'Current', a: 'Shaded object', d: 'Isometric block' })[l]);
+    const ls = marks.has(`${id}-current`) ? ['Current'] : [];
+    for (const k of marks) {
+      const m = k.startsWith(`${id}-`) && k.slice(id.length + 1).match(/^(.+)@(.+)$/);
+      if (!m) continue;
+      const word = COLS.find(c => c[0] === m[1])?.[1] || m[1].toUpperCase();
+      ls.push(`${word}${titles.get(k) ? ` · ${titles.get(k)}` : ''} (${m[2]})`);
+    }
     if (ls.length) o[id] = ls;
   }
   return JSON.stringify({ marked: o }, null, 2);
@@ -297,17 +437,34 @@ const show = v => {
   view = v;
   for (const d of [document, ...docs]) { d.body.classList.toggle('trans', v === 'trans'); d.body.classList.toggle('both', v === 'both'); }
   for (const n of VIEWS) $(`v-${n}`).setAttribute('aria-pressed', String(n === v));
+  fitAll();
   place();
 };
 for (const n of VIEWS) $(`v-${n}`).addEventListener('click', () => show(n));
+// The rounds switch reloads the sheet in the other view.
+document.documentElement.classList.toggle('all', ALL);
+$('r-all').setAttribute('aria-pressed', String(ALL));
+$('r-latest').setAttribute('aria-pressed', String(!ALL));
+$('r-all').addEventListener('click', () => { if (!ALL) location.search = ''; });
+$('r-latest').addEventListener('click', () => { if (ALL) location.search = '?latest'; });
+if (ALL) document.querySelector('.cols .two').innerHTML = '<span>Every icon of every round, newest round first</span>';
 
 // A gallery mounts when its row comes near the view, one at a time.
 const base = new URL('./', location.href).href;
 const sources = new Map();
-const source = n => sources.get(n) ?? sources.set(n, fetch(`spike-${n}.html`).then(r => (r.ok ? r.text() : '')).catch(() => '')).get(n);
+// The local server drops some requests under load; a gallery gets three tries.
+const fetchText = async (url, tries = 3) => {
+  for (let i = 0; i < tries; i++) {
+    try { const r = await fetch(url); if (r.ok) return await r.text(); if (r.status === 404) return ''; } catch {}
+    await new Promise(res => setTimeout(res, 400 * (i + 1)));
+  }
+  return '';
+};
+const source = n => sources.get(n) ?? sources.set(n, fetchText(`spike-${n}.html`)).get(n);
 async function mount(sec) {
-  const id = sec.dataset.toy, alts = sec.querySelector('.alts');
-  const src = await source(GALLERY[id]);
+  if (ALL) return mountAll(sec);
+  const id = sec.dataset.toy, r = sec.dataset.round, alts = sec.querySelector('.alts');
+  const src = await source(r);
   if (!src) return;
   const frame = document.createElement('iframe');
   frame.title = `${nameOf(id)}: Shaded object and Isometric block`;
@@ -336,16 +493,16 @@ async function mount(sec) {
   const holder = own.querySelector('.row, .dirs') || own, kept = {};
   for (const card of own.querySelectorAll('.dir')) {
     const l = card.querySelector('b')?.textContent.trim().toLowerCase(), col = COLS.findIndex(c => c[0] === l);
-    if (col < 0 || gone.has(`${id}-${l}`) || !card.querySelector('.t128, .s128')) { card.remove(); continue; }
+    if (col < 0 || stateOf(id, l, r) === 'cut' || !card.querySelector('.t128, .s128')) { card.remove(); continue; }
     card.dataset.col = String(col);
-    card.dataset.key = `${id}-${l}`;
+    card.dataset.key = keyOf(id, l, r);
     kept[l] = true;
   }
   // A missing letter keeps its slot, with the reason.
   COLS.forEach(([l], col) => {
     if (kept[l]) return;
-    const s = stateOf(id, l) === 'cut' ? 'cut' : 'none';
-    holder.insertAdjacentHTML('beforeend', `<article class="dir slot" data-col="${col}" data-key="${id}-${l}">${WORD[s]}</article>`);
+    const s = stateOf(id, l, r) === 'cut' ? 'cut' : 'none';
+    holder.insertAdjacentHTML('beforeend', `<article class="dir slot" data-col="${col}" data-key="${keyOf(id, l, r)}">${wordOf(id, s, r)}</article>`);
   });
   docs.push(doc);
   doc.addEventListener('click', onClick);
@@ -355,6 +512,80 @@ async function mount(sec) {
   paint();
   for (const s of alts.querySelectorAll('.slot')) s.remove();
   frame.classList.remove('wait');
+}
+// The galleries a toy section can come from: its own id, or the name it had then.
+const ALIAS = { vent: 'deepvent' };
+// All rounds: every card with a 128 tile, except the Current of its day, lifted into one grid.
+// Old galleries hold their cards in sections, in a bare row, or (Observatory 2) in labelled rows.
+const cardsOf = (doc, id, r) => {
+  const toyOf = s => { const first = s.querySelector('.dir'); const t = s.id?.replace(/^row-/, '') || (first?.id || first?.dataset.key || '').split('-')[0]; return ALIAS[t] || t; };
+  const secs = [...doc.querySelectorAll('section')].filter(s => s.querySelector('.dir') && toyOf(s) === id);
+  if (secs.length) return secs.flatMap(s => [...s.querySelectorAll('.dir')]);
+  // A gallery named for the toy may keep its cards outside any section.
+  if (String(r).replace(/-\d+$/, '') !== id && ALIAS[String(r).replace(/-\d+$/, '')] !== id) return [];
+  const dirs = [...doc.querySelectorAll('.dir')];
+  if (dirs.length) return dirs;
+  return [...doc.querySelectorAll('#sheet .r')];
+};
+const fitAll = () => {
+  if (!ALL) return;
+  for (const f of document.querySelectorAll('.alts iframe:not(.wait)')) {
+    const g = f.contentDocument?.getElementById('every');
+    if (g) f.style.height = `${g.scrollHeight}px`;
+  }
+};
+async function mountAll(sec) {
+  const id = sec.dataset.toy, r = sec.dataset.round, alts = sec.querySelector('.alts');
+  const src = await source(r);
+  if (!src) { alts.querySelector('.slot').textContent = `${r} · missing`; return; }
+  const frame = document.createElement('iframe');
+  frame.title = `${nameOf(id)}: round ${r}`;
+  frame.className = 'wait';
+  frame.setAttribute('scrolling', 'no');
+  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${base}">`).replace(/<\/head>/i, `<style>${ALL_CSS}</style></head>`);
+  alts.append(frame);
+  await new Promise(res => {
+    const t0 = performance.now();
+    const poll = setInterval(() => {
+      if (!frame.contentDocument?.querySelector('.t128 svg, .s128 svg') && performance.now() - t0 < 8000) return;
+      clearInterval(poll);
+      // Galleries that build in steps get a moment to finish.
+      setTimeout(res, 250);
+    }, 60);
+  });
+  const doc = frame.contentDocument;
+  const grid = doc.createElement('div');
+  grid.id = 'every';
+  for (const card of cardsOf(doc, id, r)) {
+    const tile = card.querySelector('.t128, .s128');
+    const l = (card.querySelector('b')?.textContent || card.querySelector('.lab, i, span')?.textContent || '').trim();
+    if (!tile || !l || /^current$/i.test(l)) continue;
+    const name = [...card.querySelectorAll('header span, header i, .lab span')].map(n => n.textContent).join(' ').replace(/^[\s·]+/, '').trim();
+    const key = keyOf(id, l.toLowerCase(), r);
+    const cell = doc.createElement('div');
+    cell.className = `pick2${stateOf(id, l.toLowerCase(), r) === 'cut' ? ' cut' : ''}`;
+    cell.dataset.key = key;
+    cell.tabIndex = 0;
+    if (name) titles.set(key, name);
+    // Moving the tile keeps its listeners, so its hover still runs.
+    cell.append(tile);
+    const emb = card.querySelector('.emb, .embs');
+    if (emb) cell.append(emb);
+    cell.insertAdjacentHTML('beforeend', `<p><b>${l}</b>${name ? ` · ${name}` : ''}${cell.classList.contains('cut') ? ' · cut' : ''}</p>`);
+    grid.append(cell);
+  }
+  if (!grid.children.length) { frame.remove(); alts.querySelector('.slot').textContent = `${r} · no cards`; return; }
+  doc.body.append(grid);
+  docs.push(doc);
+  doc.addEventListener('click', onClick);
+  doc.addEventListener('keydown', onKey);
+  layout();
+  show(view);
+  paint();
+  for (const s of alts.querySelectorAll('.slot')) s.remove();
+  frame.classList.remove('wait');
+  fitAll();
+  place();
 }
 // Two galleries load at a time; the local server drops large bursts.
 const queue = [];
@@ -375,8 +606,8 @@ const near = new IntersectionObserver(es => {
   pump();
 }, { rootMargin: '600px 0px' });
 for (const sec of document.querySelectorAll('.row')) {
-  const id = sec.dataset.toy;
-  if (COLS.some(([l]) => stateOf(id, l) === 'have')) near.observe(sec);
+  const id = sec.dataset.toy, r = sec.dataset.round;
+  if (r && (ALL || COLS.some(([l]) => stateOf(id, l, r) === 'have'))) near.observe(sec);
 }
 goLive();
 layout();

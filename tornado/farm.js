@@ -140,7 +140,7 @@ void fBin3(vec3 ro, vec3 rd, int i, vec3 B, float r, float h, inout float t, ino
   float qa = d.x * d.x + d.z * d.z - kk * kk * d.y * d.y, qb = a.x * d.x + a.z * d.z - kk * kk * a.y * d.y, qc = a.x * a.x + a.z * a.z - kk * kk * a.y * a.y;
   float disc = qb * qb - qa * qc;
   if (disc > 0.0 && abs(qa) > 1e-9) {
-    for (int j = 0; j < 2; j++) {
+    for (int j = ROLL0; j < 2; j++) {
       float tt = (-qb + (j == 0 ? -1.0 : 1.0) * sqrt(disc)) / qa, y = o.y + d.y * tt;
       if (tt > 0.0 && tt < t && y >= h && y <= h + hc) { t = tt; vec3 q = o + d * tt; n = normalize(vec3(q.x, kk * kk * (h + hc - q.y), q.z)); id = 26; break; }
     }
@@ -154,8 +154,11 @@ int fYard(vec3 ro, vec3 rd, out float t, out vec3 n) {
   int id = 0;
   fBarn3(ro, rd, t, n, id);
   fHouse3(ro, rd, t, n, id);
-  fBin3(ro, rd, 3, FARM + vec3(-52.0, 0.0, -12.0), 3.6, 7.0, t, n, id);
-  fBin3(ro, rd, 4, FARM + vec3(-61.0, 0.0, -8.0), 3.0, 6.0, t, n, id);
+  // Two bins: one call site, so D3D11 pastes the bin once.
+  for (int i = ROLL0; i < 2; i++) {
+    if (i == 0) fBin3(ro, rd, 3, FARM + vec3(-52.0, 0.0, -12.0), 3.6, 7.0, t, n, id);
+    else fBin3(ro, rd, 4, FARM + vec3(-61.0, 0.0, -8.0), 3.0, 6.0, t, n, id);
+  }
   return id;
 }
 // A lit surface in the storm light: sun, sky fill with occlusion, the sky's reflection and a capped glint.
@@ -194,7 +197,7 @@ vec3 fShade(int id, vec3 h, vec3 nl, vec3 P, vec3 V, float fp) {
     bool longSide = abs(nl.z) > 0.5;
     if (house) {
       float win = 0.0;
-      if (longSide) for (int i = 0; i < 3; i++) win = max(win, step(abs(along - (float(i) - 1.0) * 3.6), 0.55) * step(1.3, h.y) * step(h.y, 2.6));
+      if (longSide) for (int i = ROLL0; i < 3; i++) win = max(win, step(abs(along - (float(i) - 1.0) * 3.6), 0.55) * step(1.3, h.y) * step(h.y, 2.6));
       else win = step(abs(along), 0.5) * step(1.4, h.y) * step(h.y, 2.6);
       float door = longSide ? step(abs(along - 1.8), 0.45) * step(h.y, 2.2) : 0.0;
       if (win > 0.0 && S.z < 0.3) c = mix(uAmb * 0.02 + lineEnv(reflect(-V, N)) * 0.35 * (1.0 - S.x), vec3(0.01), S.x);
@@ -243,7 +246,7 @@ void fGround(vec2 s, vec3 rd, float px) {
 }
 // The hedge behind the house: a windbreak of lumpy crowns with gaps, each a lone tree in the wind.
 void fHedge3(vec2 s, vec3 rd, float px) {
-  for (int i = 0; i < 9; i++) {
+  for (int i = ROLL0; i < 9; i++) {
     float fi = float(i), h0 = th(vec2(fi, 31.0));
     if (h0 < 0.18) continue;
     vec3 P = FARM + vec3(-58.0 + 11.0 * fi + 4.0 * (th(vec2(fi, 32.0)) - 0.5), 0.0, -40.0 - 4.0 * th(vec2(33.0, fi)));
@@ -296,26 +299,40 @@ void fStrewn(vec2 s, vec3 rd, float px) {
   float z = depthOf(G);
   put(hazed(col, rd, z), k * 0.85, z);
 }
-// The whole farm. c is unused: every part lays itself into the objects' layers.
-void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
-  // The yard, its tallest part and the strewn field downwind, in screen units.
+// The whole farm, in four passes: one program would not compile on D3D11.
+// The passes run in this order, so the shapes stack as in one pass.
+// True where the farm can show: the yard, its tallest part and the strewn field downwind.
+// It sets the damage stages, once per pixel: shingles, roof, walls, levelled.
+bool farmIn(vec2 s) {
   vec2 at = proj(FARM);
   float m = uFoc / -FARM.z;
-  if (abs(s.x - at.x) > 380.0 * m || s.y > at.y + 25.0 * m) return;
-  // The damage stages, once per pixel: shingles, roof, walls, levelled.
+  if (abs(s.x - at.x) > 380.0 * m || s.y > at.y + 25.0 * m) return false;
   float vh = uFarm[0].x, vb = uFarm[1].x;
   gHS = vec4(fStage(vh, 35.0, 48.0), fStage(vh, 48.0, 62.0), fStage(vh, 62.0, 80.0), fStage(vh, 80.0, 95.0));
   gHSlab = fStage(vh, 92.0, 100.0);
   gBS = vec4(fStage(vb, 32.0, 44.0), fStage(vb, 42.0, 55.0), fStage(vb, 55.0, 70.0), fStage(vb, 70.0, 85.0));
-  float fk = 1.0 - sunCover(FARM * 0.001);
+  return true;
+}
+// The strewn field and the yard's ground.
+void farmGround(vec2 s, vec3 rd, float px) {
+  if (!farmIn(s)) return;
   fStrewn(s, rd, px);
   fGround(s, rd, px);
-  fHedge3(s, rd, px);
+}
+// The hedge behind the house.
+void farmHedge(vec2 s, vec3 rd, float px) {
+  if (farmIn(s)) fHedge3(s, rd, px);
+}
+// The buildings.
+void farmYard(vec2 s, vec3 rd, float px) {
+  if (!farmIn(s)) return;
+  vec2 at = proj(FARM);
+  float m = uFoc / -FARM.z;
   // The buildings, traced at four spots in the pixel: smooth edges at any lens.
   if (abs(s.x - at.x) < 110.0 * m && s.y > at.y - 2.0 * px && s.y < at.y + 14.0 * m) {
     vec3 eye = vec3(0.0, CAMH, 0.0), acc = vec3(0.0);
     float cov = 0.0, zH = -FARM.z;
-    for (int k = 0; k < 4; k++) {
+    for (int k = ROLL0; k < 4; k++) {
       vec2 so = s + (vec2(k & 1, k >> 1) - 0.5) * 0.5 * px + vec2(0.125, -0.125) * px * float(1 - 2 * (k & 1));
       vec3 rw = toWorld(normalize(vec3(so, -uFoc)));
       float t;
@@ -329,6 +346,9 @@ void farm(inout vec3 c, vec2 s, vec3 rd, float px) {
     }
     if (cov > 0.0) put(hazed(acc / cov, rd, zH), cov / 4.0, zH);
   }
-  fMill(s, rd, px, fk);
+}
+// The windmill, last.
+void farmMill(vec2 s, vec3 rd, float px) {
+  if (farmIn(s)) fMill(s, rd, px, 1.0 - sunCover(FARM * 0.001));
 }
 `;

@@ -1,10 +1,11 @@
 ---
 # stimming-ay6n
 title: 'Toy: Jet hover'
-status: draft
+status: in-progress
 type: feature
+priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-17T22:24:06Z
+updated_at: 2026-11-22T20:05:22Z
 parent: stimming-oh7b
 ---
 
@@ -18,8 +19,36 @@ Size: XXL. Tom, 2026-11-17. Not in the S to M batch.
 
 Near ideas, kept apart: Night catapult (220, a carrier deck launch), Drone (drone/).
 
+Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jethover.md.
+
+## Defaults chosen (Tom's open question: 3D or flat, and the presentation)
+
+- 3D, three.js 0.170 (Scene type). A fixed low three-quarter camera, a diorama with no orbit. Heat shimmer needs depth.
+- Blue hour on an open plain over a damp pad; far ridge and far lights for the shimmer to bend.
+- A generic twin-nozzle VTOL, plain dark grey, no markings or real shapes (hard rule 11).
+- The hand: throttle. Hold or Space for full reheat; drag to drift and yaw; click for a blip. Slider: Throttle (the hover setting).
+- Sound follows the throttle and fades after the spool-down; muted by default.
+
+## Checklist
+
+- [x] Development plan in docs/plans/jethover.md
+- [x] Blockout on the stage, screenshot 1280 x 800
+- [x] Build: craft, plumes, pad, spray, heat pass, bloom, grade
+- [x] Interaction and frame loop
+- [x] Sound: whine, roar, crackle
+- [x] Bar v3
+- [x] Icon round jethover-1, emblems, intro emblem
+- [x] Lab entry: toys.json, menu tile and hook
+- [x] QA Q1 to Q10 at 1280 px and 375 px
+- [x] Toy doc docs/toys/jethover.md
+- [x] Fidelity pass on steam, smoke and heat haze: K3 (Fire's volume fluid) ported to WebGL2 in jethover/fluid.js (Tom, 2026-11-22: "consult the fire toy fire shader")
+- [ ] Craft model fidelity (Tom, 2026-11-22: "low fi blockout"); not started
 - [ ] Blockout, signed off by Tom
-- [ ] Development plan in docs/plans/jethover.md
-- [ ] Build in the Lab
-- [ ] QA at 1280 px and 375 px
 - [ ] Tom's sign-off
+
+## QA (2026-11-22)
+
+Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 blockout to 10 Lab tile hover).
+
+- Q1 to Q9 pass: console clean; 30 fps while drifting; 0 frames in 2 s at 65 s idle, when hidden, and in reduced motion once settled; 2 bar controls, 4 How rows; Space reheat; the audio context suspends after release.
+- Q10 frame times during hold and drag: 16.7 ms median, 16.7 ms p90 (vsync bound).

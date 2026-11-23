@@ -9,6 +9,7 @@ import { FS_U, farBake } from '../world/farcountry.ts';
 import { HEAD } from '../sky/atmosphere.ts';
 import { AIR } from '../sky/air.ts';
 import { BAND } from './bands.ts';
+import { CLOUDS } from '../../../shared/clouds.js';
 import { CLOUD_U, giants, heaps, tower } from './clouds.ts';
 import { stormFl } from './lightning.ts';
 import { STORM_HOST } from './probe.ts';
@@ -63,6 +64,7 @@ const passMat = new THREE.ShaderMaterial({
   ${AIR}
   ${CELL}
   ${STORM_HOST}
+  ${CLOUDS}
   ${CELL_MARCH}
   // The sunlight at P, as the storms take it.
   // A cloud up high sees the sun after the ground has lost it: its horizon dips.

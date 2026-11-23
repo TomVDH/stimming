@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Crossing button 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Crossing button 1</h1>
+<p class="lede">Crossing button, round 1. Current is the button box Tom kept (2026-11-17). A: the box itself, turned to show its depth, on its pole. D: the box is the block; its face is the left side.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The menu tile's ids take the tile prefix, so three copies can live.
+  const ids = (m, u) => m.replace(/id="([^"]+)"/g, `id="${u}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${u}$1)`).replace(/href="#([^"]+)"/g, `href="#${u}$1"`);
+
+  const DIRS = [];
+
+  /* ================= Current ================= */
+
+  // The menu icon today, copied with its hover.
+  const CUR = `<defs>
+              <radialGradient id="crossing-halo-r" cx="64" cy="58" r="54" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="oklch(0.66 0.25 28)" stop-opacity="0.5"/>
+                <stop offset="1" stop-color="oklch(0.66 0.25 28)" stop-opacity="0"/>
+              </radialGradient>
+              <radialGradient id="crossing-halo-g" cx="64" cy="58" r="54" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="oklch(0.84 0.17 168)" stop-opacity="0.55"/>
+                <stop offset="1" stop-color="oklch(0.84 0.17 168)" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="crossing-face" x1="37.4" y1="21" x2="86.6" y2="103" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="oklch(0.9 0.15 92)"/>
+                <stop offset="0.45" stop-color="oklch(0.8 0.165 80)"/>
+                <stop offset="1" stop-color="oklch(0.58 0.14 64)"/>
+              </linearGradient>
+              <linearGradient id="crossing-steel" x1="52.16" y1="55.44" x2="71.84" y2="75.12" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="oklch(0.88 0.01 250)"/>
+                <stop offset="0.5" stop-color="oklch(0.52 0.01 250)"/>
+                <stop offset="1" stop-color="oklch(0.22 0.01 250)"/>
+              </linearGradient>
+              <radialGradient id="crossing-cap-g" cx="58.31" cy="60.77" r="10.66" gradientUnits="userSpaceOnUse">
+                <stop offset="0" stop-color="oklch(0.5 0.02 255)"/>
+                <stop offset="0.5" stop-color="oklch(0.22 0.02 260)"/>
+                <stop offset="1" stop-color="oklch(0.08 0.01 260)"/>
+              </radialGradient>
+            </defs>
+            <circle id="crossing-glow-r" cx="64" cy="58" r="54" fill="url(#crossing-halo-r)"/>
+            <circle id="crossing-glow-g" cx="64" cy="58" r="54" fill="url(#crossing-halo-g)" opacity="0"/>
+            <rect x="55.85" y="6" width="12.3" height="116" fill="oklch(0.24 0.012 260)"/>
+            <rect x="57.74" y="6" width="1.8" height="116" fill="oklch(0.46 0.05 68)"/>
+            <g id="crossing-box">
+              <rect x="54.13" y="14.44" width="15.74" height="4.92" rx="1" fill="oklch(0.42 0.02 260)"/>
+              <rect x="54.13" y="104.64" width="15.74" height="4.92" rx="1" fill="oklch(0.42 0.02 260)"/>
+              <path d="M85.78 23.05L91.11 25.1L91.11 100.13L85.78 102.67Z" fill="oklch(0.46 0.11 68)"/>
+              <rect x="37.4" y="21" width="49.2" height="82" rx="5.74" fill="url(#crossing-face)"/>
+              <rect x="36.09" y="18.13" width="55.43" height="5.33" rx="2.05" fill="oklch(0.8 0.15 82)"/>
+              <rect x="42.32" y="27.56" width="39.36" height="15.58" rx="2.46" fill="oklch(0.32 0.07 58)"/>
+              <rect x="43.3" y="28.54" width="37.39" height="13.61" rx="1.64" fill="oklch(0.1 0.02 30)"/>
+              <path id="crossing-word" d="M47.82 32h0.8v0.8h-0.8zM51.76 32h0.8v0.8h-0.8zM47.82 32.98h0.8v0.8h-0.8zM51.76 32.98h0.8v0.8h-0.8zM47.82 33.97h0.8v0.8h-0.8zM51.76 33.97h0.8v0.8h-0.8zM47.82 34.95h0.8v0.8h-0.8zM49.79 34.95h0.8v0.8h-0.8zM51.76 34.95h0.8v0.8h-0.8zM47.82 35.93h0.8v0.8h-0.8zM49.79 35.93h0.8v0.8h-0.8zM51.76 35.93h0.8v0.8h-0.8zM47.82 36.92h0.8v0.8h-0.8zM49.79 36.92h0.8v0.8h-0.8zM51.76 36.92h0.8v0.8h-0.8zM48.81 37.9h0.8v0.8h-0.8zM50.78 37.9h0.8v0.8h-0.8zM54.71 32h0.8v0.8h-0.8zM55.7 32h0.8v0.8h-0.8zM56.68 32h0.8v0.8h-0.8zM53.73 32.98h0.8v0.8h-0.8zM57.66 32.98h0.8v0.8h-0.8zM53.73 33.97h0.8v0.8h-0.8zM57.66 33.97h0.8v0.8h-0.8zM53.73 34.95h0.8v0.8h-0.8zM54.71 34.95h0.8v0.8h-0.8zM55.7 34.95h0.8v0.8h-0.8zM56.68 34.95h0.8v0.8h-0.8zM57.66 34.95h0.8v0.8h-0.8zM53.73 35.93h0.8v0.8h-0.8zM57.66 35.93h0.8v0.8h-0.8zM53.73 36.92h0.8v0.8h-0.8zM57.66 36.92h0.8v0.8h-0.8zM53.73 37.9h0.8v0.8h-0.8zM57.66 37.9h0.8v0.8h-0.8zM60.62 32h0.8v0.8h-0.8zM61.6 32h0.8v0.8h-0.8zM62.58 32h0.8v0.8h-0.8zM59.63 32.98h0.8v0.8h-0.8zM63.57 32.98h0.8v0.8h-0.8zM59.63 33.97h0.8v0.8h-0.8zM59.63 34.95h0.8v0.8h-0.8zM59.63 35.93h0.8v0.8h-0.8zM59.63 36.92h0.8v0.8h-0.8zM63.57 36.92h0.8v0.8h-0.8zM60.62 37.9h0.8v0.8h-0.8zM61.6 37.9h0.8v0.8h-0.8zM62.58 37.9h0.8v0.8h-0.8zM65.54 32h0.8v0.8h-0.8zM69.47 32h0.8v0.8h-0.8zM65.54 32.98h0.8v0.8h-0.8zM69.47 32.98h0.8v0.8h-0.8zM65.54 33.97h0.8v0.8h-0.8zM69.47 33.97h0.8v0.8h-0.8zM65.54 34.95h0.8v0.8h-0.8zM66.52 34.95h0.8v0.8h-0.8zM67.5 34.95h0.8v0.8h-0.8zM68.49 34.95h0.8v0.8h-0.8zM69.47 34.95h0.8v0.8h-0.8zM65.54 35.93h0.8v0.8h-0.8zM69.47 35.93h0.8v0.8h-0.8zM65.54 36.92h0.8v0.8h-0.8zM69.47 36.92h0.8v0.8h-0.8zM65.54 37.9h0.8v0.8h-0.8zM69.47 37.9h0.8v0.8h-0.8zM71.44 32h0.8v0.8h-0.8zM72.42 32h0.8v0.8h-0.8zM73.41 32h0.8v0.8h-0.8zM74.39 32h0.8v0.8h-0.8zM75.38 32h0.8v0.8h-0.8zM73.41 32.98h0.8v0.8h-0.8zM73.41 33.97h0.8v0.8h-0.8zM73.41 34.95h0.8v0.8h-0.8zM73.41 35.93h0.8v0.8h-0.8zM73.41 36.92h0.8v0.8h-0.8zM73.41 37.9h0.8v0.8h-0.8z" fill="oklch(0.72 0.23 33)"/>
+              <circle cx="62" cy="65.28" r="13.28" fill="url(#crossing-steel)"/>
+              <circle cx="62" cy="65.28" r="11.4" fill="oklch(0.06 0.01 260)"/>
+              <g id="crossing-cap">
+                <circle cx="62" cy="65.28" r="10.66" fill="url(#crossing-cap-g)"/>
+                <g fill="none" stroke="oklch(0.82 0.01 250)" stroke-linecap="round" stroke-linejoin="round"><circle cx="62.38" cy="62.06" r="0.9" fill="oklch(0.82 0.01 250)"/><path d="M62.13 63.6L62.38 66.41" stroke-width="1.66"/><path d="M62 63.85L60.46 65.39L60.08 66.16M62.38 63.85L63.66 65.26L64.3 66.03" stroke-width="0.77"/><path d="M62.32 66.28L61.36 68.33L60.08 70.12M62.45 66.28L63.66 68.2L64.17 70.25" stroke-width="0.9"/></g>
+                <ellipse cx="57.74" cy="59.87" rx="2.62" ry="1.07" transform="rotate(-31 57.74 59.87)" fill="oklch(0.97 0.01 80)" opacity="0.55"/>
+              </g>
+              <g id="crossing-ring" fill="oklch(0.72 0.23 33)">
+                <circle cx="62" cy="48.72" r="1.3"/><circle cx="68.34" cy="49.98" r="1.3"/><circle cx="73.71" cy="53.57" r="1.3"/><circle cx="77.3" cy="58.94" r="1.3"/><circle cx="78.56" cy="65.28" r="1.3"/><circle cx="77.3" cy="71.62" r="1.3"/><circle cx="73.71" cy="76.99" r="1.3"/><circle cx="68.34" cy="80.58" r="1.3"/><circle cx="62" cy="81.84" r="1.3"/><circle cx="55.66" cy="80.58" r="1.3"/><circle cx="50.29" cy="76.99" r="1.3"/><circle cx="46.7" cy="71.62" r="1.3"/><circle cx="45.44" cy="65.28" r="1.3"/><circle cx="46.7" cy="58.94" r="1.3"/><circle cx="50.29" cy="53.57" r="1.3"/><circle cx="55.66" cy="49.98" r="1.3"/>
+              </g>
+              <g fill="oklch(0.14 0.03 50)"><circle cx="52.16" cy="85.78" r="0.78"/><circle cx="54.62" cy="85.78" r="0.78"/><circle cx="57.08" cy="85.78" r="0.78"/><circle cx="59.54" cy="85.78" r="0.78"/><circle cx="62" cy="85.78" r="0.78"/><circle cx="64.46" cy="85.78" r="0.78"/><circle cx="66.92" cy="85.78" r="0.78"/><circle cx="69.38" cy="85.78" r="0.78"/><circle cx="71.84" cy="85.78" r="0.78"/><circle cx="52.16" cy="88.24" r="0.78"/><circle cx="54.62" cy="88.24" r="0.78"/><circle cx="57.08" cy="88.24" r="0.78"/><circle cx="59.54" cy="88.24" r="0.78"/><circle cx="62" cy="88.24" r="0.78"/><circle cx="64.46" cy="88.24" r="0.78"/><circle cx="66.92" cy="88.24" r="0.78"/><circle cx="69.38" cy="88.24" r="0.78"/><circle cx="71.84" cy="88.24" r="0.78"/><circle cx="52.16" cy="90.7" r="0.78"/><circle cx="54.62" cy="90.7" r="0.78"/><circle cx="57.08" cy="90.7" r="0.78"/><circle cx="59.54" cy="90.7" r="0.78"/><circle cx="62" cy="90.7" r="0.78"/><circle cx="64.46" cy="90.7" r="0.78"/><circle cx="66.92" cy="90.7" r="0.78"/><circle cx="69.38" cy="90.7" r="0.78"/><circle cx="71.84" cy="90.7" r="0.78"/></g>
+              <rect x="51.34" y="93.82" width="21.32" height="6.23" rx="1.48" fill="oklch(0.22 0.01 260)"/>
+              <path id="crossing-arrow" d="M55.44 96.36L64.46 96.36L64.46 94.72L69.38 96.93L64.46 99.15L64.46 97.51L55.44 97.51Z" fill="oklch(0.84 0.01 250)"/>
+            </g>`;
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    box: 'bbox',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${light(u)}</defs>${ids(CUR, u)}`;
+      const Q = id => svg.querySelector(`#${u}${id}`);
+      const box = Q('crossing-box'), cap = Q('crossing-cap'), word = Q('crossing-word'), arrow = Q('crossing-arrow');
+      const glowR = Q('crossing-glow-r'), glowG = Q('crossing-glow-g'), dots = [...Q('crossing-ring').children];
+      const RED = 'oklch(0.72 0.23 33)', GREEN = 'oklch(0.88 0.18 160)', OFF = 'oklch(0.2 0.03 30)';
+      // At rest the wait is part way down: eleven dots still lit.
+      const REST = 11;
+      let lit = REST, green = false, tl = null, chase = null, buzz = null, last = null, travel = 0;
+      const paint = () => dots.forEach((d, i) => {
+        d.setAttribute('fill', green ? GREEN : i >= 16 - lit ? RED : OFF);
+        if (!green) d.setAttribute('opacity', '1');
+      });
+      paint();
+      // Green: the halo turns, a bright head chases round the ring, the arrow buzzes.
+      const go = () => {
+        green = true;
+        paint();
+        gsap.to(glowR, { opacity: 0, duration: 0.2, overwrite: true });
+        gsap.to(glowG, { opacity: 1, duration: 0.2, overwrite: true });
+        gsap.to(word, { opacity: 0.1, duration: 0.1, overwrite: true });
+        let k = 0;
+        chase = gsap.to({}, { duration: 0.09, repeat: -1, onRepeat: () => {
+          k++;
+          dots.forEach((d, i) => d.setAttribute('opacity', (0.3 + 0.7 * Math.max(0, 1 - ((k - i + 160) % 16) / 5)).toFixed(2)));
+        } });
+        buzz = gsap.to(arrow, { x: 0.5, duration: 0.03, repeat: -1, yoyo: true, ease: 'none' });
+      };
+      // One tick: one dot goes out with a small pop; the last one brings green.
+      const knock = () => {
+        if (green || lit <= 0) return;
+        lit--;
+        paint();
+        gsap.fromTo(dots[15 - lit], { attr: { r: 2.3 } }, { attr: { r: 1.3 }, duration: 0.22, ease: 'power2.out' });
+        if (!lit) go();
+      };
+      const settle = () => {
+        chase?.kill();
+        buzz?.kill();
+        chase = buzz = null;
+        green = false;
+        gsap.set(arrow, { x: 0 });
+        gsap.to(glowR, { opacity: 1, duration: 0.3, overwrite: true });
+        gsap.to(glowG, { opacity: 0, duration: 0.3, overwrite: true });
+        gsap.to(word, { opacity: 1, duration: 0.1, overwrite: true });
+      };
+      // One cycle: the press, sixteen ticks that come faster and faster, then green.
+      const cycle = () => {
+        const t = gsap.timeline({ onComplete: () => { tl = cycle(); } });
+        t.call(() => { settle(); lit = 16; paint(); }, null, 0)
+          .fromTo(cap, { scale: 1, svgOrigin: '62 65.3' }, { scale: 0.9, svgOrigin: '62 65.3', duration: 0.07, yoyo: true, repeat: 1 }, 0);
+        let at = 0.4;
+        for (let n = 16; n > 0; n--) {
+          t.call(knock, null, at);
+          at += 0.06 + 0.26 * (n / 16) ** 1.5;
+        }
+        return t.to({}, { duration: 1.6 }, at);
+      };
+      const local = e => {
+        const svg = box.ownerSVGElement, r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+        return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+      };
+      return {
+        enter(p) { last = p; travel = 0; if (!tl) tl = cycle(); },
+        // Impatience: every burst of pointer travel is one more press.
+        move(p) {
+          if (!p || !tl) return;
+          if (last) travel += Math.hypot(p[0] - last[0], p[1] - last[1]);
+          last = p;
+          if (travel < 26) return;
+          travel = 0;
+          gsap.fromTo(cap, { scale: 0.9, svgOrigin: '62 65.3' }, { scale: 1, svgOrigin: '62 65.3', duration: 0.18, ease: 'power2.out' });
+          gsap.fromTo(box, { rotation: Math.random() < 0.5 ? -2.5 : 2.5, svgOrigin: '62 62' }, { rotation: 0, svgOrigin: '62 62', duration: 0.8, ease: 'elastic.out(1, 0.3)' });
+          knock();
+        },
+        leave() {
+          tl?.kill();
+          tl = last = null;
+          settle();
+          lit = REST;
+          paint();
+          gsap.to(cap, { scale: 1, svgOrigin: '62 65.3', duration: 0.2, overwrite: true });
+          gsap.to(box, { rotation: 0, svgOrigin: '62 62', duration: 0.4, overwrite: true });
+        },
+      };
+    },
+  });
+
+
+  // The toy's tokens: traffic yellow, an amber side, steel, the red and green LEDs.
+  const RED = 'oklch(0.72 0.23 33)', GREEN = 'oklch(0.88 0.18 160)', OFF = 'oklch(0.3 0.07 40)';
+  const YELLOW = [[0, 'oklch(0.92 0.14 94)'], [0.45, 'oklch(0.82 0.165 82)'], [1, 'oklch(0.62 0.15 64)']];
+  const AMBER = [[0, 'oklch(0.62 0.16 56)'], [1, 'oklch(0.44 0.13 48)']];
+  const STEEL = [[0, 'oklch(0.94 0.01 250)'], [0.5, 'oklch(0.58 0.01 250)'], [1, 'oklch(0.26 0.01 250)']];
+  const POLE = [[0, 'oklch(0.16 0.01 260)'], [0.32, 'oklch(0.42 0.012 260)'], [0.6, 'oklch(0.24 0.01 260)'], [1, 'oklch(0.12 0.01 260)']];
+  const rr = (x, y, w, h, r) => `M${x + r} ${y}H${x + w - r}Q${x + w} ${y} ${x + w} ${y + r}V${y + h - r}Q${x + w} ${y + h} ${x + w - r} ${y + h}H${x + r}Q${x} ${y + h} ${x} ${y + h - r}V${y + r}Q${x} ${y} ${x + r} ${y}Z`;
+  const circ = (cx, cy, r) => `M${cx - r} ${cy}A${r} ${r} 0 1 0 ${cx + r} ${cy}A${r} ${r} 0 1 0 ${cx - r} ${cy}Z`;
+  // The walking man on the cap, drawn about his middle, 34 tall.
+  const WALKER = 'M0.8 -14.6A3.6 3.6 0 1 1 4 -14.6A3.6 3.6 0 1 1 0.8 -14.6ZM-1 -9H4Q6 -9 6.4 -7L8 0L10.6 3L9 4.4L5.6 1.4L4.6 -3L3.6 4L7.6 10L8.6 17H5.6L4.6 11.6L1 7.6L-1.6 12L-6 17L-8 15L-4.4 10.6L-2 4L-1.6 -3L-3.6 0.4L-5 6H-7.4L-5.4 -1.6Q-4 -6.8 -1 -9Z';
+
+  // The toy's LED font: 5 by 7 cells, in a matrix of 35 by 7.
+  const FONT = {
+    A: ['01110', '10001', '10001', '11111', '10001', '10001', '10001'],
+    C: ['01110', '10001', '10000', '10000', '10000', '10001', '01110'],
+    D: ['11110', '10001', '10001', '10001', '10001', '10001', '11110'],
+    E: ['11111', '10000', '10000', '11110', '10000', '10000', '11111'],
+    G: ['01110', '10001', '10000', '10111', '10001', '10001', '01111'],
+    H: ['10001', '10001', '10001', '11111', '10001', '10001', '10001'],
+    J: ['00111', '00010', '00010', '00010', '00010', '10010', '01100'],
+    L: ['10000', '10000', '10000', '10000', '10000', '10000', '11111'],
+    T: ['11111', '00100', '00100', '00100', '00100', '00100', '00100'],
+    U: ['10001', '10001', '10001', '10001', '10001', '10001', '01110'],
+    W: ['10001', '10001', '10001', '10101', '10101', '10101', '01010'],
+    '!': ['00100', '00100', '00100', '00100', '00100', '00000', '00100'],
+    ' ': ['00000', '00000', '00000', '00000', '00000', '00000', '00000'],
+  };
+  // The face plan, shared by A and D: 58 by 80 from (28, 22).
+  const F = { x: 28, y: 22, w: 58, h: 80, cx: 57, ry: 67 };
+  const LP = 1.16, LS = 0.98, LX = F.cx - (34 * LP + LS) / 2, LY = 37.5 - (6 * LP + LS) / 2;
+  const cellPath = (i, j, s = LS) => `M${f(LX + i * LP + (LS - s) / 2)} ${f(LY + j * LP + (LS - s) / 2)}h${s}v${s}h-${s}Z`;
+  const legendPath = text => {
+    if (!text) return '';
+    const start = Math.floor((35 - (text.length * 6 - 1)) / 2);
+    let d = '';
+    [...text].forEach((ch, k) => (FONT[ch] || FONT[' ']).forEach((row, j) => {
+      for (let i = 0; i < 5; i++) if (row[i] === '1') d += cellPath(start + k * 6 + i, j);
+    }));
+    return d;
+  };
+  const GRID = Array.from({ length: 35 * 7 }, (_, n) => cellPath(n % 35, Math.floor(n / 35), 0.62)).join('');
+  // Sixteen LEDs round the button, clockwise from the top.
+  const DOTS = Array.from({ length: 16 }, (_, i) => { const a = -Math.PI / 2 + (i / 16) * Math.PI * 2; return [F.cx + Math.cos(a) * 18, F.ry + Math.sin(a) * 18]; });
+
+  const boxDefs = u => `${light(u)}${blur(`${u}g`, 1.3)}${blur(`${u}gw`, 0.9)}${blur(`${u}b`, 3)}
+    ${lg(`${u}yellow`, YELLOW, 'x1="0.1" y1="0" x2="0.9" y2="1"')}
+    ${lg(`${u}amber`, AMBER)}
+    ${lg(`${u}lid`, [[0, 'oklch(0.94 0.12 96)'], [1, 'oklch(0.8 0.16 82)']])}
+    ${lg(`${u}steel`, STEEL, 'x1="0.15" y1="0.1" x2="0.85" y2="0.9"')}
+    ${lg(`${u}pole`, POLE, 'x1="0" y1="0" x2="1" y2="0"')}
+    ${lg(`${u}clamp`, [[0, 'oklch(0.4 0.01 250)'], [0.35, 'oklch(0.82 0.01 250)'], [1, 'oklch(0.3 0.01 250)']], 'x1="0" y1="0" x2="1" y2="0"')}
+    ${lg(`${u}well`, [[0, 'oklch(0.58 0.14 62)'], [1, 'oklch(0.88 0.15 90)']], 'x1="0.2" y1="0.1" x2="0.8" y2="0.9"')}
+    ${lg(`${u}glass`, [[0, 'oklch(0.16 0.03 30)'], [1, 'oklch(0.07 0.02 30)']])}
+    ${rg(`${u}cap`, [[0, 'oklch(0.46 0.02 255)'], [0.55, 'oklch(0.2 0.02 260)'], [1, 'oklch(0.07 0.01 260)']], 'cx="0.38" cy="0.3" r="0.75"')}
+    ${rg(`${u}haloR`, [[0, RED, 0.5], [1, RED, 0]])}${rg(`${u}haloG`, [[0, GREEN, 0.55], [1, GREEN, 0]])}`;
+
+  // The face parts on the front: legend window, LED ring, button, arrow plate.
+  const faceParts = u => `
+    <path d="${rr(33, 28.5, 48, 18, 3.6)}" fill="oklch(0.36 0.08 56)"/>
+    <path d="${rr(35, 30.5, 44, 14, 2.6)}" fill="url(#${u}glass)"/>
+    <path d="${GRID}" fill="${RED}" opacity="0.13"/>
+    <path class="wordGlow" d="" fill="${RED}" filter="url(#${u}gw)" opacity="0.9"/>
+    <path class="word" d="" fill="oklch(0.8 0.19 38)"/>
+    <path d="M37 31.6H60L51 43.4H37Z" fill="#fff" opacity="0.06"/>
+    <path d="${circ(F.cx, F.ry, 22.4)}" fill="url(#${u}well)"/>
+    ${DOTS.map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="2.3" fill="oklch(0.22 0.04 40)"/>`).join('')}
+    <g filter="url(#${u}g)">${DOTS.map(([x, y]) => `<circle class="dotGlow" cx="${f(x)}" cy="${f(y)}" r="2.9" fill="${RED}"/>`).join('')}</g>
+    ${DOTS.map(([x, y]) => `<circle class="dot" cx="${f(x)}" cy="${f(y)}" r="2.05" fill="${RED}"/>`).join('')}
+    <path d="${circ(F.cx, F.ry, 14.2)}" fill="url(#${u}steel)"/>
+    <path d="${circ(F.cx, F.ry, 12.3)}" fill="oklch(0.06 0.01 260)"/>
+    <g class="cap">
+      <path d="${circ(F.cx, F.ry, 11.5)}" fill="url(#${u}cap)"/>
+      <path d="${WALKER}" transform="translate(${F.cx - 0.6} ${F.ry + 0.6}) scale(0.52)" fill="oklch(0.86 0.01 250)"/>
+      <ellipse cx="${F.cx - 5}" cy="${F.ry - 6}" rx="4.4" ry="1.9" transform="rotate(-32 ${F.cx - 5} ${F.ry - 6})" fill="#fff" opacity="0.4"/>
+    </g>
+    <path d="${rr(44.5, 91.5, 25, 7.5, 2)}" fill="oklch(0.2 0.01 260)"/>
+    <path class="arrow" d="M48 94.4H60V92.9L66 95.25L60 97.6V96.1H48Z" fill="oklch(0.9 0.01 250)"/>`;
+
+  // The shared hand: a press fills the ring, the dots tick out faster and faster, then green.
+  // Pointer travel is impatience: each burst presses again, the box rattles, the legend talks back.
+  const WORDS = ['WACHT', 'WACHT!', 'JA JA!', 'GEDULD'];
+  const runBox = (svg, rattle) => {
+    const Q = c => svg.querySelector(c), QA = c => [...svg.querySelectorAll(c)];
+    const cap = Q('.cap'), word = Q('.word'), wglow = Q('.wordGlow'), arrow = Q('.arrow');
+    const haloR = Q('.haloR'), haloG = Q('.haloG'), dots = QA('.dot'), glows = QA('.dotGlow');
+    const REST = 11;
+    let lit = REST, green = false, presses = 0, level = 0, tl = null, chase = null, buzz = null, shoutT = null, last = null, travel = 0;
+    const paint = () => dots.forEach((d, i) => {
+      const on = green || i >= 16 - lit;
+      d.setAttribute('fill', green ? GREEN : RED);
+      d.setAttribute('opacity', on ? 1 : 0);
+      glows[i].setAttribute('fill', green ? GREEN : RED);
+      glows[i].setAttribute('opacity', on ? 0.85 : 0);
+    });
+    const say = (text, col = RED, b = 1) => {
+      const d = legendPath(text);
+      word.setAttribute('d', d);
+      wglow.setAttribute('d', d);
+      word.setAttribute('fill', col === GREEN ? 'oklch(0.94 0.12 160)' : 'oklch(0.8 0.19 38)');
+      wglow.setAttribute('fill', col);
+      gsap.set([word, wglow], { opacity: b });
+    };
+    // A new word flickers on, as the toy's lamp does.
+    const flick = (text, col) => {
+      say(text, col, 0.2);
+      gsap.timeline().set([word, wglow], { opacity: 0.9 }, 0.05).set([word, wglow], { opacity: 0.15 }, 0.1).set([word, wglow], { opacity: 1 }, 0.16);
+    };
+    const shout = (text, col, dur, then) => {
+      shoutT?.kill();
+      flick(text, col);
+      shoutT = gsap.delayedCall(dur, () => { shoutT = null; then(); });
+    };
+    const press = () => {
+      gsap.fromTo(cap, { scale: 0.86, transformOrigin: '50% 50%' }, { scale: 1, transformOrigin: '50% 50%', duration: 0.2, ease: 'power2.out', overwrite: true });
+    };
+    const go = () => {
+      green = true;
+      paint();
+      gsap.to(haloR, { opacity: 0, duration: 0.25, overwrite: true });
+      gsap.to(haloG, { opacity: 1, duration: 0.25, overwrite: true });
+      if (!shoutT) say('');
+      let k = 0;
+      chase = gsap.to({}, { duration: 0.08, repeat: -1, onRepeat: () => {
+        k++;
+        dots.forEach((d, i) => {
+          const o = 0.35 + 0.65 * Math.max(0, 1 - ((k - i + 160) % 16) / 5);
+          d.setAttribute('opacity', f(o));
+          glows[i].setAttribute('opacity', f(o * 0.85));
+        });
+      } });
+      // The ticker rattles while the man walks.
+      buzz = gsap.to(arrow, { x: 0.7, duration: 0.035, repeat: -1, yoyo: true, ease: 'none' });
+    };
+    const settle = () => {
+      chase?.kill(); buzz?.kill(); shoutT?.kill();
+      chase = buzz = shoutT = null;
+      green = false;
+      gsap.set(arrow, { x: 0 });
+      gsap.to(haloR, { opacity: 1, duration: 0.3, overwrite: true });
+      gsap.to(haloG, { opacity: 0, duration: 0.3, overwrite: true });
+    };
+    const knock = forced => {
+      if (green || lit <= 0) return;
+      lit--;
+      paint();
+      gsap.fromTo(dots[15 - lit], { attr: { r: 3.2, opacity: 1 } }, { attr: { r: 2.05, opacity: 0 }, duration: 0.24, ease: 'power2.out' });
+      if (lit) return;
+      if (forced) {
+        // Emptied by force: the box gives in.
+        tl?.kill();
+        tl = gsap.timeline({ onComplete: () => { tl = cycle(); } }).to({}, { duration: 2 });
+        shout('ALLEE!', RED, 0.5, () => say(''));
+      }
+      go();
+    };
+    const cycle = () => {
+      const t = gsap.timeline({ onComplete: () => { tl = cycle(); } });
+      t.call(() => { settle(); presses = level = 0; lit = 0; paint(); press(); flick(WORDS[0], RED); }, null, 0);
+      // The press lights the whole ring in a quick sweep.
+      for (let n = 1; n <= 16; n++) t.call(() => { lit = n; paint(); }, null, 0.12 + n * 0.022);
+      let at = 0.85;
+      for (let n = 16; n > 0; n--) {
+        t.call(() => knock(false), null, at);
+        at += 0.06 + 0.24 * (n / 16) ** 1.5;
+      }
+      return t.to({}, { duration: 1.8 }, at);
+    };
+    const rest = () => { settle(); lit = REST; presses = level = 0; paint(); say(WORDS[0]); };
+    rest();
+    return {
+      enter(p) { last = p; travel = 0; if (!tl) tl = cycle(); },
+      move(p) {
+        if (!p || !tl) return;
+        if (last) travel += Math.hypot(p[0] - last[0], p[1] - last[1]);
+        last = p;
+        if (travel < 26) return;
+        travel = 0;
+        press();
+        rattle(Math.random() < 0.5 ? -1 : 1);
+        if (green) { shout('GA!', GREEN, 0.7, () => say('')); return; }
+        presses++;
+        const lv = Math.min(3, presses >> 1);
+        if (lv !== level) { level = lv; if (!shoutT) flick(WORDS[level], RED); }
+        knock(true);
+      },
+      leave() {
+        tl?.kill();
+        tl = last = null;
+        rest();
+        gsap.to(cap, { scale: 1, transformOrigin: '50% 50%', duration: 0.2, overwrite: true });
+        rattle(0);
+      },
+    };
+  };
+
+  /* ================= A: Shaded object ================= */
+
+  // The box itself, turned a little: a lid on top, the amber side, the clamps on its pole.
+  const A_FRONT = rr(F.x, F.y, F.w, F.h, 9), A_SIDE = rr(38, 25, 58, 74, 8);
+  const A_LID = rr(24, 14, 68, 9.5, 3.5), A_LIDSIDE = rr(30, 15, 70, 8, 3);
+  const A_POLE = 'M51 2H69V122H51Z';
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [22, 4, 80, 116],
+    idea: 'The button box itself, turned a little so it has depth: a glossy traffic-yellow body under an overhanging lid, the amber side, two steel clamps on the dark pole. The legend window says WACHT in the toy\'s own LED font; sixteen red LEDs ring a steel bezel and a black cap with the walking man; the arrow plate below. Point at it: the cap sinks, the ring sweeps full and ticks out faster and faster, then turns green with a chase, the halo turns green and the arrow buzzes. Shake the pointer: each burst presses again, the box rattles on its clamps and the legend talks back (WACHT!, JA JA!, GEDULD); empty it by force and it says ALLEE!; press on green and it says GA!.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${boxDefs(u)}
+          <linearGradient id="${u}fade" x1="0" y1="2" x2="0" y2="122" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.1" stop-color="#fff"/><stop offset="0.9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+          <mask id="${u}pm" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128"><rect x="0" y="0" width="128" height="128" fill="url(#${u}fade)"/></mask></defs>
+        <circle class="haloR" cx="60" cy="62" r="58" fill="url(#${u}haloR)"/>
+        <circle class="haloG" cx="60" cy="62" r="58" fill="url(#${u}haloG)" opacity="0"/>
+        <g mask="url(#${u}pm)">
+          <path d="${A_POLE}" fill="url(#${u}pole)"/>
+          <path d="${A_POLE}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+        </g>
+        <g class="box">
+          <path d="${rr(47, 6.5, 26, 6.5, 2)}" fill="url(#${u}clamp)"/>
+          <path d="${rr(47, 104, 26, 6.5, 2)}" fill="url(#${u}clamp)"/>
+          <path d="${A_SIDE}" fill="url(#${u}amber)"/>
+          ${body(A_FRONT, u, 'yellow')}
+          <path d="${A_LIDSIDE}" fill="oklch(0.6 0.15 58)"/>
+          ${body(A_LID, u, 'lid')}
+          ${faceParts(u)}
+        </g>`;
+      const box = svg.querySelector('.box');
+      return runBox(svg, s => gsap.fromTo(box, { rotation: s * 2.6, svgOrigin: '60 58' }, { rotation: 0, svgOrigin: '60 58', duration: s ? 0.8 : 0.3, ease: s ? 'elastic.out(1, 0.3)' : 'power2.out', overwrite: true }));
+    },
+    emblem: `${EMB_HEAD}<path d="${A_POLE}" fill="#7a7a7a"/><path d="${rr(47, 6.5, 26, 6.5, 2)}" fill="#b4b4b4"/><path d="${rr(47, 104, 26, 6.5, 2)}" fill="#b4b4b4"/><path d="${A_SIDE}" fill="#b4b4b4"/><path d="${A_FRONT}" fill="#fff"/><path d="${A_LIDSIDE}" fill="#c8c8c8"/><path d="${A_LID}" fill="#fff"/><path d="${rr(35, 30.5, 44, 14, 2.6)}" fill="#000"/><path d="${circ(F.cx, F.ry, 21)}" fill="#000"/><path d="${circ(F.cx, F.ry, 15.6)}" fill="#fff"/><path d="${circ(F.cx, F.ry, 12.3)}" fill="#000"/>${DOTS.map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="2" fill="#fff"/>`).join('')}<path d="${WALKER}" transform="translate(${F.cx - 0.6} ${F.ry + 0.6}) scale(0.52)" fill="#fff"/><path d="${rr(44.5, 91.5, 25, 7.5, 2)}" fill="#000"/><path d="M48 94.4H60V92.9L66 95.25L60 97.6V96.1H48Z" fill="#fff"/></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The box is the block: the face is the mid left side, the lid is the light top, the amber side is dark.
+  // P(w, d, y): w along the face, d back into the box, y down; 30 degree axes.
+  const OX = 24, OY = 15.5, DP = 24;
+  const P = (w, d, y) => [OX + (w + d) * 0.866, OY + (w - d) * 0.5 + y];
+  const quadP = (...pts) => poly(pts.map(p => P(...p)));
+  // The face plan maps onto the left side by one skew.
+  const SKEW = `matrix(0.866 0.5 0 1 ${f(OX - F.x * 0.866)} ${f(OY - F.x * 0.5 - F.y)})`;
+  const LID = { w0: -2.5, w1: F.w + 2, d0: -2.5, d1: DP + 1, y0: -7, y1: 0 };
+  const D_TOP = quadP([LID.w0, LID.d0, LID.y0], [LID.w1, LID.d0, LID.y0], [LID.w1, LID.d1, LID.y0], [LID.w0, LID.d1, LID.y0]);
+  const D_LIDL = quadP([LID.w0, LID.d0, LID.y0], [LID.w1, LID.d0, LID.y0], [LID.w1, LID.d0, LID.y1], [LID.w0, LID.d0, LID.y1]);
+  const D_LIDR = quadP([LID.w1, LID.d0, LID.y0], [LID.w1, LID.d1, LID.y0], [LID.w1, LID.d1, LID.y1], [LID.w1, LID.d0, LID.y1]);
+  const D_LEFT = quadP([0, 0, 0], [F.w, 0, 0], [F.w, 0, F.h], [0, 0, F.h]);
+  const D_RIGHT = quadP([F.w, 0, 0], [F.w, DP, 0], [F.w, DP, F.h], [F.w, 0, F.h]);
+  // The pole runs behind the box, out above the lid and below the floor, with a clamp at each end.
+  const PB = P(F.w / 2, DP + 9, 0), PX = PB[0], PT = OY - 21, PE = OY + 119;
+  const D_POLE = `M${f(PX - 7)} ${f(PT)}H${f(PX + 7)}V${f(PE)}H${f(PX - 7)}Z`;
+  const D_CLAMP = rr(f(PX - 9.5), f(PT + 7), 19, 5.5, 2) + rr(f(PX - 9.5), f(OY + 106), 19, 5.5, 2);
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [18, -6, 82, 126],
+    idea: 'The box is the block, at 30 degrees: the traffic-yellow face is the mid left side, the overhanging lid is the light top with the rim on its edges, the amber side is the dark right face. The face keeps everything the toy has, set in the side\'s plane: the WACHT legend in LED cells, the red LED ring, the steel bezel and black cap, the arrow plate. The pole rises behind through a clamp. Point at it: press, the ring sweeps full and ticks out to green; shake the pointer and the block rattles, the legend talks back, and ALLEE! when the ring is forced empty.',
+    art(svg, u) {
+      const rimTop = [P(LID.w0, LID.d1, LID.y0), P(LID.w0, LID.d0, LID.y0), P(LID.w1, LID.d0, LID.y0)];
+      svg.innerHTML = `<defs>${boxDefs(u)}
+          ${lg(`${u}left`, [[0, 'oklch(0.86 0.15 88)'], [1, 'oklch(0.7 0.16 72)']])}
+          ${lg(`${u}right`, [[0, 'oklch(0.56 0.15 55)'], [1, 'oklch(0.4 0.12 46)']])}
+          ${lg(`${u}top`, [[0, 'oklch(0.96 0.1 98)'], [1, 'oklch(0.88 0.15 90)']], 'x1="0" y1="0" x2="1" y2="1"')}
+          <linearGradient id="${u}fade" x1="0" y1="${f(PT)}" x2="0" y2="${f(PE)}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.09" stop-color="#fff"/><stop offset="0.9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+          <mask id="${u}pm" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128"><rect x="0" y="0" width="128" height="128" fill="url(#${u}fade)"/></mask></defs>
+        <circle class="haloR" cx="59" cy="58" r="62" fill="url(#${u}haloR)"/>
+        <circle class="haloG" cx="59" cy="58" r="62" fill="url(#${u}haloG)" opacity="0"/>
+        <g class="block">
+          <path d="${poly([P(0, 0, F.h), P(F.w, 0, F.h), P(F.w, DP, F.h)])}" fill="oklch(0.05 0.01 260)" opacity="0.55" filter="url(#${u}b)" transform="translate(2 4)"/>
+          <g mask="url(#${u}pm)"><path d="${D_POLE}" fill="url(#${u}pole)"/><path d="${D_POLE}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/></g>
+          <path d="${D_CLAMP}" fill="url(#${u}clamp)"/>
+          <path d="${D_RIGHT}" fill="url(#${u}right)"/>
+          <path d="${D_LEFT}" fill="url(#${u}left)"/>
+          <path d="${D_LEFT}" fill="url(#${u}lit)" opacity="0.6"/>
+          <g transform="${SKEW}">${faceParts(u)}</g>
+          <path d="${D_LIDR}" fill="oklch(0.62 0.15 58)"/>
+          <path d="${D_LIDL}" fill="oklch(0.84 0.15 86)"/>
+          ${body(D_TOP, u, 'top')}
+          <path d="M${rimTop.map(p => p.map(f).join(' ')).join('L')}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+        </g>`;
+      const block = svg.querySelector('.block');
+      return runBox(svg, s => gsap.fromTo(block, { rotation: s * 2, svgOrigin: '60 60' }, { rotation: 0, svgOrigin: '60 60', duration: s ? 0.8 : 0.3, ease: s ? 'elastic.out(1, 0.3)' : 'power2.out', overwrite: true }));
+    },
+    emblem: `${EMB_HEAD}<path d="${D_POLE}" fill="#7a7a7a"/><path d="${D_CLAMP}" fill="#b4b4b4"/><path d="${D_RIGHT}" fill="#9a9a9a"/><path d="${D_LEFT}" fill="#e2e2e2"/><path d="${D_LIDR}" fill="#b4b4b4"/><path d="${D_LIDL}" fill="#eeeeee"/><path d="${D_TOP}" fill="#fff"/><g transform="${SKEW}"><path d="${rr(35, 30.5, 44, 14, 2.6)}" fill="#000"/><path d="${circ(F.cx, F.ry, 21)}" fill="#000"/><path d="${circ(F.cx, F.ry, 15.6)}" fill="#fff"/><path d="${circ(F.cx, F.ry, 12.3)}" fill="#000"/>${DOTS.map(([x, y]) => `<circle cx="${f(x)}" cy="${f(y)}" r="2" fill="#fff"/>`).join('')}<path d="${WALKER}" transform="translate(${F.cx - 0.6} ${F.ry + 0.6}) scale(0.52)" fill="#fff"/><path d="${rr(44.5, 91.5, 25, 7.5, 2)}" fill="#000"/><path d="M48 94.4H60V92.9L66 95.25L60 97.6V96.1H48Z" fill="#fff"/></g></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = "Crossing button";
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-crossing';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `crossing-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      // A menu tile with no data-box fits its drawn bounds, as the menu does.
+      const bb = D.box === "bbox" && svg.getBBox();
+      fitIcon(svg, bb ? [bb.x, bb.y, bb.width, bb.height] : D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

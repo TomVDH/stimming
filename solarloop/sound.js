@@ -1,0 +1,195 @@
+// Solar loop sound in Web Audio. Muted by default; the kit holds the context.
+// Space is silent, so the sound is a sonification: each part has a visible cause.
+// A flare: a crack, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
+// a slow chord while the arcade glows, then soft drips as the rain drains.
+// A drag: a low wind that follows the speed of the turn.
+
+const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// A minor pentatonic over two octaves: each arcade loop sounds one step higher.
+const STEPS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
+const ROOT = { gold: 220, teal: 293.66, red: 164.81 };
+
+export function makeSound(kit) {
+  let pending = 0;
+  // Every scheduled source, so mute or a hidden tab can stop them.
+  const live = new Set();
+  const track = node => {
+    pending++;
+    live.add(node);
+    node.onended = () => { pending--; live.delete(node); };
+    return node;
+  };
+
+  function voice(ac, pan, dest = kit.out) {
+    const g = ac.createGain();
+    g.gain.value = 0;
+    const p = ac.createStereoPanner();
+    p.pan.value = clamp(pan, -1, 1);
+    g.connect(p).connect(dest);
+    return g;
+  }
+  function noise(ac, t, len, rate = 1) {
+    const src = ac.createBufferSource();
+    src.buffer = kit.noise;
+    src.loop = true;
+    src.playbackRate.value = rate;
+    src.start(t, Math.random() * 0.9);
+    src.stop(t + len);
+    return track(src);
+  }
+  function osc(ac, type, f, t, len) {
+    const o = ac.createOscillator();
+    o.type = type;
+    o.frequency.value = f;
+    o.start(t); o.stop(t + len);
+    return track(o);
+  }
+  function filt(ac, type, f, q = 0.7) {
+    const b = ac.createBiquadFilter();
+    b.type = type; b.frequency.value = f; b.Q.value = q;
+    return b;
+  }
+  function env(g, t, peak, rise, fall) {
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(peak, t + rise);
+    g.gain.exponentialRampToValueAtTime(0.0002, t + rise + fall);
+  }
+  // A wide hall: three long echoes, low passed.
+  let hall = null;
+  function hallOf(ac) {
+    if (hall && hall.ac === ac) return hall.in;
+    const inp = ac.createGain();
+    const lp = filt(ac, 'lowpass', 3200);
+    inp.connect(lp);
+    for (const [d, g, p] of [[0.11, 0.3, -0.6], [0.23, 0.22, 0.6], [0.41, 0.15, 0]]) {
+      const dl = ac.createDelay(1);
+      dl.delayTime.value = d;
+      const gn = ac.createGain();
+      gn.gain.value = g;
+      const pn = ac.createStereoPanner();
+      pn.pan.value = p;
+      lp.connect(dl).connect(gn).connect(pn).connect(kit.out);
+    }
+    hall = { ac, in: inp };
+    return inp;
+  }
+  function send(ac, g, amt) {
+    const s = ac.createGain();
+    s.gain.value = amt;
+    g.connect(s).connect(hallOf(ac));
+  }
+
+  // The flare: every layer starts now or later on the audio clock.
+  function flare(pan, band, k = 1) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const t = ac.currentTime + 0.005;
+    const K = clamp(k, 0.3, 1);
+    // The crack: a burst of bright noise on a falling thump.
+    const c = voice(ac, pan);
+    env(c, t, 0.32 * K * jit(0.15), 0.003, 0.32 * jit(0.2));
+    noise(ac, t, 0.5, jit(0.1)).connect(filt(ac, 'highpass', 900 * jit(0.15), 0.8)).connect(c);
+    send(ac, c, 0.5);
+    const th = voice(ac, pan * 0.5);
+    env(th, t, 0.5 * K, 0.006, 0.9);
+    const o = osc(ac, 'sine', 82 * jit(0.08), t, 1.1);
+    o.frequency.exponentialRampToValueAtTime(31, t + 0.8);
+    o.connect(th);
+    // The rush: noise swept upward as the rope lifts away.
+    const r = voice(ac, pan * 0.7);
+    r.gain.setValueAtTime(0, t + 0.1);
+    r.gain.linearRampToValueAtTime(0.14 * K, t + 1.3);
+    r.gain.exponentialRampToValueAtTime(0.0002, t + 4.6);
+    const bp = filt(ac, 'bandpass', 160, 1.4);
+    bp.frequency.setValueAtTime(160 * jit(0.1), t + 0.1);
+    bp.frequency.exponentialRampToValueAtTime(1500 * jit(0.12), t + 3.6);
+    noise(ac, t + 0.1, 4.7, 0.8).connect(bp).connect(r);
+    send(ac, r, 0.6);
+    // The roar: a low buzz under the whole eruption.
+    const lo = voice(ac, pan * 0.4);
+    lo.gain.setValueAtTime(0, t);
+    lo.gain.linearRampToValueAtTime(0.09 * K, t + 0.6);
+    lo.gain.exponentialRampToValueAtTime(0.0002, t + 7);
+    const lp = filt(ac, 'lowpass', 220, 0.9);
+    for (const f of [41.2, 41.2 * 1.006]) osc(ac, 'sawtooth', f * jit(0.02), t, 7.1).connect(lp);
+    lp.connect(lo);
+    // The glow: a slow chord while the arcade shines.
+    const root = (ROOT[band] || 220) / 2;
+    const pad = voice(ac, pan * 0.5);
+    pad.gain.setValueAtTime(0, t + 1.5);
+    pad.gain.linearRampToValueAtTime(0.05 * K, t + 8);
+    pad.gain.setValueAtTime(0.05 * K, t + 16);
+    pad.gain.exponentialRampToValueAtTime(0.0002, t + 34);
+    const plp = filt(ac, 'lowpass', 900, 0.5);
+    plp.connect(pad);
+    for (const m of [1, 1.4983, 2, 2.9966]) {
+      const a = osc(ac, 'triangle', root * m * jit(0.004), t + 1.5, 33);
+      a.detune.value = (Math.random() - 0.5) * 12;
+      a.connect(plp);
+    }
+    send(ac, pad, 0.4);
+    // The rain: soft drips, each a falling note, as the arcade drains.
+    const n = 9 + Math.floor(Math.random() * 5);
+    for (let i = 0; i < n; i++) {
+      const at = t + 12 + Math.random() * 18;
+      const d = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.4, -1, 1));
+      env(d, at, 0.05 * K * jit(0.4), 0.004, 0.22 * jit(0.3));
+      const f = 900 * jit(0.25);
+      const s = osc(ac, 'sine', f, at, 0.3);
+      s.frequency.exponentialRampToValueAtTime(f * 0.55, at + 0.18);
+      s.connect(d);
+      send(ac, d, 0.5);
+    }
+  }
+
+  // One arcade loop snaps in: a glassy note, one step above the last.
+  function snap(j, pan, band) {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.004;
+    const f = (ROOT[band] || 220) * Math.pow(2, STEPS[j % STEPS.length] / 12) * jit(0.004);
+    const lvl = 0.07 * Math.pow(0.93, j) * jit(0.2);
+    const g = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.3, -1, 1));
+    env(g, t, lvl, 0.006, 1.6 * jit(0.2));
+    osc(ac, 'sine', f, t, 1.8).connect(g);
+    const h = ac.createGain();
+    h.gain.value = 0.28;
+    osc(ac, 'sine', f * 2.756, t, 0.6).connect(h).connect(g);
+    send(ac, g, 0.7);
+  }
+
+  // The turn: a low wind whose level follows the drag speed.
+  let wind = null;
+  function turn(speed) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    if (!wind || wind.ac !== ac) {
+      const g = voice(ac, 0);
+      const lp = filt(ac, 'lowpass', 240, 0.9);
+      const src = ac.createBufferSource();
+      src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.5;
+      src.connect(lp).connect(g);
+      src.start();
+      track(src);
+      wind = { ac, g, lp, src };
+    }
+    const v = clamp(speed / 900, 0, 1);
+    wind.g.gain.setTargetAtTime(0.16 * v, ac.currentTime, 0.06);
+    wind.lp.frequency.setTargetAtTime(160 + 520 * v, ac.currentTime, 0.08);
+  }
+  function endTurn() {
+    if (!wind) return;
+    const { ac, g, src } = wind;
+    g.gain.setTargetAtTime(0, ac.currentTime, 0.12);
+    try { src.stop(ac.currentTime + 0.8); } catch { /* already stopped */ }
+    wind = null;
+  }
+
+  // Stops every sound now: mute, a hidden tab, or sleep.
+  function quiet() {
+    wind = null;
+    for (const n of live) { try { n.stop(); } catch { /* not started */ } }
+  }
+  return { flare, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+}

@@ -163,6 +163,8 @@ export type Dome = {
   show(on: boolean): void;
   // True for the Keck-style enclosure.
   big: boolean;
+  // The cupola's turn height over the dome's root, at size 1.
+  turnY: number;
 };
 
 // The big enclosure follows the Keck domes on Mauna Kea.
@@ -334,5 +336,5 @@ export function buildDome(size: number, laser = false, big = false): Dome {
     tube.updateWorldMatrix(true, false);
     return tube.localToWorld(out.copy(mouth));
   }
-  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, laserMouth, door: doorMat, pose, show, big };
+  return { root, cupola, shutter, tube, setCupola, setShutter, setTube, slitTop, laserMouth, door: doorMat, pose, show, big, turnY };
 }

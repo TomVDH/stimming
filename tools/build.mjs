@@ -50,7 +50,7 @@ const options = (toy) => ({
 if (!toys.length) console.log('No TypeScript toys found.');
 
 // A toy may build more pages than main.ts: each extra entry writes <toy>/dist/<name>.js.
-const extras = { observatory: ['viewer', 'viewer-modern'] };
+const extras = { observatory: ['viewer', 'sim/main', 'viewer-modern'] };
 const extraOptions = (toy, name) => ({
   ...options(toy),
   entryPoints: [join(root, toy, 'src', `${name}.ts`)],

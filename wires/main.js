@@ -9,6 +9,8 @@ import { SKY } from '../shared/sky.js';
 import { dayAt, dayClock, localHour } from '../shared/daytime.js';
 import { OUTPUT } from '../shared/output.js';
 import { GRADE } from '../shared/grade.js';
+import { bloomChain, glowDetail } from '../shared/glow.js';
+import { CLOUDS, CLOUD_FIELD_SHAFTS, clShaftGate } from '../shared/clouds.js';
 
 const stage = document.getElementById('stage');
 const D2R = Math.PI / 180;
@@ -37,10 +39,10 @@ const lapse = { down: 0, on: false };
 let liveBaked = false;
 
 const act = { hour() {}, now() {}, car() {}, scatter() {}, relight() {}, repaint() {}, nowDown() {}, nowUp() {} };
-// Dev tuning: the sun's bearing and the shadow darkness.
-const look = { sunAz: 0, shade: 0.4 };
+// Dev tuning: the sun's bearing, the shadow darkness and the sun rays' gain.
+const look = { sunAz: 0, shade: 0.4, shafts: 1.6 };
 // Dev post: tone map (1 AgX, 0 ACES), film, contrast, exposure, grain, vignette, bloom.
-const grade = { tone: 1, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28, bloom: 0.4 };
+const grade = { tone: 0, film: 1, contrast: 0.55, expo: 1, grain: 0.045, vig: 0.28, bloom: 0.4 };
 const ui = initPage({ id: 'wires', signal: true, bar: {
   slider: { label: 'Time', min: 0, max: 24, step: 0.05, value: hour, onInput: v => act.hour(v) },
   actions: [
@@ -55,7 +57,9 @@ const ui = initPage({ id: 'wires', signal: true, bar: {
     { type: 'slider', id: 'sunaz', group: 'Light', label: 'Sun bearing', min: -180, max: 180, step: 1, value: 0, persist: true, onInput: v => { look.sunAz = v; act.relight(); } },
     // Less sky fill makes the unlit sides and cast shadows darker.
     { type: 'slider', id: 'shade', group: 'Light', label: 'Shadow darkness', min: 0, max: 1, step: 0.01, value: 0.4, persist: true, onInput: v => { look.shade = v; act.relight(); } },
-    { type: 'choice', id: 'tone', group: 'Post', label: 'Tone map', display: 'stepper', value: 'agx', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }], onPick: v => { grade.tone = v === 'aces' ? 0 : 1; act.repaint(); } },
+    // Cloud shadows in the low air at dawn and late day, as in Railgun.
+    { type: 'slider', id: 'shafts', group: 'Light', label: 'Sun rays', min: 0, max: 3, step: 0.05, value: 1.6, persist: true, onInput: v => { look.shafts = v; act.relight(); } },
+    { type: 'choice', id: 'tone', group: 'Post', label: 'Tone map', display: 'stepper', value: 'aces', persist: true, options: [{ value: 'agx', label: 'AgX' }, { value: 'aces', label: 'ACES' }], onPick: v => { grade.tone = v === 'aces' ? 0 : 1; act.repaint(); } },
     // The film look: a Portra 400 grade over the tone map.
     { type: 'slider', id: 'film', group: 'Post', label: 'Film look', min: 0, max: 1, step: 0.01, value: 1, persist: true, onInput: v => { grade.film = v; act.repaint(); } },
     { type: 'slider', id: 'contrast', group: 'Post', label: 'Contrast', min: 0, max: 1, step: 0.01, value: 0.55, persist: true, onInput: v => { grade.contrast = v; act.repaint(); } },
@@ -70,6 +74,7 @@ const ui = initPage({ id: 'wires', signal: true, bar: {
 
 look.sunAz = +ui.setting('sunaz').value;
 look.shade = +ui.setting('shade').value;
+look.shafts = +ui.setting('shafts').value;
 grade.tone = ui.setting('tone').value === 'aces' ? 0 : 1;
 for (const k of ['film', 'contrast', 'expo', 'grain', 'vig', 'bloom']) grade[k] = +ui.setting(k).value;
 
@@ -582,19 +587,14 @@ void main() {
   c = c * 1.25 - 0.22;
   o = vec4(clamp((n * prof + c - 1.08 + uCover) * 3.0, 0.0, 1.0), 0.0, 0.0, 1.0);
 }`;
-// The clouds: the baked field, marched at a third of the size.
-// The march slides the field with the wind and relights it each time.
-// Out: the light the cloud sends, and how much sky it hides.
-const CLOUD_FS = `${HEAD}
-precision highp sampler3D;
-uniform vec2 uRes, uOff;
-uniform float uF, uLvA, uLvF;
-uniform vec3 uFw, uRt, uUp, uKey, uKeyC, uZen, uMid;
-uniform sampler3D uField;
-${ROT}
-${DECK}
-out vec4 o;
+// The baked field's density at p, in km; the clouds and the sun rays share it.
 // Two cover levels mix, so the cover breathes smoothly.
+const CL_DENSITY = `
+precision highp sampler3D;
+uniform sampler3D uField;
+uniform vec2 uOff;
+uniform float uLvA, uLvF;
+${DECK}
 float density(vec3 p) {
   float h = (p.y - BASE) / (TOP - BASE);
   if (h <= 0.0 || h >= 1.0) return 0.0;
@@ -604,6 +604,17 @@ float density(vec3 p) {
   float b = texture(uField, vec3(uv, (uLvA * ${CL_H}.0 + ${CL_H}.0 + z) / D)).r;
   return mix(a, b, uLvF);
 }
+`;
+// The clouds: the baked field, marched at a third of the size.
+// The march slides the field with the wind and relights it each time.
+// Out: the light the cloud sends, and how much sky it hides.
+const CLOUD_FS = `${HEAD}
+uniform vec2 uRes;
+uniform float uF;
+uniform vec3 uFw, uRt, uUp, uKey, uKeyC, uZen, uMid;
+${ROT}
+${CL_DENSITY}
+out vec4 o;
 // Henyey-Greenstein phase.
 float hg(float c, float g) { return (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * c, 1.5) * 0.0796; }
 void main() {
@@ -637,6 +648,28 @@ void main() {
   // Far clouds fade into the low sky.
   float fade = exp(-t0 / 11.0) * smoothstep(0.1, 0.28, d.y);
   o = vec4(L, 1.0 - T) * fade;
+}`;
+// The sun rays: points under the deck test the field toward the sun.
+// Out: the ray's lit share and its depth in the low air, in metres.
+const SHAFT_FS = `${HEAD}
+uniform vec2 uRes;
+uniform float uF;
+uniform vec3 uFw, uRt, uUp, uSun;
+${ROT}
+${CL_DENSITY}
+float clDensity(vec3 p) { return density(p); }
+${CLOUDS}
+${CLOUD_FIELD_SHAFTS}
+out vec4 o;
+void main() {
+  vec2 c = (gl_FragCoord.xy - 0.5 * uRes) / (0.5 * uRes.y);
+  vec2 s = rot(c, -uRoll);
+  vec3 d = normalize(uFw + (s.x * uRt + s.y * uUp) / uF);
+  float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  // Extinction 7 per km matches the cloud march.
+  // A sun path stops after 0.8 km, so a low sun is not all shade.
+  vec2 sh = clShaftsField(vec3(0.0), d, 20.0, BASE, TOP, uSun, 7.0, 0.8, jit);
+  o = vec4(sh.x, sh.y * 1000.0, 0.0, 1.0);
 }`;
 
 // One part of the lane. The vertex shader bounds it on screen.
@@ -1451,8 +1484,13 @@ void main() {
 // The sky, the crows in front of it, the lane in front of them.
 // Out: linear light, before the bloom and the grade.
 const COMP_FS = `${HEAD}
-uniform sampler2D uSky, uScene, uBirds, uWires, uCloud;
+uniform sampler2D uSky, uScene, uBirds, uWires, uCloud, uShaftT;
 uniform vec3 uInk;
+// The sun rays: the view frame, the sun, its glow colour and the strength.
+uniform float uF, uShaft;
+uniform vec3 uFw, uRt, uUp, uSun, uGlowC;
+${ROT}
+${CLOUDS}
 out vec4 o;
 void main() {
   ivec2 fc = ivec2(gl_FragCoord.xy);
@@ -1460,6 +1498,11 @@ void main() {
   vec3 col = texture(uSky, uv).rgb;
   vec4 Cl = texture(uCloud, uv);
   col = col * (1.0 - Cl.a) + Cl.rgb;
+  if (uShaft > 0.001) {
+    vec2 c = (gl_FragCoord.xy - 0.5 * res) / (0.5 * res.y), s = rot(c, -uRoll);
+    vec3 d = normalize(uFw + (s.x * uRt + s.y * uUp) / uF);
+    col = clShaftLook(col, d, texture(uShaftT, uv).rg, uSun, uGlowC, uShaft);
+  }
   vec4 B = texelFetch(uBirds, fc, 0), S = texelFetch(uScene, fc, 0);
   if (B.r > 1e-3) {
     // Far crows take on the sky's haze.
@@ -1471,46 +1514,10 @@ void main() {
   col = col * (1.0 - Wr.a) + Wr.rgb;
   o = vec4(col, 1.0);
 }`;
-// Bloom, after Jimenez (SIGGRAPH 2014): 13-tap downsamples, tent upsamples.
-// The first downsample weighs each group by 1 / (1 + luma): no fireflies.
-const BLOOM_N = 6;
-const BLOOM_DOWN_FS = `${HEAD}
-uniform sampler2D uSrc;
-uniform vec2 uPx, uRes;
-uniform float uFirst;
-out vec4 o;
-vec3 tap(vec2 uv, float x, float y) { return min(texture(uSrc, uv + vec2(x, y) * uPx).rgb, vec3(64.0)); }
-float kw(vec3 c) { return 1.0 / (1.0 + dot(c, vec3(0.2126, 0.7152, 0.0722))); }
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 a = tap(uv, -2.0, 2.0), b = tap(uv, 0.0, 2.0), c = tap(uv, 2.0, 2.0);
-  vec3 d = tap(uv, -2.0, 0.0), e = tap(uv, 0.0, 0.0), f = tap(uv, 2.0, 0.0);
-  vec3 g = tap(uv, -2.0, -2.0), h = tap(uv, 0.0, -2.0), i = tap(uv, 2.0, -2.0);
-  vec3 j = tap(uv, -1.0, 1.0), k = tap(uv, 1.0, 1.0), l = tap(uv, -1.0, -1.0), m = tap(uv, 1.0, -1.0);
-  if (uFirst < 0.5) {
-    o = vec4(e * 0.125 + (a + c + g + i) * 0.03125 + (b + d + f + h) * 0.0625 + (j + k + l + m) * 0.125, 1.0);
-    return;
-  }
-  vec3 g0 = (j + k + l + m) * 0.25, g1 = (a + b + d + e) * 0.25, g2 = (b + c + e + f) * 0.25, g3 = (d + e + g + h) * 0.25, g4 = (e + f + h + i) * 0.25;
-  float w0 = kw(g0) * 0.5, w1 = kw(g1) * 0.125, w2 = kw(g2) * 0.125, w3 = kw(g3) * 0.125, w4 = kw(g4) * 0.125;
-  o = vec4((g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / (w0 + w1 + w2 + w3 + w4), 1.0);
-}`;
-// Each upsample adds a 3x3 tent of the smaller level onto the larger one.
-const BLOOM_UP_FS = `${HEAD}
-uniform sampler2D uSrc;
-uniform vec2 uPx, uRes;
-out vec4 o;
-void main() {
-  vec2 uv = gl_FragCoord.xy / uRes;
-  vec3 s = texture(uSrc, uv).rgb * 4.0;
-  s += (texture(uSrc, uv + vec2(0.0, uPx.y)).rgb + texture(uSrc, uv - vec2(0.0, uPx.y)).rgb + texture(uSrc, uv + vec2(uPx.x, 0.0)).rgb + texture(uSrc, uv - vec2(uPx.x, 0.0)).rgb) * 2.0;
-  s += texture(uSrc, uv + uPx).rgb + texture(uSrc, uv - uPx).rgb + texture(uSrc, uv + vec2(uPx.x, -uPx.y)).rgb + texture(uSrc, uv + vec2(-uPx.x, uPx.y)).rgb;
-  o = vec4(s / 16.0, 1.0);
-}`;
 // The bloom mixes in, then the shared grade and the tone map.
 const OUT_FS = `${HEAD}
 uniform sampler2D uHdr, uBloom;
-uniform float uExpo, uT, uBloomK;
+uniform float uExpo, uT, uBloomK, uBloomN;
 // Post: x tone map (1 AgX), y film look, z contrast, w grain.
 uniform vec4 uPost;
 uniform float uVig;
@@ -1549,8 +1556,8 @@ vec3 portra(vec3 c, float k, float con) {
 void main() {
   vec2 res = vec2(textureSize(uHdr, 0)), uv = gl_FragCoord.xy / res;
   vec3 col = texelFetch(uHdr, ivec2(gl_FragCoord.xy), 0).rgb;
-  // The upsamples sum BLOOM_N levels, so the mix divides by that.
-  if (uBloomK > 0.0) col = mix(col, texture(uBloom, uv).rgb / ${BLOOM_N}.0, uBloomK);
+  // The shared chain sums uBloomN levels, so the mix divides by that.
+  if (uBloomK > 0.0) col = mix(col, texture(uBloom, uv).rgb / uBloomN, uBloomK);
   col = gdGrade(col, uv, res.x / res.y, gl_FragCoord.xy + floor(fract(uT) * 97.0), vec3(0.0), uVig, 0.45, uPost.w);
   if (uPost.x < 0.5) { o = vec4(ouFilmAces(col, uExpo, gl_FragCoord.xy), 1.0); return; }
   vec3 d = ouSrgb(agx(col * uExpo));
@@ -1568,9 +1575,11 @@ if (!gl || !gl.getExtension('EXT_color_buffer_float')) {
   throw new Error('East Van Alley needs WebGL 2 with float targets.');
 }
 let P = null, vao = null, strokeVao = null, wireVao = null, strokeN = 0, ready = false, wireT = null;
-let S = [], cur = 0, FA = null, FB = null, birdT = null, sceneT = null, skyT = null, passT = null, cloudT = null, wpT = null;
-// The linear frame and the bloom levels, half size and smaller.
-let hdrT = null, bloomT = [];
+let S = [], cur = 0, FA = null, FB = null, birdT = null, sceneT = null, skyT = null, passT = null, cloudT = null, shaftT = null, wpT = null;
+// True while shaftT holds the last cloud bake's sun rays.
+let shaftBaked = false;
+// The linear frame; the shared chain (shared/glow.js) keeps its own levels.
+let hdrT = null, glow = null;
 let rows = 8, GX = 0, GY = 0, AW = 0, AH = 0, fieldA = 0, W = 0, H = 0, A = 16 / 9;
 const GMIN = [0, 0, 0];
 
@@ -1603,12 +1612,11 @@ const freeT = t => { if (!t) return; gl.deleteFramebuffer(t.fb); gl.deleteTextur
 
 async function buildGL() {
   P = await linked(gl, {
-    sky: program(gl, TRI, SKY_FS), cloud: program(gl, TRI, CLOUD_FS), cfield: program(gl, TRI, FIELD_FS), wire: program(gl, PART_VS, partFS(0)), solid: program(gl, PART_VS, partFS(1)), shoe: program(gl, PART_VS, partFS(2)), add: program(gl, TRI, ADD_FS),
+    sky: program(gl, TRI, SKY_FS), cloud: program(gl, TRI, CLOUD_FS), shaft: program(gl, TRI, SHAFT_FS), cfield: program(gl, TRI, FIELD_FS), wire: program(gl, PART_VS, partFS(0)), solid: program(gl, PART_VS, partFS(1)), shoe: program(gl, PART_VS, partFS(2)), add: program(gl, TRI, ADD_FS),
     splat: program(gl, SPLAT_VS, SPLAT_FS), blur: program(gl, TRI, BLUR_FS), upd: program(gl, TRI, UPDATE_FS),
     bird: program(gl, BIRD_VS, BIRD_FS), comp: program(gl, TRI, COMP_FS), out: program(gl, TRI, OUT_FS),
-    bdown: program(gl, TRI, BLOOM_DOWN_FS), bup: program(gl, TRI, BLOOM_UP_FS),
   });
-  // Samplers keep fixed units: state 0-1, field 3-4, birds 5, scene 6, sky 7.
+  // Samplers keep fixed units: state 0-1, field 3-4, birds 5, scene 6, sky 7, sun rays 10.
   for (const q of [P.splat, P.upd, P.bird]) { gl.useProgram(q.p); gl.uniform1i(q.u.uPos, 0); gl.uniform1i(q.u.uVel, 1); }
   gl.useProgram(P.upd.p);
   gl.uniform1i(P.upd.u.uF0, 3);
@@ -1622,12 +1630,12 @@ async function buildGL() {
   gl.uniform1i(P.comp.u.uSky, 7);
   gl.uniform1i(P.comp.u.uWires, 8);
   gl.uniform1i(P.comp.u.uCloud, 9);
+  gl.uniform1i(P.comp.u.uShaftT, 10);
   gl.uniform3fv(P.comp.u.uInk, linFit(0.13, 0.01, 270));
   // The output reads the linear frame on 12 and the bloom on 13.
   gl.useProgram(P.out.p);
   gl.uniform1i(P.out.u.uHdr, 12);
   gl.uniform1i(P.out.u.uBloom, 13);
-  for (const q of [P.bdown, P.bup]) { gl.useProgram(q.p); gl.uniform1i(q.u.uSrc, 12); }
   vao = gl.createVertexArray();
   S = [0, 1].map(() => {
     const pos = tex(TW, rows, gl.RGBA32F, gl.NEAREST), vel = tex(TW, rows, gl.RGBA32F, gl.NEAREST);
@@ -1654,8 +1662,9 @@ async function buildGL() {
   lay(wireStart);
   gl.bindVertexArray(null);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  FA = FB = birdT = sceneT = skyT = passT = wireT = cloudT = wpT = hdrT = null;
-  bloomT = [];
+  FA = FB = birdT = sceneT = skyT = passT = wireT = cloudT = shaftT = wpT = hdrT = null;
+  // A new context needs a new chain.
+  glow = bloomChain(gl);
   fieldA = 0;
   bakeCloudField();
 }
@@ -1686,8 +1695,7 @@ function bakeCloudField() {
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.deleteFramebuffer(fb);
-  gl.useProgram(P.cloud.p);
-  gl.uniform1i(P.cloud.u.uField, 11);
+  for (const q of [P.cloud, P.shaft]) { gl.useProgram(q.p); gl.uniform1i(q.u.uField, 11); }
 }
 // The field grid spans the frame, so its width follows the aspect.
 function allocField() {
@@ -1712,7 +1720,7 @@ function allocField() {
 function allocTargets() {
   const cw = canvas.width, ch = canvas.height;
   if (birdT && birdT.w === cw && birdT.h === ch) return;
-  [birdT, sceneT, skyT, passT, cloudT, wireT, hdrT, ...bloomT].forEach(freeT);
+  [birdT, sceneT, skyT, passT, cloudT, shaftT, wireT, hdrT].forEach(freeT);
   if (wpT) { gl.deleteFramebuffer(wpT.fb); gl.deleteTexture(wpT.tex); }
   const mk = (w, h, filter) => { const t = tex(w, h, gl.RGBA16F, filter); return { tex: t, fb: fbo([t]), w, h }; };
   birdT = mk(cw, ch, gl.NEAREST);
@@ -1731,9 +1739,10 @@ function allocTargets() {
   gl.bindFramebuffer(gl.FRAMEBUFFER, wpT.fb);
   gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, passT.depth);
   cloudT = mk(Math.ceil(cw / 3), Math.ceil(ch / 3), gl.LINEAR);
+  shaftT = mk(Math.ceil(cw / 3), Math.ceil(ch / 3), gl.LINEAR);
+  shaftBaked = false;
   skyT = mk(Math.ceil(cw / 2), Math.ceil(ch / 2), gl.LINEAR);
   hdrT = mk(cw, ch, gl.LINEAR);
-  bloomT = Array.from({ length: BLOOM_N }, (_, i) => mk(Math.max(1, Math.ceil(cw / 2 ** (i + 1))), Math.max(1, Math.ceil(ch / 2 ** (i + 1))), gl.LINEAR));
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 }
 function gridUniforms(q) {
@@ -1870,6 +1879,8 @@ function bakeSky() {
 }
 // Each visit gets its own sky: a random place in the cloud field and a random cover.
 const SKY_SEED = [rand(0, 60), rand(0, 60)], COVER = rand(0.16, 0.3);
+// The sun rays' strength: a low sun only, times the Dev gain.
+const shaftK = () => look.shafts * clShaftGate(light.sun[1], light.night) * (reduced() ? 0.6 : 1);
 // The clouds drift east and a little north, about 10 m each second.
 function bakeClouds() {
   const { s, cloudKey, cloudC } = light, K = P.cloud.u;
@@ -1877,21 +1888,35 @@ function bakeClouds() {
   gl.bindVertexArray(vao);
   gl.bindFramebuffer(gl.FRAMEBUFFER, cloudT.fb);
   gl.viewport(0, 0, cloudT.w, cloudT.h);
-  gl.useProgram(P.cloud.p);
-  gl.uniform2f(K.uRes, cloudT.w, cloudT.h);
   // The offset wraps with the field, so float precision holds for hours.
-  gl.uniform2f(K.uOff, -(windT * 0.01 % CL_L), -(windT * 0.004 % CL_L));
+  const off = [-(windT * 0.01 % CL_L), -(windT * 0.004 % CL_L)];
   // The cover breathes slowly, so clouds form and thin out.
   // It falls between two baked levels; the shader mixes them.
   const cover = COVER + 0.05 * Math.sin(windT * 0.021 + SKY_SEED[0]);
   const lv = clamp((cover - CL_LV[0]) / (CL_LV[1] - CL_LV[0]), 0, CL_LV.length - 1), lvA = Math.min(Math.floor(lv), CL_LV.length - 2);
-  gl.uniform1f(K.uLvA, lvA);
-  gl.uniform1f(K.uLvF, lv - lvA);
-  gl.uniform1f(K.uRoll, ROLL);
-  gl.uniform1f(K.uF, F);
-  gl.uniform3fv(K.uFw, FW);
-  gl.uniform3fv(K.uRt, RT);
-  gl.uniform3fv(K.uUp, UP);
+  const field = q => {
+    gl.uniform2f(q.u.uRes, cloudT.w, cloudT.h);
+    gl.uniform2fv(q.u.uOff, off);
+    gl.uniform1f(q.u.uLvA, lvA);
+    gl.uniform1f(q.u.uLvF, lv - lvA);
+    gl.uniform1f(q.u.uRoll, ROLL);
+    gl.uniform1f(q.u.uF, F);
+    gl.uniform3fv(q.u.uFw, FW);
+    gl.uniform3fv(q.u.uRt, RT);
+    gl.uniform3fv(q.u.uUp, UP);
+  };
+  // The sun rays bake with the clouds, from the same field.
+  shaftBaked = shaftK() > 0.001;
+  if (shaftBaked) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, shaftT.fb);
+    gl.useProgram(P.shaft.p);
+    field(P.shaft);
+    gl.uniform3fv(P.shaft.u.uSun, light.sun);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, cloudT.fb);
+  }
+  gl.useProgram(P.cloud.p);
+  field(P.cloud);
   gl.uniform3fv(K.uKey, cloudKey);
   // At night the moon lights the clouds weakly; the city lights them from below.
   const n = light.night, city = CITY.map(v => v * n * 2.5);
@@ -2115,44 +2140,39 @@ function draw() {
   bindTex(7, skyT.tex);
   bindTex(8, wireT.tex);
   bindTex(9, cloudT.tex);
+  bindTex(10, shaftT.tex);
+  // An unbaked ray texture would read as full shade: skip the look.
+  const C = P.comp.u, sk = shaftBaked ? shaftK() : 0;
+  gl.uniform1f(C.uShaft, sk);
+  if (sk > 0.001) {
+    gl.uniform1f(C.uRoll, ROLL);
+    gl.uniform1f(C.uF, F);
+    gl.uniform3fv(C.uFw, FW);
+    gl.uniform3fv(C.uRt, RT);
+    gl.uniform3fv(C.uUp, UP);
+    gl.uniform3fv(C.uSun, light.sun);
+    // As in Railgun, the glow fades over 10 degrees under the horizon.
+    gl.uniform3fv(C.uGlowC, light.sunC.map(c => c * sstep(-0.174, 0, light.sun[1])));
+  }
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   // The Bloom setting runs 0 to 1; 1 mixes in 12 percent.
-  const k = grade.bloom * 0.12;
-  if (k > 0) bloom();
+  // A tiny threshold turns on the chain's cap of 64: the sun disc stays tame.
+  const k = grade.bloom * 0.12, levels = glowDetail(D.level).levels;
+  const bloomTex = k > 0 ? glow.render(hdrT.tex, cw, ch, { threshold: 1e-3, cap: 64, levels }) : hdrT.tex;
+  gl.bindVertexArray(vao);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, cw, ch);
   const O = P.out.u;
   gl.useProgram(P.out.p);
   bindTex(12, hdrT.tex);
-  bindTex(13, bloomT[0].tex);
+  bindTex(13, bloomTex);
   gl.uniform1f(O.uBloomK, k);
+  gl.uniform1f(O.uBloomN, levels);
   gl.uniform1f(O.uExpo, light.expo * grade.expo);
   gl.uniform4f(O.uPost, grade.tone, grade.film, grade.contrast, grade.grain);
   gl.uniform1f(O.uVig, grade.vig);
   gl.uniform1f(O.uT, simT);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
-}
-// Down the levels from the linear frame, then back up, summing.
-function bloom() {
-  const pass = (q, src, dst) => {
-    gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
-    gl.viewport(0, 0, dst.w, dst.h);
-    bindTex(12, src.tex);
-    gl.uniform2f(q.u.uPx, 1 / src.w, 1 / src.h);
-    gl.uniform2f(q.u.uRes, dst.w, dst.h);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
-  };
-  gl.disable(gl.BLEND);
-  gl.useProgram(P.bdown.p);
-  bloomT.forEach((dst, i) => {
-    gl.uniform1f(P.bdown.u.uFirst, i === 0 ? 1 : 0);
-    pass(P.bdown, i ? bloomT[i - 1] : hdrT, dst);
-  });
-  gl.useProgram(P.bup.p);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.ONE, gl.ONE);
-  for (let i = BLOOM_N - 2; i >= 0; i--) pass(P.bup, bloomT[i + 1], bloomT[i]);
-  gl.disable(gl.BLEND);
 }
 
 /* ---------- the car, the shoes, a plucked wire ---------- */

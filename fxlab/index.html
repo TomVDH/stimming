@@ -130,7 +130,7 @@ const gl = cv.getContext('webgl2', { antialias: false, alpha: false });
 const KNOBS = {
   gain: ['Gain', 0, 3, 0.01, 1], size: ['Size', 0.1, 2, 0.01, 1], band: ['Band', 0, 1, 0.01, 0], hard: ['Hard', 0, 1, 0.01, 0],
   streak: ['Streak', 0, 3, 0.01, 1], ghost: ['Ghosts', 0, 3, 0.01, 1], spread: ['Spread', 0.3, 2, 0.01, 1], warm: ['Warmth', -1, 1, 0.01, 0],
-  len: ['Length', 0.05, 1.5, 0.01, 0.35], thin: ['Thinness', 20, 400, 1, 160], extra: ['More ghosts', 0, 3, 0.01, 0],
+  len: ['Length', 0.05, 1.5, 0.01, 0.35], thin: ['Thinness', 20, 400, 1, 160], extra: ['More ghosts', 0, 3, 0.01, 0], orb: ['Orb', 0, 3, 0.01, 1],
   kVeil: ['Veil', 0, 3, 0.01, 1], kStreak: ['Streak', 0, 3, 0.01, 1], kGhost: ['Ghosts', 0, 3, 0.01, 1], bSize: ['Size', 0.1, 2, 0.01, 1],
   tintK: ['Tint', 0, 40, 0.1, 1], vig: ['Vignette', 0, 1, 0.01, 0.5], vigIn: ['Inner edge', 0, 1, 0.01, 0.4], grain: ['Grain', 0, 0.3, 0.001, 0.03],
   seed: ['Grain seed', 0, 20, 1, 0], box: ['Letterbox', 0, 1, 1, 0], flick: ['Flicker', -0.1, 0.1, 0.001, 0],
@@ -292,6 +292,31 @@ vec3 warm(vec3 c) { float g = min(c.g, c.r); return vec3(c.r, g, min(c.b, g)); }
   add += col * flGhosts(uv, uSrc, uAsp, 1.0, uSpread, 0.0) * 0.06 * uGhost;
   // This flare adds light before bloom; it does not screen.
   return base + add;`,
+  },
+  {
+    id: 'buoy', name: 'Buoy Business', a: 'Havoc', b: 'flBuoy()', light: 'white',
+    knobs: { orb: 0.6, streak: 0.2, ghost: 0.25, size: 1, spread: 1, len: 0.22, thin: 209, warm: 0 },
+    // A: Havoc's lensflare.js and orbNode, line by line, at its look values.
+    A: `
+  vec3 tint = mix(uCol, uWarm > 0.0 ? vec3(1.0, 0.42, 0.1) : vec3(1.0, 0.93, 0.8), clamp(abs(uWarm), 0.0, 1.0));
+  vec3 t = max(tint, 0.0);
+  float g = min(t.y, t.x);
+  vec3 col = vec3(t.x, g, min(t.z, g));
+  vec2 d = uv - uSrc;
+  float ax = d.x * uAsp, ay = d.y;
+  float line = exp(abs(ay) * -uThin) + exp(abs(ay) * (uThin * -0.08)) * 0.3;
+  vec3 acc = col * line * exp(-(abs(ax) / uLen)) * (1.4 * 4.0) * uStreak;
+  vec2 toCentre = (vec2(0.5) - uSrc) * uSpread;
+  vec3 gh[3]; gh[0] = vec3(0.7, 0.05, 0.9); gh[1] = vec3(1.4, 0.09, 0.6); gh[2] = vec3(2.2, 0.15, 0.4);
+  for (int i = 0; i < 3; i++) {
+    vec2 q = (uv - (uSrc + toCentre * gh[i].x)) * vec2(uAsp, 1.0);
+    acc += col * exp(dot(q, q) / -(gh[i].y * gh[i].y)) * (2.2 * gh[i].z * 1.5) * uGhost;
+  }
+  float r = length(vec2(d.x * uAsp * 0.6, d.y));
+  acc += uCol * uOrb * exp(-(r * 20.0 / uSize));
+  return base + acc;`,
+    B: `
+  return base + flBuoy(uv, uSrc, uAsp, uCol, uSize, vec3(uOrb, uStreak, uGhost), vec4(uThin, uLen, FL_BB.z, uSpread), uWarm);`,
   },
 ];
 

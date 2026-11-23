@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Epicycles 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Epicycles 1</h1>
+<p class="lede">Epicycles, round 1. No pick yet; A goes on the menu until Tom picks. A: a chain of glossy steel hoops, each riding on the last; its pen draws a glowing gold heart. D: the same chain and heart laid flat on a dark block.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+
+  // The toy's tokens: cool steel hoops, a gold pen line, a white-hot pen.
+  const STEEL = [[0, 'oklch(0.86 0.03 245)'], [0.55, 'oklch(0.6 0.05 252)'], [1, 'oklch(0.4 0.055 260)']];
+  const GOLD = [[0, 'oklch(0.93 0.11 85)'], [0.5, 'oklch(0.82 0.16 70)'], [1, 'oklch(0.68 0.17 50)']];
+  const GLOW = 'oklch(0.75 0.17 60)', ARM = 'oklch(0.9 0.02 245)';
+  const PEN = [[0, '#fff', 1], [0.35, 'oklch(0.92 0.1 80)', 0.95], [1, 'oklch(0.75 0.17 60)', 0]];
+
+  // The heart as a Fourier series: its four largest circles draw it.
+  // Heart: x = 16 sin³t, y = 13 cos t - 5 cos 2t - 2 cos 3t - cos 4t.
+  const heart = t => [16 * Math.sin(t) ** 3, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t))];
+  const series = (n, keep) => {
+    const pts = Array.from({ length: n }, (_, i) => heart((i / n) * 2 * Math.PI));
+    const terms = [];
+    let c0 = [0, 0];
+    for (let k = -8; k <= 8; k++) {
+      let re = 0, im = 0;
+      pts.forEach(([x, y], i) => { const a = (-2 * Math.PI * k * i) / n; re += x * Math.cos(a) - y * Math.sin(a); im += x * Math.sin(a) + y * Math.cos(a); });
+      re /= n; im /= n;
+      if (k === 0) c0 = [re, im]; else terms.push({ k, re, im, r: Math.hypot(re, im) });
+    }
+    terms.sort((a, b) => b.r - a.r);
+    return { c0, terms: terms.slice(0, keep) };
+  };
+  const HEART = series(128, 4);
+  // The chain at angle t: each circle's centre, then the pen.
+  const chainAt = (S, cx, cy, t) => {
+    let x = cx + HEART.c0[0] * S, y = cy + HEART.c0[1] * S;
+    const centres = HEART.terms.map(c => {
+      const at = [x, y], a = c.k * t;
+      x += (c.re * Math.cos(a) - c.im * Math.sin(a)) * S;
+      y += (c.re * Math.sin(a) + c.im * Math.cos(a)) * S;
+      return at;
+    });
+    return { centres, pen: [x, y] };
+  };
+  // The pen's path from angle a to angle b, as a polyline.
+  const trailD = (S, cx, cy, a, b, steps = 160) => {
+    const n = Math.max(2, Math.round(steps * Math.abs(b - a) / (2 * Math.PI)));
+    let d = '';
+    for (let i = 0; i <= n; i++) { const p = chainAt(S, cx, cy, a + ((b - a) * i) / n).pen; d += `${i ? 'L' : 'M'}${f(p[0])} ${f(p[1])}`; }
+    return d;
+  };
+  // A hoop: an annulus round the origin, mid radius r, width w.
+  const hoop = (r, w) => {
+    const R = r + w / 2, q = Math.max(0.5, r - w / 2);
+    return `M${f(-R)} 0A${f(R)} ${f(R)} 0 1 0 ${f(R)} 0A${f(R)} ${f(R)} 0 1 0 ${f(-R)} 0ZM${f(-q)} 0A${f(q)} ${f(q)} 0 1 1 ${f(q)} 0A${f(q)} ${f(q)} 0 1 1 ${f(-q)} 0Z`;
+  };
+  const HOOP_W = [6.4, 3.6, 3.2, 3.2];
+  // The pen rests on the right lobe.
+  const REST_T = 1.15;
+  const TAU = 2 * Math.PI;
+
+  // The shared motion: play wipes the heart and the pen draws it again.
+  // The chain whirls while it draws; rest eases it home to the right lobe.
+  const run = (svg, S, cx, cy) => {
+    const rings = [...svg.querySelectorAll('.ring')], arms = [...svg.querySelectorAll('.arm')];
+    const trail = [...svg.querySelectorAll('.trail')], pen = svg.querySelector('.pen');
+    const st = { t: REST_T, from: REST_T, live: false, speed: 0, last: 0 };
+    const paint = () => {
+      const { centres, pen: p } = chainAt(S, cx, cy, st.t);
+      centres.forEach((c, i) => {
+        rings[i]?.setAttribute('transform', `translate(${f(c[0])} ${f(c[1])})`);
+        const nx = centres[i + 1] || p;
+        arms[i]?.setAttribute('d', `M${f(c[0])} ${f(c[1])}L${f(nx[0])} ${f(nx[1])}`);
+      });
+      pen.setAttribute('transform', `translate(${f(p[0])} ${f(p[1])})`);
+      // The trail covers what the pen drew, one loop at most.
+      const d = trailD(S, cx, cy, Math.max(st.from, st.t - TAU * 0.999), st.t);
+      trail.forEach(e => e.setAttribute('d', d));
+    };
+    const step = time => {
+      const dt = Math.min(0.1, time - (st.last || time));
+      st.last = time;
+      if (st.live) {
+        st.speed += (TAU / 2.6 - st.speed) * Math.min(1, dt * 3);
+        st.t += st.speed * dt;
+      } else {
+        // Home: the next rest angle ahead, reached on a soft ease.
+        const home = REST_T + TAU * Math.ceil((st.t - REST_T) / TAU - 1e-6);
+        st.t += (home - st.t) * Math.min(1, dt * 4);
+        if (home - st.t < 0.003) { st.t = REST_T; st.from = REST_T - TAU; paint(); st.last = 0; loop.stop(); return; }
+      }
+      paint();
+    };
+    const loop = clock(step);
+    st.from = REST_T - TAU;
+    paint();
+    return {
+      enter() { st.live = true; st.from = st.t; st.speed = 0; loop.start(); },
+      move() {},
+      leave() { st.live = false; loop.start(); },
+    };
+  };
+  // The chain parts as markup, at the rest pose; run() moves them.
+  const chainMarkup = (u, S, cx, cy, k = 1) => {
+    const { centres, pen } = chainAt(S, cx, cy, REST_T);
+    const ringsM = HEART.terms.map((c, i) => `<g class="ring" fill-rule="evenodd" transform="translate(${f(centres[i][0])} ${f(centres[i][1])})">${body(hoop(c.r * S, HOOP_W[i] * k), u, 'steel')}</g>`);
+    const armsM = centres.map((c, i) => { const n = centres[i + 1] || pen; return `<path class="arm" d="M${f(c[0])} ${f(c[1])}L${f(n[0])} ${f(n[1])}" stroke="${ARM}" stroke-width="${f(2.2 * k)}" stroke-linecap="round"/>`; });
+    const d = trailD(S, cx, cy, REST_T - TAU, REST_T);
+    return {
+      big: ringsM[0],
+      small: ringsM.slice(1).join(''),
+      arms: armsM.join(''),
+      trail: `<path class="trail" d="${d}" fill="none" stroke="${GLOW}" stroke-width="${f(7 * k)}" stroke-linejoin="round" opacity="0.55" filter="url(#${u}g)"/>
+        <path class="trail" d="${d}" fill="none" stroke="url(#${u}gold)" stroke-width="${f(4.2 * k)}" stroke-linejoin="round" stroke-linecap="round"/>`,
+      pen: `<g class="pen" transform="translate(${f(pen[0])} ${f(pen[1])})"><circle r="${f(9 * k)}" fill="url(#${u}pen)"/><circle r="${f(3 * k)}" fill="#fff"/></g>`,
+      d, centres, penAt: pen,
+    };
+  };
+
+  /* ================= Current ================= */
+
+  // Epicycles is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The chain stands face on; its pen has drawn a gold heart.
+  const AS = 3.05, ACX = 64, ACY = 62;
+  const A_CH = chainMarkup('E', AS, ACX, ACY);
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [12, 12, 104, 104],
+    idea: 'A chain of glossy steel hoops stands face on: one big hoop, and three small ones that ride its rim, each on the last, joined by bright arms. The last carries a white-hot pen, and the pen has drawn a glowing gold heart round them all. The four hoops are the four largest circles of the heart\'s Fourier series, so the line is their true path. The pointer wipes the heart; the chain whirls and the pen draws it again, and goes on round. When the pointer leaves, the chain eases home to the right lobe.',
+    art(svg, u) {
+      const c = chainMarkup(u, AS, ACX, ACY);
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 3)}${blur(`${u}g`, 3.2)}${blur(`${u}h`, 9)}
+          ${lg(`${u}steel`, STEEL, 'x1="0.1" y1="0" x2="0.7" y2="1"')}${lg(`${u}gold`, GOLD, 'x1="0" y1="0" x2="0.4" y2="1"')}${rg(`${u}pen`, PEN)}</defs>
+        <ellipse cx="64" cy="62" rx="40" ry="34" fill="oklch(0.55 0.13 60)" opacity="0.22" filter="url(#${u}h)"/>
+        ${c.big}${c.trail}${c.arms}${c.small}${c.pen}`;
+      return run(svg, AS, ACX, ACY);
+    },
+    // The emblem: the big hoop, the heart line, the arms and small hoops, the pen.
+    emblem: `${EMB_HEAD}<g fill="#fff" fill-rule="evenodd">${HEART.terms.map((t, i) => `<path transform="translate(${f(A_CH.centres[i][0])} ${f(A_CH.centres[i][1])})" d="${hoop(t.r * AS, [7, 4.4, 4, 4][i])}"/>`).join('')}<circle cx="${f(A_CH.penAt[0])}" cy="${f(A_CH.penAt[1])}" r="5.4"/></g><path d="${A_CH.d}" fill="none" stroke="#fff" stroke-width="6" stroke-linejoin="round" stroke-linecap="round"/>${A_CH.centres.map((c, i) => { const n = A_CH.centres[i + 1] || A_CH.penAt; return `<path d="M${f(c[0])} ${f(c[1])}L${f(n[0])} ${f(n[1])}" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/>`; }).join('')}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // A dark slab at 30 degrees; the chain and its heart lie flat on its top.
+  const CY = 44, HX = 31, HY = 31, T = 14;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const N = iso(-HX, -HY), E = iso(HX, -HY), S = iso(HX, HY), W = iso(-HX, HY);
+  const down = (p, k = 1) => [p[0], p[1] + T * k];
+  const DS = 1.45;
+  // The top plane: grid units to the tile, by one matrix.
+  const ISO_M = `matrix(0.866 0.5 -0.866 0.5 64 ${CY})`;
+  const D_CH = chainMarkup('E', DS, 0, 2, 0.75);
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [10, 11, 108, 80],
+    idea: 'A slab of dark blue-black glass at 30 degrees: light top, mid left face, dark right face, a rim on the top edges. The chain of steel hoops lies flat on the top, and its pen has drawn the gold heart there, glowing on the dark. The pointer wipes the heart and the chain draws it again; it eases home when the pointer leaves.',
+    art(svg, u) {
+      const top = poly([N, E, S, W]);
+      const c = chainMarkup(u, DS, 0, 2, 0.75);
+      svg.innerHTML = `<defs>${light(u)}${blur(`${u}b`, 2.6)}${blur(`${u}g`, 2.4)}${blur(`${u}h`, 6)}
+          ${lg(`${u}top`, [[0, 'oklch(0.3 0.03 262)'], [1, 'oklch(0.17 0.025 266)']], 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+          ${lg(`${u}L`, [[0, 'oklch(0.26 0.03 262)'], [1, 'oklch(0.19 0.028 264)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.17 0.022 264)'], [1, 'oklch(0.11 0.02 266)']])}
+          ${lg(`${u}steel`, STEEL, 'x1="0.1" y1="0" x2="0.7" y2="1"')}${lg(`${u}gold`, GOLD, 'x1="0" y1="0" x2="0.4" y2="1"')}${rg(`${u}pen`, PEN)}</defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="url(#${u}R)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <ellipse cx="64" cy="${CY}" rx="27" ry="14" fill="oklch(0.6 0.14 60)" opacity="0.2" filter="url(#${u}h)"/>
+        <g transform="${ISO_M}">${c.big}${c.trail}${c.arms}${c.small}${c.pen}</g>
+        <path d="${top}" fill="url(#${u}lit)" opacity="0.6"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>`;
+      return run(svg.querySelector('g[transform^="matrix"]'), DS, 0, 2);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly([N, E, S, W])}" fill="#202020"/><g transform="${ISO_M}"><g fill="#fff" fill-rule="evenodd">${HEART.terms.map((t, i) => `<path transform="translate(${f(D_CH.centres[i][0])} ${f(D_CH.centres[i][1])})" d="${hoop(t.r * DS, [5, 3.2, 3, 3][i])}"/>`).join('')}<circle cx="${f(D_CH.penAt[0])}" cy="${f(D_CH.penAt[1])}" r="3.6"/></g><path d="${D_CH.d}" fill="none" stroke="#fff" stroke-width="4" stroke-linejoin="round"/></g></svg>`,
+  });
+
+
+  /* ================= Gallery ================= */
+  const NAME = 'Epicycles';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-epicycles';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `epicycles-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

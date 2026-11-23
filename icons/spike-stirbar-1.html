@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Stir vortex 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Stir vortex 1</h1>
+<p class="lede">Stir vortex, round 1. No pick yet; A goes on the menu until Tom picks. A: a glass beaker on a black stirrer with a white plate; the water dips into a funnel and a blue helix of dye winds down it to the stir bar. D: the stirrer is the block, the beaker stands on its plate.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  // The toy's tokens: dark glass, backlit water, blue dye, a black stirrer with a white plate.
+  const GLASS = [[0, 'oklch(0.36 0.03 215)'], [1, 'oklch(0.2 0.025 230)']];
+  const WATERC = [[0, 'oklch(0.86 0.025 225)'], [1, 'oklch(0.62 0.04 232)']];
+  const DYE = [[0, 'oklch(0.56 0.2 262)'], [1, 'oklch(0.36 0.19 266)']];
+  const BODYC = [[0, 'oklch(0.3 0.01 260)'], [1, 'oklch(0.15 0.008 260)']];
+  const PLATE = [[0, 'oklch(0.95 0.004 250)'], [1, 'oklch(0.76 0.01 250)']];
+  const KNOBC = [[0, 'oklch(0.34 0.01 260)'], [1, 'oklch(0.12 0.006 260)']];
+
+  // The beaker: a spout at the top left, a flat base at y 91.
+  const BEAKER = 'M40 91Q36 91 36 87L36 25Q32 22 32 18L94 18Q95 21 92 23L92 87Q92 91 88 91Z';
+  const INNER = 'M43 87Q40 87 40 84L40 23L88 23L88 84Q88 87 85 87Z';
+  // The water's top: a funnel, shallow at rest and deep in play.
+  const fun = tip => `M38 40C52 40 58 44 61 ${f(40 + (tip - 40) * 0.42)}L64 ${tip}L67 ${f(40 + (tip - 40) * 0.42)}C70 44 76 40 90 40`;
+  const WATER = tip => `${fun(tip)}L90 92L38 92Z`;
+  const REST = 68, DEEP = 82;
+  // The dye: one helix that winds down round the funnel and narrows.
+  const helix = (() => {
+    const pts = [];
+    for (let i = 0; i <= 120; i++) {
+      const t = i / 120, a = t * 3.2 * Math.PI * 2 + 0.6;
+      const rx = 19 * (1 - t) ** 1.3 + 4.5;
+      pts.push([64 + rx * Math.cos(a), 46 + 36 * t + 2.6 * Math.sin(a)]);
+    }
+    return 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
+  })();
+  // The stirrer: a black body, a white ceramic plate, one knob, an amber lamp.
+  const BODY = 'M20 97L108 97Q114 97 114 103L114 112Q114 118 108 118L20 118Q14 118 14 112L14 103Q14 97 20 97Z';
+  const PLATEP = 'M22 89L106 89Q109 89 109 92L109 97L19 97L19 92Q19 89 22 89Z';
+
+  // The shared motion: play turns the knob up; the bar spins, the funnel deepens,
+  // and the dye runs down its helix. Rest turns the knob back and the funnel relaxes.
+  const run = svg => {
+    const knob = svg.querySelector('.knob'), bar = svg.querySelector('.bar'), dye = svg.querySelectorAll('.dye');
+    const water = svg.querySelector('.water'), edge = svg.querySelector('.edge'), lamp = svg.querySelector('.lamp');
+    const tip = { v: REST };
+    const draw = () => { water.setAttribute('d', WATER(tip.v)); edge.setAttribute('d', fun(tip.v)); };
+    let tl = null;
+    return {
+      enter() {
+        if (tl) tl.kill();
+        tl = gsap.timeline();
+        tl.to(knob, { rotation: 100, svgOrigin: knob.dataset.o, duration: 0.35, ease: 'power2.out' })
+          .to(lamp, { opacity: 1, duration: 0.2 }, '<')
+          .to(tip, { v: DEEP, duration: 0.9, ease: 'power2.out', onUpdate: draw }, '<0.1')
+          .to(bar, { scaleX: 0.2, svgOrigin: '64 86', duration: 0.07, repeat: -1, yoyo: true, ease: 'sine.inOut' }, '<')
+          .to(dye, { strokeDashoffset: -60, duration: 1.6, repeat: -1, ease: 'none' }, '<');
+      },
+      move() {},
+      leave() {
+        if (tl) tl.kill();
+        tl = null;
+        gsap.to(knob, { rotation: 0, svgOrigin: knob.dataset.o, duration: 0.4, ease: 'power2.out' });
+        gsap.to(lamp, { opacity: 0.55, duration: 0.3 });
+        gsap.to(bar, { scaleX: 1, svgOrigin: '64 86', duration: 0.2 });
+        gsap.to(tip, { v: REST, duration: 1.2, ease: 'power2.inOut', onUpdate: draw });
+        gsap.to(dye, { strokeDashoffset: 0, duration: 0.8, ease: 'power2.out' });
+      },
+    };
+  };
+  // The beaker with its water, dye and bar, in the menu's language.
+  const beakerArt = u => `
+        ${body(BEAKER, u, 'glass')}
+        <clipPath id="${u}in"><path d="${INNER}"/></clipPath>
+        <g clip-path="url(#${u}in)">
+          <path class="water" d="${WATER(REST)}" fill="url(#${u}water)"/>
+          <path d="${helix}" fill="none" stroke="oklch(0.3 0.16 266)" stroke-width="3.4" stroke-linecap="round" opacity="0.55"/>
+          <path class="dye" d="${helix}" fill="none" stroke="url(#${u}dye)" stroke-width="3.4" stroke-linecap="round" stroke-dasharray="26 4"/>
+          <path class="edge" d="${fun(REST)}" fill="none" stroke="#fff" stroke-width="2" opacity="0.8"/>
+          <rect class="bar" x="53" y="83" width="22" height="6" rx="3" fill="oklch(0.97 0.004 250)"/>
+        </g>
+        <path d="M43 30L43 82" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" opacity="0.4"/>`;
+  const stirrerArt = u => `
+        ${body(PLATEP, u, 'plate')}
+        ${body(BODY, u, 'body')}
+        <circle class="lamp" cx="28" cy="107.5" r="2.6" fill="oklch(0.85 0.15 70)" opacity="0.55"/>
+        <g class="knob" data-o="94 107.5"><circle cx="94" cy="107.5" r="7" fill="url(#${u}knob)"/><circle cx="94" cy="107.5" r="7" fill="none" stroke="url(#${u}rim)" stroke-width="2"/><path d="M94 107.5L94 102" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></g>`;
+  const defs = u => `${light(u)}${blur(`${u}b`, 2.6)}
+          ${lg(`${u}glass`, GLASS, 'x1="0" y1="0" x2="1" y2="0.6"')}${lg(`${u}water`, WATERC)}${lg(`${u}dye`, DYE)}
+          ${lg(`${u}body`, BODYC)}${lg(`${u}plate`, PLATE)}${rg(`${u}knob`, KNOBC, 'cx="0.35" cy="0.3" r="0.8"')}`;
+  // The emblem's beaker: a white wall, white water with the funnel cut dark, the bar cut dark.
+  const embBeaker = `<path d="${BEAKER}" fill="#fff"/><path d="${INNER}" fill="#000"/><path d="${WATER(DEEP - 4)}" fill="#fff" transform="translate(64 64) scale(0.98) translate(-64 -64)"/><rect x="52" y="82" width="24" height="6" rx="3" fill="#000"/>`;
+  const embStirrer = `<path d="${PLATEP}" fill="#fff"/><path d="${BODY}" fill="#fff"/><path d="M14 97.5L114 97.5" stroke="#000" stroke-width="2.2"/><circle cx="94" cy="107.5" r="6.2" fill="#000"/><path d="M94 107.5L94 103" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/>`;
+
+  /* ================= Current ================= */
+
+  // Stir vortex is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [14, 18, 100, 100],
+    idea: 'A glass beaker of pale backlit water on a black stirrer with a white ceramic plate. The surface dips into a funnel; a blue helix of dye winds down round it to the white stir bar. The pointer turns the knob up: the lamp lights, the bar spins, the funnel deepens and the dye runs down the helix. Rest turns the knob back.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${defs(u)}</defs>
+        <ellipse cx="64" cy="119" rx="50" ry="4" fill="oklch(0.05 0.01 240)" opacity="0.6" filter="url(#${u}b)"/>
+        ${stirrerArt(u)}
+        ${beakerArt(u)}`;
+      return run(svg);
+    },
+    emblem: `${EMB_HEAD}${embBeaker}${embStirrer}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The stirrer is the block: a white plate on top, black faces, the knob on the left face.
+  const CY = 82, HX = 30, HY = 30, T = 14, K = 0.72;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const N = iso(-HX, -HY), E = iso(HX, -HY), S = iso(HX, HY), W = iso(-HX, HY);
+  const down = (p, k = 1) => [p[0], p[1] + T * k];
+  // The beaker's base lands on the centre of the top face.
+  const BTF = `translate(64 ${CY + 4}) scale(${K}) translate(-64 -91)`;
+  const BTOP = CY + 4 - (91 - 18) * K;
+  // The knob sits on the left face, drawn as an ellipse in its plane.
+  const KC = [(W[0] + S[0]) / 2 - 7, (W[1] + S[1]) / 2 + T * 0.5 - 4];
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [12, BTOP, 104, S[1] + T - BTOP],
+    idea: 'The stirrer as the block at 30 degrees: a white ceramic top, a black left face with the knob, a darker right face, a rim on the top edges. The beaker of water stands on the plate with its funnel and blue helix. The pointer turns the knob up and the funnel deepens, as A does.',
+    art(svg, u) {
+      const top = poly([N, E, S, W]);
+      svg.innerHTML = `<defs>${defs(u)}
+          ${lg(`${u}top`, [[0, 'oklch(0.94 0.004 250)'], [1, 'oklch(0.74 0.01 250)']], 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+          ${lg(`${u}L`, [[0, 'oklch(0.3 0.01 260)'], [1, 'oklch(0.22 0.008 260)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.18 0.008 260)'], [1, 'oklch(0.12 0.006 260)']])}</defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="url(#${u}R)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <path d="${top}" fill="url(#${u}lit)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <circle class="lamp" cx="${f(W[0] + 7)}" cy="${f(W[1] + T * 0.55 + 3.5)}" r="1.8" fill="oklch(0.85 0.15 70)" opacity="0.55"/>
+        <g class="knob" data-o="${f(KC[0])} ${f(KC[1])}"><ellipse cx="${f(KC[0])}" cy="${f(KC[1])}" rx="4.6" ry="5.4" transform="skewY(30)" transform-origin="${f(KC[0])} ${f(KC[1])}" fill="url(#${u}knob)"/><path d="M${f(KC[0])} ${f(KC[1])}L${f(KC[0])} ${f(KC[1] - 4)}" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></g>
+        <ellipse cx="66" cy="${CY + 4}" rx="20" ry="6" fill="oklch(0.2 0.01 250)" opacity="0.5" filter="url(#${u}b)"/>
+        <g transform="${BTF}">${beakerArt(u)}</g>`;
+      return run(svg);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly([N, E, S, W])}" fill="#d0d0d0"/><g transform="${BTF}">${embBeaker}</g></svg>`,
+  });
+
+
+  /* ================= Gallery ================= */
+  const NAME = 'Stir vortex';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-stirbar';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `stirbar-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

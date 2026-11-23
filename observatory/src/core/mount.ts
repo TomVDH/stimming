@@ -4,13 +4,11 @@
 // Sizes are in dome units at size 1, as in world/hero-scope.ts.
 // +Y is up, -Z is north, +X is east. Angles are in degrees.
 
+import { AXES_UP, D_OFF, targetPose } from './clearance.ts';
+
 const DEG = Math.PI / 180;
 // Copied from world/hero-scope.ts: the site's latitude.
 const LAT = 51;
-// Copied from world/hero-scope.ts: the axes cross 0.35 over the drum top.
-const AXES_UP = 0.35;
-// Copied from world/hero-scope.ts: the tube's axis is this far from the polar axis.
-const D_OFF = 0.3775;
 // Copied from world/observatory.ts: the cupola's radius.
 const DOME_R = 3.3;
 
@@ -21,11 +19,10 @@ export function slitAzFor(alt: number, az: number): number {
   const a = alt * DEG, z = az * DEG;
   // The tube's direction.
   const tx = Math.sin(z) * Math.cos(a), ty = Math.sin(a), tz = -Math.cos(z) * Math.cos(a);
-  // Hour angle, as in world/hero-scope.ts: the axis follows the same turns.
+  // The mount's RA joint, from the same rule world/hero-scope.ts uses.
   const L = LAT * DEG;
-  const ha = Math.atan2(-tx, ty * Math.cos(L) + tz * Math.sin(L));
-  // The tube axis's foot: D_OFF along x, turned by -ha about Y, then by LAT - 90 about X.
-  const th = -ha, phi = L - Math.PI / 2;
+  // The tube axis's foot: D_OFF along x, turned by ra about Y, then by LAT - 90 about X.
+  const th = targetPose(alt, az, 0).ra, phi = L - Math.PI / 2;
   const x1 = D_OFF * Math.cos(th), z1 = -D_OFF * Math.sin(th);
   const ox = x1, oy = AXES_UP - z1 * Math.sin(phi), oz = z1 * Math.cos(phi);
   // Where the line of sight meets the dome's sphere.

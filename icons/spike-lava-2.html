@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Lava lamp 2</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Lava lamp 2</h1>
+<p class="lede">Lava lamp, round 2. Current is A of spike lava-1, Tom's pick. A: the whole lamp, bigger and bolder, copper chrome, red liquid, four fat wax blobs and a pool. D: the lamp on a walnut block, its red light on the top.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The menu tile's ids take the tile prefix, so three copies can live.
+  const ids = (m, u) => m.replace(/id="([^"]+)"/g, `id="${u}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${u}$1)`).replace(/href="#([^"]+)"/g, `href="#${u}$1"`);
+
+  const DIRS = [];
+
+  // The toy's tokens: copper chrome, red liquid, amber wax, a yellow pool.
+  const METAL = [[0, 'oklch(0.22 0.03 35)'], [0.18, 'oklch(0.6 0.08 50)'], [0.3, 'oklch(0.97 0.03 80)'], [0.42, 'oklch(0.72 0.1 55)'], [0.66, 'oklch(0.3 0.06 35)'], [0.86, 'oklch(0.66 0.13 50)'], [1, 'oklch(0.2 0.03 35)']];
+  const WAX = [[0, 'oklch(0.72 0.2 48)'], [0.65, 'oklch(0.82 0.18 70)'], [1, 'oklch(0.92 0.17 98)']];
+  const POOL = 'oklch(0.9 0.18 100)';
+  const GLOW = 'oklch(0.58 0.23 30)';
+
+  /* ================= Current ================= */
+
+  // The menu icon today, A of spike lava-1, copied with its hover.
+  const CUR = `<defs>
+    <clipPath id="lava-c"><path d="M53 26.4C50 40 44.4 54 44.4 66C44.4 73 48 78.5 50 83H78C80 78.5 83.6 73 83.6 66C83.6 54 78 40 75 26.4Z"/></clipPath>
+    <radialGradient id="lava-h" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="oklch(0.56 0.23 30)" stop-opacity="0.85"/>
+      <stop offset="0.55" stop-color="oklch(0.5 0.21 27)" stop-opacity="0.3"/>
+      <stop offset="1" stop-color="oklch(0.5 0.21 27)" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="lava-l" gradientUnits="userSpaceOnUse" cx="64" cy="62" r="24">
+      <stop offset="0" stop-color="oklch(0.66 0.25 36)"/>
+      <stop offset="0.6" stop-color="oklch(0.52 0.22 29)"/>
+      <stop offset="1" stop-color="oklch(0.3 0.14 25)"/>
+    </radialGradient>
+    <linearGradient id="lava-w" gradientUnits="userSpaceOnUse" x1="0" y1="30" x2="0" y2="82">
+      <stop offset="0" stop-color="oklch(0.7 0.2 48)"/>
+      <stop offset="0.7" stop-color="oklch(0.8 0.18 68)"/>
+      <stop offset="1" stop-color="oklch(0.9 0.18 98)"/>
+    </linearGradient>
+    <linearGradient id="lava-m" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="oklch(0.2 0.02 30)"/>
+      <stop offset="0.16" stop-color="oklch(0.62 0.03 40)"/>
+      <stop offset="0.27" stop-color="oklch(0.99 0 0)"/>
+      <stop offset="0.36" stop-color="oklch(0.78 0.02 50)"/>
+      <stop offset="0.6" stop-color="oklch(0.28 0.03 30)"/>
+      <stop offset="0.82" stop-color="oklch(0.62 0.1 45)"/>
+      <stop offset="1" stop-color="oklch(0.16 0.02 30)"/>
+    </linearGradient>
+    <linearGradient id="lava-n" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="oklch(0.78 0.18 62)" stop-opacity="0.75"/>
+      <stop offset="0.45" stop-color="oklch(0.6 0.2 40)" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="oklch(0.6 0.2 40)" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="lava-g" x="-0.3" y="-0.3" width="1.6" height="1.6" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="1.7" result="b"/>
+      <feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 16 -6"/>
+    </filter>
+    <filter id="lava-s" x="-0.6" y="-0.6" width="2.2" height="2.2"><feGaussianBlur stdDeviation="0.6"/></filter>
+    <filter id="lava-b" x="-0.6" y="-0.6" width="2.2" height="2.2"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+  <ellipse id="lava-halo" cx="64" cy="58" rx="46" ry="50" fill="url(#lava-h)" opacity="0.8" pointer-events="none"/>
+  <path d="M53 26.4C50 40 44.4 54 44.4 66C44.4 73 48 78.5 50 83H78C80 78.5 83.6 73 83.6 66C83.6 54 78 40 75 26.4Z" fill="url(#lava-l)"/>
+  <g clip-path="url(#lava-c)">
+    <g id="lava-glow" fill="oklch(0.8 0.2 60)" filter="url(#lava-b)" opacity="0.35">
+      <circle cx="58" cy="45" r="9"/><circle cx="67" cy="42" r="8"/><circle cx="62" cy="55" r="7.5"/>
+      <circle cx="64.5" cy="61" r="5.4"/><circle cx="66" cy="67" r="8.4"/><circle cx="55.5" cy="75" r="6.4"/>
+    </g>
+    <g id="lava-blobs" filter="url(#lava-g)" fill="url(#lava-w)">
+      <circle cx="58" cy="45" r="7"/><circle cx="67" cy="42" r="6"/><circle cx="62" cy="55" r="5.5"/>
+      <circle cx="64.5" cy="61" r="3.4"/><circle cx="66" cy="67" r="6.4"/><circle cx="55.5" cy="75" r="4.4"/>
+    </g>
+    <path d="M40 79.4Q50 77 58 78.8T70 78.2T88 79.4V86H40Z" fill="oklch(0.91 0.19 102)"/>
+    <path d="M40 79.4Q50 77 58 78.8T70 78.2T88 79.4V86H40Z" fill="oklch(0.97 0.14 105)" filter="url(#lava-s)" opacity="0.6" transform="translate(0 3)"/>
+    <g fill="none" stroke="#fff" stroke-linecap="round" filter="url(#lava-s)">
+      <path d="M58.6 29C56.4 44 55 58 56.2 76" stroke-width="1.5" opacity="0.4"/>
+      <path d="M68.4 29C69.6 42 70.6 52 70 63" stroke-width="0.9" opacity="0.28"/>
+    </g>
+  </g>
+  <path d="M53 26.4C50 40 44.4 54 44.4 66C44.4 73 48 78.5 50 83H78C80 78.5 83.6 73 83.6 66C83.6 54 78 40 75 26.4Z" fill="none" stroke="oklch(0.22 0.1 25)" stroke-width="1.2" opacity="0.8"/>
+  <path d="M56.4 12H71.6L75.6 24.4H52.4Z" fill="url(#lava-m)"/>
+  <path d="M75.6 24.4H52.4L54.2 18.8H73.8Z" fill="url(#lava-n)" transform="rotate(180 64 21.6)"/>
+  <rect x="51.4" y="24.2" width="25.2" height="2.6" rx="1.3" fill="url(#lava-m)"/>
+  <rect x="50.6" y="82.6" width="26.8" height="3" rx="1.5" fill="url(#lava-m)"/>
+  <path d="M51.6 85.6H76.4L84.2 111.4H43.8Z" fill="url(#lava-m)"/>
+  <path d="M51.6 85.6H76.4L84.2 111.4H43.8Z" fill="url(#lava-n)"/>
+  <rect x="42.4" y="111" width="43.2" height="5" rx="2" fill="url(#lava-m)"/>
+  <path d="M52 26.6H76" stroke="oklch(0.72 0.2 45)" stroke-width="0.8" stroke-linecap="round" opacity="0.8"/>
+  <path d="M51 82.8H77" stroke="oklch(0.86 0.17 90)" stroke-width="0.8" stroke-linecap="round" opacity="0.7"/>
+  <path d="M43.4 111.2H84.6" stroke="oklch(0.75 0.15 55)" stroke-width="0.6" stroke-linecap="round" opacity="0.6"/>`;
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    box: [42, 12, 44, 104],
+    art(svg, u) {
+      svg.innerHTML = ids(CUR, u);
+      const q = s => svg.querySelector(`#${u}${s}`);
+      const blobs = [...q('lava-blobs').children], glow = [...q('lava-glow').children], halo = q('lava-halo');
+      const RISE = [[1, -9, 0.6], [-2, 13, -0.8], [2, -10, 0], [1.5, -14, 0.6], [-1, -17, -0.6], [3, -4, 1]];
+      let tws = null;
+      const bob = () => blobs.flatMap((b, i) => {
+        const [dx, dy, dr] = RISE[i], cx = +b.getAttribute('cx'), cy = +b.getAttribute('cy'), r = +b.getAttribute('r');
+        const o = { duration: 2 + (i % 3) * 0.45, ease: 'sine.inOut', yoyo: true, repeat: -1, paused: true };
+        return [gsap.to(b, { attr: { cx: cx + dx, cy: cy + dy, r: r + dr }, ...o }), gsap.to(glow[i], { attr: { cx: cx + dx, cy: cy + dy }, ...o })];
+      });
+      const warm = p => blobs.forEach(b => {
+        const near = p && Math.hypot(p[0] - b.getAttribute('cx'), p[1] - b.getAttribute('cy')) < 12;
+        gsap.to(b, { scale: near ? 1.3 : 1, transformOrigin: '50% 50%', duration: 0.5, overwrite: 'auto' });
+      });
+      return {
+        enter(p) { tws ||= bob(); tws.forEach(t => t.play()); gsap.to(halo, { opacity: 1, duration: 0.6, overwrite: 'auto' }); warm(p); },
+        move(p) { warm(p); },
+        leave() { tws?.forEach(t => t.pause()); gsap.to(halo, { opacity: 0.8, duration: 0.6, overwrite: 'auto' }); warm(null); },
+      };
+    },
+  });
+
+  /* ================= The lamp ================= */
+
+  // One lamp in its own frame: 60 wide, 110 tall, foot at y 119.
+  const CAP = 'M56 9H72Q73.4 9 73.9 10.4L79.4 25.4Q79.8 27 78 27H50Q48.2 27 48.6 25.4L54.1 10.4Q54.6 9 56 9Z';
+  const BOTTLE = 'M50.4 27C47.4 41 41 53 41 63C41 69.6 44.2 73.6 47 77.6H81C83.8 73.6 87 69.6 87 63C87 53 80.6 41 77.6 27Z';
+  const COLLAR = 'M46.4 77.6H81.6Q83 77.6 83 79V80.4Q83 81.8 81.6 81.8H46.4Q45 81.8 45 80.4V79Q45 77.6 46.4 77.6Z';
+  const BASE = 'M47.4 81.8H80.6L91.6 112.4H36.4Z';
+  const FOOT = 'M37 112.4H91Q94 112.4 94 115.2V116.4Q94 119 91 119H37Q34 119 34 116.4V115.2Q34 112.4 37 112.4Z';
+  const POOL_D = 'M38 72Q46 69.6 53 71.2T66 70.6T78 71.6T90 71V80H38Z';
+  // Blobs at rest: x, y, r, then the drift: amplitude, rate, phase.
+  const BLOBS = [[58, 38, 7, 7, 0.9, 0], [70, 46, 5.2, 9, 0.7, 2.1], [61, 56, 8.4, 6, 0.6, 4], [72, 63, 4.4, 5, 1.1, 1.2]];
+  const lampDefs = u => `${light(u)}${blur(`${u}b`, 2.6)}${blur(`${u}h`, 9)}${blur(`${u}s`, 1.2)}
+    ${lg(`${u}metal`, METAL, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}wax`, WAX)}
+    ${rg(`${u}liq`, [[0, 'oklch(0.66 0.25 36)'], [0.6, 'oklch(0.5 0.22 29)'], [1, 'oklch(0.28 0.13 25)']], 'cx="0.5" cy="0.62" r="0.62"')}
+    ${rg(`${u}halo`, [[0, GLOW, 0.95], [0.55, GLOW, 0.55], [1, GLOW, 0]])}
+    <filter id="${u}goo" x="-0.3" y="-0.3" width="1.6" height="1.6" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="1.9" result="b"/><feColorMatrix in="b" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 18 -7"/></filter>
+    <clipPath id="${u}glass"><path d="${BOTTLE}"/></clipPath>`;
+  // The lamp body: halo, glass, wax, metal; a rim on each part.
+  const lamp = (u, halo = true) => `
+    ${halo ? `<ellipse class="halo" cx="64" cy="58" rx="46" ry="52" fill="url(#${u}halo)" opacity="0.8"/>` : ''}
+    <path d="${BOTTLE}" fill="url(#${u}liq)"/>
+    <g clip-path="url(#${u}glass)">
+      <g class="wax" filter="url(#${u}goo)">
+        <path d="${POOL_D}" fill="${POOL}"/>
+        <circle class="bud" cx="64" cy="73" r="4.6" fill="url(#${u}wax)"/>
+        ${BLOBS.map(([x, y, r]) => `<circle class="blob" cx="${x}" cy="${y}" r="${r}" fill="url(#${u}wax)"/>`).join('')}
+      </g>
+      <path d="M49 30Q44 50 45.6 70" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity="0.3" filter="url(#${u}s)"/>
+    </g>
+    <path d="${BOTTLE}" fill="url(#${u}lit)"/>
+    <path d="${BOTTLE}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>
+    ${body(CAP, u, 'metal')}
+    <path d="M49.4 27H78.6" stroke="oklch(0.74 0.2 45)" stroke-width="2" stroke-linecap="round" opacity="0.8"/>
+    ${body(BASE, u, 'metal')}
+    <path d="M47.4 82.2H80.6L83 89H45Z" fill="oklch(0.85 0.17 80)" opacity="0.35"/>
+    ${body(COLLAR, u, 'metal')}
+    ${body(FOOT, u, 'metal')}`;
+
+  // The shared motion: the wax wakes and drifts; a bud pinches off the pool and climbs.
+  // The pointer warms the blob under it, which swells; the halo brightens.
+  const run = (svg, tf = [0, 0, 1]) => {
+    const st = { live: false, k: 0, last: 0, p: null, w: BLOBS.map(() => 0) };
+    const blobs = [...svg.querySelectorAll('.blob')], bud = svg.querySelector('.bud'), halo = svg.querySelector('.halo');
+    const paint = time => {
+      const k = st.k;
+      blobs.forEach((b, i) => {
+        const [x, y, r, a, w, ph] = BLOBS[i], s = Math.sin(time * w + ph);
+        const cx = x + 1.6 * Math.sin(time * w * 0.6 + ph) * k, cy = y + a * s * k;
+        const near = st.live && st.p ? clamp(1 - Math.hypot(st.p[0] - cx, st.p[1] - cy) / 16) : 0;
+        st.w[i] = lerp(st.w[i], near, 0.15);
+        b.setAttribute('cx', f(cx));
+        b.setAttribute('cy', f(cy));
+        b.setAttribute('r', f(r * (1 + 0.04 * s * k + 0.32 * st.w[i])));
+      });
+      // The bud climbs out of the pool on a 5 s cycle.
+      const c = (time * 0.2) % 1, rise = k * Math.sin(Math.PI * Math.min(1, c * 1.2)) ** 0.8;
+      bud.setAttribute('cy', f(73 - 24 * rise));
+      bud.setAttribute('r', f(4.6 + 1.8 * rise));
+      if (halo) halo.setAttribute("opacity", f(0.8 + 0.2 * k));
+    };
+    const step = time => {
+      const dt = Math.min(0.1, time - (st.last || time));
+      st.last = time;
+      st.k = st.live ? Math.min(1, st.k + dt * 1.4) : Math.max(0, st.k - dt * 0.9);
+      paint(time);
+      if (!st.live && st.k <= 0 && st.w.every(w => w < 0.01)) { st.last = 0; loop.stop(); }
+    };
+    const loop = clock(step);
+    const toLamp = p => p && [(p[0] - tf[0]) / tf[2], (p[1] - tf[1]) / tf[2]];
+    return {
+      enter(p) { st.live = true; st.p = toLamp(p); loop.start(); },
+      move(p) { st.p = toLamp(p); },
+      leave() { st.live = false; st.p = null; loop.start(); },
+    };
+  };
+  // The emblem lamp: metal white, glass grey, wax white.
+  const lampEmblem = `<path d="${CAP}" fill="#fff"/><path d="${BOTTLE}" fill="#6a6a6a"/><path d="${POOL_D}" fill="#fff" clip-path="url(#g)"/>${BLOBS.map(([x, y, r]) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#fff"/>`).join('')}<path d="${COLLAR}" fill="#fff"/><path d="${BASE}" fill="#fff"/><path d="${FOOT}" fill="#fff"/><path d="M45 81.8H83" stroke="#000" stroke-width="1.6"/><path d="M36.4 112.4H91.6" stroke="#000" stroke-width="1.6"/>`;
+
+  /* ================= A: Shaded object ================= */
+
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [34, 9, 60, 110],
+    idea: 'The whole lamp, bigger and bolder than today: a copper-chrome cone cap and cone base with one hard white band, red liquid lit from within, four fat amber wax blobs and a yellow pool at the foot, a red halo on the wall behind. The pointer wakes the wax: the blobs drift, a bud pinches off the pool and climbs, and the blob under the pointer warms and swells. It settles when the pointer leaves.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${lampDefs(u)}</defs>
+        <ellipse cx="64" cy="120" rx="34" ry="3.4" fill="oklch(0.05 0.01 30)" opacity="0.6" filter="url(#${u}b)"/>
+        ${lamp(u)}`;
+      return run(svg);
+    },
+    emblem: `${EMB_HEAD}<defs><clipPath id="g"><path d="${BOTTLE}"/></clipPath></defs>${lampEmblem}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // A walnut block; the lamp stands on it, its red light on the top.
+  const CY = 84, HX = 27, HY = 27, T = 13;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const N = iso(-HX, -HY), E = iso(HX, -HY), S = iso(HX, HY), W = iso(-HX, HY);
+  const down = (p, k = 1) => [p[0], p[1] + T * k];
+  // The lamp at 0.66, its foot on the middle of the top.
+  const LS = 0.66, LX = 64 - 64 * LS, LY = CY + 2 - 119 * LS;
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [17, 7, 94, 117],
+    idea: 'A walnut block at 30 degrees: a warm top washed red by the lamp, a mid left face, a dark right face, a rim on the top edges. The lamp stands in the middle of the top. The pointer wakes the wax as in A; the pool of red light on the block grows with it.',
+    art(svg, u) {
+      const top = poly([N, E, S, W]);
+      svg.innerHTML = `<defs>${lampDefs(u)}
+          ${lg(`${u}top`, [[0, 'oklch(0.42 0.08 35)'], [1, 'oklch(0.3 0.07 30)']], 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+          ${lg(`${u}L`, [[0, 'oklch(0.3 0.06 35)'], [1, 'oklch(0.22 0.05 30)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.2 0.04 30)'], [1, 'oklch(0.14 0.03 30)']])}
+          ${rg(`${u}spill`, [[0, 'oklch(0.62 0.22 32)', 0.75], [1, 'oklch(0.62 0.22 32)', 0]])}</defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 30)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <ellipse class="halo" cx="64" cy="${f(LY + 58 * LS)}" rx="36" ry="42" fill="url(#${u}halo)" opacity="0.8"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="url(#${u}R)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <ellipse class="spill" cx="64" cy="${CY}" rx="40" ry="20" fill="url(#${u}spill)" opacity="0.6"/>
+        <path d="${top}" fill="url(#${u}lit)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="url(#${u}rim)" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.35" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <ellipse cx="64" cy="${CY + 2}" rx="${f(32 * LS)}" ry="${f(6 * LS)}" fill="oklch(0.08 0.02 30)" opacity="0.7" filter="url(#${u}s)"/>
+        <g transform="translate(${f(LX)} ${f(LY)}) scale(${LS})">${lamp(u, false)}</g>`;
+      const c = run(svg, [LX, LY, LS]), spill = svg.querySelector('.spill');
+      // The spill of red light follows the halo.
+      const obs = new MutationObserver(() => spill.setAttribute('opacity', f(0.6 + 0.35 * ((+svg.querySelector('.halo').getAttribute('opacity') - 0.8) / 0.2))));
+      obs.observe(svg.querySelector('.halo'), { attributes: true, attributeFilter: ['opacity'] });
+      return c;
+    },
+    emblem: `${EMB_HEAD}<defs><clipPath id="g"><path d="${BOTTLE}"/></clipPath></defs><path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly([N, E, S, W])}" fill="#8a8a8a"/><g transform="translate(${f(LX)} ${f(LY)}) scale(${LS})">${lampEmblem}</g></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = "Lava lamp";
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-lava';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `lava-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

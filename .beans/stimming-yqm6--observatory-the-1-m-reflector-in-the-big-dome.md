@@ -13,6 +13,6 @@ Tom, 2026-11-23: the new big mirror telescope goes in the new big dome.
 - [x] The big hero carries the 1 m reflector at size 0.75 on the floor; the tube clears the cupola
 - [x] No German slit offset in the big dome
 - [x] Cuts: the big room's floor, wall and fork; the lift eye over the floor; the glass shot down the reflector
-- [x] Cuts: outside the summit clearing the eye stands over the treetops, so the slit and roll shots face the opening
+- [x] Cuts: the slit and roll shots face the opening (main's eye rule from d8fe2bc8 replaced the treetop rule at the merge of main, 2026-11-23)
 - [ ] The wide shot's light model still carries the old tube
 - [ ] Tom's look

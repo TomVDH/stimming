@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Glowing pickle 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Glowing pickle 1</h1>
+<p class="lede">Glowing pickle, round 1. No pick yet; A goes on the menu until Tom picks. A: a brined gherkin on a sliver of white china, a steel fork in each end with a red and a black clip lead, its right end blazing sodium yellow and lighting the plate orange. D: a block of white china with the plate on its top, the pickle lying across it at 30 degrees, its glowing end lighting the top.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  // The menu tile's ids take the tile prefix, so three copies can live.
+  const ids = (m, u) => m.replace(/id="([^"]+)"/g, `id="${u}$1"`).replace(/url\(#([^)]+)\)/g, `url(#${u}$1)`).replace(/href="#([^"]+)"/g, `href="#${u}$1"`);
+
+  const DIRS = [];
+
+
+  // The toy's tokens: olive brine skin, pale stripes, sodium glow, warm white china.
+  const SKIN = [[0, 'oklch(0.6 0.11 120)'], [0.42, 'oklch(0.45 0.1 127)'], [1, 'oklch(0.25 0.06 138)']];
+  const STRIPE = 'oklch(0.76 0.11 112)', WART = 'oklch(0.54 0.11 122)', TIP = 'oklch(0.88 0.13 104)';
+  const STEEL = [[0, 'oklch(0.6 0.012 250)'], [0.42, 'oklch(0.97 0.006 250)'], [1, 'oklch(0.48 0.014 250)']];
+  const CHINA = [[0, 'oklch(0.98 0.012 88)'], [0.55, 'oklch(0.91 0.022 80)'], [1, 'oklch(0.74 0.035 68)']];
+  const WELL = [[0, 'oklch(0.8 0.03 72)'], [1, 'oklch(0.93 0.018 82)']];
+  const CORE = '#fff9dc', HOT = '#ffd860', ORANGE = '#ffb030', AMBER = 'oklch(0.74 0.17 62)';
+  const RED = [[0, 'oklch(0.66 0.21 28)'], [1, 'oklch(0.42 0.17 24)']];
+  const BLACK = [[0, 'oklch(0.42 0.012 250)'], [1, 'oklch(0.16 0.008 250)']];
+  const { sin, cos, PI, abs } = Math;
+  // The glow at rest; play drives it to 1.
+  const REST = 0.5;
+
+  // The gherkin in its own frame: x runs from -50 to 50, radius about 15.
+  const PK = { R: 15, H: 50 };
+  const pkMid = x => { const t = x / PK.H; return -3 * (1 - t * t); };
+  // A blunt capsule, a little thinner at the stem end, with soft lumps.
+  const pkRad = x => { const t = clamp(x / PK.H, -1, 1); return PK.R * Math.pow(1 - Math.pow(abs(t), 2.6), 0.42) * (1 + 0.05 * t) * (1 + 0.035 * sin(t * 19 + 0.6)); };
+  const PICKLE = (() => {
+    const top = [], bot = [];
+    for (let i = 0; i <= 48; i++) { const x = -PK.H * cos(PI * i / 48); top.push([x, pkMid(x) - pkRad(x)]); bot.push([x, pkMid(x) + pkRad(x)]); }
+    return poly(top.concat(bot.reverse()));
+  })();
+  // A pale stripe: a lens along the skin at depth v, w wide at the middle.
+  const stripe = (v, w) => {
+    const a = [], b = [];
+    for (let i = 0; i <= 24; i++) { const x = -44 + 88 * i / 24, t = x / 44, k = 1 - t * t; a.push([x, pkMid(x) + v * pkRad(x)]); b.push([x, pkMid(x) + (v + w * k) * pkRad(x)]); }
+    return poly(a.concat(b.reverse()));
+  };
+  const STRIPES = [[-0.74, 0.2], [-0.16, 0.18], [0.42, 0.16]];
+  // Warts: a raised bump with a yellow tip, few and bold.
+  const WARTS = [[-38, -0.34], [-27, 0.3], [-16, -0.58], [-5, 0.06], [9, -0.44], [21, 0.28], [-33, 0.72], [2, 0.7]];
+  const pkPt = (x, v) => [x, pkMid(x) + v * pkRad(x)];
+  // The hot point sits just inside the right end, at the fork's tines.
+  const HOTX = 43, HOTY = pkMid(43) - 1;
+  const pickleArt = (u, k = 1) => `
+      <circle class="halo" cx="${HOTX}" cy="${f(HOTY)}" r="52" fill="url(#${u}halo)"/>
+      <path d="${PICKLE}" fill="url(#${u}skin)"/>
+      <g clip-path="url(#${u}pk)">
+        ${STRIPES.map(([v, w]) => `<path d="${stripe(v, w)}" fill="${STRIPE}" opacity="0.42"/>`).join('')}
+        ${WARTS.map(([x, v]) => { const [a, b] = pkPt(x, v); return `<circle cx="${f(a)}" cy="${f(b)}" r="2.7" fill="${WART}"/><circle cx="${f(a - 0.6)}" cy="${f(b - 0.8)}" r="1.25" fill="${TIP}" opacity="0.9"/>`; }).join('')}
+        <path d="${PICKLE}" fill="url(#${u}lit)"/>
+        <rect class="amb" x="-52" y="-24" width="104" height="44" fill="url(#${u}amb)"/>
+        <circle class="core" cx="${HOTX}" cy="${f(HOTY)}" r="30" fill="url(#${u}core)"/>
+      </g>
+      <path d="${PICKLE}" fill="none" stroke="url(#${u}rim)" stroke-width="${f(2 / k)}" stroke-linejoin="round"/>
+      <ellipse class="flare" cx="${HOTX + 3}" cy="${f(HOTY)}" rx="7" ry="8" fill="${CORE}" filter="url(#${u}fl)"/>`;
+
+  // A dessert fork from its base in the skin, pointing up its own -y.
+  const roundRect = (x, y, w, h, r) => `M${x + r} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x + r}A${r} ${r} 0 0 1 ${x} ${y + h - r}V${y + r}A${r} ${r} 0 0 1 ${x + r} ${y}Z`;
+  const FORK = [-4.6, -1.55, 1.55, 4.6].map(x => `M${f(x - 1.15)} 1V-6H${f(x + 1.15)}V1Z`).join('') +
+    'M-6 -6Q-6 -10.5 -2 -14L-1.8 -21Q-3.8 -25.5 -3.8 -31V-52Q-3.8 -55.5 0 -55.5Q3.8 -55.5 3.8 -52V-31Q3.8 -25.5 1.8 -21L2 -14Q6 -10.5 6 -6Z';
+  // The clip: a steel jaw on the handle, a rubber boot, a lead out of its back.
+  const BOOT = roundRect(-5.6, -56, 11.2, 19, 3.6);
+  const JAW = 'M-4.8 -37.5L-3.9 -30.5H3.9L4.8 -37.5Z';
+  const LEAD = s => `M0 -55C0 -62 ${s} -67 ${3 * s} -76`;
+  // x, y: base; deg: lean; k, ky: scale and foreshortening; col: boot colour; s: outward side.
+  const forkArt = (u, x, y, deg, k, ky, col, s, glow) => `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(deg)}) scale(${f(k)} ${f(k * ky)})">
+        <ellipse cx="0" cy="0.4" rx="7.6" ry="2.4" fill="oklch(0.2 0.05 135)" opacity="0.7"/>
+        ${body(FORK, u, 'steel')}
+        ${glow ? `<path class="fg" d="${FORK}" fill="url(#${u}fglow)"/>` : ''}
+        <path d="${LEAD(s)}" fill="none" stroke="url(#${u}${col}l)" stroke-width="4.4" stroke-linecap="round"/>
+        ${body(JAW, u, 'steel')}
+        ${body(BOOT, u, col)}
+      </g>`;
+  const forkFlat = (x, y, deg, k, ky, s) => `<g transform="translate(${f(x)} ${f(y)}) rotate(${f(deg)}) scale(${f(k)} ${f(k * ky)})"><path d="${FORK}${JAW}${BOOT}" fill="#fff"/><path d="${LEAD(s)}" fill="none" stroke="#9a9a9a" stroke-width="4.4" stroke-linecap="round"/></g>`;
+  // Steam puffs and brine spits ride in screen space; they rise straight up.
+  const fxArt = u => `<g class="steam" fill="oklch(0.95 0.02 80)">${[0, 1, 2, 3].map(() => `<ellipse class="puff" rx="5.5" ry="7.5" opacity="0" filter="url(#${u}st)"/>`).join('')}</g>
+      <g>${[0, 1, 2, 3].map(() => `<circle class="spit" r="1.7" fill="${HOT}" opacity="0"/>`).join('')}</g>`;
+
+  const defs = u => `${light(u)}${blur(`${u}b`, 2.6)}${blur(`${u}s`, 2.2)}${blur(`${u}fl`, 2.6)}${blur(`${u}st`, 2)}
+      <clipPath id="${u}pk"><path d="${PICKLE}"/></clipPath>
+      ${lg(`${u}skin`, SKIN)}${lg(`${u}steel`, STEEL, 'x1="0" y1="0" x2="1" y2="0"')}${lg(`${u}china`, CHINA, 'x1="0" y1="0" x2="0.4" y2="1"')}${lg(`${u}well`, WELL)}
+      ${lg(`${u}red`, RED, 'x1="0" y1="0" x2="1" y2="1"')}${lg(`${u}black`, BLACK, 'x1="0" y1="0" x2="1" y2="1"')}
+      ${['red', 'black'].map(c => { const s0 = (c === 'red' ? RED : BLACK)[0][1]; return lg(`${u}${c}l`, [[0, s0], [0.35, s0], [1, s0, 0]], 'gradientUnits="userSpaceOnUse" x1="0" y1="-56" x2="0" y2="-76"'); }).join('')}
+      ${lg(`${u}amb`, [[0, AMBER, 0.95], [0.5, AMBER, 0.45], [1, AMBER, 0]], `gradientUnits="userSpaceOnUse" x1="${HOTX + 6}" y1="0" x2="-12" y2="0"`)}
+      ${rg(`${u}core`, [[0, CORE], [0.2, HOT], [0.5, ORANGE, 0.8], [1, ORANGE, 0]])}
+      ${rg(`${u}halo`, [[0, ORANGE, 0.55], [0.4, ORANGE, 0.2], [1, ORANGE, 0]])}
+      ${rg(`${u}pool`, [[0, HOT, 0.85], [0.35, ORANGE, 0.55], [1, ORANGE, 0]])}
+      ${lg(`${u}fglow`, [[0, ORANGE, 0.9], [0.5, ORANGE, 0]], 'x1="0" y1="1" x2="0" y2="0"')}`;
+
+  // The shared motion: the pointer switches the current on.
+  // The end flares and flickers, steam rises, the brine spits.
+  // g.steam: the screen point over the hot end; g.dir: the spits' side.
+  const run = (svg, g) => {
+    const q = c => svg.querySelector(c), qa = c => [...svg.querySelectorAll(c)];
+    const amb = q('.amb'), core = q('.core'), halo = q('.halo'), flare = q('.flare'), pools = qa('.pool'), fg = q('.fg');
+    const puffs = qa('.puff'), spits = qa('.spit');
+    const st = { live: false, p: REST, to: REST, s: 0, last: 0 };
+    const sc = (cx, cy, k) => `translate(${cx} ${f(cy)}) scale(${f(k)}) translate(${-cx} ${f(-cy)})`;
+    const paint = time => {
+      const s = st.s;
+      // Sodium flickers while the current runs.
+      const v = st.p * (1 + s * (0.16 * sin(time * 23) * sin(time * 7.1) + 0.07 * sin(time * 41 + 1)));
+      amb.setAttribute('opacity', f(clamp(0.2 + 0.8 * v)));
+      core.setAttribute('opacity', f(clamp(0.35 + 0.75 * v)));
+      core.setAttribute('transform', sc(HOTX, HOTY, 0.5 + 0.62 * v));
+      halo.setAttribute('opacity', f(clamp(0.25 + 0.85 * v)));
+      halo.setAttribute('transform', sc(HOTX, HOTY, 0.7 + 0.45 * v));
+      flare.setAttribute('opacity', f(clamp(v * 1.3 - 0.25)));
+      pools.forEach(e => e.setAttribute('opacity', f(clamp(0.25 + 0.8 * v))));
+      fg.setAttribute('opacity', f(clamp(v)));
+      const [sx, sy] = g.steam;
+      puffs.forEach((e, i) => {
+        const ph = (time * 0.55 + i / puffs.length) % 1;
+        e.setAttribute('transform', `translate(${f(sx + (i - 1.5) * 5 * g.k + sin(ph * 5 + i) * 3 * g.k)} ${f(sy - ph * 40 * g.k)}) scale(${f((0.45 + ph * 1.1) * g.k)})`);
+        e.setAttribute('opacity', f(s * 0.85 * sin(PI * ph)));
+      });
+      spits.forEach((e, i) => {
+        const c = time * 0.9 + i * 0.37, ph = c % 1, on = (Math.floor(c) + i) % 3 !== 0;
+        const dx = (i % 2 ? 1 : -0.6) * (10 + i * 4) * g.k;
+        e.setAttribute('cx', f(sx + dx * ph));
+        e.setAttribute('cy', f(sy - (30 - i * 4) * g.k * ph + 34 * g.k * ph * ph));
+        e.setAttribute('opacity', f(on ? s * clamp((1 - ph) / 0.35) : 0));
+      });
+    };
+    const loop = clock(time => {
+      const dt = Math.min(0.1, time - (st.last || time));
+      st.last = time;
+      st.p += (st.to - st.p) * Math.min(1, dt * (st.live ? 6 : 2.5));
+      st.s = st.live ? Math.min(1, st.s + dt * 2) : Math.max(0, st.s - dt * 1.4);
+      paint(time);
+      // The clock stops once the glow is back at rest.
+      if (!st.live && st.s <= 0 && abs(st.p - REST) < 0.004) { st.p = REST; st.last = 0; paint(0); loop.stop(); }
+    });
+    paint(0);
+    return {
+      enter(p) { st.live = true; st.to = 1; loop.start(); if (p) this.move(p); },
+      // The pointer near the hot end turns the variac up.
+      move(p) { if (p && st.live) st.to = 0.85 + 0.3 * clamp((p[0] - g.x0) / (g.x1 - g.x0)); },
+      leave() { st.live = false; st.to = REST; loop.start(); },
+    };
+  };
+
+  // An emblem fits its box to the 128 square, 118 on its long side.
+  const fitEmb = (b, inner) => { const k = 118 / Math.max(b[2], b[3]); return `<g transform="translate(64 64) scale(${f(k)}) translate(${f(-(b[0] + b[2] / 2))} ${f(-(b[1] + b[3] / 2))})">${inner}</g>`; };
+
+  /* ================= Current ================= */
+
+  // Glowing pickle is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The pickle lies on a sliver of plate, a little tilted; a fork stands in each end.
+  const ell = (cx, cy, rx, ry) => `M${cx - rx} ${cy}A${rx} ${ry} 0 1 0 ${cx + rx} ${cy}A${rx} ${ry} 0 1 0 ${cx - rx} ${cy}Z`;
+  const A_BOX = [0, -4, 121, 114];
+  const A_X = 62, A_Y = 74, A_ROT = -5;
+  const aAt = (x, y) => { const r = A_ROT * PI / 180; return [A_X + x * cos(r) - y * sin(r), A_Y + x * sin(r) + y * cos(r)]; };
+  const A_PLATE = ell(62, 94, 58, 16);
+  const A_LF = aAt(...pkPt(-33, -0.5)), A_RF = aAt(...pkPt(33, -0.5));
+  const A_STEAM = aAt(HOTX - 4, HOTY - 12);
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: A_BOX,
+    idea: 'A brined gherkin, dark olive with pale stripes and yellow-tipped warts, lies on a sliver of warm white china. A steel dessert fork stands in each end and leans out, a black clip lead on the left handle and a red one on the right. The right end blazes sodium yellow, the light shows amber through the skin over half its length, and an orange pool lies on the plate. The pointer switches it on: the end flares and flickers, steam rises and the brine spits; nearer the hot end, brighter. Leave lets it settle.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${defs(u)}<clipPath id="${u}pl"><path d="${A_PLATE}"/></clipPath></defs>
+        <ellipse cx="62" cy="111" rx="52" ry="4" fill="oklch(0.05 0.01 240)" opacity="0.6" filter="url(#${u}b)"/>
+        ${body(A_PLATE, u, 'china')}
+        <ellipse cx="62" cy="96" rx="40" ry="10" fill="url(#${u}well)"/>
+        <g clip-path="url(#${u}pl)">
+          <ellipse cx="50" cy="92" rx="46" ry="6.5" fill="oklch(0.28 0.04 60)" opacity="0.55" filter="url(#${u}s)"/>
+          <ellipse class="pool" cx="106" cy="91" rx="38" ry="14" fill="url(#${u}pool)"/>
+        </g>
+        <g transform="translate(${A_X} ${A_Y}) rotate(${A_ROT})">${pickleArt(u)}</g>
+        ${forkArt(u, A_LF[0], A_LF[1], -21, 1, 1, 'black', -1, false)}
+        ${forkArt(u, A_RF[0], A_RF[1], 19, 1, 1, 'red', 1, true)}
+        ${fxArt(u)}`;
+      return run(svg, { steam: A_STEAM, k: 1, x0: 20, x1: 110 });
+    },
+    // The emblem: the plate grey, its well darker, the pickle and the forks white.
+    emblem: `${EMB_HEAD}${fitEmb(A_BOX, `<path d="${A_PLATE}" fill="#6e6e6e"/><ellipse cx="62" cy="96" rx="40" ry="10" fill="#4a4a4a"/><g transform="translate(${A_X} ${A_Y}) rotate(${A_ROT})"><path d="${PICKLE}" fill="#fff"/></g>${forkFlat(A_LF[0], A_LF[1], -21, 1, 1, -1)}${forkFlat(A_RF[0], A_RF[1], 19, 1, 1, 1)}`)}</svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // A block of white china with a plate on its top; the pickle lies across it.
+  const D_BOX = [5, 6, 118, 126];
+  const CY = 84, HALF = 34, T = 14;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const N = iso(-HALF, -HALF), E = iso(HALF, -HALF), S = iso(HALF, HALF), W = iso(-HALF, HALF);
+  const down = p => [p[0], p[1] + T];
+  // Flat ground space onto the top face.
+  const ON_TOP = `matrix(0.866 0.5 -0.866 0.5 64 ${CY})`;
+  // The pickle runs along the block's x axis, scaled to 0.68.
+  const DK = 0.68, D_C = iso(-2, 4), D_X = D_C[0], D_Y = D_C[1] - PK.R * DK;
+  const dAt = (x, y) => [D_X + (x * 0.866 - y * 0.5) * DK, D_Y + (x * 0.5 + y * 0.866) * DK];
+  const D_LF = dAt(...pkPt(-35, -0.5)), D_RF = dAt(...pkPt(35, -0.5));
+  // Each fork leans 30 degrees out along the pickle; the near one shortens.
+  const lean = sx => { const v = [0.866 * 0.5 * sx, -0.866 + 0.25 * sx]; return [Math.atan2(v[0], -v[1]) * 180 / PI, Math.hypot(v[0], v[1])]; };
+  const [D_LD, D_LK] = lean(-1), [D_RD, D_RK] = lean(1);
+  const D_STEAM = dAt(HOTX - 4, HOTY - 14);
+  // The glow spills over the near edge onto the right face.
+  const D_EDGE = iso(HALF, 4);
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: D_BOX,
+    idea: 'A block of white china at 30 degrees: a warm white top with the plate’s rim and well on it, a mid left face, a dark right face, a rim on the top edges. The pickle lies across the top along the block, a fork leaning out of each end with its clip lead. Its right end glows sodium yellow and lays an orange pool over the top. The pointer switches it on: the end flares and flickers, steam rises and the brine spits.',
+    art(svg, u) {
+      const top = poly([N, E, S, W]);
+      svg.innerHTML = `<defs>${defs(u)}
+          ${lg(`${u}L`, [[0, 'oklch(0.8 0.03 78)'], [1, 'oklch(0.66 0.035 70)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.56 0.03 70)'], [1, 'oklch(0.42 0.03 62)']])}
+          ${lg(`${u}skin`, SKIN, 'x1="0" y1="0" x2="0" y2="1" gradientTransform="rotate(-30 0.5 0.5)"').replace(`id="${u}skin"`, `id="${u}dskin"`)}
+          <clipPath id="${u}clip"><path d="${top}"/></clipPath><clipPath id="${u}rf"><path d="${poly([S, E, down(E), down(S)])}"/></clipPath></defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="url(#${u}R)"/>
+        <g clip-path="url(#${u}rf)"><ellipse class="pool" cx="${f(D_EDGE[0])}" cy="${f(D_EDGE[1])}" rx="24" ry="16" fill="url(#${u}pool)"/></g>
+        <path d="${top}" fill="url(#${u}china)"/>
+        <g clip-path="url(#${u}clip)">
+          <g transform="${ON_TOP}">
+            <circle r="31" fill="oklch(0.97 0.012 86)"/>
+            <circle r="21" fill="url(#${u}well)"/>
+            <ellipse cx="-12" cy="9" rx="34" ry="11" fill="oklch(0.28 0.04 60)" opacity="0.5" filter="url(#${u}s)"/>
+            <circle class="pool" cx="${f(HOTX * DK - 2)}" cy="4" r="40" fill="url(#${u}pool)"/>
+          </g>
+        </g>
+        <path d="${top}" fill="url(#${u}lit)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <g transform="translate(${f(D_X)} ${f(D_Y)}) rotate(30) scale(${DK})">${pickleArt(u, DK).replace(`url(#${u}skin)`, `url(#${u}dskin)`)}</g>
+        ${forkArt(u, D_LF[0], D_LF[1], D_LD, 0.64, D_LK, 'black', -1, false)}
+        ${forkArt(u, D_RF[0], D_RF[1], D_RD, 0.64, D_RK, 'red', 1, true)}
+        ${fxArt(u)}`;
+      return run(svg, { steam: D_STEAM, k: 0.75, x0: 20, x1: 110 });
+    },
+    emblem: `${EMB_HEAD}${fitEmb(D_BOX, `<path d="${poly([W, S, down(S), down(W)])}" fill="#5a5a5a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#3a3a3a"/><path d="${poly([N, E, S, W])}" fill="#8a8a8a"/><g transform="${ON_TOP}"><circle r="31" fill="#9a9a9a"/><circle r="21" fill="#7a7a7a"/></g><g transform="translate(${f(D_X)} ${f(D_Y)}) rotate(30) scale(${DK})"><path d="${PICKLE}" fill="#fff"/></g>${forkFlat(D_LF[0], D_LF[1], D_LD, 0.64, D_LK, -1)}${forkFlat(D_RF[0], D_RF[1], D_RD, 0.64, D_RK, 1)}`)}</svg>`,
+  });
+
+  // ?menu prints A's markup for the menu tile, with the toy's id on its defs.
+  window.MENU_A = () => {
+    const D = DIRS[1], svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' });
+    D.art(svg, 'pickle-');
+    const side = Math.max(D.box[2], D.box[3]), size = side * 128 / 110, cx = D.box[0] + D.box[2] / 2, cy = D.box[1] + D.box[3] / 2;
+    return { viewBox: `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`, inner: svg.innerHTML };
+  };
+
+  /* ================= Gallery ================= */
+  const NAME = "Glowing pickle";
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-pickle';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `pickle-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      // A menu tile with no data-box fits its drawn bounds, as the menu does.
+      const bb = D.box === "bbox" && svg.getBBox();
+      fitIcon(svg, bb ? [bb.x, bb.y, bb.width, bb.height] : D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

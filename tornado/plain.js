@@ -32,7 +32,7 @@ function nearTrees() {
     const r = 3.5 + 2.5 * th(i, 34);
     T.push([FX - 58 + 11 * i + 4 * (th(i, 32) - 0.5), FZ - 40 - 4 * th(33, i), r, r * (2 + 0.5 * h0), 40 + i]);
   }
-  // stead(): four trees behind each far farmstead.
+  // plainTrees(): four trees behind each far farmstead.
   for (const [x, z, sd] of [[-2900, -5200, 1], [1700, -3900, 2], [-1200, -11500, 3]]) {
     for (let i = 0; i < 4; i++) T.push([x - 40 + 24 * i + 8 * th(sd, i), z - 30 - 10 * th(i, sd), 6 + 2 * th(sd + i, 1), 13 + 4 * th(i, sd + 2), sd + i]);
   }
@@ -199,7 +199,7 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h0, float seed) 
   if (!above && hb > 0.0) kt *= step(q.y, hb + 0.4 * abs(q.x * 3.0));
   // Four limbs from the trunk's top to the lobes, seen most once the leaves go.
   float kl = 0.0;
-  for (int i = 0; i < 4; i++) {
+  for (int i = ROLL0; i < 4; i++) {
     if (!above || tp != 0) break;
     float fi = float(i), lx = (fi - 1.5) * 0.5 * r, ly = cy + (0.15 - 0.25 * abs(fi - 1.5)) * r;
     if (th(vec2(seed + fi, 5.5)) < dm.y * 0.8) continue;
@@ -224,7 +224,7 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h0, float seed) 
     // Each lobe is a dome toward the eye: the one standing highest here gives the normal.
     float hgt = -1e9, cR = 1.0;
     vec2 cn = vec2(0.0);
-    for (int i = 0; i < 7; i++) {
+    for (int i = ROLL0; i < 7; i++) {
       float fi = float(i);
       vec3 lb;
       if (tp == 1) {
@@ -253,7 +253,7 @@ void loneTree(vec2 s, vec3 rd, float px, vec3 P, float r, float h0, float seed) 
   float det = smoothstep(2.0, 6.0, W * m / px);
   vec2 g = ql / fs + seed * 3.1, gi = floor(g), gf = fract(g), cv = vec2(0.0), ci = gi;
   float d1 = 9.0, d2 = 9.0;
-  for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+  for (int y = ROLL0 - 1; y <= 1; y++) for (int x = ROLL0 - 1; x <= 1; x++) {
     vec2 o = vec2(float(x), float(y)), c = o + vec2(th(gi + o), th(gi + o + 17.3)) * 0.8 + 0.1 - gf;
     float dd = dot(c, c);
     if (dd < d1) { d2 = d1; d1 = dd; cv = c; ci = gi + o; } else if (dd < d2) d2 = dd;
@@ -295,12 +295,20 @@ float pbox(vec2 s, vec2 a, vec2 b, float px) {
   vec2 lo = clamp((s - a) / px + 0.5, 0.0, 1.0), hi = clamp((b - s) / px + 0.5, 0.0, 1.0);
   return lo.x * lo.y * hi.x * hi.y;
 }
-// A far farmstead at P: a house, a barn, three grain bins, a few trees.
+// True where a far farmstead at P can show: its screen box.
+// Its trees stay inside this box too.
+bool steadIn(vec2 s, float px, vec3 P) {
+  vec2 b = proj(P);
+  float m = uFoc / depthOf(P);
+  return !(abs(s.x - b.x) > 90.0 * m + px || s.y < b.y - 2.0 * px || s.y > b.y + 22.0 * m + px);
+}
+// A far farmstead at P: a house, a barn, three grain bins.
+// Its trees draw in plainTrees(), a pass before.
 void stead(vec2 s, vec3 rd, float px, vec3 P, float seed) {
   float z = depthOf(P);
   vec2 b = proj(P);
   float m = uFoc / z;
-  if (abs(s.x - b.x) > 90.0 * m + px || s.y < b.y - 2.0 * px || s.y > b.y + 22.0 * m + px) return;
+  if (!steadIn(s, px, P)) return;
   float sun = 1.0 - sunCover(P * 0.001);
   vec3 lit = uSunCol * 0.5 * sun + uAmb * 0.5;
   float fl = s.x < b.x ? 1.0 : -1.0;
@@ -308,11 +316,6 @@ void stead(vec2 s, vec3 rd, float px, vec3 P, float seed) {
   float v = dmgAt(P.xz).x;
   float roofK = 1.0 - clamp((v - 45.0) / 12.0, 0.0, 1.0), wallK = mix(1.0, 0.15, clamp((v - 60.0) / 25.0, 0.0, 1.0));
   float binK = 1.0 - clamp((v - 58.0) / 12.0, 0.0, 1.0);
-  // The trees behind the yard.
-  for (int i = 0; i < 4; i++) {
-    float fi = float(i);
-    loneTree(s, rd, px, P + vec3(-40.0 + 24.0 * fi + 8.0 * th(vec2(seed, fi)), 0.0, -30.0 - 10.0 * th(vec2(fi, seed))), 6.0 + 2.0 * th(vec2(seed + fi, 1.0)), 13.0 + 4.0 * th(vec2(fi, seed + 2.0)), seed + fi);
-  }
   // The grain bins: corrugated steel, bright where the sun reaches, each with a cone on top.
   for (int i = 0; i < 3; i++) {
     float fi = float(i), r = 4.5 - 0.6 * fi;
@@ -409,10 +412,10 @@ void fence(vec2 s, vec3 rd, float px) {
 // None stands on the road's line, and none nearer than 9 km stands in front of the touchdown ground.
 void farTrees(vec2 s, vec3 rd, float px) {
   float az = atan(rd.x, -rd.z);
-  for (int b = 0; b < 6; b++) {
+  for (int b = ROLL0; b < 6; b++) {
     float fb = float(b), d0 = 2500.0 * pow(1.55, fb), cw = 220.0 / d0;
     float ci = floor(az / cw);
-    for (int k = -1; k <= 1; k++) {
+    for (int k = ROLL0 - 1; k <= 1; k++) {
       float c = ci + float(k);
       vec3 h = vec3(th(vec2(c, fb + 0.5)), th(vec2(fb + 3.3, c)), th(vec2(c + 7.1, fb * 3.0)));
       // Trees gather in loose groups: some stretches of horizon hold many, some none.
@@ -424,38 +427,70 @@ void farTrees(vec2 s, vec3 rd, float px) {
       if (d < 9000.0 && a > -0.45 && a < -0.1) continue;
       // Old cottonwoods and elms: crowns 12 to 24 m across, often two or three together.
       float r = 6.0 + 6.0 * th(vec2(c, fb + 9.0)), H = r * (2.0 + 0.5 * th(vec2(fb, c + 2.0)));
-      loneTree(s, rd, px, P, r, H, c * 0.37 + fb);
-      if (h.y > 0.45) loneTree(s, rd, px, P + vec3(cos(a) * r * 1.6, 0.0, sin(a) * r * 1.6), r * 0.8, H * 0.85, c * 0.37 + fb + 0.5);
-      if (h.y > 0.75) loneTree(s, rd, px, P - vec3(cos(a) * r * 1.5, 0.0, sin(a) * r * 1.5), r * 0.7, H * 0.8, c * 0.37 + fb + 0.7);
+      // A second tree stands past h.y 0.45, a third past 0.75.
+      for (int j = ROLL0; j < 3; j++) {
+        if ((j == 1 && h.y <= 0.45) || (j == 2 && h.y <= 0.75)) continue;
+        float f = j == 1 ? 1.6 : 1.5, kr = j == 0 ? 1.0 : (j == 1 ? 0.8 : 0.7), kh = j == 0 ? 1.0 : (j == 1 ? 0.85 : 0.8);
+        vec3 o = vec3(cos(a) * r * f, 0.0, sin(a) * r * f);
+        vec3 Q = j == 0 ? P : (j == 1 ? P + o : P - o);
+        loneTree(s, rd, px, Q, j == 0 ? r : r * kr, j == 0 ? H : H * kh, j == 0 ? c * 0.37 + fb : c * 0.37 + fb + (j == 1 ? 0.5 : 0.7));
+      }
     }
   }
 }
+// Shelterbelts: ends a.xy and b.xy; height and seed.
+const vec4 BELT_AB[6] = vec4[6](vec4(-3500.0, -3220.0, -1500.0, -3220.0), vec4(400.0, -4830.0, 2600.0, -4830.0),
+  vec4(-6000.0, -9650.0, -300.0, -9650.0), vec4(-3218.0, -1609.0, -3218.0, -4800.0),
+  vec4(1000.0, -12870.0, 8000.0, -12870.0), vec4(2400.0, -6400.0, 2400.0, -11200.0));
+const vec2 BELT_HS[6] = vec2[6](vec2(13.0, 1.0), vec2(15.0, 2.0), vec2(14.0, 3.0), vec2(12.0, 4.0), vec2(16.0, 5.0), vec2(13.0, 6.0));
+// Lone trees: place x, z and crown radius; height.
+const vec4 LONE[6] = vec4[6](vec4(-600.0, -950.0, 5.0, 11.0), vec4(-260.0, -2600.0, 6.0, 13.0), vec4(520.0, -1900.0, 4.5, 10.0),
+  vec4(1500.0, -3500.0, 7.0, 15.0), vec4(-1900.0, -2200.0, 5.5, 12.0), vec4(3400.0, -2600.0, 6.5, 14.0));
+// Farmsteads: place x, z.
+const vec2 STEAD[3] = vec2[3](vec2(-2900.0, -5200.0), vec2(1700.0, -3900.0), vec2(-1200.0, -11500.0));
 // Every far shape on the plain, laid into the objects' layers.
-void plain(vec2 s, vec3 rd, float px) {
-  // Everything here stands within a thin band round the horizon, or near the road for the fence.
+// It takes five passes: one program would not compile on D3D11.
+// The passes run in this order, so the shapes stack as in one pass.
+// Everything here stands in a thin band round the horizon, or near the road.
+// The fence along the road.
+void plainFence(vec2 s, vec3 rd, float px) {
   if (s.y < -0.6 || s.y > 0.06) return;
   fence(s, rd, px);
-  if (s.y < -0.03) return;
-  // Shelterbelts on the section lines, a mile apart; none crosses the road or the touchdown ground.
-  belt(s, rd, px, vec2(-3500.0, -3220.0), vec2(-1500.0, -3220.0), 13.0, 1.0);
-  belt(s, rd, px, vec2(400.0, -4830.0), vec2(2600.0, -4830.0), 15.0, 2.0);
-  belt(s, rd, px, vec2(-6000.0, -9650.0), vec2(-300.0, -9650.0), 14.0, 3.0);
-  belt(s, rd, px, vec2(-3218.0, -1609.0), vec2(-3218.0, -4800.0), 12.0, 4.0);
-  belt(s, rd, px, vec2(1000.0, -12870.0), vec2(8000.0, -12870.0), 16.0, 5.0);
-  belt(s, rd, px, vec2(2400.0, -6400.0), vec2(2400.0, -11200.0), 13.0, 6.0);
-  // Far trees, only in the thin band over the horizon where they can stand.
+}
+// Shelterbelts on the section lines, a mile apart.
+// No belt crosses the road or the touchdown ground.
+void plainBelts(vec2 s, vec3 rd, float px) {
+  if (s.y < -0.03 || s.y > 0.06) return;
+  for (int i = ROLL0; i < 6; i++) belt(s, rd, px, BELT_AB[i].xy, BELT_AB[i].zw, BELT_HS[i].x, BELT_HS[i].y);
+}
+// Far trees, only in the thin band over the horizon where they can stand.
+void plainFar(vec2 s, vec3 rd, float px) {
   if (abs(s.y) < 0.025) farTrees(s, rd, px);
-  // Lone trees in the fields.
-  loneTree(s, rd, px, vec3(-600.0, 0.0, -950.0), 5.0, 11.0, 1.0);
-  loneTree(s, rd, px, vec3(-260.0, 0.0, -2600.0), 6.0, 13.0, 2.0);
-  loneTree(s, rd, px, vec3(520.0, 0.0, -1900.0), 4.5, 10.0, 3.0);
-  loneTree(s, rd, px, vec3(1500.0, 0.0, -3500.0), 7.0, 15.0, 4.0);
-  loneTree(s, rd, px, vec3(-1900.0, 0.0, -2200.0), 5.5, 12.0, 5.0);
-  loneTree(s, rd, px, vec3(3400.0, 0.0, -2600.0), 6.5, 14.0, 6.0);
-  // Far farmsteads.
-  stead(s, rd, px, vec3(-2900.0, 0.0, -5200.0), 1.0);
-  stead(s, rd, px, vec3(1700.0, 0.0, -3900.0), 2.0);
-  stead(s, rd, px, vec3(-1200.0, 0.0, -11500.0), 3.0);
+}
+// The lone trees in the fields, then four trees behind each farmstead's yard.
+// The farmsteads stand far apart on screen: their trees can draw before all their buildings.
+void plainTrees(vec2 s, vec3 rd, float px) {
+  if (s.y < -0.03 || s.y > 0.06) return;
+  for (int i = ROLL0; i < 18; i++) {
+    vec3 P;
+    float r, h, seed;
+    if (i < 6) {
+      P = vec3(LONE[i].x, 0.0, LONE[i].y); r = LONE[i].z; h = LONE[i].w; seed = float(i + 1);
+    } else {
+      int k = (i - 6) / 4;
+      float sd = float(k + 1), fi = float(i - 6 - k * 4);
+      vec3 S = vec3(STEAD[k].x, 0.0, STEAD[k].y);
+      if (!steadIn(s, px, S)) continue;
+      P = S + vec3(-40.0 + 24.0 * fi + 8.0 * th(vec2(sd, fi)), 0.0, -30.0 - 10.0 * th(vec2(fi, sd)));
+      r = 6.0 + 2.0 * th(vec2(sd + fi, 1.0)); h = 13.0 + 4.0 * th(vec2(fi, sd + 2.0)); seed = sd + fi;
+    }
+    loneTree(s, rd, px, P, r, h, seed);
+  }
+}
+// The far farmsteads' buildings and bins.
+void plainSteads(vec2 s, vec3 rd, float px) {
+  if (s.y < -0.03 || s.y > 0.06) return;
+  for (int i = ROLL0; i < 3; i++) stead(s, rd, px, vec3(STEAD[i].x, 0.0, STEAD[i].y), float(i + 1));
 }
 /* ---------- uprooted trees in flight ---------- */
 // Each flight: place x, z, start time, seed; then crown radius and height.

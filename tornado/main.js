@@ -11,6 +11,7 @@ import { funnelFS, noiseVolume, spinLayers, at, densAt, labM, KNOB, KNOBS, MAX_F
 import { WHEAT_GLSL } from './wheat.js';
 import { ROAD_GLSL } from './road.js';
 import { PLAIN_GLSL, treesState, treesStep, treesUniforms } from './plain.js';
+import { vehDraw } from './vdraw.js';
 import { TRAFFIC_GLSL, trafficState, trafficRun, trafficStep, trafficUniforms, trafficBusy, trafficShake } from './traffic.js';
 import { LINE_GLSL, lineState, lineReset, lineStep, lineUniforms } from './line.js';
 import { DAMAGE_GLSL, damageState, damageStep, damageReset, damageTex, debrisUniforms } from './damage.js';
@@ -181,14 +182,19 @@ uniform float uGreen;
 float gFine = 1.0;
 float gPx;
 
+// D3D11 pastes a whole function at each call, and in each unrolled loop pass.
+// So a heavy function has one call site, in a loop the compiler cannot unroll.
+// ROLL0 is 0, but the compiler cannot know it.
+#define ROLL0 int(min(gl_FragCoord.x, 0.0))
 float th(vec2 p) { p = fract(p * vec2(233.34, 851.73)); p += dot(p, p + 23.45); return fract(p.x * p.y); }
 float vn(vec2 p) {
   vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
   return mix(mix(th(i), th(i + vec2(1, 0)), u.x), mix(th(i + vec2(0, 1)), th(i + vec2(1, 1)), u.x), u.y);
 }
 // The volume holds 64 cells per unit: a sixteenth makes one unit four cells wide.
-float N(vec3 p) { return texture(tNoise, p * 0.0625).r; }
-float W(vec3 p) { return texture(tNoise, p * 0.0625).g; }
+// The volume has one level: level 0 is exact, and D3D11 keeps loops round it.
+float N(vec3 p) { return textureLod(tNoise, p * 0.0625, 0.0).r; }
+float W(vec3 p) { return textureLod(tNoise, p * 0.0625, 0.0).g; }
 // The storm's noise: one cell per km.
 float vn3(vec3 p) { return N(p * 0.25); }
 float fbm3(vec3 p) { return 0.5 * vn3(p) + 0.25 * vn3(p * 2.03 + 7.1) + 0.125 * vn3(p * 4.1 + 3.7); }
@@ -464,9 +470,14 @@ float stormNoise(vec3 p, float d) {
   }
   float W = w1 + w2, wS = clamp(W, 0.0, 1.0);
   // The still deck and each whirl read only where they show.
-  float n0 = wS < 1.0 ? deckN(p, p, calm) : 0.0;
-  float n1 = w1 > 1e-4 ? deckN(p, p1, calm) : 0.0;
-  float n2 = w2 > 0.02 ? deckN(p, p2, calm) : n1;
+  // One loop holds the one deckN() call: D3D11 pastes each call whole.
+  float n0 = 0.0, n1 = 0.0, n2 = 0.0;
+  for (int k = ROLL0; k < 3; k++) {
+    if (k == 0 ? wS >= 1.0 : k == 1 ? w1 <= 1e-4 : w2 <= 0.02) continue;
+    float n = deckN(p, k == 0 ? p : k == 1 ? p1 : p2, calm);
+    if (k == 0) n0 = n; else if (k == 1) n1 = n; else n2 = n;
+  }
+  if (w2 <= 0.02) n2 = n1;
   float nw = W > 1e-4 ? (n1 * w1 + n2 * w2) / W : 0.0;
   return d + mix(n0, nw, wS);
 }
@@ -520,11 +531,16 @@ vec3 stormLit(vec3 p, float d) {
   float fine = gFine;
   gFine = 0.0;
   gOpenHold = gOpen;
-  float ds = stormD(p + gSunC * 0.9);
+  // Then a step up: deeper cloud above means an underside, out of the sun.
+  // One loop holds the one stormD() call: D3D11 pastes each call whole.
+  float ds = 0.0, du = 0.0;
+  for (int k = ROLL0; k < 2; k++) {
+    float dk = stormD(p + (k == 0 ? gSunC * 0.9 : vec3(0.0, 0.4, 0.0)));
+    if (k == 0) ds = dk; else du = dk;
+  }
   float lit = clamp((ds - d) / 0.9 * 0.8 + 0.3, 0.0, 1.0);
-  // A step up: deeper cloud above means an underside, out of the sun.
   // A horn hangs below the base: its sides take the low sun as the funnel does, not the underside's shade.
-  float under = clamp((d - stormD(p + vec3(0.0, 0.4, 0.0))) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
+  float under = clamp((d - du) / 0.4, 0.0, 1.0) * (1.0 - hornUnder(p));
   gFine = fine;
   gOpenHold = -1.0;
   // A young deck is thin: its underside takes more light.
@@ -1092,31 +1108,194 @@ float boltChannel(vec2 s, float px) {
   // The foot fades a little into the dust; the top into the base.
   return k * smoothstep(0.0, 0.06, u) * (0.7 + 0.3 * smoothstep(1.0, 0.85, u));
 }
-vec3 envScene(vec2 uv) {
-  float asp = uRes.x / uRes.y, px = 1.0 / uRes.y;
-  vec2 s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
-  vec3 rc = normalize(vec3(s, -uFoc));
-  vec3 rd = toWorld(rc);
+/* ---------- the layer passes ---------- */
+// The scene draws in passes, each its own small program (stimming-azxj).
+// The D3D11 compiler cannot finish the whole scene as one program.
+// tLayB and tLayF: objects behind and in front of the funnels, premultiplied.
+// tLayG: the vehicles' lamp glow, added. tLayX: the ground, or the storm's march.
+uniform sampler2D tLayB, tLayF, tLayG, tLayX;
+// Sets up a pixel as the composite does: its screen point, rays and light.
+void pixStart(vec2 uv, out vec2 s, out vec3 rc, out vec3 rd, out float px) {
+  float asp = uRes.x / uRes.y;
+  px = 1.0 / uRes.y;
+  s = vec2((uv.x - 0.5) * asp, uv.y - uHz);
+  rc = normalize(vec3(s, -uFoc));
+  rd = toWorld(rc);
   lightInit(rc);
   gPx = px;
-  vec3 c;
-  // The objects on the plain first: each one sorts itself behind or in front of the funnels.
+}
+// Hands one object group's layers to the runner.
+void objOut(out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  b = gOB; f = gOF; g = vec4(gVehGlow, 0.0); x = vec4(0.0);
+}
+// The objects on the plain: each one sorts itself behind or in front of the funnels.
+// The passes run in this order; each lays over the ones before it.
+// The farm takes four passes: farm.js says why.
+void passFarmGround(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
   objInit(s);
-  farm(c, s, rd, px);
+  farmGround(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passFarmHedge(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  farmHedge(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passFarmYard(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  farmYard(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passFarmMill(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  farmMill(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPoles(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   linePoles(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passWires(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   wires(s, rd, px);
-  plain(s, rd, px);
-  // A pole, wire or fence post that overlaps a vehicle in a lane stands beyond it.
-  // So vehicles lay down after them: far ones before the infrastructure, near ones last.
+  objOut(b, f, g, x);
+}
+// The far plain takes five passes: plain.js says why.
+void passPlainFence(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainFence(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainBelts(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainBelts(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainFar(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainFar(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainTrees(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainTrees(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passPlainSteads(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  plainSteads(s, rd, px);
+  objOut(b, f, g, x);
+}
+// A pole, wire or fence post that overlaps a vehicle in a lane stands beyond it.
+// So vehicles lay down after them: far ones before the infrastructure, near ones last.
+// The vehicles' lamps only add glow: their own pass, in any place.
+void passCarLamps(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  trafficLamps(s, px);
+  objOut(b, f, g, x);
+}
+void passCarsFar(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   traffic(s, rd, px, false);
-  infra(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passInfraTall(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  infraTall(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passInfraLow(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
+  infraLow(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passDebris(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   debris(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passTrees(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   treesFly(s, rd, px);
+  objOut(b, f, g, x);
+}
+void passCarsNear(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  objInit(s);
   traffic(s, rd, px, true);
+  objOut(b, f, g, x);
+}
+// The ground under the horizon, opaque. The sky's pixels stay clear.
+void passGround(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  b = vec4(0.0); f = vec4(0.0); g = vec4(0.0); x = vec4(0.0);
+  if (rd.y < -1e-4) x = vec4(ground(rd, px), 1.0);
+}
+// Until the storm pass builds, the sky marches the storm here, premultiplied.
+void passStorm(vec2 uv, out vec4 b, out vec4 f, out vec4 g, out vec4 x) {
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  b = vec4(0.0); f = vec4(0.0); g = vec4(0.0); x = vec4(0.0);
+  if (rd.y < -1e-4 || uStormOn > 0.5) return;
+  // White noise per pixel, new each frame: it reads as film grain, not a pattern.
+  float jit = th(gl_FragCoord.xy + fract(uT * 7.31) * 113.0);
+  float tHit;
+  vec4 st = storm(rc, jit, tHit);
+  // The far storm sinks into the haze.
+  float h = 1.0 - exp(-tHit / 70.0);
+  x = vec4(mix(st.rgb, hazeCol(rd) * st.a, h * 0.8), st.a);
+}
+
+// The composite: sky, ground and storm, with the passes' layers laid in.
+vec3 envScene(vec2 uv) {
+  float asp = uRes.x / uRes.y;
+  vec2 s; vec3 rc, rd; float px;
+  pixStart(uv, s, rc, rd, px);
+  vec3 c;
+  ivec2 ip = ivec2(gl_FragCoord.xy);
+  vec4 gOB = texelFetch(tLayB, ip, 0), gOF = texelFetch(tLayF, ip, 0), back = texelFetch(tLayX, ip, 0);
+  vec3 gVehGlow = texelFetch(tLayG, ip, 0).rgb;
   // The storm pass: the whole deck and every funnel, at half size. Until it builds, the sky marches here.
   vec4 tv = uStormOn > 0.5 ? texture(tTor, uv) : vec4(0.0);
   if (rd.y < -1e-4) {
-    c = ground(rd, px);
+    c = back.rgb;
     c = c * (1.0 - gOB.a) + gOB.rgb;
     c = c * (1.0 - tv.a) + tv.rgb;
   } else {
@@ -1168,13 +1347,8 @@ vec3 envScene(vec2 uv) {
       c = mix(mix(c, gloom, glK), rainC, rnK);
       c = c * (1.0 - tv.a) + tv.rgb;
     } else {
-      // White noise per pixel, new each frame: it reads as film grain, not a pattern.
-      float jit = th(gl_FragCoord.xy + fract(uT * 7.31) * 113.0);
-      float tHit;
-      vec4 st = storm(rc, jit, tHit);
-      // The far storm sinks into the haze.
-      float h = 1.0 - exp(-tHit / 70.0);
-      c = c * (1.0 - st.a) + mix(st.rgb, hazeCol(rd) * st.a, h * 0.8);
+      // passStorm marched the storm for this pixel.
+      c = c * (1.0 - back.a) + back.rgb;
       c = mix(mix(c, gloom, glK), rainC, rnK);
     }
   }
@@ -1307,6 +1481,8 @@ const canvas = document.createElement('canvas');
 stage.prepend(canvas);
 // A GPU reset shows as a failure, during the compile or later.
 canvas.addEventListener('webglcontextlost', e => { watch.fail('the GPU reset (WebGL context lost)'); e.preventDefault(); });
+// An object pass fills the layers behind and in front of the funnels.
+const OBJ = fn => ({ fn, layers: ['tLayB', 'tLayF'] });
 // The funnel pass: its program, the noise volume, two targets for the history, and its state.
 const fun = { n: 0, prog: null, progs: {}, mode: 'tube', noise: null, A: null, B: null, w: 0, h: 0, on: false, loopT: 0, frame: 0, fresh: true, farT: 0, farDur: 0 };
 // The load line: the scene link and the noise volume; the first frame ends it.
@@ -1314,11 +1490,34 @@ const loadStep = buildSteps(2);
 // The build waits twice; no frame draws until the whole module has run.
 let booted = false;
 let env = null;
+// The scene's uniforms: the passes and the vehicles' meshes both read them.
+const envU = {
+  uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
+  uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
+  uBase: baseNow, uReach: () => deckReach, uFront: () => front, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
+  uRain: () => rain, uRainDir: () => rainAim(),
+  uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
+  uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
+  uGust: fieldGust, uTorF: torFeet,
+  uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uFly: () => trees.uFly, uFlyB: () => trees.uFlyB, uInfra: () => inf.uInfra, uBale: () => inf.uBale, uBaleB: () => inf.uBaleB, uSwayPh: () => line.uSwayPh,
+};
+// The vehicles' mesh renderer (vdraw.js); it builds once the context exists.
+let vd = null;
 try {
   // The scene shader is large: the driver links it while the intro plays.
   watch.step('Compiling shaders');
   env = await environmentReady(canvas, {
     scene: SCENE,
+    // The scene compiles in parts: one program per pass, then the composite.
+    layers: ['tLayB', 'tLayF', 'tLayG', 'tLayX'],
+    // Each pass names the layers it fills: the runner draws it once for each.
+    passes: [
+      { fn: 'passGround', layers: ['tLayX'] }, { fn: 'passStorm', layers: ['tLayX'] },
+      ...['passFarmGround', 'passFarmHedge', 'passFarmYard', 'passFarmMill', 'passPoles', 'passWires',
+        'passPlainFence', 'passPlainBelts', 'passPlainFar', 'passPlainTrees', 'passPlainSteads'].map(OBJ),
+      { fn: 'passCarLamps', layers: ['tLayG'] }, OBJ('passCarsFar'),
+      ...['passInfraTall', 'passInfraLow', 'passDebris', 'passTrees', 'passCarsNear'].map(OBJ),
+    ],
     glass: GLASS_STEP,
     pane: { head: PANE_HEAD, uniforms: { uNearBlur: () => (S.on.glass && drops?.ready ? nearBlur : 0) }, textures: { tDrops: () => drops?.tex() ?? null } },
     animated: true,
@@ -1326,18 +1525,9 @@ try {
     budget: watch.crashed ? 0.6e6 : 1.8e6,
     active: () => booted && visible && !qaHold,
     onFrame: raw => { fun.loopT = performance.now(); step(Math.min(raw, 0.05)); },
-    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); treesUniforms(trees, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
-    textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex },
-    uniforms: {
-      uSun: () => sun, uSunCol: () => sunCol, uAmb: () => amb,
-      uFoc: focal, uHz: horizon, uYaw: yaw, uWind: () => wind, uWDir: () => windDir, uStorm: () => storm, uT: () => simT,
-      uBase: baseNow, uReach: () => deckReach, uFront: () => front, uCamH: () => camH, uSpIn: () => KNOB.spIn, uStormOn: () => (fun.on ? 1 : 0), uPlainLit: () => plainLit(), uGreen: () => greenK(), uBoltT: () => bolt.top, uBoltG: () => bolt.foot, uBolt: () => bolt.u, uBeam: () => beam, uTorOn: () => (fun.on && fun.n ? 1 : 0),
-      uRain: () => rain, uRainDir: () => rainAim(),
-      uWB: () => LOOK_NOW.wb, uSat: () => LOOK_NOW.sat, uCon: () => LOOK_NOW.con,
-      uTorZ: () => pk.Z, uTorN: () => pk.NR, uTorH: () => pk.H,
-      uGust: fieldGust, uTorF: torFeet,
-      uPole: () => line.uPole, uSpan: () => line.uSpan, uArc: () => line.uArc, uArcK: () => line.uArcK, uFoot: () => line.uFoot, uCasc: () => line.uCasc, uVeh: () => traf.u, uVehB: () => traf.uB, uVehC: () => traf.uC, uFarm: () => farmUniforms(farmS), uDeb: () => dmg.uDeb, uDebB: () => dmg.uDebB, uFly: () => trees.uFly, uFlyB: () => trees.uFlyB, uInfra: () => inf.uInfra, uBale: () => inf.uBale, uBaleB: () => inf.uBaleB, uSwayPh: () => line.uSwayPh,
-    },
+    before: (w, h) => { damageTex(dmg, env.gl); debrisUniforms(dmg, simT); treesUniforms(trees, simT); infraUniforms(inf); lineUniforms(line, tors); trafficUniforms(traf, simT); funnelPass(w, h); bindNoise(); vd?.draw(w, h, traf, simT); sunFlare(); if (S.on.glass && nearBlur > 0) drops?.pass(w, h, env.motion, S, nearBlur); },
+    textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex, tCarFB: () => vd?.tex('far', 0) ?? null, tCarFF: () => vd?.tex('far', 1) ?? null, tCarNB: () => vd?.tex('near', 0) ?? null, tCarNF: () => vd?.tex('near', 1) ?? null },
+    uniforms: envU,
   });
 } catch (err) {
   watch.fail(err);
@@ -1447,6 +1637,7 @@ function sunFlare() {
 // The tornadoes draw at this share of the frame's size, into their own target.
 const FUN_RES = 0.5;
 const gl = env.gl;
+vd = vehDraw(gl, { scene: SCENE, uniforms: envU, textures: { tTor: () => (fun.on ? fun.A.tex : null), tDmg: () => dmg.tex }, hour: () => S.hour });
 // The pane's drops, out of focus: the focus is on the far plain.
 const drops = paneBlur(gl);
 // The pass compiles beside the first frames; until then the plain shows no funnel.
@@ -1457,9 +1648,38 @@ function useFunnel(mode) {
   if (fun.progs[mode]) { fun.prog = fun.progs[mode]; fun.fresh = true; env.touch(); return; }
   if (fun.progs[mode] === null) return;
   fun.progs[mode] = null;
-  linked(gl, { f: program(gl, TRI_VS, funnelFS(SKY, SHARED, mode === 'tube')) }, { wait: () => new Promise(r => setTimeout(r, 30)) })
-    .then(set => { fun.progs[mode] = set.f; if (fun.mode === mode) { fun.prog = set.f; fun.fresh = true; } env.touch(); })
+  // D3D11 compiles the march and the rest far faster apart; an integer target carries the march's result.
+  const fs = part => program(gl, TRI_VS, funnelFS(SKY, SHARED, mode === 'tube', part));
+  const set = { m: fs('march'), r: fs('post') };
+  linked(gl, set, { wait: () => new Promise(r => setTimeout(r, 30)) })
+    .then(set => { const P = funPair(set); fun.progs[mode] = P; if (fun.mode === mode) { fun.prog = P; fun.fresh = true; } env.touch(); })
     .catch(err => { delete fun.progs[mode]; console.error('funnel pass:', err); });
+}
+// The funnel's programs: the march (m) and the rest (r).
+// P.u maps a uniform's name to its place in each program that has it.
+function funPair({ m, r }) {
+  const u = new Proxy({}, { get: (_, name) => [m, r].filter(q => q.u[name] != null).map(q => [q.p, q.u[name]]) });
+  // The march's result sits on unit 9.
+  gl.useProgram(r.p);
+  gl.uniform1i(r.u.tMarch, 9);
+  return { m, r, u };
+}
+// Sets one uniform in each funnel program that has it: funU.uniform1f(u.uT, simT).
+const funU = new Proxy({}, { get: (_, fn) => (at, ...v) => { for (const [prog, loc] of at) { gl.useProgram(prog); gl[fn](loc, ...v); } } });
+// Draws the funnel into fb, at the viewport already set.
+// The march draws into its own target first; the rest reads it.
+function funDraw(fb) {
+  const P = fun.prog;
+  // The target is made on unit 9, its own: it must not unbind a picture the draw reads.
+  gl.activeTexture(gl.TEXTURE9);
+  if (!fun.M || fun.M.w !== fun.w || fun.M.h !== fun.h) { free(gl, fun.M); fun.M = glTarget(gl, fun.w, fun.h, { format: gl.RGBA32UI, filter: gl.NEAREST }); }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fun.M.fb);
+  gl.useProgram(P.m.p);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.bindTexture(gl.TEXTURE_2D, fun.M.tex);
+  gl.useProgram(P.r.p);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 act.funnel = v => useFunnel(v === 'shells' ? 'shells' : 'tube');
 // The old key held the old default; it goes.
@@ -1629,25 +1849,25 @@ function bakeFar(u, rw, rh, n) {
   if (!fun.farBusy) { if (fun.farHold) return; fun.farRow = 0; fun.farBusy = true; }
   // A bake keeps the lens it started with through all its strips.
   if (fun.farRow === 0) fun.farLens = [focal(), yaw()];
-  gl.uniform1f(u.uFoc, fun.farLens[0]);
-  gl.uniform1f(u.uYaw, fun.farLens[1]);
+  funU.uniform1f(u.uFoc, fun.farLens[0]);
+  funU.uniform1f(u.uYaw, fun.farLens[1]);
   // The bake reads no tornado and no history; its noise keeps the time it was baked at.
-  gl.uniform1i(u.uMode, 1);
-  gl.uniform1f(u.uFarD, farD);
-  gl.uniform1i(u.uN, 0);
-  gl.uniform1f(u.uTorOn, 0);
-  gl.uniform1f(u.uBlend, 1);
-  gl.uniform2f(u.uJit, 0, 0);
+  funU.uniform1i(u.uMode, 1);
+  funU.uniform1f(u.uFarD, farD);
+  funU.uniform1i(u.uN, 0);
+  funU.uniform1f(u.uTorOn, 0);
+  funU.uniform1f(u.uBlend, 1);
+  funU.uniform2f(u.uJit, 0, 0);
   // tFar points away from the target: on unit 0 it could meet farB and make a feedback loop.
   // That loop drops the draw, and the far field came out empty on the first load.
-  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
-  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); funU.uniform1i(u.tFar, 7);
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); funU.uniform1i(u.tFarPrev, 8);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.farB.fb);
   gl.viewport(0, 0, rw, rh);
   // The first bake, or a still page, bakes whole; a running page bakes one slice a frame.
   // A slice is every eighth row, not a band: a band across the horizon cost far more and hitched.
-  if (whole) { gl.uniform1i(u.uSlice, -1); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow = FAR_STRIPS; }
-  else { gl.uniform1i(u.uSlice, fun.farRow); gl.drawArrays(gl.TRIANGLES, 0, 3); fun.farRow++; }
+  if (whole) { funU.uniform1i(u.uSlice, -1); funDraw(fun.farB.fb); fun.farRow = FAR_STRIPS; }
+  else { funU.uniform1i(u.uSlice, fun.farRow); funDraw(fun.farB.fb); fun.farRow++; }
   // A finished bake fades in over the last one: no step shows, during the build-up or a drag.
   if (fun.farRow >= FAR_STRIPS) {
     [fun.farC, fun.farA, fun.farB] = [fun.farA, fun.farB, fun.farC];
@@ -1657,10 +1877,10 @@ function bakeFar(u, rw, rh, n) {
     fun.farBusy = false; fun.farReady = true;
   }
   // The live draw that follows takes these back.
-  gl.uniform1f(u.uFoc, focal());
-  gl.uniform1f(u.uYaw, yaw());
-  gl.uniform1i(u.uN, n);
-  gl.uniform1f(u.uTorOn, n ? 1 : 0);
+  funU.uniform1f(u.uFoc, focal());
+  funU.uniform1f(u.uYaw, yaw());
+  funU.uniform1i(u.uN, n);
+  funU.uniform1f(u.uTorOn, n ? 1 : 0);
 }
 // Draws every tornado into the funnel target. The runner calls it before its passes.
 function funnelPass(w, h) {
@@ -1680,68 +1900,68 @@ function funnelPass(w, h) {
   // A still page bakes the far field whole, at once.
   fun.farHold = !hist;
   const P = fun.prog, u = P.u;
-  gl.useProgram(P.p);
   gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
   gl.viewport(0, 0, rw, rh);
   gl.disable(gl.BLEND);
   gl.disable(gl.SCISSOR_TEST);
   // Units 0 to 4 belong to the runner; the pass uses 5 and 6.
-  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); gl.uniform1i(u.tPrev, 5);
-  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, fun.noise); gl.uniform1i(u.tNoise, 6);
+  gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); funU.uniform1i(u.tPrev, 5);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, fun.noise); funU.uniform1i(u.tNoise, 6);
   const sk = skyAt(S.hour);
-  gl.uniform2f(u.uRes, rw, rh);
+  funU.uniform2f(u.uRes, rw, rh);
   const fr = fun.frame++;
-  gl.uniform1f(u.uTrans, KNOB.trans); gl.uniform1f(u.uRim, KNOB.rim);
-  gl.uniform1f(u.uWid, KNOB.width); gl.uniform1f(u.uGap, KNOB.gap); gl.uniform1f(u.uSheathK, KNOB.sheath); gl.uniform1f(u.uEdgeW, KNOB.edge); gl.uniform1f(u.uAmp, KNOB.amp);
-  gl.uniform1f(u.uAlb, KNOB.alb); gl.uniform1f(u.uSunK, KNOB.sunK); gl.uniform1f(u.uAmbK, KNOB.ambK);
-  gl.uniform1f(u.uHazeK, KNOB.hazeK); gl.uniform1f(u.uTopDark, KNOB.topK); gl.uniform1f(u.uDustK, KNOB.dustK);
-  gl.uniform1f(u.uSpIn, KNOB.spIn);
-  if (P === fun.progs.tube) { gl.uniform1f(u.uTbBands, KNOB.tbBands); gl.uniform1f(u.uTbCount, KNOB.tbCount); gl.uniform1f(u.uTbStretch, KNOB.tbStretch); }
-  gl.uniform3fv(u.uSun, sun); gl.uniform3fv(u.uSunCol, sunCol); gl.uniform3fv(u.uAmb, amb);
-  gl.uniform3fv(u.uZen, sk.zen); gl.uniform3fv(u.uMid, sk.mid); gl.uniform3fv(u.uBand, sk.band); gl.uniform3fv(u.uAnti, sk.anti);
-  gl.uniform1f(u.uFoc, focal()); gl.uniform1f(u.uHz, horizon()); gl.uniform1f(u.uYaw, yaw()); gl.uniform1f(u.uStorm, storm); gl.uniform1f(u.uT, simT);
-  gl.uniform1i(u.uN, n);
-  gl.uniform1f(u.uBase, baseNow());
-  gl.uniform1f(u.uReach, deckReach);
-  gl.uniform1f(u.uFront, front);
-  gl.uniform1f(u.uGod, god);
-  gl.uniform1f(u.uPlainLit, plainLit());
-  gl.uniform1f(u.uGreen, greenK());
-  gl.uniform3fv(u.uBoltT, bolt.top);
-  gl.uniform4fv(u.uBolt, bolt.u);
-  gl.uniform3fv(u.uBeam, beamSpot());
-  gl.uniform2f(u.uWDir, windDir[0], windDir[1]);
-  gl.uniform1f(u.uCamH, camH);
-  gl.uniform2f(u.uWindC, windC[0], windC[1]);
-  gl.uniform1f(u.uWind, wind);
-  for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) gl.uniform4fv(u['uT' + k], pk[k]);
-  gl.uniform2fv(u.uPhs, pk.ph);
+  funU.uniform1f(u.uTrans, KNOB.trans); funU.uniform1f(u.uRim, KNOB.rim);
+  funU.uniform1f(u.uWid, KNOB.width); funU.uniform1f(u.uGap, KNOB.gap); funU.uniform1f(u.uSheathK, KNOB.sheath); funU.uniform1f(u.uEdgeW, KNOB.edge); funU.uniform1f(u.uAmp, KNOB.amp);
+  funU.uniform1f(u.uAlb, KNOB.alb); funU.uniform1f(u.uSunK, KNOB.sunK); funU.uniform1f(u.uAmbK, KNOB.ambK);
+  funU.uniform1f(u.uHazeK, KNOB.hazeK); funU.uniform1f(u.uTopDark, KNOB.topK); funU.uniform1f(u.uDustK, KNOB.dustK);
+  funU.uniform1f(u.uSpIn, KNOB.spIn);
+  if (P === fun.progs.tube) { funU.uniform1f(u.uTbBands, KNOB.tbBands); funU.uniform1f(u.uTbCount, KNOB.tbCount); funU.uniform1f(u.uTbStretch, KNOB.tbStretch); }
+  funU.uniform3fv(u.uSun, sun); funU.uniform3fv(u.uSunCol, sunCol); funU.uniform3fv(u.uAmb, amb);
+  funU.uniform3fv(u.uZen, sk.zen); funU.uniform3fv(u.uMid, sk.mid); funU.uniform3fv(u.uBand, sk.band); funU.uniform3fv(u.uAnti, sk.anti);
+  funU.uniform1f(u.uFoc, focal()); funU.uniform1f(u.uHz, horizon()); funU.uniform1f(u.uYaw, yaw()); funU.uniform1f(u.uStorm, storm); funU.uniform1f(u.uT, simT);
+  funU.uniform1i(u.uN, n);
+  funU.uniform1f(u.uBase, baseNow());
+  funU.uniform1f(u.uReach, deckReach);
+  funU.uniform1f(u.uFront, front);
+  funU.uniform1f(u.uGod, god);
+  funU.uniform1f(u.uPlainLit, plainLit());
+  funU.uniform1f(u.uGreen, greenK());
+  funU.uniform3fv(u.uBoltT, bolt.top);
+  funU.uniform4fv(u.uBolt, bolt.u);
+  funU.uniform3fv(u.uBeam, beamSpot());
+  funU.uniform2f(u.uWDir, windDir[0], windDir[1]);
+  funU.uniform1f(u.uCamH, camH);
+  funU.uniform2f(u.uWindC, windC[0], windC[1]);
+  funU.uniform1f(u.uWind, wind);
+  for (const k of ['A', 'B', 'C', 'D', 'E', 'F']) funU.uniform4fv(u['uT' + k], pk[k]);
+  funU.uniform2fv(u.uPhs, pk.ph);
   // The storm GLSL reads every tornado too: the horns' calm and shade.
-  gl.uniform1f(u.uTorOn, n ? 1 : 0); gl.uniform4fv(u.uTorZ, pk.Z); gl.uniform4fv(u.uTorN, pk.NR); gl.uniform4fv(u.uTorH, pk.H);
+  funU.uniform1f(u.uTorOn, n ? 1 : 0); funU.uniform4fv(u.uTorZ, pk.Z); funU.uniform4fv(u.uTorN, pk.NR); funU.uniform4fv(u.uTorH, pk.H);
   gl.bindVertexArray(null);
   // The first bake is whole: that frame skips the extra still draws.
   const first = !fun.farReady;
   bakeFar(u, rw, rh, n);
-  gl.uniform1i(u.uMode, 0);
-  gl.uniform1f(u.uFarD, farD);
-  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); gl.uniform1i(u.tFar, 7);
-  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); gl.uniform1i(u.tFarPrev, 8);
-  gl.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
-  gl.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
+  funU.uniform1i(u.uMode, 0);
+  funU.uniform1f(u.uFarD, farD);
+  gl.activeTexture(gl.TEXTURE7); gl.bindTexture(gl.TEXTURE_2D, fun.farA.tex); funU.uniform1i(u.tFar, 7);
+  gl.activeTexture(gl.TEXTURE8); gl.bindTexture(gl.TEXTURE_2D, fun.farC.tex); funU.uniform1i(u.tFarPrev, 8);
+  funU.uniform1f(u.uFarK, fun.farDur > 0 ? clamp((performance.now() - fun.farT) / fun.farDur) : 1);
+  funU.uniform2f(u.uFarFoc, fun.farFocA ?? focal(), fun.farFocC ?? fun.farFocA ?? focal());
   // A running page blends each frame into a long history: the march's grain averages out.
   // A still frame has no history: it averages four jittered draws of its own.
   const subs = hist || first ? 1 : 4;
   for (let k = 0; k < subs; k++) {
     if (k) { [fun.A, fun.B] = [fun.B, fun.A]; gl.activeTexture(gl.TEXTURE5); gl.bindTexture(gl.TEXTURE_2D, fun.A.tex); }
     const j = hist ? fr : k, on = hist || k > 0;
-    gl.uniform2f(u.uJit, on ? ((j * 0.618) % 1) - 0.5 : 0, on ? ((j * 0.382) % 1) - 0.5 : 0);
-    gl.uniform1f(u.uBlend, hist ? 0.35 : 1 / (k + 1));
+    funU.uniform2f(u.uJit, on ? ((j * 0.618) % 1) - 0.5 : 0, on ? ((j * 0.382) % 1) - 0.5 : 0);
+    funU.uniform1f(u.uBlend, hist ? 0.35 : 1 / (k + 1));
     gl.bindFramebuffer(gl.FRAMEBUFFER, fun.B.fb);
     gl.viewport(0, 0, rw, rh);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    funDraw(fun.B.fb);
   }
   // The runner wants the context in its default state.
-  gl.bindTexture(gl.TEXTURE_3D, null);
+  gl.activeTexture(gl.TEXTURE6); gl.bindTexture(gl.TEXTURE_3D, null);
+  gl.activeTexture(gl.TEXTURE9); gl.bindTexture(gl.TEXTURE_2D, null);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   [fun.A, fun.B] = [fun.B, fun.A];
@@ -2178,7 +2398,7 @@ async function syncTime(n = 20, part = 'frame', px = 1.8e6) {
   ms.sort((p, q) => p - q);
   return { median: +ms[n >> 1].toFixed(2), min: +ms[0].toFixed(2), size: [fw, fh, fun.w, fun.h] };
 }
-if (qs.has('qa')) window.__qa = { bolt, preset: act.preset, traf, trees, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
+if (qs.has('qa')) window.__qa = { vd, tod: act.tod, bolt, preset: act.preset, traf, trees, trafficRun, line, lineReset, dmg, farmS, inf, hold: v => { qaHold = !!v; }, syncTime, tors, live, ropeOut, setF, step, gpuTime, fun, env, canvas, funnel: act.funnel, pass: funnelPass };
 lastInput = performance.now();
 booted = true;
 watch.step('Drawing the first frames', true);

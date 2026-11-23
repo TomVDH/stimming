@@ -11,7 +11,7 @@ import { camera, renderer, scene } from '../setup.ts';
 import { complex } from './complex.ts';
 import { slitOffset } from '../core/mount.ts';
 import { patch as duskPatch } from './dusk.ts';
-import { buildHeroScope, type HeroScope } from './hero-scope.ts';
+import { buildHeroScope, SCOPE_TURN, type HeroScope } from './hero-scope.ts';
 import { buildModernScope } from './modern-scope.ts';
 import { BIG_BASE_H, BIG_SKIRT_H, BIG_SLIT_B, BIG_WALL_R, DOME_R, DOOR_GLOW, DOOR_HALF, DOOR_SPRING, DRUM_BATTER, DRUM_H, DRUM_R, LOW_OPEN, PIER_H, SLIT_B, SLIT_E, SPLIT_E, UP_OPEN, type Dome } from './observatory.ts';
 
@@ -1087,10 +1087,10 @@ function buildHero(main: Dome, tx: Painted): Built {
   root.add(...parts);
 
   // The telescope stands on the pier.
-  // Another module builds it.
-  // Its root sits where the dome's root sits.
-  // So it takes size 1 here.
+  // Another module builds it, at size 1.
+  // Its root drops to this drum's turn height.
   const scope = buildHeroScope(1);
+  scope.root.position.y = DRUM_H - SCOPE_TURN;
   root.add(scope.root);
   // It takes the inside light, but its glass keeps its own look.
   const seen = new Set<Material>(mats);
@@ -1228,7 +1228,11 @@ function bigScope(main: Dome, floorY: number): CutScope {
   glass.visible = false;
   return {
     root: m.root, glass,
-    setTube(alt, az) { tAlt = alt; tAz = az; m.setTube(alt, az); },
+    // An alt-az fork never flips over the pole.
+    setTube(alt, az) { tAlt = alt; tAz = az; m.setTube(alt, az); return false; },
+    step: () => false,
+    // The clearance check reads the refractor's joints; these stay empty.
+    parts: { mount: new Group(), polar: new Group(), ra: new Group(), dec: new Group(), tube: new Group(), worm: new Group(), knob: new Group() },
     setSky() {}, setTarget() {}, setSlit() {}, setStars() {},
     laserMouth(out) {
       line(tAlt, tAz);

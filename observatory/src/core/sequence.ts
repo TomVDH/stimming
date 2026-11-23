@@ -22,7 +22,7 @@ export type Cut = { shot: Shot; fov: number; phase: 'open' | 'slew' };
 // The focus pulls to the primary, with the starry sky in it.
 export const CUTS: Cut[] = [
   { shot: 'edge', fov: 18, phase: 'open' },
-  { shot: 'slit', fov: 10, phase: 'open' },
+  { shot: 'slit', fov: 17, phase: 'open' },
   { shot: 'lift', fov: 34, phase: 'slew' },
   { shot: 'roll', fov: 9, phase: 'slew' },
   { shot: 'glass', fov: 20, phase: 'slew' },

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Dichroic glass 1</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Dichroic glass 1</h1>
+<p class="lede">Dichroic glass, round 1. No pick yet; A goes on the menu until Tom picks. A: the toy&#8217;s folded screen of three coated glass leaves, gold where it throws the light back and blue where the light passes, over a gold pool and a blue pool of light. D: the same screen on a white table block at 30 degrees. The pointer is the lamp: each leaf turns from blue to gold as the lamp crosses its face, and the pools slide.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  // The toy's tokens: clear glass with a coating that reflects gold and passes blue.
+  const GOLD = [[0, 'oklch(0.88 0.15 88)'], [1, 'oklch(0.72 0.17 62)']];
+  const MAG = [[0, 'oklch(0.7 0.21 345)'], [1, 'oklch(0.52 0.21 330)']];
+  const BLUE = [[0, 'oklch(0.7 0.15 235)'], [1, 'oklch(0.5 0.19 262)']];
+  // Each leaf's face: +1 turns gold as the light moves right, -1 as it moves left.
+  const FACE = [-1, 1, -1];
+  // The rest light: a little from the left.
+  const REST = -0.5;
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  // How much a leaf reflects, from 0 (passes blue) to 1 (throws gold).
+  const refl = (k, lx) => clamp01(0.5 + 1.5 * FACE[k] * lx);
+  // The three colour layers of a leaf: blue, magenta in between, gold.
+  const mixOf = r => [(1 - r) * (1 - r), Math.min(1, 2.6 * r * (1 - r)), r * r];
+
+  // One leaf of coated glass: three colour layers, then the menu light and rim.
+  const leafArt = (u, k, d, lx = REST) => {
+    const m = mixOf(refl(k, lx));
+    return `<g class="lf${k}" opacity="0.9">
+      <path d="${d}" fill="url(#${u}glass)"/>
+      <path class="c0" d="${d}" fill="url(#${u}blue)" opacity="${f(m[0])}"/>
+      <path class="c1" d="${d}" fill="url(#${u}mag)" opacity="${f(m[1])}"/>
+      <path class="c2" d="${d}" fill="url(#${u}gold)" opacity="${f(m[2])}"/>
+      <path d="${d}" fill="url(#${u}lit)"/>
+      <path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/></g>`;
+  };
+  // The light thrown on the table: gold toward the lamp, blue away from it.
+  const poolArt = (u, cx, cy, rx, ry, lx = REST) => `<g filter="url(#${u}pb)">
+      <ellipse class="pg" cx="${f(cx + lx * rx * 0.9)}" cy="${cy}" rx="${rx}" ry="${ry}" fill="oklch(0.8 0.16 75)" opacity="0.75"/>
+      <ellipse class="pb" cx="${f(cx - lx * rx * 0.8)}" cy="${f(cy + 1)}" rx="${f(rx * 0.95)}" ry="${ry}" fill="oklch(0.58 0.19 255)" opacity="0.8"/></g>`;
+
+  // The shared motion: the pointer is the lamp.
+  // Each leaf turns from blue to gold as the lamp crosses its face; the pools slide.
+  const run = (svg, { cx = 64, poolX = 64, poolRx = 26, iso = false } = {}) => {
+    const q = c => svg.querySelector(c);
+    const leaves = [0, 1, 2].map(k => [0, 1, 2].map(i => q(`.lf${k} .c${i}`)));
+    const pg = q('.pg'), pb = q('.pb');
+    const st = { l: REST, to: REST, last: 0 };
+    const paint = () => {
+      leaves.forEach((cs, k) => { const m = mixOf(refl(k, st.l)); cs.forEach((c, i) => c.setAttribute('opacity', f(m[i]))); });
+      const gx = poolX + st.l * poolRx * 0.9, bx = poolX - st.l * poolRx * 0.8;
+      pg.setAttribute('cx', f(gx)); pb.setAttribute('cx', f(bx));
+      if (iso) { pg.setAttribute('cy', f(92 - st.l * 6)); pb.setAttribute('cy', f(93 + st.l * 6)); }
+    };
+    const step = time => {
+      const dt = Math.min(0.1, time - (st.last || time));
+      st.last = time;
+      st.l += (st.to - st.l) * (1 - Math.exp(-dt / (reduce ? 0.05 : 0.14)));
+      paint();
+      if (Math.abs(st.to - st.l) < 0.002) { st.l = st.to; paint(); st.last = 0; loop.stop(); }
+    };
+    const loop = clock(step);
+    return {
+      enter(p) { if (p) this.move(p); },
+      move(p) { st.to = Math.max(-1, Math.min(1, (p[0] - cx) / 40)); loop.start(); },
+      leave() { st.to = REST; loop.start(); },
+    };
+  };
+  const defs = u => `${light(u)}${blur(`${u}b`, 3)}${blur(`${u}pb`, 4)}${lg(`${u}gold`, GOLD)}${lg(`${u}mag`, MAG)}${lg(`${u}blue`, BLUE)}${lg(`${u}glass`, [[0, 'oklch(0.9 0.02 220)', 0.35], [1, 'oklch(0.75 0.03 220)', 0.2]])}`;
+  // A leaf from its two seams on the table and its height.
+  const leaf = (a, b, h) => poly([a, b, [b[0], b[1] - h], [a[0], a[1] - h]]);
+
+  /* ================= Current ================= */
+
+  // Dichroic glass is new; it has no menu icon yet.
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    art(svg) {
+      svg.innerHTML = `<rect x="14" y="14" width="100" height="100" rx="10" fill="none" stroke="oklch(0.3 0.015 275)" stroke-width="1.5" stroke-dasharray="4 5"/><text x="64" y="68" text-anchor="middle" fill="oklch(0.5 0.02 275)" font-size="10" font-family="Gabarito, sans-serif" letter-spacing="1">NO ICON</text>`;
+      return { enter() {}, move() {}, leave() {} };
+    },
+  });
+
+  /* ================= A: Shaded object ================= */
+
+  // The folded screen: three leaves of coated glass in a zigzag, seen from the front.
+  const SA = [[16, 92], [46, 80], [84, 100], [112, 86]];
+  const HA = [56, 70, 48];
+  const LA = [0, 1, 2].map(k => leaf(SA[k], SA[k + 1], HA[k]));
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [8, 8, 112, 104],
+    idea: 'The toy’s folded screen: three leaves of coated glass in a zigzag, the middle one tallest. Each leaf is gold where it throws the light back and blue where the light goes through; under them a gold pool and a blue pool of light lie on the table. The pointer is the lamp: each leaf turns from blue through magenta to gold as the lamp crosses its face, and the pools slide apart and swap.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${defs(u)}</defs>
+        <ellipse cx="64" cy="102" rx="50" ry="5" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)"/>
+        ${poolArt(u, 64, 104, 26, 7)}
+        ${leafArt(u, 0, LA[0])}${leafArt(u, 2, LA[2])}${leafArt(u, 1, LA[1])}`;
+      return run(svg);
+    },
+    // The emblem: the three leaves, the middle one grey, parted by dark seams.
+    // It is centred and fills the box.
+    emblem: `${EMB_HEAD}<g transform="translate(64 64) scale(1.12) translate(-64 -55)" stroke="#000" stroke-width="2.5" stroke-linejoin="round"><path d="${LA[0]}" fill="#fff"/><path d="${LA[2]}" fill="#fff"/><path d="${LA[1]}" fill="#9a9a9a"/></g></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // A slab of white table at 30 degrees, the folded screen standing on its top.
+  const CY = 76, HX = 30, HY = 30, T = 16;
+  const iso = (gx, gy) => [64 + (gx - gy) * 0.866, CY + (gx + gy) * 0.5];
+  const N = iso(-HX, -HY), E = iso(HX, -HY), S = iso(HX, HY), W = iso(-HX, HY);
+  const down = (p, k = 1) => [p[0], p[1] + T * k];
+  const SD = [[30, 80], [50, 70], [78, 84], [98, 74]];
+  const HD = [44, 54, 38];
+  const LD = [0, 1, 2].map(k => leaf(SD[k], SD[k + 1], HD[k]));
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [8, 12, 112, 112],
+    idea: 'A slab of white table at 30 degrees: a light top, a mid left face, a dark right face, a rim on the top edges. The folded screen stands on the top, and its gold and blue pools of light lie on the top face. The pointer is the lamp, as on A.',
+    art(svg, u) {
+      const top = poly([N, E, S, W]);
+      svg.innerHTML = `<defs>${defs(u)}
+          ${lg(`${u}T`, [[0, 'oklch(0.93 0.006 80)'], [1, 'oklch(0.84 0.008 80)']])}
+          ${lg(`${u}L`, [[0, 'oklch(0.72 0.008 80)'], [1, 'oklch(0.62 0.008 80)']])}
+          ${lg(`${u}R`, [[0, 'oklch(0.52 0.008 80)'], [1, 'oklch(0.42 0.008 80)']])}
+          <clipPath id="${u}clip"><path d="${top}"/></clipPath></defs>
+        <path d="${poly([E, S, W, down(W), down(S), down(E)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([W, S, down(S), down(W)])}" fill="url(#${u}L)"/>
+        <path d="${poly([S, E, down(E), down(S)])}" fill="url(#${u}R)"/>
+        <path d="${top}" fill="url(#${u}T)"/>
+        <g clip-path="url(#${u}clip)">${poolArt(u, 64, 92, 22, 8)}</g>
+        <path d="${top}" fill="url(#${u}lit)"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(N[0])} ${f(N[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.5" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(W[0])} ${f(W[1])}L${f(S[0])} ${f(S[1])}L${f(E[0])} ${f(E[1])}" stroke="#fff" stroke-opacity="0.35" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        ${leafArt(u, 0, LD[0])}${leafArt(u, 2, LD[2])}${leafArt(u, 1, LD[1])}`;
+      return run(svg, { poolRx: 22, iso: true });
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([W, S, down(S), down(W)])}" fill="#4a4a4a"/><path d="${poly([S, E, down(E), down(S)])}" fill="#333"/><path d="${poly([N, E, S, W])}" fill="#6e6e6e"/><g stroke="#000" stroke-width="2.5" stroke-linejoin="round"><path d="${LD[0]}" fill="#fff"/><path d="${LD[2]}" fill="#fff"/><path d="${LD[1]}" fill="#bdbdbd"/></g></svg>`,
+  });
+
+  // ?menu prints A's markup for the menu tile, with the toy's id on its defs.
+  window.MENU_A = () => {
+    const D = DIRS[1], svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' });
+    D.art(svg, 'dichroic-');
+    const side = Math.max(D.box[2], D.box[3]), size = side * 128 / 110, cx = D.box[0] + D.box[2] / 2, cy = D.box[1] + D.box[3] / 2;
+    return { viewBox: `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`, inner: svg.innerHTML };
+  };
+
+  /* ================= Gallery ================= */
+  const NAME = 'Dichroic glass';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-dichroic';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `dichroic-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>

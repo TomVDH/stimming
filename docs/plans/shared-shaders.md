@@ -95,7 +95,8 @@ Every module compiles together in a three.js `ShaderMaterial`: the lab's check s
 
 | Module | Date | Proof | Adopted by |
 |---|---|---|---|
-| `shared/flare.js` (lens flare) | 2026-11-09 | Five copies match within 1 / 255, raw and three.js | None yet |
+| `shared/flare.js` (lens flare) | 2026-11-09 | Five copies match within 1 / 255, raw and three.js | Railgun, Ascent, Calaeno, Ten seconds; the runner's toys |
+| `flBuoy()` in `shared/flare.js` (the Buoy Business flare) | 2026-11-22 | Matches Havoc's `lensflare.js` and `orbNode` exactly (0 / 255), raw and three.js | None yet |
 | `shared/grade.js` (tint, vignette, grain) | 2026-11-10 | Five copies match within 1 / 255 in raw WebGL2. In three.js, three match; see the note | None yet |
 | `shared/wetglass.js` (the wet pane in one call) | 2026-11-10 | Matches Train Ride's own lines within 1 / 255 on a frozen frame, raw WebGL2 | None yet |
 | `shared/water.js` (swell, chop, wave sets, Fresnel, glitter, rain rings) | 2026-11-10 | Seen in the lab's harbour scene. No copy check: eleven toys have eleven waters | None yet |
@@ -220,6 +221,20 @@ Not shared, on purpose: split tone (two toys, two formulas), letterbox (two toys
 New users (`launch`, `canal`, `viaduct`, `trainride`) call `flFlare()` and `flScreen()`: the Look rule's flare in one call.
 `flareAt()` gives a raw WebGL2 toy the light's place on the frame.
 
+#### The Buoy Business flare
+
+Tom picked it on 2026-11-22 (bean `stimming-58zx`). `flBuoy()` draws Havoc's flare: one orb, a thin line in a soft sheath, warm ghosts.
+It adds light in linear colour, before bloom and tone mapping. `FLARE_BUOY` holds the Buoy Business panel values; `FL_BB` holds its look.
+
+Tom, 2026-11-22: "dont alter look of current adopters".
+
+- `flFlare()` and its parts stay as they are. The toys on them keep their look.
+- A toy with a hand copy moves onto the parts with its own numbers: the same frame, within 1 / 255.
+- A new flare uses `flBuoy()`. A raw WebGL2 toy calls it in its shader; a three.js toy with many lights uses `new ShaderPass(flarePass({ slots: buoySlots(n) }))`.
+- `flRingTap()` gives the nine depth taps round the light. The toy tests its own depth, because each toy stores depth its own way.
+- `flareFade()` and `flareEdge()` fade a light with distance and at the frame edge, as Buoy Business does.
+- fxlab: the Buoy Business copy and `spike-flare-buoy.html` (Havoc, `flFlare()`, `flBuoy()` side by side).
+
 Rules:
 
 - One effect at a time. Tom picks.
@@ -246,8 +261,8 @@ Toys are named by folder. "K2" is the night-scene kit that Night viaduct built a
 | Water mirror: the smeared reflection | `tMirror` in `canal`, `fireworks`, `launch`, `viaduct/port.js` | 4 | `fireworks` | M. Part of water |
 | Light orbs, point flares | K2 orbs in `viaduct`, `fireworks`, `launch`; point flares in `viaduct/port.js`, `pass.js`; `windfarm` lights | 4 | `fireworks` orbs | Built: `gwOrb()` in `shared/glow.js` |
 | Rain and snow in the air | `viaduct` (K2 precipitation), `canal`, `trainride`, `window`, `rain`, `frietkot`, `washline` | 7, all different | `viaduct/port.js`. Havoc `src/view/aqua/weatherfx.js`: each drop's place is a function of seed and time | A screen version is built: `shared/precip.js`. World-lit particles stay per toy |
-| Clouds | `window` (`noise3d.js`, a volume), `fireworks`, `flock`, `trainride`, `washline`, `windfarm`, `walker` | 7, all different | None. Each toy's clouds are its own look | A common deck is built: `skClouds()` in `shared/sky.js`. Toys keep their own unless Tom moves them |
-| Light shafts | `walker` `HAZE_FS`, `frietkot`, `sunbeam`, `pins` | 4, all different | None | Do not share |
+| Clouds | `window` (`noise3d.js`, a volume), `fireworks`, `flock`, `trainride`, `washline`, `windfarm`, `walker`; volumes in `railgun`, `tornado`, `wires` | 7, all different; the two-lobe phase in 4 | None. Each toy's clouds are its own look | A common deck is built: `skClouds()` in `shared/sky.js`. The two-lobe phase is built: `clPhase()` in `shared/clouds.js` (`railgun` uses it; `window` and `tornado` adopt later). Toys keep their own clouds unless Tom moves them |
+| Light shafts | `walker` `HAZE_FS`, `frietkot`, `sunbeam`, `pins`; under clouds: `railgun`, `wires` | 4 own, 2 shared | `railgun` `shaftSky` (Tom, 2026-11-22: the look for East Van Alley) | Built for cloud shadows: `shared/clouds.js` (`clShaftLook`, `clShaftsField`, `clShaftGate`). The look is common; each toy gives its own occlusion source. The four own shafts stay |
 | Caustics | `pool`, `beer`, `snow` | 3 | `pool`. Havoc `causticWeb` (`sea.js:186`) | S. Low demand |
 | Box fog | Havoc only: `src/view/aqua/boxfog.js` | 0. It could suit `sunbeam`, `windfarm` | Havoc | S. Low demand |
 

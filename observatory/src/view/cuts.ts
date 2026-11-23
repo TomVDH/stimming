@@ -1,9 +1,9 @@
 // Load order: world/hero runs first.
 import '../world/hero.ts';
-import { MathUtils, Matrix4, Raycaster, Texture, Vector3 } from 'three';
-import type { Object3D } from 'three';
+import { Box3, MathUtils, Matrix4, Ray, Texture, Vector3 } from 'three';
 import { reduced } from '../../../shared/stim.js';
 import { MIRROR_PUSH, cutOf, lens, makeLocks, skipSeq, startSeq, stepSeq, type Cut, type Lift, type Seq, type Shot } from '../core/sequence.ts';
+import { AXES_UP, D_OFF, targetPose, TUBE_SHIFT } from '../core/clearance.ts';
 import type { Phase } from '../core/machine.ts';
 import type { Dome } from '../world/observatory.ts';
 import type { Star } from '../core/catalog.ts';
@@ -11,7 +11,7 @@ import type { AltAz } from '../core/sky.ts';
 import { azDelta } from '../core/dome.ts';
 import { setStarLift, sky } from '../sky/stars.ts';
 import { camera, renderer } from '../setup.ts';
-import { CLEAR, TREELINE, hillHeight } from '../world/hill.ts';
+import { CLEAR, hillHeight } from '../world/hill.ts';
 import { complex } from '../world/complex.ts';
 import { hero, heroSlitAz } from '../world/hero.ts';
 import { altAzDir, laser } from '../world/laser.ts';
@@ -45,12 +45,12 @@ type Plan = { eye: Point; look: Point; tall?: Point; inside?: boolean; aperture:
 const PLANS: Record<Exclude<Shot, 'glass' | 'mirror'>, Plan> = {
   // a. Low and close on the slit's right: the dome looms, its crown on the stars.
   // The locked camera holds while the cupola turns and the leaves slowly part.
-  edge: { eye: [2.2, 1.6, -0.35], look: [0.3, 0.15, 0.62], aperture: 0.008 },
-  // b. Dead centre from the front, low, on a long lens.
-  // Only the slit, the dome's face and the catwalk rail show.
-  // The door lamp's glow lights the rail from below.
-  // The lower leaf drops and the slit opens on the tube.
-  slit: { eye: [6.5, 0, -0.86], look: [0.5, 0, 0.45], aperture: 0.006 },
+  edge: { eye: [2.7, 0.8, -0.25], look: [0.3, 0.15, 0.62], aperture: 0.008 },
+  // b. Dead centre from the front, at eye height, on a long lens.
+  // The open slit stands between the dome's shoulders.
+  // The lower shutter drops and the slit opens on the tube.
+  // The eye stays on the summit, so the lens is 17 degrees.
+  slit: { eye: [3.6, 0, -0.3], look: [0.6, 0, 0.4], aperture: 0.006 },
   // c. Inside, low, behind the mount, left of the slit.
   // The pier and mount stand dark on the right.
   // The wall lamp lights them red.
@@ -76,8 +76,11 @@ const planOf = (shot: Exclude<Shot, 'glass' | 'mirror'>): Plan => (shot === 'lif
 const TURNS = [0, 20, -20, 40, -40, 60, -60, 90, -90];
 // The eye moves in by these shares when a building blocks it.
 const NEAR = [1, 0.8, 0.65];
-// Out of the summit's clearing, the eye stands over the treetops.
-const TREE_TOP = TREELINE + 10;
+// The eye stays over the bare summit, inside the trees' clearing.
+const EYE_R = CLEAR - 6;
+// A building's box grows by this many metres.
+// A thin mast near the eye then blocks it too.
+const BOX_PAD = 0.6;
 // Reduced motion: one still shot, then one crossfade to the wide shot.
 const STILL_S = 2.6, FADE_S = 1.2;
 // After the last cut, a quick dip to black leads to the wide shot.
@@ -106,8 +109,9 @@ const ease = (k: number): number => k * k * (3 - 2 * k);
 type Framed = { eye: Vector3; aim: Vector3; fov: number; focus: number; aperture: number; glass?: { dist: number }; mirror?: boolean };
 
 const centre = new Vector3();
-const ray = new Raycaster();
+const ray = new Ray();
 const tmp = new Vector3();
+const UP = new Vector3(0, 1, 0);
 // The cupola's radius in metres, set at the pick.
 let R = 1;
 // The dome the cuts show, set at the pick.
@@ -135,8 +139,29 @@ function clearInside(eye: Vector3): boolean {
   return room.keep.every(([x, z, r]) => Math.hypot(local.x - x, local.z - z) > r);
 }
 
-// Everything in the complex that can stand between the eye and the dome.
-const blockers = (): Object3D[] => complex.root.children.filter(o => o !== dome.root);
+// The boxes of everything in the complex that can stand before the dome.
+// They are set at the pick.
+let boxes: Box3[] = [];
+function setBoxes(): void {
+  boxes = complex.root.children.filter(o => o !== dome.root)
+    .map(o => new Box3().setFromObject(o).expandByScalar(BOX_PAD));
+}
+// True when a box stands between a point and the eye.
+function hidden(from: Vector3, eye: Vector3): boolean {
+  ray.set(from, tmp.copy(eye).sub(from).normalize());
+  const far = eye.distanceTo(from);
+  return boxes.some(b => { const hit = ray.intersectBox(b, tmp); return hit !== null && hit.distanceTo(from) < far; });
+}
+// The sight lines cross the frame at these shares of its half width.
+// A thin mast near the eye then falls on one of them.
+const ACROSS = [0, -0.45, 0.45, -0.9, 0.9];
+const side = new Vector3(), off = new Vector3();
+// True when a box stands anywhere across the middle of the frame.
+// halfW: the frame's half width over its distance, from the lens.
+function blocked(look: Vector3, eye: Vector3, halfW: number): boolean {
+  side.subVectors(eye, look).cross(UP).normalize().multiplyScalar(halfW * eye.distanceTo(look));
+  return ACROSS.some(k => hidden(off.copy(look).addScaledVector(side, k), eye));
+}
 
 // A point of the slit's frame in world space.
 // a: the frame's azimuth in radians.
@@ -160,16 +185,15 @@ function place(cut: Cut, az: number, aspect: number): Framed {
   const { fov, tall } = lens(cut.fov, aspect);
   const aim = tall && plan.tall ? slitPoint(plan.tall, az * DEG, new Vector3()) : look;
   const eye = new Vector3();
+  const halfW = Math.tan(fov * DEG / 2) * aspect;
   for (const near of NEAR) {
     for (const turn of TURNS) {
       slitPoint(plan.eye, (az + turn) * DEG, eye);
       eye.lerp(look, 1 - near);
-      if (Math.hypot(eye.x, eye.z) > CLEAR && eye.y < TREE_TOP) continue;
+      if (Math.hypot(eye.x, eye.z) > EYE_R) continue;
       if (eye.y < hillHeight(eye.x, eye.z) + 0.8) continue;
       if (plan.inside && !clearInside(eye)) continue;
-      ray.set(look, tmp.copy(eye).sub(look).normalize());
-      ray.far = eye.distanceTo(look);
-      if (ray.intersectObjects(blockers(), true).length) continue;
+      if (blocked(look, eye, halfW)) continue;
       return { eye, aim, fov, focus: eye.distanceTo(look), aperture: plan.aperture };
     }
   }
@@ -180,12 +204,8 @@ function place(cut: Cut, az: number, aspect: number): Framed {
 
 /* ---------- the glass shot: locked on the glass's place of rest ---------- */
 // Copied from world/hero-scope.ts, in dome units.
-// The axes cross this high over the drum's foot.
-const AXES_Y = 3.75;
 // The site's latitude in degrees.
 const LAT = 51;
-// The tube's axis runs this far from the polar axis.
-const D_OFF = 0.3775;
 // The glass's face, along the tube from the declination axis.
 const GLASS_Z = 2.27;
 // The glass's diameter.
@@ -201,8 +221,6 @@ const GLASS_UNDER = 4 * DEG;
 const GLASS_APERTURE = 0.016;
 // The picked star shines this much brighter in the glass.
 const TARGET_K = 1.5;
-const POLE = new Vector3(0, Math.sin(LAT * DEG), -Math.cos(LAT * DEG));
-const EQ = new Vector3(0, Math.cos(LAT * DEG), Math.sin(LAT * DEG));
 const gm = new Matrix4(), gr = new Matrix4();
 const gp = new Vector3(), ga = new Vector3(), gu = new Vector3();
 
@@ -214,15 +232,13 @@ function glassAt(alt: number, az: number): void {
   // The big dome's reflector gives its own pose.
   const sc = heroScope();
   if (sc?.restGlass) { sc.restGlass(alt, az, gp, ga, gu); return; }
-  const a = alt * DEG, z = az * DEG;
-  tmp.set(Math.sin(z) * Math.cos(a), Math.sin(a), -Math.cos(z) * Math.cos(a));
-  const ha = Math.atan2(-tmp.x, tmp.dot(EQ));
-  const decl = Math.asin(Math.min(1, Math.max(-1, tmp.dot(POLE))));
-  gm.makeTranslation(0, AXES_Y, 0)
+  // The joint angles come from core/clearance.ts, as the hero's do.
+  const p = targetPose(alt, az, 0);
+  gm.makeTranslation(0, dome.turnY + AXES_UP, 0)
     .multiply(gr.makeRotationX(LAT * DEG - Math.PI / 2))
-    .multiply(gr.makeRotationY(-ha))
-    .multiply(gr.makeRotationX(-decl))
-    .multiply(gr.makeTranslation(D_OFF, 0, 0))
+    .multiply(gr.makeRotationY(p.ra))
+    .multiply(gr.makeRotationX(p.dec))
+    .multiply(gr.makeTranslation(D_OFF, 0, TUBE_SHIFT))
     .premultiply(dome.root.matrixWorld);
   gp.set(0, 0, GLASS_Z).applyMatrix4(gm);
   ga.set(0, 0, 1).transformDirection(gm);
@@ -263,7 +279,6 @@ const MIRROR_FILL = 0.95;
 const MIRROR_APERTURE = 0.03;
 // The focus pulls from the disk to the primary over this share of the push.
 const PULL_A = 0.3, PULL_B = 0.7;
-const side = new Vector3(), off = new Vector3();
 const smooth = (a: number, b: number, x: number): number => ease(Math.min(1, Math.max(0, (x - a) / (b - a))));
 // t: seconds in the shot.
 // The eye keeps off the axis, midway between the housing and the ring.
@@ -493,7 +508,7 @@ export const cuts = {
   // Seconds since the pick.
   get time(): number { return seq.total; },
   // True while the picture runs on the film beat.
-  // That is the five shots and the dip down.
+  // That is the shots and the dip down.
   get film(): boolean { return mode === 'cuts' || (mode === 'dip' && !dipWide); },
   // The loop hands over the catalog once it loads.
   setStars(s: readonly Star[]): void { stars = s; },
@@ -508,6 +523,7 @@ export const cuts = {
     d.root.updateMatrixWorld(true);
     d.cupola.getWorldPosition(centre);
     R = DOME_R1 * d.root.scale.x;
+    setBoxes();
     view = v;
     // The reflector adds the mirror shot.
     seq = startSeq(phase, v, hero.ready && !!heroScope()?.restGlass);

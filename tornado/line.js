@@ -395,7 +395,7 @@ void wires(vec2 s, vec3 rd, float px) {
 }
 // The poles: each a round wooden post with its cross-arm and three glass insulators.
 void linePoles(vec2 s, vec3 rd, float px) {
-  for (int i = 0; i < POLES; i++) {
+  for (int i = ROLL0; i < POLES; i++) {
     vec3 P = vec3(POLE_X, 0.0, -(POLE_Z0 + POLE_GAP * float(i)));
     float z = depthOf(P);
     // A pole behind the eye holds its wires but does not draw.
@@ -406,22 +406,20 @@ void linePoles(vec2 s, vec3 rd, float px) {
     vec3 A = normalize(vec3(sl, cl, poleTilt(i))), X = normalize(vec3(cl, -sl, 0.0) + A * armRoll(i));
     vec3 V = normalize(vec3(0.0, CAMH, 0.0) - (P + A * 5.0));
     float m = uFoc / z;
-    // The post: it thins a little toward its top.
-    vec2 tp = proj(P + A * 10.0);
-    float u, sx;
-    float k = segCover(s, b, tp, 0.15 * m, px, sx, u);
-    if (k > 0.0) {
-      float grain = vn(vec2(sx * 3.0 + float(i) * 7.0, u * 40.0)) * (1.0 - smoothstep(0.003, 0.02, px / m));
-      put(hazed(woodShade(P + A * u * 10.0, A, V, sx, u * 10.0, grain), rd, z), k, z);
-    }
-    // The cross-arm: a sawn beam across the line, lit on its top and its face.
+    // The post, then the cross-arm: one loop holds one woodShade() call for D3D11.
+    // The post thins a little toward its top.
+    // The cross-arm is a sawn beam across the line, lit on its top and its face.
     vec3 C0 = P + A * 9.15 - X * 1.25, C1 = P + A * 9.15 + X * 1.25;
-    float ka = segCover(s, proj(C0), proj(C1), 0.06 * m, px, sx, u);
-    if (ka > 0.0) {
-      put(hazed(woodShade(mix(C0, C1, u), X, V, sx * 0.6, 9.0, 0.5), rd, z), ka, z);
+    for (int w = ROLL0; w < 2; w++) {
+      float u, sx;
+      float k = w == 0 ? segCover(s, b, proj(P + A * 10.0), 0.15 * m, px, sx, u) : segCover(s, proj(C0), proj(C1), 0.06 * m, px, sx, u);
+      if (k <= 0.0) continue;
+      float grain = w == 0 ? vn(vec2(sx * 3.0 + float(i) * 7.0, u * 40.0)) * (1.0 - smoothstep(0.003, 0.02, px / m)) : 0.5;
+      vec3 Q = w == 0 ? P + A * u * 10.0 : mix(C0, C1, u);
+      put(hazed(woodShade(Q, w == 0 ? A : X, V, w == 0 ? sx : sx * 0.6, w == 0 ? u * 10.0 : 9.0, grain), rd, z), k, z);
     }
     // The insulators: glazed porcelain bells under each wire, with a small glint where they catch the sky.
-    for (int j = 0; j < 3; j++) {
+    for (int j = ROLL0; j < 3; j++) {
       vec3 I = j == 1 ? P + A * 9.85 + X * 0.12 : P + A * 9.2 + X * (float(j - 1) * 1.1);
       vec2 ic = proj(I);
       float ir = 0.08 * m, ih = 0.1 * m;

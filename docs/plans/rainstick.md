@@ -1,6 +1,6 @@
 # Rain stick (`rainstick`) implementation plan
 
-Status: active · Bean: `stimming-6hb9`
+Status: MVP built in the Lab (2026-11-22) on Bar v3: glass beads, Flip, Beads slider; no stand, flat side view. Not built: the Fill choice, Pins and Glow settings. The toy doc is `docs/toys/rainstick.md`. · Bean: `stimming-6hb9`
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans. One fresh session builds this toy, task by task. Steps use checkbox (`- [ ]`) syntax.
 
