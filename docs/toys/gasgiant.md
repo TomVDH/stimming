@@ -32,6 +32,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Bright rings arch over the northern sky, seen from their unlit side. Their shadow lies on the deck.
 - A low sun at the side, 10 degrees up (Tom, 2026-11-23): the heads on the deck throw long shadows.
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
+- At the first touch the capsule skims the tops to their horizon; a few thunderheads punch up to 30 to 38 km with anvils; the haze lid's sheets pass as veils. Inside the white deck, dense billows stand against brighter gaps (Tom, 2026-11-23).
 - Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
 - Three decks with a void under each of the upper two (Tom, 2026-11-23). Hourglass towers join each floor to its ceiling, far off in the haze.
 - A deep, majestic, abyssal dive with much variance in the layers (Tom, 2026-11-23). Sixteen layers, top down (diagram: [gasgiant-layers.svg](../plans/gasgiant-layers.svg)):

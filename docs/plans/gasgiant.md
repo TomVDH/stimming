@@ -224,6 +224,17 @@ Tom asked if the toy is WebGPU with passes like Tornado alley, and what big thin
 | Resume | The depth and the look live in this tab's session storage, saved every 2 s while moving, on hide and on a lost context. A reload or a restored context resumes there within 30 minutes; a new visit starts at the top. |
 | Checks | First frame 1.7 to 2.8 s from load. A slide from the top to -300 km crossed both edges with no hold. A lost and restored context reloaded at the same depth (8.8 km). A start at -300 km links the deep zone first. |
 
+### Polish: the first touch and the white deck (Tom, 2026-11-23: "Yes, polish")
+
+| Part | Change |
+|---|---|
+| Thunderheads | A few 90 km cells, most in the zones, punch up to 30 to 38 km: cauliflower sides that widen upward, an anvil in the top fifth. They cast shade; at the first touch they stand on the horizon. From orbit they blend into the deck's colour. |
+| Haze lid | Its sheets read as veils near the eye (density 0.07) and stay faint far off (0.012). |
+| White deck | Fine wisps a kilometre across near the eye. Deep in a deck, dense cores shade themselves and thin wisps catch the light between them: in an evenly lit cloud, density alone shows no form. |
+| Cost | GPU 3.2 to 6.3 ms a frame at 1280 x 800 on the RTX 3070. |
+
+The window's glass weather still covers much of the deck's interior in the capsule view; it waits for Tom's window pass.
+
 Frame time 7.8 ms median in the voids at -8, -170 and -270 km. March link 0.9 to 1.0 s on D3D11, all passes 1.5 s.
 
 ## 4. Tech

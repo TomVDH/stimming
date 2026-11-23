@@ -274,6 +274,8 @@ float dens(vec3 p, float lod, float fine, float full) {
       // Pockets are 4 km across; the interior is thin enough to see billows 3 to 5 km off.
       float pocket = mix(0.06, 1.0, smoothstep(0.35, 0.7, n2.r + 0.4 * (n1.r - 0.5)));
       d *= mix(1.0, 0.45 * pocket, smoothstep(1.5, 4.0, top - h));
+      // Near the eye the cloud shows fine wisps a kilometre across, rising slowly.
+      if (full > 0.5 && lod < 0.4 && top - h > 1.0) d *= 0.35 + 1.3 * textureLod(uVol, q / 5.0 + vec3(0.0, uT * 0.004, 0.0), 0.0).g;
       gDeep = max(top - h, 0.0);
       // Hue drifts a little with the billows, so the colours blend in the cloud.
       // Valleys between heads see less sky; their colour runs deeper.
@@ -281,10 +283,29 @@ float dens(vec3 p, float lod, float fine, float full) {
       float sat = clamp(m.b + 0.35 * (1.0 - ao), 0.0, 1.0);
       gAlb = mix(vec3(0.86, 0.9, 0.88), pal(m.g + 0.22 * (n1.a - 0.5) + 0.12 * (n2.a - 0.5)), sat);
       gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0) * ao;
+      // Thunderheads: a few 90 km cells in the zones punch up to 30 to 38 km.
+      // Cauliflower sides widen upward; the anvil spreads in the top fifth.
+      vec2 tc = floor(p.xz / 90.0);
+      vec3 tr = th3(tc + 71.0);
+      if (tr.z > 0.985 - 0.05 * m.r) {
+        float H = 30.0 + 8.0 * tr.x;
+        float g = clamp(h / H, 0.0, 1.0);
+        float rad = (6.0 + 6.0 * tr.y) * (0.75 + 0.35 * g) * (1.0 + 1.1 * smoothstep(0.82, 0.97, g));
+        float edge = rad * (0.7 + 0.6 * n2.b) - length(p.xz - (tc + 0.2 + 0.6 * tr.xy) * 90.0);
+        float cap = H + 2.0 * (n2.b - 0.5) - h;
+        float th = smoothstep(0.0, 0.8 + lod, min(edge, cap * 2.0)) * (0.7 + 0.3 * n1.b);
+        if (th > d) {
+          d = th;
+          gAlb = mix(vec3(0.9, 0.94, 0.92), pal(m.g + 0.1 * (n1.a - 0.5)), 0.45);
+          gOpen = clamp(1.0 - cap / 6.0, 0.3, 1.0);
+          gDeep = max(min(edge, cap), 0.0);
+        }
+      }
       // The haze lid: thin teal sheets over the tops.
       if (full > 0.5 && h > 20.0) {
         vec3 hid;
-        float hz = sheets(h, 22.0, 5.5, 0.6, nb, nc.a - 0.05, lod, hid) * 0.015 * band(h, 22.0, 40.0, 2.0);
+        // Near the eye the sheets read as veils; far off they stay faint, so the horizon stays clear.
+        float hz = sheets(h, 22.0, 5.5, 0.6, nb, nc.a - 0.05, lod, hid) * mix(0.07, 0.012, smoothstep(0.1, 1.5, lod)) * band(h, 22.0, 40.0, 2.0);
         if (hz > d) { d = hz; gAlb = mix(pal(0.45), vec3(0.9), 0.5); gOpen = 1.0; }
       }
     } else
@@ -566,6 +587,8 @@ void main() {
         // Sunlight diffuses down into a deck: none at the skin, most 3 to 6 km in, then it fades.
         vec3 inner = deep >= 0.0 ? L.rgb * 1.2 * (1.0 - exp(-deep / 1.5)) * exp(-deep / 14.0) * (0.25 + 0.75 * lit) : vec3(0.0);
         vec3 Lc = alb * (sun + diffuse + sky + bounce + inner);
+        // Deep in a deck, dense cores shade themselves and thin wisps catch the light between them.
+        if (deep > 1.5) Lc *= mix(1.0, mix(1.35, 0.45, smoothstep(0.08, 0.5, dn)), smoothstep(1.5, 4.0, deep));
         // Flashes light the cloud round them, with no shadow.
         for (int k = 0; k < 4; k++) {
           vec4 f = uFlash[k];
