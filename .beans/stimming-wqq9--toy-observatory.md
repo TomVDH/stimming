@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-23T17:01:42Z
+updated_at: 2026-11-23T18:03:17Z
 parent: stimming-oh7b
 ---
 
@@ -33,7 +33,8 @@ All are pushed to origin. Main holds the building redo, the first cuts and the t
 | claude/reverent-burnell-1c5f46 | Celestial selector and sky controls; passes the chosen dome to cuts.start | Rebases onto the integration |
 | claude/obs-sim-integrate | Simulator with the building's clouds, mist and relief | Rebases after the integration |
 
-- [ ] Integration on claude/obs-cuts-6762ea: builds, checks, tests, captured
-- [ ] Selector rebased onto the integration
+- [x] Integration on claude/obs-cuts-6762ea at 357658dd: builds, checks, 127 tests, captured (pushed)
+- [x] Selector rebased onto the integration: claude/reverent-burnell-1c5f46 at 4c6cf1c1 holds building, cuts and selector; 153 tests (pushed)
 - [ ] Tom's look at the integration
-- [ ] Integration lands on main
+- [ ] claude/reverent-burnell-1c5f46 lands on main, with main's newer commits merged in
+- [ ] npm run check: fix the shared/flare.js type errors (also on main; not observatory's)
