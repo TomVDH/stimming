@@ -9,7 +9,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
-import { hullGeometry, topsides, yard, farLand, CANAL, HULL, START_Z, wayTop } from './yard.js';
+import { hullGeometry, topsides, yard, farLand, CANAL, PIER, HULL, START_Z, wayTop } from './yard.js';
 import { makeLaunch, reset as resetLaunch, release, step as stepLaunch, keel, moving, sectionWorld, WIRE_LEN } from './launch.js';
 import { makeChains, makeCrowd, makeBunting } from './props.js';
 import { launchSound } from './sound.js';
@@ -88,7 +88,7 @@ function mats() {
     concrete: std(0x8b8780, 0.9), wall: std(0x5c5a55, 0.95), steel: std(0x4a4a48, 0.55, 0.6),
     ground: std(0x6d6a5f, 0.95), grass: std(0x4f5a34, 1), shed: std(0x7d8a92, 0.7, 0.2), roof: std(0x50585e, 0.6, 0.3),
     paving: std(0x76665a, 0.95), bed: std(0x2a2a1e, 1), tree: std(0x2c3322, 1),
-    wire: std(0x2a2522, 0.6, 0.7), rust: std(0x6b3a22, 0.95, 0.3), coat: std(0xffffff, 0.85), skin: std(0xc49a80, 0.7), hair: std(0x2a221d, 0.9), flag: std(0xffffff, 0.8),
+    wire: std(0x2a2522, 0.6, 0.7), rust: std(0x6b3a22, 0.95, 0.3), flag: std(0xffffff, 0.8),
   };
 }
 
@@ -152,7 +152,7 @@ function setup() {
   sun.position.copy(SUN).multiplyScalar(200);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
-  Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 90, bottom: -90, near: 10, far: 500 });
+  Object.assign(sun.shadow.camera, { left: -160, right: 160, top: 150, bottom: -150, near: 10, far: 700 });
   sun.shadow.bias = -0.0004;
   scene.add(sun, sun.target);
   scene.add(new THREE.HemisphereLight(0x9fb3cf, 0x4a4036, 0.25));
@@ -166,7 +166,12 @@ function setup() {
   hull.add(bunting.mesh);
   scene.add(hull);
   chains = makeChains(M);
-  crowd = makeCrowd(M);
+  crowd = makeCrowd();
+  crowd.U.uSun.value.copy(SUN);
+  crowd.U.uSunCol.value.setRGB(2.6, 1.75, 1.1);
+  crowd.U.uSky.value.setRGB(0.55, 0.6, 0.68);
+  crowd.U.uFog.value.copy(scene.fog.color);
+  crowd.U.uFogD.value = scene.fog.density;
   scene.add(chains.grp, crowd.grp);
   canal = makeCanal(renderer, drop);
   if (globalThis.__launch) globalThis.__canal = canal;
@@ -219,14 +224,16 @@ function placeHull() {
   hull.updateMatrixWorld(true);
 }
 
-// The shot: the far quay, among the crowd, three-quarter on the hull.
-// The eye stands on a bollard 8.5 m back from the edge, over the crowd's heads.
-const EYE = new THREE.Vector3(-20, CANAL.quayTop + 2.3, CANAL.zQuay + 8.5);
-const AIM = new THREE.Vector3(-5, 6.5, START_Z);
+// The shot: the pier head, among the crowd, three-quarter on the hull.
+// The eye stands at the pier's west edge, 11 m back from the head.
+const EYE = new THREE.Vector3(PIER.x0 + 3, PIER.top + 2.5, PIER.z0 + 11);
+const AIM = new THREE.Vector3(10, 4, START_Z + 8);
 // The lens keeps the hull's width: a tall stage widens the vertical view.
+const LENS = { wide: 40, tall: 62 };
+if (globalThis.__launch) globalThis.__cam = { EYE, AIM, LENS, frame: () => frame3() };
 function frame3() {
   const asp = cssW / cssH;
-  const hfov = asp < 1 ? 78 : 68;
+  const hfov = asp < 1 ? LENS.tall : LENS.wide;
   const v = 2 * Math.atan(Math.tan((hfov * Math.PI) / 360) / asp) * 180 / Math.PI;
   camera.fov = Math.max(40, Math.min(90, v));
   camera.aspect = asp;
@@ -287,8 +294,9 @@ function again() {
   hullU.uWet.value = 0;
   mist?.clear();
   mistUntil = -1;
-  prevEdge.fill(0);
-  canal.edgeH.fill(0);
+  prevFace.fill(-9);
+  crowd.cheer(false);
+  canal.clearPatch();
   placeHull();
   snd.cancel();
   setLabel('Launch');
@@ -315,7 +323,7 @@ function step(dt) {
   stepLaunch(L, dt);
   const delay = camera.position.distanceTo(tmpV.set(0, 4, L.gz)) / 343, px = 0.1;
   for (const e of L.events.splice(0)) {
-    if (e.type === 'hit') { hitAt = simT; hullU.uWet.value = 1; snd.hit(Math.min(1, e.v / 7), delay, px); snd.cheer(delay + 2.2, 0.6 + 0.4 * Math.min(1, e.v / 7)); }
+    if (e.type === 'hit') { hitAt = simT; hullU.uWet.value = 1; snd.hit(Math.min(1, e.v / 7), delay, px); snd.cheer(delay + 2.2, 0.6 + 0.4 * Math.min(1, e.v / 7)); crowd.cheer(true); }
     else if (e.type === 'release') snd.release(delay, px);
     else if (e.type === 'move') snd.groan(delay, px);
   }
@@ -332,22 +340,20 @@ function step(dt) {
   canal.step(n, dt / n);
   simT += dt;
   canal.WU.uT.value = simT;
-  if (L.phase === 'free') { canal.readColumn(); if (simT - hitAt < 40) canal.readEdge(); }
-  quaySplash();
+  if (L.phase === 'free') { canal.readColumn(); if (simT - hitAt < 60) canal.readPatch(); }
+  pierSplash();
   mistLive = driveMist(dt);
-  const washK = Math.abs(canal.levelAt(22)) + Math.abs(canal.levelAt(25));
+  const washK = FACE.reduce((a, f) => a + Math.max(0, canal.etaAt(f.x, f.z)), 0) / 8;
   snd.update({ rumble: L.phase === 'slide' ? Math.min(1, L.vs / 4.5) : (L.phase === 'free' && L.tPhase < 1.2 ? 0.8 * (1 - L.tPhase / 1.2) : 0), chains: Math.min(1, L.heapV / 2.5), wash: Math.min(1, washK * 1.5) });
   // The lively phase ends 75 s after the hit at the latest.
   const fresh = hitAt < 0 || simT - hitAt < 75;
   // The canal counts as busy while a wave still runs across it.
-  const waves = hitAt >= 0 && (Math.abs(canal.levelAt(L.gz + 12)) + Math.abs(canal.levelAt(20)) + Math.abs(canal.levelAt(4)) > 0.04);
+  const waves = hitAt >= 0 && (Math.abs(canal.levelAt(L.gz + 12)) + Math.abs(canal.levelAt(60)) + Math.abs(canal.levelAt(120)) + washK > 0.04);
   const live = fresh && (moving(L) || SP.n > 0 || mistLive || waves);
   return live;
 }
 
 let frameDt = 0;
-// Water on the near quay at x, from the last edge read.
-const wetAt = x => canal.edgeH[Math.max(0, Math.min(639, Math.round((x + 160) / 0.5 - 0.5)))] || 0;
 function render() {
   yaw += (yawGoal - yaw) * 0.12;
   camera.position.copy(EYE);
@@ -357,7 +363,7 @@ function render() {
   canal.WU.uFocal.value = cssH / 2 / Math.tan((camera.fov * Math.PI) / 360);
   spray.upload(SP);
   chains.update(hull, L, drop, WIRE_LEN);
-  crowd.update(frameDt, wetAt, () => 1.7);
+  crowd.update(frameDt, canal.wetAt, () => 1.7, camera, frozen ? 0 : performance.now() / 1000);
   bunting.update(simT, frozen);
   spray.U.uCam.value.copy(camera.position);
   canal.drawMirror(scene, camera);
@@ -403,24 +409,26 @@ function throwSpray(dt) {
     }
   }
 }
-// The wave breaks over the near quay: spray stands up along the edge.
-const prevEdge = new Float32Array(640);
-function quaySplash() {
-  const H = canal.edgeH;
+// The wave breaks on the pier: spray stands up along its faces.
+// Points just off the head and the two sides, with the way out to the water.
+const FACE = [];
+for (let x = PIER.x0 + 0.5; x < PIER.x1; x += 1) FACE.push({ x, z: PIER.z0 - 0.5, nx: 0, nz: -1 });
+for (let z = PIER.z0 + 0.5; z < PIER.z0 + 30; z += 1.5) FACE.push({ x: PIER.x1 + 0.5, z, nx: 1, nz: 0 }, { x: PIER.x0 - 0.5, z, nx: -1, nz: 0 });
+const prevFace = new Float32Array(FACE.length).fill(-9);
+function pierSplash() {
   let sum = 0, sx = 0;
-  for (let i = 0; i < H.length; i += 2) {
-    const dh = H[i] - prevEdge[i];
-    if (H[i] > 0.02 && dh > 0.004) {
-      const x = canal.xAt(i);
-      const up = 2 + 30 * Math.min(dh, 0.2);
-      emit(SP, 1, x, CANAL.quayTop + 0.2, CANAL.zQuay + 0.4, 0, up, 1.5, 1.0, 1, 0.5 + 0.6 * r01());
-      if (r01() < 0.5) emit(SP, 1, x, CANAL.quayTop + 0.1, CANAL.zQuay + 0.3, 0, up * 1.2, 2.2, 1.6, 0, 0.02);
-      sum += dh; sx += x * dh;
-    }
-    prevEdge[i] = H[i];
-  }
-  // The slap of the wave on the wall, panned to where it breaks.
-  if (sum > 0.05 && simT - slapT > 0.6) { slapT = simT; tmpV.set(sx / sum, 1, CANAL.zQuay).project(camera); snd.slap(Math.min(1, sum), Math.max(-1, Math.min(1, tmpV.x))); }
+  FACE.forEach((f, i) => {
+    const e = canal.etaAt(f.x, f.z), de = e - prevFace[i];
+    prevFace[i] = e;
+    if (e < 0.15 || de < 0.006 || de > 2) return;
+    const up = 2 + 30 * Math.min(de, 0.2), wx = f.x + f.nx * 0.3, wz = f.z + f.nz * 0.3;
+    // The jet climbs the wall and falls back over the water and the deck.
+    emit(SP, 1, wx, e + 0.2, wz, -f.nx * 0.8, up, -f.nz * 0.8, 1.0, 1, 0.5 + 0.6 * r01());
+    if (r01() < 0.5) emit(SP, 1, wx, e + 0.1, wz, -f.nx * 1.4, up * 1.2, -f.nz * 1.4, 1.6, 0, 0.02);
+    sum += de; sx += f.x * de;
+  });
+  // The slap of the wave on the pier, panned to where it breaks.
+  if (sum > 0.05 && simT - slapT > 0.6) { slapT = simT; tmpV.set(sx / sum, 1, PIER.z0).project(camera); snd.slap(Math.min(1, sum), Math.max(-1, Math.min(1, tmpV.x))); }
 }
 
 /* ---------- mist and dust ---------- */

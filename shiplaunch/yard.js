@@ -1,11 +1,14 @@
-// Ship launch yard: the hull, the ways, the quays, the shed, the crane and the far land.
-// Metres. x runs along the canal, z across it, y up; still water is y = 0.
+// Ship launch yard: the hull, the ways, the quays, the pier, the shed, the crane and the far land.
+// Metres. x runs along the basin, z across it, y up; still water is y = 0.
 // Shapes follow the Westerbroek and Hoogezand side-launch photos on Wikimedia Commons.
 import * as THREE from 'three';
 
 /* ---------- the site ---------- */
-// The canal: 55 m wide, 4.5 m deep. The yard bank is on the far side.
-export const CANAL = { zYard: -27.5, zQuay: 27.5, depth: 4.5, quayTop: 0.8 };
+// The port basin: 200 m wide, 6 m deep. The yard is on its south side.
+// The basin is closed at xWest and opens east to the outer harbour.
+export const CANAL = { zYard: -27.5, zQuay: 172.5, depth: 6, quayTop: 1.0, xWest: -230 };
+// A stone pier runs out from the north quay; the crowd stands on its head.
+export const PIER = { x0: -116, x1: -104, z0: 78, top: 1.0 };
 // The ways: 1 in 10 across the berth, eight of them under the hull.
 export const WAYS = { slope: 0.1, xs: [-35, -25, -15, -5, 5, 15, 25, 35], back: -60 };
 // The hull: an 88 m short-sea coaster.
@@ -141,11 +144,10 @@ export function yard(mats, drop) {
   }
   // The yard behind the berth: flat ground with the shed and the crane.
   const backY = wayTop(WAYS.back, drop) - 0.55;
-  add(new THREE.BoxGeometry(900, 2, 400), mats.ground, 0, backY - 1, WAYS.back - 200, false);
-  // The banks up and down the canal beside the berth.
+  add(new THREE.BoxGeometry(3000, 2, 400), mats.ground, 0, backY - 1, WAYS.back - 200, false);
+  // The banks along the basin beside the berth.
   add(new THREE.BoxGeometry(400, 3, 40), mats.grass, -265, 0.2, zYard - 20, false);
-  add(new THREE.BoxGeometry(400, 3, 40), mats.grass, 265, 0.2, zYard - 20, false);
-  add(new THREE.BoxGeometry(900, 2, 30), mats.ground, 0, backY - 1, WAYS.back + 10, false).visible = false;
+  add(new THREE.BoxGeometry(1400, 3, 40), mats.grass, 765, 0.2, zYard - 20, false);
   // The shed: a long hall with a gable roof.
   add(new THREE.BoxGeometry(90, 20, 40), mats.shed, -20, backY + 10, -105);
   const roof = add(new THREE.CylinderGeometry(0.01, 25, 6, 4, 1, false, Math.PI / 4), mats.roof, -20, backY + 23, -105);
@@ -155,11 +157,22 @@ export function yard(mats, drop) {
   add(new THREE.BoxGeometry(3, 38, 3), mats.steel, 48, backY + 19, -66);
   add(new THREE.BoxGeometry(56, 2.2, 2.2), mats.steel, 38, backY + 39, -66);
   add(new THREE.BoxGeometry(6, 3, 3), mats.steel, 63, backY + 39.5, -66);
-  // The near quay: brick paving on a wall, the road behind.
-  add(new THREE.BoxGeometry(400, depth + quayTop, 1.2), mats.wall, 0, (quayTop - depth) / 2, zQuay + 0.6, false);
-  add(new THREE.BoxGeometry(400, 1, 60), mats.paving, 0, quayTop - 0.5, zQuay + 30, false);
-  // The canal bed.
-  add(new THREE.BoxGeometry(900, 1, 60), mats.bed, 0, -depth - 0.5, 0, false);
+  // The north quay: paving on a wall, far across the basin.
+  const xW = CANAL.xWest, east = 3000;
+  add(new THREE.BoxGeometry(east - xW, depth + quayTop, 1.2), mats.wall, (east + xW) / 2, (quayTop - depth) / 2, zQuay + 0.6, false);
+  add(new THREE.BoxGeometry(east + 400, 1, 200), mats.paving, (east - 400) / 2, quayTop - 0.5, zQuay + 100, false);
+  // The west end of the basin: a wall and paving behind it.
+  add(new THREE.BoxGeometry(1.2, depth + quayTop, zQuay - zYard), mats.wall, xW - 0.6, (quayTop - depth) / 2, (zQuay + zYard) / 2, false);
+  add(new THREE.BoxGeometry(200, 1, zQuay - zYard), mats.paving, xW - 100, quayTop - 0.5, (zQuay + zYard) / 2, false);
+  // The pier: a stone mole from the north quay, its head toward the berth.
+  const P = PIER, pl = zQuay - P.z0;
+  add(new THREE.BoxGeometry(P.x1 - P.x0, depth + P.top, pl), mats.wall, (P.x0 + P.x1) / 2, (P.top - depth) / 2, P.z0 + pl / 2, false);
+  add(new THREE.BoxGeometry(P.x1 - P.x0 - 0.4, 0.3, pl - 0.4), mats.paving, (P.x0 + P.x1) / 2, P.top - 0.1, P.z0 + pl / 2, false);
+  // Bollards along the pier's edges.
+  const bol = new THREE.CylinderGeometry(0.22, 0.28, 0.7, 8);
+  for (let z = P.z0 + 1; z < zQuay; z += 9) for (const x of [P.x0 + 0.6, P.x1 - 0.6]) add(bol, mats.steel, x, P.top + 0.35, z, true);
+  // The basin bed.
+  add(new THREE.BoxGeometry(east - xW, 1, zQuay - zYard + 4), mats.bed, (east + xW) / 2, -depth - 0.5, (zQuay + zYard) / 2, false);
   return { grp, ways, backY };
 }
 

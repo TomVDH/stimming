@@ -1,14 +1,14 @@
-// Ship launch canal: a shallow-water sim on the GPU, the hull's draft, the water surface.
+// Ship launch basin: a shallow-water sim on the GPU, the hull's draft, the water surface.
 // The pipe model moves water between cells; it keeps mass and handles wet and dry,
-// so the wave can run up the near quay and sheet across it.
+// so the wave can run up the pier and sheet across it.
 import * as THREE from 'three';
 import { WATER } from '../shared/water.js';
 import { bakeFoam } from './foam.js';
-import { CANAL, WAYS, wayTop } from './yard.js';
+import { CANAL, PIER, wayTop } from './yard.js';
 
-// The grid: 0.5 m cells, 320 m along the canal, 88 m across it.
-export const CELL = 0.5, NX = 640, NZ = 176;
-export const X0 = -160, Z0 = -30;
+// The grid: 1 m cells, 512 m along the basin, 256 m across it.
+export const CELL = 1, NX = 512, NZ = 256;
+export const X0 = -240, Z0 = -30;
 const G = 9.81;
 // The hull's pressure head: water under her is pushed out this hard.
 const KAPPA = 4;
@@ -28,8 +28,8 @@ bool inside(ivec2 c) { return c.x >= 0 && c.y >= 0 && c.x < R.x && c.y < R.y; }
 float bedAt(ivec2 c) { return texelFetch(tB, c, 0).r; }
 // The hull's lowest point over a cell; 1000 where there is none.
 float hullAt(ivec2 c) { float r = texelFetch(tH, c, 0).r; return r > 1.0 ? r - 500.0 : 1000.0; }
-// The sponge: the canal runs on past both ends of the grid.
-float sponge(ivec2 c) { float x = float(min(c.x, R.x - 1 - c.x)) * L; return 1.0 - smoothstep(0.0, 34.0, x); }
+// The sponge: the basin opens east to the outer harbour.
+float sponge(ivec2 c) { float x = float(R.x - 1 - c.x) * L; return 1.0 - smoothstep(0.0, 50.0, x); }
 `;
 
 // Flux: each cell pushes water to its four neighbours by the head difference.
@@ -43,8 +43,8 @@ void main() {
   ivec2 c = ivec2(gl_FragCoord.xy);
   float b0, h0;
   float e0 = head(c, b0, h0);
-  // Bed friction calms the canal within a minute.
-  vec4 f = texelFetch(tF, c, 0) * (1.0 - uDt * (0.1 + 2.5 * sponge(c)));
+  // Light bed friction: the wave must cross 200 m of basin.
+  vec4 f = texelFetch(tF, c, 0) * (1.0 - uDt * (0.03 + 2.5 * sponge(c)));
   ivec2 o[4] = ivec2[4](ivec2(-1, 0), ivec2(1, 0), ivec2(0, -1), ivec2(0, 1));
   float q[4] = float[4](f.x, f.y, f.z, f.w);
   for (int k = 0; k < 4; k++) {
@@ -128,7 +128,7 @@ void main() {
   gl_FragColor = vec4(s.r, (r - l) / (2.0 * L), (u - d) / (2.0 * L), s.a);
 }`;
 
-// The hull's lowest point over each cell, seen from under the canal.
+// The hull's lowest point over each cell, seen from under the basin.
 const DRAFT_VS = 'varying float vY; void main() { vec4 w = modelMatrix * vec4(position, 1.0); vY = w.y; gl_Position = projectionMatrix * viewMatrix * w; }';
 // The draft clears to 0 and stores y + 500, so an empty texel means no hull.
 const DRAFT_FS = 'varying float vY; void main() { gl_FragColor = vec4(vY + 500.0, 0.0, 0.0, 1.0); }';
@@ -177,7 +177,7 @@ void main() {
   vec4 mp = uMirror * vec4(vW.x, 0.0, vW.z, 1.0);
   vec2 muv = mp.xy / mp.w + slope * 0.06 * min(1.0, 30.0 / dist);
   vec3 refl = texture2D(tMirror, muv).rgb;
-  // Murky canal water: dark green-brown, lit a little by the sky.
+  // Murky harbour water: dark green-brown, lit a little by the sky.
   vec3 deep = vec3(0.028, 0.040, 0.032);
   // Low sun through a thin crest: the backlit water glows green.
   float thin = clamp(length(s.gb) * 3.0, 0.0, 1.0) * pow(max(0.0, dot(d, uSun * vec3(-1.0, 1.0, -1.0))), 2.0);
@@ -196,14 +196,14 @@ void main() {
   float fo = max(fmat * (0.45 + 0.55 * fresh), lace * 0.55);
   vec3 foamCol = vec3(0.6, 0.61, 0.6) + uSunCol * 0.16 * (0.5 + 0.5 * n.y);
   col = mix(col, foamCol, fo);
-  // A thin sheet on the quay is clear and shows the paving through it.
+  // A thin sheet on the pier is clear and shows the paving through it.
   float a = smoothstep(0.004, 0.06, s.r);
   col = mix(col, uFog, 1.0 - exp(-uFogD * uFogD * dist * dist));
   gl_FragColor = vec4(col, a);
 }`;
 
 /**
- * Builds the canal sim and its water meshes.
+ * Builds the basin sim and its water meshes.
  * @param {THREE.WebGLRenderer} renderer
  */
 export function makeCanal(renderer, drop) {
@@ -232,7 +232,7 @@ export function makeCanal(renderer, drop) {
   copy.material.uniforms = { ...U, tInit: { value: initTex } };
   const run = (m, target) => { scene.children.length = 0; scene.add(m); renderer.setRenderTarget(target); renderer.render(scene, cam); };
 
-  // The draft pass looks up from under the canal.
+  // The draft pass looks up from under the basin.
   const dScene = new THREE.Scene();
   const dCam = new THREE.OrthographicCamera(X0, X0 + NX * CELL, Z0 + NZ * CELL, Z0, 0.1, 200);
   dCam.position.set(0, -60, 0);
@@ -250,6 +250,8 @@ export function makeCanal(renderer, drop) {
       const x = X0 + (i + 0.5) * CELL, z = Z0 + (j + 0.5) * CELL;
       let b;
       if (z < CANAL.zYard) b = Math.abs(x) < 64 ? wayTop(z, d) - 0.55 : 1.7;
+      else if (x < CANAL.xWest) b = CANAL.quayTop;
+      else if (x > PIER.x0 && x < PIER.x1 && z > PIER.z0 && z <= CANAL.zQuay) b = PIER.top;
       else if (z <= CANAL.zQuay) b = -CANAL.depth;
       // The quay rises gently inland, so a sheet of water drains back.
       else b = CANAL.quayTop + (z - CANAL.zQuay) * 0.006;
@@ -306,36 +308,54 @@ export function makeCanal(renderer, drop) {
 
   /* ---------- readback ---------- */
   // One column of the state at x = 0, for the hull's water line.
+  const I0 = Math.round(-X0 / CELL - 0.5);
   const col = new Float32Array(NZ * 4);
   let colBusy = false;
   const level = { at: new Float32Array(NZ), ok: false };
   function readColumn() {
     if (colBusy || !float) return;
     colBusy = true;
-    renderer.readRenderTargetPixelsAsync(S[0], NX / 2, 0, 1, NZ, col).then(() => {
-      for (let j = 0; j < NZ; j++) level.at[j] = bed[(j * NX + NX / 2) * 4] + col[j * 4];
+    renderer.readRenderTargetPixelsAsync(S[0], I0, 0, 1, NZ, col).then(() => {
+      for (let j = 0; j < NZ; j++) level.at[j] = bed[(j * NX + I0) * 4] + col[j * 4];
       level.ok = true;
     }).catch(() => {}).finally(() => { colBusy = false; });
   }
   /** Water level at z on the centre line, from the last read. */
-  // Only canal water counts: the berth and the quay tops are ground.
+  // Only basin water counts: the berth and the quay tops are ground.
   const levelAt = z => {
     if (!level.ok) return 0;
     const zc = Math.max(CANAL.zYard + 0.5, Math.min(CANAL.zQuay - 0.5, z));
     const j = Math.max(0, Math.min(NZ - 1, Math.round((zc - Z0) / CELL - 0.5)));
     return level.at[j];
   };
-  // The first row on the near quay: where the wave breaks over the edge.
-  const edgeJ = Math.ceil((CANAL.zQuay - Z0) / CELL) + 1;
-  const edge = new Float32Array(NX * 4), edgeH = new Float32Array(NX);
-  let edgeBusy = false;
-  function readEdge() {
-    if (edgeBusy || !float) return;
-    edgeBusy = true;
-    renderer.readRenderTargetPixelsAsync(S[0], 0, edgeJ, NX, 1, edge).then(() => {
-      for (let i = 0; i < NX; i++) edgeH[i] = edge[i * 4];
-    }).catch(() => {}).finally(() => { edgeBusy = false; });
+  // A patch around the pier head: the water at its faces and on its deck.
+  const PI0 = Math.round((PIER.x0 - 10 - X0) / CELL), PJ0 = Math.round((PIER.z0 - 8 - Z0) / CELL);
+  const PW = Math.round((PIER.x1 - PIER.x0 + 20) / CELL), PH = Math.round(40 / CELL);
+  const pbuf = new Float32Array(PW * PH * 4);
+  const patch = { h: new Float32Array(PW * PH), eta: new Float32Array(PW * PH).fill(-9), ok: false };
+  let patchBusy = false;
+  function readPatch() {
+    if (patchBusy || !float) return;
+    patchBusy = true;
+    renderer.readRenderTargetPixelsAsync(S[0], PI0, PJ0, PW, PH, pbuf).then(() => {
+      for (let j = 0; j < PH; j++) for (let i = 0; i < PW; i++) {
+        const k = j * PW + i, h = pbuf[k * 4];
+        patch.h[k] = h;
+        patch.eta[k] = h > 0.004 ? bed[((PJ0 + j) * NX + PI0 + i) * 4] + h : -9;
+      }
+      patch.ok = true;
+    }).catch(() => {}).finally(() => { patchBusy = false; });
   }
+  // The patch cell at a world point, or -1 outside it.
+  const patchAt = (x, z) => {
+    const i = Math.floor((x - X0) / CELL) - PI0, j = Math.floor((z - Z0) / CELL) - PJ0;
+    return i < 0 || j < 0 || i >= PW || j >= PH ? -1 : j * PW + i;
+  };
+  /** Water depth at x, z in the patch, from the last read. */
+  const wetAt = (x, z) => { const k = patchAt(x, z); return k < 0 || !patch.ok ? 0 : patch.h[k]; };
+  /** Water level at x, z in the patch; -9 where it is dry. */
+  const etaAt = (x, z) => { const k = patchAt(x, z); return k < 0 || !patch.ok ? -9 : patch.eta[k]; };
+  function clearPatch() { patch.h.fill(0); patch.eta.fill(-9); patch.ok = false; }
 
   /* ---------- meshes ---------- */
   const WU = {
@@ -346,21 +366,21 @@ export function makeCanal(renderer, drop) {
   };
   const mat = new THREE.ShaderMaterial({ uniforms: WU, vertexShader: WATER_VS, fragmentShader: WATER_FS, transparent: true, depthWrite: true });
   const group = new THREE.Group();
-  // The sim's field: one vertex a metre. The canal runs on past it, flat.
-  const grid = new THREE.PlaneGeometry(NX * CELL, NZ * CELL, NX / 2, NZ / 2).rotateX(-Math.PI / 2);
+  // The sim's field: one vertex a metre. The harbour runs on east of it, flat.
+  const grid = new THREE.PlaneGeometry(NX * CELL, NZ * CELL, NX, NZ).rotateX(-Math.PI / 2);
   const sim = new THREE.Mesh(grid, mat);
   sim.position.set(X0 + (NX * CELL) / 2, 0, Z0 + (NZ * CELL) / 2);
   sim.frustumCulled = false;
   const W = CANAL.zQuay - CANAL.zYard;
-  const far = new THREE.PlaneGeometry(1400, W, 1, 1).rotateX(-Math.PI / 2);
-  const left = new THREE.Mesh(far, mat), right = new THREE.Mesh(far, mat);
-  left.position.set(X0 - 700, 0, (CANAL.zQuay + CANAL.zYard) / 2);
-  right.position.set(X0 + NX * CELL + 700, 0, (CANAL.zQuay + CANAL.zYard) / 2);
-  group.add(sim, left, right);
+  const far = new THREE.PlaneGeometry(3000, W, 1, 1).rotateX(-Math.PI / 2);
+  const east = new THREE.Mesh(far, mat);
+  east.position.set(X0 + NX * CELL + 1500, 0, (CANAL.zQuay + CANAL.zYard) / 2);
+  group.add(sim, east);
   group.renderOrder = 2;
 
   /* ---------- the mirror ---------- */
-  const mirror = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType });
+  // Multisampled, so long near-flat edges in the mirror do not step.
+  const mirror = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   const mCam = new THREE.PerspectiveCamera();
   const clip = [new THREE.Plane(new THREE.Vector3(0, 1, 0), 0.02)];
   const bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
@@ -400,9 +420,7 @@ export function makeCanal(renderer, drop) {
 
   reset(drop);
   return { probe,
-    group, WU, U, step, reset, drawHull, clearDraft, drawMirror, setMirrorSize, readColumn, readEdge, levelAt, edgeH,
+    group, WU, U, step, reset, drawHull, clearDraft, drawMirror, setMirrorSize, readColumn, readPatch, clearPatch, levelAt, wetAt, etaAt,
     get drop() { return drop; },
-    xAt: i => X0 + (i + 0.5) * CELL, edgeZ: Z0 + (edgeJ + 0.5) * CELL,
   };
 }
-void WAYS;

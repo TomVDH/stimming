@@ -1,6 +1,6 @@
 # Ship launch (`shiplaunch`) plan
 
-Status: active, MVP built in the Lab (2026-11-23) · Bean: `stimming-y9pf`
+Status: active, MVP built in the Lab, the sweep planned (2026-11-23) · Beans: `stimming-y9pf`, `stimming-z2w5`
 
 ## Context
 
@@ -201,8 +201,151 @@ Bean: one `feature` bean, "Ship launch: MVP", type Scene, under the 2026-11-23 p
 ## Built (2026-11-23)
 
 - Water reference (Tom, 2026-11-23: "a github with water dynamics"): Ponlai (github.com/HuberyLL/ponlai, its ocean adapts dgreenheck/tidewater). Both are WebGPU and TSL, so the toy ports ideas to GLSL: the foam pattern (a mat that tears, then lace) and the spray kinds.
-- The near quay stands 0.8 m over the water, as a canal bank does, so a hard launch can overtop it.
-- The eye stands on a bollard, 2.3 m over the quay, so the crowd's heads stay under the canal.
+- The MVP's canal had a near quay 0.8 m over the water and the eye on a bollard 2.3 m over it. The port basin replaced both.
+
+## The port basin (2026-11-23)
+
+Tom on the MVP: "Would like more faraway POV"; "I'd maybe want it to be released in a port or lagoon / wider waterway than a canal" (he picked Port basin over Open lagoon); "perhaps we can use frietkot like silhouettes instead of weird roblox people".
+
+- The basin is 200 m wide and 6 m deep, closed at the west end and open east to the outer harbour. The sim covers 512 m by 256 m at 1 m cells.
+- The camera stands on a stone pier from the north quay, about 150 m from the berth. Its head is 1 m over the water.
+- The crowd are flat figure cards, Frietkot's `walker()` shape, ink against the low sun.
+
+## Sweep: the quality pass (plan, Tom: "Yes, plan it")
+
+Tom: "I think this is not the sweeping quality we're looking for..". The plan he approved:
+
+### Context
+
+The MVP plays, but Tom says it is "not the sweeping quality we're looking for". He said yes to this direction: one cinematic move, a real wall of water, shafts of low sun through the spray, and a detail pass.
+
+The current state (local, uncommitted):
+- a 200 m port basin;
+- the camera on a stone pier among Frietkot-style ink figures;
+- QA passing at 8.2 ms a frame.
+
+Three things keep it small:
+1. **A small wave.** In open water the pulse spreads, and it is about 0.1 m at the pier. I measured this at 1 m and at 0.5 m cells, so the grid is not the cause.
+2. **Blockout art.** The shed and crane are boxes, the hull has no detail, the trees are blobs, and the sky is flat haze.
+3. **One fixed shot.** A small hull sits in a wide frame and nothing moves the eye.
+
+### 0. Base
+
+Commit the basin, pier and figures as they are now: the Lab build, docs and captures updated. That gives each later stage a clean diff. This happens only on Tom's yes to this plan.
+
+### 1. The wave wall (first: the biggest risk)
+
+The sim keeps the physics, but the hit gets an art-directed source, and the basin is shaped to grow the wave.
+
+- **Impact source.** At the hit, `canal.js` adds a volume pulse along a curve on her outboard side.
+  - The curve is a 12 m wide Gaussian ridge, about 120 m long, bent slightly toward the pier so the wall focuses there.
+  - Its volume scales with the Drop and her impact speed, injected over about 1.2 s.
+  - A tiny sink over the whole basin takes the volume back over 20 s, so the mean level stays at 0.
+  - This is one extra uniform pair in the height pass (a source line and a strength), with no new pass.
+- **A shoal.** A rubble apron raises the bed from 6 m to about 1.5 m over the last 40 m before the pier head. By Green's law the crest grows by about 1.4x. It also slows and steepens, so it breaks on the pier.
+- **The breaking crest.** Where the front is steep and the water shallow, `main.js` emits spray along the crest. The sim's foam already marks the front white.
+- **Targets**, measured with the 0.15 s peak probe:
+
+  | Where | Drop 1.5 | Drop 2.4 |
+  |---|---|---|
+  | Crest mid-basin | about 1.5 m | about 2.5 m |
+  | Overtopping the pier deck (1.0 m) | from Drop 1.2 up | sheets across the head; the crowd runs back |
+
+- **Arrival.** About 14 s after the hit.
+- **Show Tom:** the probe numbers and a strip of four frames.
+
+### 2. The camera sweep
+
+The move is a timed track keyed to the launch, in `main.js`: eased keyframes, eye and aim each on a Catmull-Rom curve.
+
+| Beat | When | Camera |
+|---|---|---|
+| Waiting | Before the cut | High and wide: 40 m over the north quay, about 230 m out. The whole basin, the yard and the low sun. Still, so idle does no per-frame work. |
+| Cut and slide | About 5 to 8 s | A long crane move down and in toward the pier, following her as she slides. |
+| Tip and hit | | It arrives at 3.5 m in the crowd, broadside on, and pushes in a little on the spray sheet. |
+| The wave | About 14 s | It holds on the wall crossing toward the lens. As the wall breaks over the pier it sinks to about 1.8 m, so the wall stands over the lens. |
+| Settle | About 25 s | A slow rise and pull back to a wide aftermath frame. It ends still. |
+
+- **Drag** adds a look offset on top of the track, as now.
+- **Again** flash-cuts back to the waiting shot.
+- **Reduced motion:** no sweep. Three hard cuts (wide, pier, wide), each one still.
+- **Tall stages** get their own keyframes: higher, closer and narrower on the hull.
+- **Show Tom:** a contact sheet of eight frames across the whole move, still in blockout.
+
+### 3. Light
+
+- **Sky:** `shared/sky.js` (`skSky`, `skClouds`, thin cover) replaces the toy's own sky. The sun sits about 5 degrees up, behind the yard.
+- **Light shafts:** `shared/clouds.js` (`clShaftsField`, `clShaftLook`). The mist volume is the occlusion field, so the backlit spray throws shafts of sun. Railgun is the reference.
+- **Flare:** `shared/flare.js` (`flFlare`), covered when the sun is behind the hull, the spray or the shed.
+- **Grade:** `shared/grade.js` (`gradePass`), for a warm tint, a light vignette and grain.
+- **Sun path:** a glitter path on the water toward the sun, from `wtGlint` with a wider spread.
+- Everything is imported from `shared/`. Nothing in `shared/` changes.
+
+### 4. The detail pass (reference first)
+
+Before modelling, I open the reference photos and drawings:
+- the Commons side-launch set already in the plan;
+- coaster general-arrangement drawings;
+- hammerhead and level-luffing cranes at Dutch yards;
+- yard sheds with corrugated walls.
+
+In order, with a capture to Tom after each:
+1. **Hull.**
+   - Shape: the sheer line, a raised forecastle with a bulwark and anchor pockets, the hatch coaming and pontoon covers.
+   - The aft house in tiers: windows, bridge wings, the funnel, the mast with lights and radar, and the rails.
+   - A baked canvas texture: plate seams, weld lines, draft marks, rust streaks and window glass. There is no name on the hull.
+2. **Crane and shed.**
+   - The crane: a lattice tower and jib from instanced struts, a counterweight and a cab.
+   - The shed: corrugated walls (a normal pattern in the shader), a roof with skylights, and big doors open on a warm-lit inside.
+3. **Yard.**
+   - Visible cradles and poppets under the hull, plate stacks and a mobile crane.
+   - Workers on the berth as figure cards.
+4. **Harbour.**
+   - Warehouses and a moored ship on the north quay, a tug standing off, and a light at the mouth.
+   - A polder skyline of poplar rows and a spire silhouette. No real names.
+5. **Water:** wind bands of chop across the basin, and Ponlai-style lace foam behind the wall.
+
+### 5. Budget and rules
+
+- **Frame:** 12 ms mean or less at 1280 x 800 through the hit on the RTX 3070 (D3D11). Each program stays small.
+- **Link:** about 7.5 s for all programs.
+- **Loop and sound:** the existing rules hold. Lively until calm or 75 s, then drifting at 30 fps, asleep after 60 s, and hidden stops everything. Sound stays muted by default.
+- **Quality ladder:** pixel ratio, then the mirror, mist and shaft sizes, then the counts.
+
+### Files
+
+| File | Change |
+|---|---|
+| `shiplaunch/canal.js` | Impact source, shoal bed, sink |
+| `shiplaunch/main.js` | Camera track, beats, the crest spray, sky, shafts, flare, grade |
+| `shiplaunch/yard.js` | Hull lines and topsides, crane, shed, yard, harbour |
+| `shiplaunch/props.js` | Figure cards for the workers, the tug |
+| New `shiplaunch/paint.js` | Baked hull texture |
+
+Docs: `docs/toys/shiplaunch.md` and `docs/plans/shiplaunch.md` (a "Sweep" section, with Tom's words), the bean, and the QA captures.
+
+### Cost and risks
+
+**Cost:** about $120 to $200 across the stages, in this session.
+
+**Risks:**
+1. **The source looks staged.** Mitigation: tie it to the measured impact speed, and keep the shoal doing half the work.
+2. **Link time** for the sky, shafts and flare. Mitigation: separate passes, and shafts at half size.
+3. **The detail pass swallows the session.** Mitigation: hull first; Tom judges after each part.
+4. **Tall phone stages.** Mitigation: their own keyframes, checked at 375 x 812.
+
+### Verification
+
+- `python -m http.server 8012`, then headless Edge (`channel: 'msedge'`, D3D11) with the existing scratch scripts:
+  - `peak.mjs`: wave peaks and the overtop;
+  - `pov.mjs`: the frame strip;
+  - `qa.mjs`: Q2 to Q10, frame times and captures.
+- Each stage ends with captures sent to Tom before the next starts.
+- Before each commit:
+  - Q1 `node --check` on every module;
+  - the console is clean;
+  - Q4, Q5 and Q9 show the loop sleeps and the audio context suspends.
+- Commits go through `tools/commit.sh` with my own paths. Run `git log origin/main..main` as a separate step before each push.
 
 ## Tom's answers (2026-11-23, in the dialog)
 
