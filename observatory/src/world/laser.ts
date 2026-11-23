@@ -18,19 +18,25 @@ const GREEN = '0.0, 1.0, 0.06';
 // Thin high air keeps a trace.
 // Core gains on the low haze and the high air.
 // HIGH_H is the high air's scale height in metres.
-const CORE_LOW = 0.28, CORE_HIGH = 0.17, HIGH_H = 600;
+const CORE_LOW = 0.28, CORE_HIGH = 0.12, HIGH_H = 600;
 // The soft scatter glow shows only in the low haze.
 const GLOW_LOW = 0.07;
 // Widths across the beam in CSS pixels, full width at half peak.
 // The far widths hold from the rise.
 // The near widths hold in the close shots.
-const CORE_FAR = 1.5, CORE_NEAR = 2.5, GLOW_FAR = 5, GLOW_NEAR = 9;
+const CORE_FAR = 0.9, CORE_NEAR = 2, GLOW_FAR = 3.5, GLOW_NEAR = 7;
 // Eye distances in metres for the near widths and the far widths.
 const NEAR_D = 50, FAR_D = 200;
 // The far beam dims by e every FADE metres.
 const FADE = 1800;
 // The beam fades in over its first half metre out of the slit.
 const START = 0.5;
+// A core sigma under this many pixels widens and dims by the same share.
+// So a sub-pixel core keeps its light and never flickers.
+const SIGMA_MIN = 0.55;
+// The core's centre goes this pale where it burns brightest.
+// A bright beam saturates the eye, so its axis reads whiter than its fringe.
+const HOT = '0.62, 1.0, 0.66', HOT_K = 0.45;
 // Dust in the low haze makes the beam shimmer in moving knots.
 const SHIMMER = 0.1;
 // The ribbon is this many glow widths across.
@@ -102,17 +108,20 @@ export function buildLaser(): Laser {
       // Gaussian sigmas from the widths at half peak.
       float sc = mix(${f(CORE_FAR)}, ${f(CORE_NEAR)}, near_) / 2.3548;
       float sg = mix(${f(GLOW_FAR)}, ${f(GLOW_NEAR)}, near_) / 2.3548;
-      float core = exp(-0.5 * x * x / (sc * sc));
+      float se = max(sc, ${f(SIGMA_MIN)});
+      float core = exp(-0.5 * x * x / (se * se)) * sc / se;
       // The window takes the glow to zero at the ribbon's edge.
       float glow = exp(-0.5 * x * x / (sg * sg)) * max(1.0 - q * q, 0.0);
       float up = max(vP.y - uFoot, 0.0), s = vE * ${f(LENGTH)};
       float low = exp(-up / ${f(HAZE_H)}), high = exp(-up / ${f(HIGH_H)});
       // Railgun's shimmer, in knots along the beam.
       float sh = 1.0 + ${f(SHIMMER)} * low * sin(uT * 31.0 + s * 9.0) * sin(uT * 17.0 - s * 3.4);
-      float k = (${f(CORE_LOW)} * low + ${f(CORE_HIGH)} * high) * core + ${f(GLOW_LOW)} * low * glow;
+      float kc = (${f(CORE_LOW)} * low + ${f(CORE_HIGH)} * high) * core, kg = ${f(GLOW_LOW)} * low * glow;
       // The far beam dims with range and ends soft.
-      k *= exp(-s / ${f(FADE)}) * (1.0 - smoothstep(0.55, 1.0, vE)) * smoothstep(0.0, ${f(START)}, s);
-      gl_FragColor = vec4(vec3(${GREEN}) * k * sh * uK, 1.0);
+      float fade = exp(-s / ${f(FADE)}) * (1.0 - smoothstep(0.55, 1.0, vE)) * smoothstep(0.0, ${f(START)}, s);
+      // The hot axis: pale where the core is strong and the haze is thick.
+      vec3 c = mix(vec3(${GREEN}), vec3(${HOT}), ${f(HOT_K)} * core * core * low);
+      gl_FragColor = vec4((c * kc + vec3(${GREEN}) * kg) * fade * sh * uK, 1.0);
     }`,
   });
   const mesh = new Mesh(geo, mat);
