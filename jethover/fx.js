@@ -101,7 +101,7 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
   heatPass.setResolutionScale(0.5);
   const U = {
     res: uniform(new THREE.Vector2(1, 1)), amp: uniform(1), bend: uniform(45), time: uniform(0),
-    vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3),
+    vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3), occ: uniform(0.6),
     key: uniform(new THREE.Color(0.8, 0.9, 1.06)), pull: uniform(0.3),
   };
   const heat = heatPass.getTextureNode();
@@ -119,8 +119,9 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
   })();
   const sceneCol = scenePass.getTextureNode().sample(bentUV);
   const gasCol = blurred.getTextureNode().sample(bentUV).mul(U.vol);
-  // The lit gas adds over the bent scene.
-  const lit = vec4(sceneCol.rgb.add(gasCol.rgb), 1.0);
+  // Smoke dims the scene behind it; the lit gas then adds over.
+  const behind = exp(heat.sample(screenUV).b.mul(U.occ).negate());
+  const lit = vec4(sceneCol.rgb.mul(behind).add(gasCol.rgb), 1.0);
   const glow = bloom(lit, 0.55, 0.6, 0.85);
   const tone = renderOutput(lit.add(glow));
   // The Villeneuve grade: colour falls toward one cool key; highs go to cream.

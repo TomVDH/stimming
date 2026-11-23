@@ -27,7 +27,7 @@ Tom sized the full toy XXL. This build is the MVP: one shot, the hover. The plan
 
 - 3D, a fixed long-lens shot as Villeneuve frames scale (Tom, 2026-11-23: "more villeneuveian the camera and positioning"). The eye stands 1.7 m up, 150 m out on the apron, with a 9 degree lens.
 - The craft hovers nose on, a little off the axis, small in the middle of the frame. The two plumes stand side by side.
-- Behind it, three ranges at true scale sink into the haze: low hills at 2.6 km, table mountains at 7 km, a massif at 18 km. A row of far lights runs at the foot of the hills.
+- Behind it stands a real range: a photo plate (Tom, 2026-11-23: "photo real backdrop here", "Photo plate"). Cadiz Wilderness by Bob Wick, BLM, public domain, shot at 200 mm at blue hour. The sky is masked out, so the drawn sky, stars and sun glow show above it. A row of far lights runs along the plain at its foot. Drawn ranges remain only outside the plate, past the frame edges.
 - The long lens is where heat haze shows in real life: the hot gas bends the far ranges and the lights.
 - Four times of day (Tom, 2026-11-23: "lets add ToD -- 4 times of day"). Dusk is the default: blue hour, just after sunset, the camera toward the last light, the craft warm underneath from its own exhaust. Dawn: a peach glow behind the ranges, morning mist. Day: a pale, dusty haze, the ranges faint. Night: stars, the far lights bright, the exhaust the only strong light.
 - A wet concrete apron runs to 260 m. Wet patches mirror the far country and the plumes.
@@ -80,9 +80,10 @@ Bar v3, from the `bar` spec in `initPage()`.
 |---|---|
 | `index.html` | The page |
 | `main.js` | Bar, renderer and passes, engine and craft motion, pointer, frame loop, life cycle |
-| `scene.js` | Sky and far country, the apron, the craft from lofts and plates, lights, the four times of day |
+| `scene.js` | Sky and far country, the photo plate, the apron, the craft from lofts and plates, lights, the four times of day |
+| `plate.webp` | The photo plate: 3840 x 818, sky in alpha (see `CREDITS.md`) |
 | `fx.js` | Plume ribbons; the post chain: heat bend, gas over the scene, bloom, the grade |
-| `gas.js` | K3, Fire's fluid and volume (copy of `shared/fire.js`), with jets, a solid floor, steam, sky light and a heat volume |
+| `gas.js` | K3, Fire's fluid and volume (copy of `shared/fire.js`), with jets, a solid floor, steam, sky light and a heat volume; `main.js` runs two: the big gas and the fine exhaust |
 | `sound.js` | Roar, rumble, hiss, turbine whine, fan buzz and reheat crackle |
 
 ## How it works
@@ -107,10 +108,12 @@ flowchart LR
 - **Plumes.** One view-facing ribbon per nozzle, from the nozzle to the pad, under the gas. A hot throat, a body that runs orange to violet blue, and shock diamonds: rhombs on the axis, spaced wider with more throttle, each dimmer than the one above. The cold lift-fan jet shows only in the gas it drives.
 - **Pad.** Damp concrete with slab joints and soot, light from the nozzles and a hot pool under each plume, a wet mirror of the sky and a streak of each plume, then haze.
 - **Gas.** Fire's fluid (`shared/fire.js`), copied into `gas.js`. A 112 x 56 x 112 grid of 0.25 m cells covers 28 x 14 x 28 m over the pad. Compute passes each step: curl, advection with buoyancy, curl-noise turbulence and vorticity confinement, divergence, 12 Jacobi sweeps, projection, dye transport. Jet hover adds: each jet drives its core down its axis; the floor is solid. The exhaust strikes the floor and smokes it, then turns flat: a thin sheet runs out radially to 4.5 m, then runs free, and its shear rolls it into billows (Tom, 2026-11-23: "the billows also come from the jet"). The hot jets heat their cores, and steam flashes off the damp floor in a ring round each landing point. The gas clock runs at 0.55 of real time, so the billows roll slowly, as Fire's smoke does (Tom, 2026-11-23: "Slower, like Fire").
-- **Volume.** Fire's lit volume, unchanged in method: a velocity-warped lookup, simplex detail, light from the lamps through a short self-shadow march with Beer, multi-scatter and powder terms, a Henyey-Greenstein phase. Flame light comes from heat through Fire's flame ramp, so the exhaust and the hot gas at the pad glow by the same shader. Jet hover adds a flat flame gain, a glow that fades with the gas's age, and blue-hour sky light on the steam. The march stops behind the craft. It draws at half size and is blurred a little.
-- **Heat.** A twin volume sums heat times rising noise cells along each ray, at half size. The post chain bends the frame along the gradient of that sum, so the shimmer sits where the hot gas is. In the wide shot the bend caps at 3 px. In the tight lens the bend grows with the square root of the zoom, the cap with its 0.75 power (about 8 px), and the gradient taps widen with the zoom, so the bend stays smooth. The tight lens draws the gas and heat at three quarters size.
-- **Time of day.** Four keys in `scene.js` at the hours of `HOURS`: dawn 6.2, day 12.5, dusk 19.3, night 23. Each key sets the sky (zenith, horizon, the band and halo toward the sun, stars), the ranges, the far lights, the apron's sky and sun light, the haze, the hemisphere and rim lights, the exposure, the grade's key, the sky light on the gas and the plume gain. A pick eases the hour over about 2 s with `dayClock`; between two keys every value blends.
-- **Frames.** Scene; gas and heat volumes at half size; heat bend; gas over the scene; bloom; ACES; the grade: colour pulled toward one cool key, highs to cream, a vignette, grain and lifted blacks, after Railgun's Villeneuve print.
+- **Exhaust.** A second copy of Fire's gas, fine, pumps out of the engines (Tom, 2026-11-23: "the fire shader we brought in needs to pump OUT of the jet engines"). A 120 x 72 x 50 grid of 0.1 m cells covers 12 x 7.2 x 5 m from the nozzles to the pad, wide enough for the drift. Fire's own emitter feeds it: 240 points in a disc under each nozzle, carried by the craft. Fire's rates are raised 60 times, because jet gas crosses a cell in about a hundredth of a second; the emitter gain follows the throttle. The jets drive the gas down and out over the pad, so the flame and smoke stream from the nozzles and spread.
+- **Volume.** Fire's lit volume, unchanged in method: a velocity-warped lookup, simplex detail, light from the lamps through a short self-shadow march with Beer, multi-scatter and powder terms, a Henyey-Greenstein phase. Flame light comes from heat through Fire's flame ramp, so the exhaust and the hot gas at the pad glow by the same shader. Jet hover adds a flat flame gain, a glow that fades with the gas's age, sky light on the steam, and a cap on the velocity warp of the lookup (0.3 m), since jets run far faster than a flame. The big sim's heat caps at 2.5, so the gas at the pad glows orange and never white; the exhaust sim's caps at 3. The exhaust lamps light the gas at 0.9 of their strength. The march stops behind the craft. It draws at half size and is blurred a little.
+- **Heat.** Each gas sim has a twin volume that sums heat times rising noise cells along each ray, at half size. The post chain bends the frame along the gradient of that sum, so the shimmer sits where the hot gas is: down each jet from the exhaust sim, and over the pad from the big one. In the wide shot the bend caps at 3 px. In the tight lens the bend grows with the square root of the zoom, the cap with its 0.75 power (about 8 px), and the gradient taps widen with the zoom, so the bend stays smooth. In the tight lens the gas fills the frame, so both volumes march 40 steps. The passes keep one size: a change of size rebuilds the post chain and blacks the frame for seconds.
+- **Plate.** The photo maps onto the sky dome by azimuth and elevation: 19 degrees wide, about twice the photo's own field, centred 2.6 degrees left of north-south where the lens looks; its foot sits on the horizon. Its side edges fade into the drawn ranges outside the frame. Each time of day grades it: a gain, a tint and a mix toward the horizon haze. Dusk stays near the photo; Day is pale haze; Night is a dark silhouette. The wet apron mirrors it and the heat bends it. The first frame waits for it, 8 s at most.
+- **Time of day.** Four keys in `scene.js` at the hours of `HOURS`: dawn 6.2, day 12.5, dusk 19.3, night 23. Each key sets the sky (zenith, horizon, the band and halo toward the sun, stars), the ranges, the plate's grade, the far lights, the apron's sky and sun light, the haze, the hemisphere and rim lights, the exposure, the grade's key, the sky light on the gas and the plume gain. A pick eases the hour over about 2 s with `dayClock`; between two keys every value blends.
+- **Frames.** Scene; gas and heat volumes at half size; heat bend; the summed smoke dims the scene behind it (`occ` 0.6; thin haze under 0.08 does not count); gas over the scene; bloom; ACES; the grade: colour pulled toward one cool key, highs to cream, a vignette, grain and lifted blacks, after Railgun's Villeneuve print.
 
 ## Frame loop
 
@@ -129,7 +132,7 @@ Slow frames step down: pixel ratio, then the volume march from 72 to 44 steps.
 
 ## QA (2026-11-23, WebGPU build)
 
-Headless Edge, WebGPU on D3D12 (`--enable-unsafe-webgpu`), on Tom's PC. Captures 11 to 20: `docs/qa/jethover/`; 15 to 19 show the four times of day, 20 the jet's billows, 21 to 23 the tight lens. Captures 01 to 10 show the first WebGL build.
+Headless Edge, WebGPU on D3D12 (`--enable-unsafe-webgpu`), on Tom's PC. Captures 11 to 20: `docs/qa/jethover/`; 15 to 19 show the four times of day, 20 the jet's billows, 21 to 23 the tight lens, 24 to 26 the exhaust sim, 27 to 32 the photo plate. Captures 01 to 10 show the first WebGL build.
 
 | Check | Result |
 |---|---|
@@ -140,13 +143,15 @@ Headless Edge, WebGPU on D3D12 (`--enable-unsafe-webgpu`), on Tom's PC. Captures
 | Q6 reduced motion | No frames while idle; 0 frames in 2 s once the craft settles after a gesture |
 | Q8 keys | Space held runs the engine to 0.95; release spools back to the hover |
 | Q9 sound | The context runs during the gesture and is suspended 9 s after release |
-| Q10 frames | 7.9 ms median, 8.1 ms p90 during a hold and drag at 1280 x 800; 7.8 ms and 8.1 ms with the tight lens |
+| Q10 frames | 7.7 ms median, 8.1 ms p90 during a hold and drag at 1280 x 800, with both gas sims and the plate; 7.8 ms and 8.1 ms with the tight lens |
 
 The renderer's own frame loop is stopped; the page ticks the node clock before each render.
 
 ## Open for Tom
 
 - The shot: 9 degree lens from 150 m; the craft nose on. A closer or wider framing is one number each.
+- The plate is one blue-hour photo, graded per hour; its slopes keep blue-hour light at Day and Dawn.
+- Smoke billowing down: the exhaust smoke now dims what is behind it, but the billows stay faint, most of all by day.
 - The tight lens: 10 m across at the plumes (`TIGHT_W` in `main.js`). On reheat the steam fills the tight frame; the hover setting shows the most background.
 - The four times of day are a first pass: each is one key in `scene.js`.
 - The gas speed: 0.55 of real time (`GAS_K` in `main.js`). Slower or faster is one number.

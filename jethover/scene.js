@@ -5,7 +5,7 @@ import * as THREE from 'three/webgpu';
 import { HOURS } from '../shared/daytime.js';
 import {
   Fn, vec2, vec3, float, uniform, positionWorld, positionLocal, positionWorldDirection, cameraPosition,
-  normalize, mix, smoothstep, exp, max, min, abs, fract, floor, sin, cos, dot, atan, fwidth, mx_noise_float, reflect,
+  normalize, mix, smoothstep, exp, max, min, abs, fract, floor, sin, cos, dot, atan, fwidth, mx_noise_float, reflect, texture,
 } from 'three/tsl';
 
 // The dusk sun lies behind the craft, low in the west (-z).
@@ -16,6 +16,7 @@ export const SUN = new THREE.Vector3(0.18, -0.05, -1).normalize();
 // sun: the key light's direction; at night it is the moon.
 // zen, hor, low: the sky from zenith to the horizon. glow, wide, halo: light round the sun.
 // flank, crest: a range's foot and top. lights: far lights. E, sunE: apron sky and sun light.
+// pGain, pTint, pHaze: the photo plate's grade: exposure, colour, haze.
 const TOD = {
   dawn: {
     sun: [-0.12, 0.03, -1], zen: [0.025, 0.04, 0.085], hor: [0.09, 0.08, 0.1], low: [0.04, 0.045, 0.07],
@@ -24,6 +25,7 @@ const TOD = {
     E: [0.06, 0.065, 0.09], sunE: [2.0, 1.2, 0.7], haze: 0.0045,
     hemiSky: [0.54, 0.56, 0.69], hemiGround: [0.13, 0.11, 0.11], hemiI: 1.1, rimCol: [1.0, 0.72, 0.56], rimI: 2.0,
     expo: 0.85, key: [0.95, 0.92, 1.0], pull: 0.25, smoke: [0.1, 0.1, 0.13], plume: 0.9,
+    pGain: 0.9, pTint: [1.15, 0.95, 0.9], pHaze: 0.35,
   },
   day: {
     sun: [-0.45, 0.62, -0.65], zen: [0.22, 0.32, 0.5], hor: [0.62, 0.56, 0.48], low: [0.1, 0.09, 0.07],
@@ -32,6 +34,7 @@ const TOD = {
     E: [0.55, 0.6, 0.7], sunE: [1.6, 1.45, 1.2], haze: 0.004,
     hemiSky: [0.72, 0.77, 0.85], hemiGround: [0.35, 0.31, 0.28], hemiI: 1.4, rimCol: [1.0, 0.94, 0.86], rimI: 3.0,
     expo: 0.75, key: [1.04, 0.99, 0.9], pull: 0.22, smoke: [0.5, 0.49, 0.47], plume: 0.75,
+    pGain: 2.2, pTint: [1.2, 1.1, 0.95], pHaze: 0.55,
   },
   dusk: {
     sun: [0.18, -0.05, -1], zen: [0.003, 0.006, 0.02], hor: [0.016, 0.026, 0.052], low: [0.012, 0.02, 0.036],
@@ -40,6 +43,7 @@ const TOD = {
     E: [0.02, 0.028, 0.052], sunE: [0, 0, 0], haze: 0.0026,
     hemiSky: [0.23, 0.3, 0.47], hemiGround: [0.05, 0.04, 0.04], hemiI: 0.95, rimCol: [1.0, 0.71, 0.54], rimI: 1.4,
     expo: 0.9, key: [0.8, 0.9, 1.06], pull: 0.3, smoke: [0.035, 0.05, 0.09], plume: 1,
+    pGain: 0.3, pTint: [0.85, 0.9, 1.05], pHaze: 0.3,
   },
   night: {
     sun: [0.5, 0.45, -0.75], zen: [0.001, 0.0015, 0.004], hor: [0.006, 0.008, 0.014], low: [0.006, 0.007, 0.01],
@@ -48,6 +52,7 @@ const TOD = {
     E: [0.006, 0.008, 0.014], sunE: [0.03, 0.035, 0.05], haze: 0.0022,
     hemiSky: [0.11, 0.15, 0.25], hemiGround: [0.02, 0.02, 0.02], hemiI: 0.5, rimCol: [0.62, 0.7, 0.88], rimI: 0.6,
     expo: 1.0, key: [0.75, 0.88, 1.1], pull: 0.4, smoke: [0.01, 0.014, 0.024], plume: 1.1,
+    pGain: 0.06, pTint: [0.7, 0.8, 1.1], pHaze: 0.1,
   },
 };
 export const TIMES = /** @type {const} */ (['dawn', 'day', 'dusk', 'night']);
@@ -60,6 +65,7 @@ const T = {
   glow: uniform(c3(TOD.dusk.glow)), glowW: uniform(TOD.dusk.glowW), wide: uniform(c3(TOD.dusk.wide)), halo: uniform(0), stars: uniform(0),
   flank: uniform(c3(TOD.dusk.flank)), crest: uniform(c3(TOD.dusk.crest)), lights: uniform(1),
   E: uniform(c3(TOD.dusk.E)), sunE: uniform(c3(TOD.dusk.sunE)),
+  pGain: uniform(TOD.dusk.pGain), pTint: uniform(c3(TOD.dusk.pTint)), pHaze: uniform(TOD.dusk.pHaze),
 };
 // Blends the two keys round the hour, on the 24-hour circle.
 export function blendTod(hour) {
@@ -124,6 +130,19 @@ const RANGES = [
   [7000, 20, 240, 16, 9.3, 0.17, true],
   [2600, 4, 30, 34, 4.1, 0.17, false],
 ];
+/* ---------- the photo plate: a real range behind the drawn country ---------- */
+// Cadiz Wilderness, BLM California (Bob Wick), public domain; 200 mm at blue hour.
+// The sky is masked out; alpha holds the land.
+let plateLoaded;
+// The first frame waits for the plate, 8 s at most.
+export const plateReady = new Promise(res => { plateLoaded = res; setTimeout(res, 8000); });
+const plateTex = new THREE.TextureLoader().load(new URL('./plate.webp', import.meta.url).href, () => plateLoaded(), undefined, () => plateLoaded());
+plateTex.colorSpace = THREE.SRGBColorSpace;
+plateTex.anisotropy = 8;
+// The plate spans 19 degrees, about twice the photo's own field, centred where the lens looks.
+const P_W = (19 * Math.PI) / 180, P_H = (P_W * 818) / 3840;
+const P_AZ = (-2.6 * Math.PI) / 180, P_EL = -0.0006;
+
 // Eye height, metres: the camera stands as a person on the apron.
 export const EYE = 1.7;
 export const farCountry = Fn(([d]) => {
@@ -135,16 +154,24 @@ export const farCountry = Fn(([d]) => {
   // The plain below the ranges: dark, and the haze takes it at the horizon.
   const plainOn = float(1.0).sub(smoothstep(px.negate(), px, el));
   c.assign(mix(c, hz.mul(0.9), plainOn));
+  // Where the plate lies, the drawn ranges give way; its side edges fade.
+  const pu = az.sub(P_AZ - P_W / 2).div(P_W), pv = el.sub(P_EL).div(P_H);
+  const inPlate = smoothstep(0.0, 0.07, pu).mul(smoothstep(0.0, 0.07, float(1.0).sub(pu)));
   for (const [D, base, amp, f, seed, k, mesa] of RANGES) {
     // Earth curvature sinks a far range a little.
     const top = ridge(az, f, seed, mesa).mul(amp).add(base).sub(EYE).div(D).sub(D / 12.74e6);
-    const on = float(1.0).sub(smoothstep(px.negate(), px, el.sub(top)));
+    const on = float(1.0).sub(smoothstep(px.negate(), px, el.sub(top))).mul(float(1.0).sub(inPlate));
     const haze = 1 - Math.exp((-D / 1000) * k);
     // The flank darkens toward its foot; the crest takes the last light.
     const flank = smoothstep(top.sub(0.004), top, el);
     const col = mix(T.flank, T.crest, flank).mul(1 - haze).add(hz.mul(haze));
     c.assign(mix(c, col, on));
   }
+  // The plate: the photo graded for the hour and sunk in the haze.
+  const ps = texture(plateTex, vec2(pu, pv));
+  const pOn = ps.a.mul(inPlate).mul(smoothstep(-0.002, 0.0, pv)).mul(float(1.0).sub(smoothstep(1.0, 1.002, pv)));
+  const pCol = mix(ps.rgb.mul(T.pTint).mul(T.pGain), hz, T.pHaze);
+  c.assign(mix(c, pCol, pOn));
   // Far lights at the foot of the near range: a sparse row of sodium and white.
   const cell = az.div(0.0035), ci = floor(cell);
   const has = smoothstep(0.66, 0.67, h11(ci.add(7.0)));
@@ -398,7 +425,8 @@ export function buildScene() {
     const k = blendTod(hour);
     const sun = v3(k.sun).normalize();
     T.sun.value.copy(sun);
-    for (const n of ['zen', 'hor', 'low', 'glow', 'wide', 'flank', 'crest', 'E', 'sunE']) T[n].value.setRGB(...k[n]);
+    for (const n of ['zen', 'hor', 'low', 'glow', 'wide', 'flank', 'crest', 'E', 'sunE', 'pTint']) T[n].value.setRGB(...k[n]);
+    T.pGain.value = k.pGain; T.pHaze.value = k.pHaze;
     T.glowW.value = k.glowW; T.halo.value = k.halo; T.stars.value = k.stars; T.lights.value = k.lights;
     U.haze.value = k.haze;
     // Light colours are sRGB, as the hex values were.

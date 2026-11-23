@@ -226,6 +226,10 @@ export function createFire({
     glowAge: uniform(2.0),
     // Jet hover: scale of the summed heat that bends the frame.
     heatGain: uniform(100.0),
+    // Jet hover: what each jet core feeds per unit of heat: heat, smoke.
+    feed: uniform(new THREE.Vector2(1, 0.04)),
+    // Jet hover: the hottest the gas gets.
+    tMax: uniform(12.0),
   };
 
   /* ---------- storage 3D textures ---------- */
@@ -495,8 +499,8 @@ export function createFire({
       const r = w.sub(A.mul(s)).length();
       const R = K.w.mul(0.8).add(s.mul(0.06));
       const core = float(1.0).sub(smoothstep(R.mul(0.2), R, r)).mul(smoothstep(-0.2, 0.15, sRaw)).mul(float(1.0).sub(smoothstep(L.sub(0.3), L.add(0.3), sRaw)));
-      temperature.addAssign(K.y.mul(core).mul(u.dt));
-      density.addAssign(K.y.mul(0.04).mul(core).mul(u.dt));
+      temperature.addAssign(K.y.mul(core).mul(u.feed.x).mul(u.dt));
+      density.addAssign(K.y.mul(core).mul(u.feed.y).mul(u.dt));
       const land = P.add(A.mul(L));
       const rr = wp.xz.distance(land.xz);
       const hgt = wp.y.sub(floorY);
@@ -509,7 +513,7 @@ export function createFire({
       density.addAssign(K.z.mul(ring).mul(patch.mul(1.6).add(0.1)).mul(u.dt));
       temperature.addAssign(K.z.mul(0.05).mul(ring).mul(u.dt));
     }
-    temperature.assign(temperature.clamp(0, 12));
+    temperature.assign(temperature.clamp(0, u.tMax));
     If(density.lessThanEqual(0.01), () => { age.assign(0.0); });
     // Alpha carries tint; it clears with the smoke and fades faster.
     const tint = dye.a.mul(max(float(1).sub(u.dissipation.add(u.tintFade).mul(u.dt)), 0));
@@ -572,7 +576,10 @@ export function createFire({
   const getVolumeSample = ({ positionRay }) => {
     const uvw = toUVW(positionRay).toVar();
     // Velocity warps the lookup, so smoke turns wispy.
-    const noiseDistortion = texture3D(velTexA, uvw, 0).xyz.div(u.size).mul(0.15);
+    // Jet hover: jets run fast, so the warp caps at 0.3 m.
+    const warp = texture3D(velTexA, uvw, 0).xyz.mul(0.15).toVar();
+    warp.mulAssign(min(1.0, float(0.3).div(max(warp.length(), 1e-4))));
+    const noiseDistortion = warp.div(u.size);
     const distortedUVW = uvw.add(noiseDistortion).clamp(0.0, 1.0).toVar();
     const sample = dyeTexNode.sample(distortedUVW).level(0);
     // Tint is a share of the smoke, so thin smoke keeps its colour.
@@ -693,7 +700,8 @@ export function createFire({
     shadowMesh.castShadow = true;
 
     // Jet hover: a twin volume sums the heat along each ray, for the shimmer.
-    // r holds heat times rising noise cells; g holds the plain heat.
+    // r holds heat times rising noise cells; g holds the plain heat; b holds the smoke.
+    // The smoke sum dims the scene behind it, so smoke can hide what it covers.
     const heatMaterial = new THREE.VolumeNodeMaterial();
     heatMaterial.steps = Math.max(12, Math.round(steps / 2));
     heatMaterial.transparent = true;
@@ -702,9 +710,13 @@ export function createFire({
     heatMaterial.offsetNode = material.offsetNode;
     heatMaterial.scatteringEmissiveNode = Fn(({ positionRay }) => {
       const uvw = toUVW(positionRay);
-      const T = dyeTexNode.sample(uvw.clamp(0.0, 1.0)).level(0).g.min(2.5);
+      const dye = dyeTexNode.sample(uvw.clamp(0.0, 1.0)).level(0);
+      const T = dye.g.min(2.5);
       const cellNoise = mx_noise_float(positionRay.mul(vec3(2.6, 1.6, 2.6)).add(vec3(0.0, u.time.mul(-3.2), 0.0)));
-      return vec3(T.mul(cellNoise), T, 0.0).mul(u.heatGain).mul(seen(positionRay));
+      const edge = min(uvw, vec3(1).sub(uvw));
+      // Thin haze in the box does not count; only real billows dim the scene.
+      const smoke = dye.r.mul(smoothstep(0.08, 0.6, dye.r)).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));
+      return vec3(T.mul(cellNoise).mul(u.heatGain), T.mul(u.heatGain), smoke).mul(seen(positionRay));
     });
     const heatMesh = new THREE.Mesh(new THREE.BoxGeometry(SX, SY, SZ), heatMaterial);
     heatMesh.position.set(CX, CY + lift, CZ);

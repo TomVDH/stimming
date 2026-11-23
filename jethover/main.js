@@ -7,7 +7,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
 import { HOURS, dayClock } from '../shared/daytime.js';
-import { buildScene, NOZ, FAN, EYE, TIMES } from './scene.js';
+import { buildScene, NOZ, NOZ_R, FAN, EYE, TIMES, plateReady } from './scene.js';
 import { makePlumes, makePost } from './fx.js';
 import { createFire } from './gas.js';
 import { jetSound } from './sound.js';
@@ -86,7 +86,7 @@ const kit = audioKit({ keys: new Set([' ']), sleepMs: 1500 });
 const snd = jetSound(kit);
 
 /* ---------- three ---------- */
-let renderer = null, post = null, S = null, camera = null, P = null, gas = null, vol = null;
+let renderer = null, post = null, S = null, camera = null, P = null, gas = null, vol = null, gasF = null, volF = null;
 let volScene = null, heatScene = null, volLamps = null;
 // Ready once setup has finished; until then nothing draws.
 let ready = false;
@@ -96,6 +96,9 @@ const D = detail({ maxDpr: 1.5, budget: 2.2e6, steps: 3, settle: 2, onChange: ()
 
 // The gas box: 28 m square and 14 m tall, its floor on the apron.
 const BOX = [28, 14, 28], CENTER = [0, 7, -2.5];
+// The exhaust: a fine grid of 0.1 m cells round the jets, from nozzle to pad.
+// It spans the drift, so the jets never leave it.
+const FBOX = [12, 7.2, 5], FCENTER = [-1.2, 3.6, -3.1];
 
 async function setup() {
   if (!navigator.gpu) throw new Error('no WebGPU');
@@ -129,7 +132,9 @@ async function setup() {
   u.buoyancy.value = 0.35; u.weight.value = -0.05;
   u.turbulence.value = 4.0; u.turbFrequency.value = 10.0; u.vorticity.value = 7.0;
   u.velDamping.value = 0.35; u.cooling.value = 1.6; u.dissipation.value = 0.32;
-  u.intensity.value = 3.0; u.glowSpread.value = 2.8; u.glowGain.value = 1.0; u.glowAge.value = 2.0;
+  // The pad gas glows orange, never white: its heat caps low.
+  u.tMax.value = 2.5;
+  u.intensity.value = 1.2; u.glowSpread.value = 2.8; u.glowGain.value = 1.0; u.glowAge.value = 2.0;
   u.startColor.value.setRGB(1.0, 0.86, 0.62); u.midColor.value.setRGB(1.0, 0.42, 0.1); u.endColor.value.setRGB(0.22, 0.05, 0.05);
   u.smokeTint.value.setRGB(0.9, 0.86, 0.8);
   u.ambient.value.setRGB(0.035, 0.05, 0.09);
@@ -138,16 +143,48 @@ async function setup() {
   vol = gas.volume({ steps: 72, lift: 0, sceneZ: post.sceneZ });
   volScene.add(vol.mesh);
   heatScene.add(vol.heatMesh);
+  // The exhaust: Fire's gas again, fine, fed at the nozzle exits.
+  gasF = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, grid: [120, 72, 50], size: FBOX, center: FCENTER, pressure: 10, emitMax: 480 });
+  const f = gasF.u;
+  // Fire's own emitter: a disc of points just under each nozzle, in the craft's frame.
+  const pts = [];
+  for (const n of NOZ) {
+    for (let k = 0; k < 240; k++) {
+      const a = k * 2.39996, r = NOZ_R * 0.85 * Math.sqrt((k + 0.5) / 240);
+      pts.push(n.x + Math.cos(a) * r, n.y - 0.15 - (k % 4) * 0.08, n.z + Math.sin(a) * r);
+    }
+  }
+  gasF.setEmitters(pts);
+  // Fire's rates times 60: jet gas crosses a cell in a hundredth of a second.
+  f.emitTemperature.value = 330; f.emitDensity.value = 420; f.emitGain.value = 1;
+  // The emitter feeds this sim; the jet cores add only a little heat.
+  f.feed.value.set(0.05, 0);
+  f.buoyancy.value = 0.6; f.weight.value = 0.05;
+  f.turbulence.value = 3.0; f.turbFrequency.value = 10.0; f.vorticity.value = 4.0;
+  f.velDamping.value = 0.25; f.cooling.value = 1.3; f.dissipation.value = 0.35;
+  // A flat glow curve, near Fire's own, so the cooler stream still shows.
+  f.tMax.value = 3;
+  f.intensity.value = 0.8; f.glowSpread.value = 4.8; f.glowGain.value = 1.0; f.glowAge.value = 3.0;
+  f.startColor.value.copy(u.startColor.value); f.midColor.value.copy(u.midColor.value); f.endColor.value.copy(u.endColor.value);
+  f.smokeTint.value.copy(u.smokeTint.value);
+  f.ambient.value.copy(u.ambient.value);
+  f.shadowAbsorption.value = 2.2; f.shadowAmbient.value = 0.15; f.asymmetry.value = 0.35;
+  f.heatGain.value = 5;
+  volF = gasF.volume({ steps: 64, lift: 0, sceneZ: post.sceneZ });
+  volScene.add(volF.mesh);
+  heatScene.add(volF.heatMesh);
   // The volume model runs only with a light in the scene; this one gives none.
   heatScene.add(new THREE.PointLight(0x000000, 0, 1, 2));
   await gas.compile();
+  await gasF.compile();
+  await plateReady;
 }
 
 // The lens: long, from a standing eye far out on the apron, as Villeneuve shoots scale.
 // Wide: the craft sits small in the middle; the far ranges loom behind it in the haze.
 // Tight: from the same place, the frame holds the plumes and the pad blast.
 const TIGHT_W = 10;
-let gasScale = 0.5;
+let gasScale = -1;
 function frame3() {
   const asp = cssW / cssH;
   const wide = asp < 1 ? 17 : 9;
@@ -164,9 +201,14 @@ function frame3() {
   post.U.bend.value = 45 * Math.sqrt(zoom);
   post.U.cap.value = 3 * zoom ** 0.75;
   post.U.tap.value = 3 * zoom;
-  // The tight lens draws the gas and heat at three quarters size.
-  const rs = lens.k > 0.5 ? 0.75 : 0.5;
-  if (gasScale !== rs) { gasScale = rs; post.volPass.setResolutionScale(rs); post.heatPass.setResolutionScale(rs); }
+  // The gas fills the tight frame, so it marches fewer steps there.
+  // A change of pass size rebuilds the post chain; the size stays fixed.
+  const rs = lens.k > 0.5 ? 1 : 0;
+  if (gasScale !== rs) {
+    gasScale = rs;
+    gas.setSteps(rs ? 40 : D.rung >= 3 ? 44 : 72);
+    gasF.setSteps(rs ? 40 : D.rung >= 3 ? 40 : 64);
+  }
   camera.aspect = asp;
   camera.updateProjectionMatrix();
   base.set(AIM.x + dist * 0.05, EYE, AIM.z + dist);
@@ -184,7 +226,7 @@ function resize(force = false) {
   W = w; H = h;
   renderer.setPixelRatio(dpr);
   renderer.setSize(cssW, cssH, false);
-  gas.setSteps(D.rung >= 3 ? 44 : 72);
+  gasScale = -1;
   post.U.res.value.set(w, h);
   post.U.amp.value = dpr * Math.max(0.6, Math.min(1.4, cssW / 1280));
   post.U.asp.value = cssW / cssH;
@@ -239,6 +281,8 @@ function step(dt) {
     gasClock = (gasClock + SIM_DT * GAS_K) % 1000;
     gas.u.time.value = gasClock;
     gas.step(SIM_DT * GAS_K);
+    gasF.u.time.value = gasClock;
+    gasF.step(SIM_DT * GAS_K);
     simAcc -= SIM_DT;
   }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
@@ -252,6 +296,7 @@ function applyTime() {
   post.U.key.value.setRGB(...k.key);
   post.U.pull.value = k.pull;
   gas.u.ambient.value.setRGB(...k.smoke);
+  gasF.u.ambient.value.setRGB(...k.smoke);
   for (const p of P) p.U.gain.value = k.plume;
 }
 
@@ -281,6 +326,10 @@ function pose() {
     u.jetP[i].value.copy(j.n);
     u.jetA[i].value.set(axis.x, axis.y, axis.z, len);
     u.jetK[i].value.set((i === 2 ? 9 : 16) * (0.35 + 0.75 * eng.rpm), i === 2 ? 0 : (6 + 26 * eng.rpm) * flick, (i === 2 ? 1.2 : 11) * (0.4 + eng.rpm), i === 2 ? 0.75 : 0.5);
+    // The exhaust sim takes the same jets; the steam stays in the big one.
+    gasF.u.jetP[i].value.copy(j.n);
+    gasF.u.jetA[i].value.copy(u.jetA[i].value);
+    gasF.u.jetK[i].value.copy(u.jetK[i].value).setZ(0);
     // The apron: a hot pool under each nozzle; the fan's pool is cold.
     const hot = i === 2 ? 0 : (0.25 + 1.5 * thr * thr) * clamp(1.4 - j.n.y / 10, 0.3, 1);
     S.U.hot[i].value.set(j.c.x, 0, j.c.z, hot);
@@ -294,9 +343,13 @@ function pose() {
   tmp.copy(jets[0].c).add(jets[1].c).multiplyScalar(0.5);
   S.lamps[2].position.set(tmp.x, 0.6, tmp.z + 0.6);
   S.lamps[2].intensity = (2 + 14 * thr * thr) * flick;
-  for (let i = 0; i < 3; i++) { volLamps[i].position.copy(S.lamps[i].position); volLamps[i].intensity = S.lamps[i].intensity * 2; }
+  for (let i = 0; i < 3; i++) { volLamps[i].position.copy(S.lamps[i].position); volLamps[i].intensity = S.lamps[i].intensity * 0.9; }
   S.craft.uGlow.value = (0.5 + 1.6 * thr) * flick;
   u.lightPos.value.set(tmp.x, 0.8, tmp.z);
+  gasF.u.lightPos.value.copy(u.lightPos.value);
+  // The emitter points ride with the craft.
+  gasF.u.emitMatrix.value.copy(g.matrixWorld);
+  gasF.u.emitGain.value = 0.5 + 0.6 * thr;
 }
 
 function render() {
@@ -413,7 +466,7 @@ onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); });
 new ResizeObserver(() => resize()).observe(stage);
 // ?qa hands the state to a test script.
-if (new URLSearchParams(location.search).has('qa')) globalThis.__jet = { eng, craft, gas: () => gas, post: () => post, renderer: () => renderer, D, get frames() { return frameNo; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__jet = { eng, craft, plumes: () => P, gas: () => gas, gasF: () => gasF, post: () => post, renderer: () => renderer, D, get frames() { return frameNo; } };
 
 mark('build');
 try {
