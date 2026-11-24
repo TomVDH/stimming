@@ -522,7 +522,7 @@ float starLight(vec2 P) {
   return h < 0.0 ? 1.0 : exp(-h / 240.0) * 0.8 + 0.05;
 }
 // One scale body: b is x, y, radius in pixels, and weight.
-// Kinds: 0 bare rock, 1 a star, 2 the earth, 3 the moon, 4 a lumpy moonlet.
+// Kinds: 0 bare rock, 1 a star.
 vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
   if (b.w <= 0.0) return c;
   vec2 e = fc - b.xy;
@@ -537,9 +537,6 @@ vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
     float halo = exp(-length(e) / (4.0 + r * 0.25)) * 0.5;
     return c * (1.0 - smoothstep(1.0, 0.97, d) * b.w) + vec3(1.0, 0.82, 0.55) * (core + halo) * b.w;
   }
-  float a = atan(e.y, e.x);
-  // A moonlet is lumpy: its edge wanders with the angle.
-  if (kind == 4.0) d *= 1.0 + 0.16 * (vn(vec3(a * 1.6, 2.0, 0.0)) - 0.5) + 0.06 * (vn(vec3(a * 5.0, 7.0, 0.0)) - 0.5);
   float disc = smoothstep(1.0, 1.0 - 1.5 / r, d);
   // The star stands behind the body: a crescent of light on its near side.
   vec2 to = normalize(uC * uRes - b.xy + 1e-4);
@@ -547,22 +544,13 @@ vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
   vec3 n = vec3(e / r, sqrt(max(1.0 - d * d, 0.0)));
   float lam = max(dot(n, L), 0.0);
   vec3 q = vec3(e / r * 3.0, 0.0);
-  vec3 alb = vec3(0.16);
-  if (kind == 2.0) {
-    float land = smoothstep(0.5, 0.56, fbm(q * 1.2 + 3.0) + 0.08 * fbm(q * 9.0));
-    vec3 cq = q * 3.2 + vec3(fbm(q * 2.0), fbm(q * 2.0 + 4.0), uTime * 0.01) * 1.4;
-    float cloud = smoothstep(0.45, 0.8, fbm(cq)) * (0.6 + 0.4 * fbm(q * 12.0));
-    alb = mix(mix(vec3(0.02, 0.06, 0.16), vec3(0.2, 0.18, 0.1), land), vec3(0.8), cloud);
-  } else if (kind == 3.0) {
-    alb = vec3(0.32) * (0.75 + 0.5 * fbm(q * 3.0)) * (1.0 - 0.3 * smoothstep(0.55, 0.7, fbm(q * 1.2 + 5.0)));
-  } else if (kind == 4.0) {
-    alb = vec3(0.17, 0.15, 0.13) * (0.7 + 0.6 * fbm(q * 4.0));
-  }
+  // Mercury: grey rock, pitted.
+  vec3 alb = vec3(0.17) * (0.75 + 0.5 * fbm(q * 3.0));
   vec3 light = grade(vec2(2.5, 0.0)) * 1.3;
   vec3 lit = alb * light * lam;
-  // A thin atmosphere glows round the earth; bare rock has only its sunlit edge.
-  float rim = exp(-pow((d - 0.98) / (kind == 2.0 ? 0.05 : 0.025), 2.0)) * pow(0.5 + 0.5 * dot(normalize(e + 1e-4), to), 3.0);
-  vec3 rimC = kind == 2.0 ? vec3(0.45, 0.7, 1.0) : light * 0.6;
+  // Bare rock has only its sunlit edge.
+  float rim = exp(-pow((d - 0.98) / 0.025, 2.0)) * pow(0.5 + 0.5 * dot(normalize(e + 1e-4), to), 3.0);
+  vec3 rimC = light * 0.6;
   return c * (1.0 - disc * b.w) + (lit * disc + rimC * rim * 0.8) * b.w;
 }
 void main() {

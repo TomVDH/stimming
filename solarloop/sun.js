@@ -40,13 +40,13 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // field, beam, lensing: a neutron star's field lines, pulsar beams and bent light.
 const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0 };
 export const STARS = {
-  // A neutron star: 24 km across, a city's width, spinning; Phobos is its size.
+  // A neutron star: 24 km across, a city's width, spinning.
   neutron: {
     ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, wave: 0.9, field: 1, beam: 1, lensing: 1,
     row: 5, rsun: 1.72e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1.2,
     hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
     disk: [1.3, 0.06, 0.3, 0.6], disk2: [80, 0, 0, 0], tex: [40, 4, 0, 0.5],
-    wide: 'phobos', long: 'none', root: 440,
+    wide: 'none', long: 'none', root: 440,
   },
   // Sirius B: a white dwarf, a star's mass in a ball smaller than the earth.
   siriusb: {
@@ -54,22 +54,22 @@ export const STARS = {
     row: 6, rsun: 0.0084, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1,
     hal: [0.6, 0.85, 0.95], streak: [0.6, 0.85, 1],
     disk: [1.2, 0.3, 0.2, 0.4], disk2: [40, 0.1, 0, 0], tex: [80, 6, 0, 0.6],
-    wide: 'earth', long: 'moon', root: 392,
+    wide: 'none', long: 'none', root: 392,
   },
   // Our sun: a yellow dwarf, the furnace in gold and white.
   sun: {
     ...FLARE, row: 0, rsun: 1, expo: 1, hotW: 1, coolW: 1.15, loop: 1, prom: 1, dust: 0, rays: 0.9,
     hal: [1, 0.42, 0.12], streak: [1, 0.7, 0.34],
     disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12], tex: [170, 16, 0.15, 0.55],
-    wide: 'earth', long: 'mercury', root: 220,
+    wide: 'none', long: 'mercury', root: 220,
   },
-  // Proxima: a small red flare star; the earth is a seventh of its width.
+  // Proxima: a small red flare star, a seventh of the sun's width.
   proxima: {
     ...FLARE, ribbon: 2.4, sat: 1.4, bubble: 0.3, wave: 0.7,
     row: 1, rsun: 0.154, expo: 1, hotW: 1, coolW: 1.2, loop: 0.8, prom: 0.9, dust: 0, rays: 0.7,
     hal: [1, 0.3, 0.1], streak: [1, 0.5, 0.3],
     disk: [1.7, 0.8, 0.1, 0.45], disk2: [40, 1.2, 0.7, 0.15], tex: [120, 12, 0.2, 0.7],
-    wide: 'earth', long: 'planet', root: 261.63,
+    wide: 'none', long: 'none', root: 261.63,
   },
   // Sirius: a white star twice the sun's size; the sun stands beside it.
   sirius: {
@@ -77,7 +77,7 @@ export const STARS = {
     row: 7, rsun: 1.71, expo: 1, hotW: 1, coolW: 1, loop: 0.45, prom: 0.5, dust: 0, rays: 1,
     hal: [0.75, 0.8, 1], streak: [0.7, 0.8, 1],
     disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.4, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
-    wide: 'sun', long: 'earth', root: 293.66,
+    wide: 'sun', long: 'none', root: 293.66,
   },
   // Rigel: a blue supergiant, 79 suns wide; the sun is a bead beside it.
   rigel: {
@@ -107,13 +107,9 @@ export const STARS = {
 // Every star weights its loops by one temperature response.
 export const resp = lt => gauss(lt, 5.95, 0.2) + 0.04 * gauss(lt, 7.0, 0.3);
 // Scale bodies: diameter in km; bright bodies shine, dark ones block light.
-// kind: 0 bare rock, 1 a star, 2 the earth, 3 the moon, 4 a lumpy moonlet.
+// kind: 0 bare rock, 1 a star.
 export const BODIES = {
-  earth: { km: 12742, kind: 2 },
-  moon: { km: 3474, kind: 3 },
   mercury: { km: 4879, kind: 0 },
-  planet: { km: 13600, kind: 0 },
-  phobos: { km: 22.5, kind: 4 },
   sun: { km: 1392700, kind: 1 },
   none: { km: 0, kind: 0 },
 };

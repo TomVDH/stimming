@@ -328,7 +328,7 @@ function makeFrame() {
   // A body too big for the sky hangs in the top right corner, cut by the frame.
   if (rA > 0.12 * wh) { ex = w.cx + w.hw * 0.72 + rA * 0.45; ey = w.cy + wh * 0.5 + rA * 0.35; }
   const [ax, ay] = px(ex, ey);
-  f.bodyA.set([ax, ay, rA * ppm, 1 - weight('long')]);
+  f.bodyA.set([ax, ay, rA * ppm, star.wide === 'none' ? 0 : 1 - weight('long')]);
   const L = fit.long, lh = L.hw / view.asp;
   const tx = Math.cos(L.psi), ty = -Math.sin(L.psi);
   // The transit runs along a chord across the disk, over about five minutes.
