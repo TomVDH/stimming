@@ -1,7 +1,7 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
 // A flare: the brass blast, a rush as the rope lifts, a low roar,
-// a slow chord while the arcade glows, then soft drips as the rain drains.
+// a slow chord while the arcade glows.
 // A drag: a low wind that follows the speed of the turn.
 // Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
 
@@ -372,18 +372,6 @@ export function makeSound(kit) {
       a.connect(plp);
     }
     send(ac, pad, 0.4);
-    // The rain: soft drips, each a falling note, as the arcade drains.
-    const n = 9 + Math.floor(Math.random() * 5);
-    for (let i = 0; i < n; i++) {
-      const at = t + 12 + Math.random() * 18;
-      const d = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.4, -1, 1));
-      env(d, at, 0.05 * K * jit(0.4), 0.004, 0.22 * jit(0.3));
-      const f = 900 * jit(0.25);
-      const s = osc(ac, 'sine', f, at, 0.3);
-      s.frequency.exponentialRampToValueAtTime(f * 0.55, at + 0.18);
-      s.connect(d);
-      send(ac, d, 0.5);
-    }
   }
 
   // The turn: a low wind whose level follows the drag speed.

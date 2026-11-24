@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T05:58:16Z
-updated_at: 2026-11-24T06:18:52Z
+updated_at: 2026-11-24T06:20:48Z
 parent: stimming-oh7b
 ---
 
@@ -16,7 +16,7 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [ ] Hum wobble off (pitch drift, shimmer, loudness swell): Tom listens
 - [ ] Organs richer and more organic
 - [ ] Space rumble louder as the view closes in: Tom listens
-- [ ] Ask Tom which tap layers stay; cut the rest (chimes cut 2026-11-23: no visible cause)
+- [ ] Ask Tom which tap layers stay; cut the rest (chimes cut 2026-11-23: no visible cause; rain drips cut, Tom)
 - [x] Tom hears the choir swell on the Sun: rejected; the original brass blast is back, exact (Tom: "the best")
 - [ ] Pulsar tick: Tom objects to the pop; proposal is a short, quiet burst of band-passed radio noise, no thump. Decide with Tom; the eggs session follows.
 - [ ] Wooshes: Tom calls every swept-noise rush cheap (flare rush, rise rush, drag wind). Cut or replace with his yes.

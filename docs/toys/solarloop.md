@@ -144,7 +144,6 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 
 - The flare: no crack on the tap (Tom, 2026-11-23: he keeps the brass blast); a rush of noise swept upward as the rope lifts; a low roar under the eruption.
 - The glow: a slow chord while the arcade shines.
-- The rain: soft drips, each a falling note, from 12 s.
 - A drag is silent (Tom, 2026-11-23: no woosh).
 - A wide hall: three long echoes.
 
