@@ -30,9 +30,9 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 
 | Star | Radius (suns) | Look | Scale body: wide, long lens |
 |---|---|---|---|
-| Zeta Ophiuchi (O) | 8 | Violet blue to white, deep violet prominences, strong rays | Our sun; none in transit |
-| Regulus (B) | 4.2 | Blue white, lilac prominences | Our sun; none in transit |
-| Vega (A) | 2.7 | Near pure white, pale blue prominences | Our sun; none in transit |
+| Zeta Ophiuchi (O) | 8 | Violet blue to white, deep violet prominences, strong rays. A fast spinner seen side-on: its equator 15 percent wider than its poles, and darker | Our sun; none in transit |
+| Regulus (B) | 4.2 | Blue white, lilac prominences. Spun almost to breaking, seen side-on: its equator a third wider than its poles, and darker | Our sun; none in transit |
+| Vega (A) | 2.7 | Near pure white, pale blue prominences. A fast spinner seen pole-on, as from the earth: a round disk, hot and bright at its centre, cooler and darker at its rim | Our sun; none in transit |
 | Sirius | 1.71 | Blue white, pale rose prominences | Our sun, more than half its size; none in transit |
 | Procyon (F) | 2.05 | Cream to white, salmon prominences | Our sun; none in transit |
 | Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences | None beside it; Mercury in transit, 4.9 units |
@@ -76,6 +76,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 - The disk pass: boiling granules, swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the wave front over the disk and the dimming behind it, the bubble's shell and cavity.
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
 - Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light: a smooth glow. No screen-fixed spokes (Tom, 2026-11-23: they read as a static starburst); the corona and haze volumes carry the structure.
+- Fast spinners: the view stretches an oblate star's equator across the screen, so the disk, the loops and the volumes all take the same shape. Gravity darkening dims the disk toward the spin equator.
 - The final pass: bent light round a neutron star, heat shimmer at the limb, the volume over the light, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, faint lens dirt, highlights that roll off to white, a vignette and fine grain. Reduced motion stills the grain.
 
 ## Dev (`?dev`)

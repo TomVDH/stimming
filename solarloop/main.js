@@ -105,6 +105,9 @@ function applyView() {
   view.cy = a.cy + (b.cy - a.cy) * k;
   view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
   view.hh = view.hw / view.asp;
+  // An oblate star: the view stretches its equator across the screen.
+  const ob = 1 + STARS[st.star].oblate;
+  view.cx /= ob; view.hw /= ob;
   setRot();
 }
 // L steps through the framings: long lens, wide dome, full star.
@@ -187,7 +190,7 @@ const ui = initPage({ id: ID, bar: {
       { value: 'siriusb', label: 'Sirius B · white dwarf', dot: 'oklch(0.88 0.06 210)', group: 'Life stages' },
       { value: 'neutron', label: 'Pulsar · neutron star', dot: 'oklch(0.72 0.15 270)', group: 'Life stages' },
     ],
-    onPick: v => { if (!STARS[v]) return; st.star = v; store.set('star', v); poke(); },
+    onPick: v => { if (!STARS[v]) return; st.star = v; store.set('star', v); applyView(); poke(); },
   },
   actions: [
     { verb: 'flare', key: 'Space', onPress: () => flareNext() },

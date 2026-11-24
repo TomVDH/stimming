@@ -38,7 +38,9 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // rays: light shaft gain. hal: halation tint. streak: lens streak tint.
 // wide, long: the scale body beside the limb and the one in transit.
 // field, beam, lensing: a neutron star's field lines, pulsar beams and bent light.
-const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0 };
+// oblate: how much wider the equator is than the poles, seen side-on.
+// grav: the spin axis in the star's frame, and the gravity darkening at its equator.
+const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -74,23 +76,25 @@ export const STARS = {
   },
   // Zeta Ophiuchi: an O star, eight suns wide, hot violet blue.
   zetaoph: {
-    ...FLARE, rain: 0.2, wave: 0.7,
+    ...FLARE, rain: 0.2, wave: 0.7, oblate: 0.15, grav: [0, 1, 0, 0.35],
     row: 8, rsun: 8, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0.5, prom: 0.45, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.5, 0.05, 0.45], disk2: [100, 0.25, 0.3, 0.08], tex: [80, 9, 0.08, 0.38],
     wide: 'sun', long: 'none', root: 164.81,
   },
-  // Regulus: a B star, four suns wide, blue white.
+  // Regulus: a B star, four suns wide, spun almost to breaking.
+  // Seen side-on: its equator is a third wider than its poles, and darker.
   regulus: {
-    ...FLARE, rain: 0.3,
+    ...FLARE, rain: 0.3, oblate: 0.32, grav: [0, 1, 0, 0.5],
     row: 9, rsun: 4.2, expo: 1, hotW: 1, coolW: 0.85, loop: 0.5, prom: 0.5, dust: 0, rays: 1.1,
     hal: [0.6, 0.72, 1], streak: [0.55, 0.75, 1],
     disk: [1.45, 0.5, 0.06, 0.42], disk2: [85, 0.3, 0.3, 0.07], tex: [100, 9, 0.08, 0.45],
     wide: 'sun', long: 'none', root: 174.61,
   },
-  // Vega: an A star, near three suns wide, pure white.
+  // Vega: an A star, near three suns wide, pure white, spinning fast.
+  // We see it pole-on: a round disk, hot at its centre, cooler at the rim.
   vega: {
-    ...FLARE,
+    ...FLARE, grav: [0, 0, 1, 0.45],
     row: 10, rsun: 2.7, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.45, dust: 0, rays: 1,
     hal: [0.8, 0.85, 1], streak: [0.75, 0.82, 1],
     disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],

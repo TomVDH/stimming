@@ -119,7 +119,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin;
+uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
@@ -167,6 +167,8 @@ void main() {
       // Behind the wave the corona dims.
       hot *= 1.0 - 0.3 * uFlW[k].y * smoothstep(uFlW[k].x, 0.0, a);
     }
+    // A fast spinner is hotter at its poles than at its equator.
+    if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
     // A neutron star's magnetic poles burn hot: a white cap in a soft ring.
     if (uBeam.w > 0.0) {
       float pc = 1.0 - abs(dot(n, uBeam.xyz));
@@ -752,6 +754,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uFull, v.full);
     gl.uniform4fv(s.u.uBeam, v.beam);
     gl.uniform4fv(s.u.uSpin, v.spin);
+    gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);

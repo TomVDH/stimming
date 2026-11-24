@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-24T04:58:48Z
-updated_at: 2026-11-24T05:15:42Z
+updated_at: 2026-11-24T05:20:15Z
 parent: stimming-oh7b
 ---
 
@@ -15,7 +15,7 @@ Tom, 2026-11-23: redo Solar loop's stars (follows stimming-e35i). Planets out (o
 - [x] 1. Planets out: earth, moon, planet, Phobos go; the sun keeps Mercury
 - [x] 2. Tray: display tray, new order, STARS entries, ramps, ROOT notes
 - [x] 3. Pulsar redo (Vela)
-- [ ] 4. Vega and the oblate shape (oblate, gdark)
+- [x] 4. Vega and the oblate shape (oblate, gdark)
 - [ ] 5. Classes O, B, F, K: Zeta Ophiuchi, Regulus, Procyon, Epsilon Eridani
 - [ ] 6. Brown dwarfs: Luhman 16, WISE 0855
 - [ ] 7. Stages: T Tauri, Arcturus
