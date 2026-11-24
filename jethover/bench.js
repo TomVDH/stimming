@@ -9,7 +9,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { devPanel } from './devpanel.js';
 
 /* ---------- controls ---------- */
-const tune = { thr: 0.5, shape: 'stubby', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines' };
+const tune = { thr: 0.5, shape: 'column', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines' };
 // Shape presets: length and spread; Custom takes the sliders.
 const SHAPES = { stubby: [1.8, 0.12], column: [5, 0.04] };
 // Motion presets: noise size (per metre), speed and strength.
@@ -19,7 +19,7 @@ const slider = (id, group, label, min, max, step) => ({
 });
 const ROWS = [
   slider('thr', 'Jet', 'Throttle', 0, 1, 0.01),
-  { type: 'choice', id: 'shape', group: 'Jet', label: 'Shape', value: 'stubby', options: [
+  { type: 'choice', id: 'shape', group: 'Jet', label: 'Shape', value: 'column', options: [
     { value: 'stubby', label: 'Stubby' }, { value: 'column', label: 'Column' }, { value: 'custom', label: 'Custom' },
   ], onPick: v => { tune.shape = v; apply(); } },
   { type: 'choice', id: 'motion', group: 'Jet', label: 'Motion', value: 'fast', options: [
@@ -52,7 +52,7 @@ camera.position.set(0, 3, 16);
 camera.lookAt(0, 3, 0);
 
 const U = {
-  time: uniform(0), thr: uniform(0.5), len: uniform(5), r0: uniform(0.4), spread: uniform(0.08),
+  time: uniform(0), flowT: uniform(0), thr: uniform(0.5), len: uniform(5), r0: uniform(0.4), spread: uniform(0.08),
   feather: uniform(0.5), bright: uniform(1), dia: uniform(1), turb: uniform(1), speed: uniform(1), freq: uniform(3.5),
   board: uniform(0),
   // The nozzle sits here and points straight down.
@@ -94,7 +94,6 @@ coneMat.colorNode = Fn(() => {
   const ds = tFar.div(STEPS);
   const jit = interleavedGradientNoise(screenCoordinate.xy);
   const col = vec3(0).toVar();
-  const t = U.time;
   const thr = U.thr;
   Loop(STEPS, ({ i }) => {
     const P = p0.add(d.mul(float(i).add(jit).mul(ds)));
@@ -102,7 +101,8 @@ coneMat.colorNode = Fn(() => {
     const s = U.noz.y.sub(P.y);
     const r = P.xz.sub(U.noz.xz).length();
     // Flow noise rides down the jet; it breaks the edges and the tail.
-    const flow = vec3(P.x.mul(U.freq), P.y.mul(U.freq.mul(0.6)).add(t.mul(U.speed).mul(thr.mul(6.0).add(3.0))), P.z.mul(U.freq));
+    // flowT is the flow's own clock, so a throttle change never jumps it.
+    const flow = vec3(P.x.mul(U.freq), P.y.mul(U.freq.mul(0.6)).add(U.flowT), P.z.mul(U.freq));
     const n = mx_noise_float(flow).mul(0.5).add(0.5);
     const n2 = mx_noise_float(flow.mul(2.3).add(7.1)).mul(0.5).add(0.5);
     const tn = n.mul(0.65).add(n2.mul(0.35));
@@ -147,16 +147,35 @@ function placeCone() {
   cone.scale.set(2 * w, L + 0.8, 2 * w);
 }
 
+// Targets: every value eases toward these each frame.
+const goal = {};
+const EASED = ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed', 'freq'];
 function apply() {
-  for (const k of ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed']) U[k].value = tune[k];
+  for (const k of ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed']) goal[k] = tune[k];
   const sh = SHAPES[tune.shape];
-  if (sh) { U.len.value = sh[0]; U.spread.value = sh[1]; }
+  if (sh) { goal.len = sh[0]; goal.spread = sh[1]; }
   const [fq, sp, tb] = MOTIONS[tune.motion] || MOTIONS.fast;
-  U.freq.value = fq; U.speed.value = sp * tune.speed; U.turb.value = tb * tune.turb;
+  goal.freq = fq; goal.speed = sp * tune.speed; goal.turb = tb * tune.turb;
   U.board.value = tune.board === 'dark' ? 1 : tune.board === 'sky' ? 2 : 0;
-  placeCone();
 }
 apply();
+// The first frame starts at the goal.
+for (const k of EASED) U[k].value = goal[k];
+// Space held is full throttle.
+let burn = false;
+addEventListener('keydown', e => { if (e.code === 'Space') { burn = true; e.preventDefault(); } });
+addEventListener('keyup', e => { if (e.code === 'Space') burn = false; });
+function ease(dt) {
+  // The engine spools up in about 0.4 s and down in about 0.8 s.
+  const tThr = burn ? 1 : goal.thr;
+  const tau = tThr > U.thr.value ? 0.4 : 0.8;
+  U.thr.value += (tThr - U.thr.value) * (1 - Math.exp(-dt / tau));
+  // Shape and motion ease over about half a second.
+  for (const k of EASED) if (k !== 'thr') U[k].value += (goal[k] - U[k].value) * (1 - Math.exp(-dt / 0.25));
+  // The flow clock runs faster with more throttle.
+  U.flowT.value += dt * U.speed.value * (U.thr.value * 6 + 3);
+  placeCone();
+}
 
 /* ---------- post: bloom, tone ---------- */
 const pipe = new THREE.RenderPipeline(renderer);
@@ -189,10 +208,13 @@ addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 });
-const t0 = performance.now();
+let last = performance.now();
 renderer.setAnimationLoop(() => {
   // A hidden page does no work.
-  if (document.hidden) return;
-  U.time.value = (performance.now() - t0) / 1000;
+  if (document.hidden) { last = performance.now(); return; }
+  const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  U.time.value += dt;
+  ease(dt);
   pipe.render();
 });
