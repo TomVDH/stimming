@@ -81,3 +81,33 @@ Tom sized the toy XXL. These are named so the MVP leaves room for them. None is 
 3. A free camera: orbit the craft, and a low shot under the plumes.
 4. Weather and time: rain and steam off the pad, night with lights, day with dust.
 5. Distance sound: the sound arrives late with distance, with a ground echo.
+
+## Exhaust pass: downwash, gas and heat (Tom, 2026-11-23)
+
+Status: approved 2026-11-23; on hold. Step 1's first try (a guide flow in the fine grid) read as a black fog dome; Tom: "This looks awful". The craft is hidden and the emitter moves into the sky while the gas is reworked.
+
+Tom: "prio the downwash, gas, jet, cone and heat distortion". The exhaust behaves as a real jet does at the ground, as a VFX approximation. Fluid only: no cards or sprites (Tom: "we have a fluid smoke / fire situation here").
+
+### Shape
+
+1. Column: each jet leaves its nozzle as a tight hot column.
+2. Impact: it strikes the ground and turns flat into a thin hot sheet.
+3. Roll-up: the sheet slows, lifts and curls into a ring, a big curl each side.
+4. Fountain: between the two jets the sheets meet and rise under the belly.
+5. Free air: with no ground, the column opens as a cone and curls at its edge. The scene always has ground, so this case is not built.
+
+### Method
+
+- Fire's fluid (`gas.js`) only. A guide flow holds the gas to the shape; the sim makes the turbulence inside it.
+- The fine exhaust grid grows to hold the roll: 16 x 7 x 10 m at 0.125 m cells (128 x 56 x 80), its floor on the ground.
+- Colour follows heat: hot gas is lit flame; cooled gas turns to opaque black soot (Tom: "it goes black as it has cooled down").
+- The shimmer comes from the same gas, so it runs down the column, along the ground and up the curls.
+
+### Steps
+
+One visible change each; Tom judges each before the next.
+
+1. Guide flow in the fine grid, with its shimmer. The roll, sheet and fountain push the gas; the grid grows; the smoke lives about 3 s. Dev row: Gas, Downwash roll.
+2. Soot: cooled smoke darkens to black and blocks the light behind it.
+3. Dry ground in place of the wet mirror (Tom: "it is not floating above water").
+4. No haze on the background (Tom: "also no haze on the bg").

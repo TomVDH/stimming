@@ -30,7 +30,11 @@ eng.rpm = eng.base;
 const HOVER_Y = 6.1;
 // The nose points at the camera, turned a little off the axis.
 const YAW0 = -Math.PI / 2 + 0.32;
-const craft = { y: HOVER_Y, vy: 0, x: 0, vx: 0, tx: 0, yaw: 0 };
+const craft = { y: HOVER_Y, vy: 0, x: 0, vx: 0, tx: 0, ty: HOVER_Y, yaw: 0 };
+// The nozzles stand 1.62 m under the craft's centre, at world z -3.1.
+const NOZ_DY = 1.62, NOZ_Z = -3.1;
+// The visible jet runs 9 m at most; past that it spreads in free air.
+const JET_MAX = 9;
 
 /* ---------- time of day ---------- */
 const timeSaved = saved('time');
@@ -100,7 +104,7 @@ const ui = initPage({ id: ID, bar: {
   ],
   slider: { label: 'Throttle', min: 0.2, max: 0.75, step: 0.01, value: eng.base, onInput: v => { eng.base = v; save('throttle', v); touch(); } },
   quality: true,
-  reset: () => { eng.base = BASE0; save('throttle', BASE0); ui.slider?.set?.(BASE0); craft.tx = 0; touch(); },
+  reset: () => { eng.base = BASE0; save('throttle', BASE0); ui.slider?.set?.(BASE0); craft.tx = 0; craft.ty = HOVER_Y; touch(); },
   keys: [['hold', 'full reheat'], ['drag', 'drift'], ['1 2 3 4', 'change the time of day'], ['L', 'tight or wide lens']],
   help: [
     ['hold', 'Hold for full reheat'],
@@ -128,9 +132,9 @@ const D = detail({ maxDpr: 1.5, budget: 2.2e6, steps: 3, settle: 2, onChange: ()
 
 // The gas box: 28 m square and 14 m tall, its floor on the apron.
 const BOX = [28, 14, 28], CENTER = [0, 7, -2.5];
-// The exhaust: a fine grid of 0.1 m cells round the jets, from nozzle to pad.
-// It spans the drift, so the jets never leave it.
-const FBOX = [12, 7.2, 5], FCENTER = [-1.2, 3.6, -3.1];
+// The exhaust: a fine grid of 0.14 m cells round the jets, from the sky to the pad.
+// It spans the drift and the climb, so the jets never leave it.
+const FBOX = [16, 15, 5], FCENTER = [-1.2, 7.5, -3.1];
 
 async function setup() {
   if (!navigator.gpu) throw new Error('no WebGPU');
@@ -177,7 +181,7 @@ async function setup() {
   volScene.add(vol.mesh);
   heatScene.add(vol.heatMesh);
   // The exhaust: Fire's gas again, fine, fed at the nozzle exits.
-  gasF = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, grid: [120, 72, 50], size: FBOX, center: FCENTER, pressure: 10, emitMax: 480 });
+  gasF = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, grid: [112, 104, 36], size: FBOX, center: FCENTER, pressure: 10, emitMax: 480 });
   const f = gasF.u;
   // Fire's own emitter: a disc of points just under each nozzle, in the craft's frame.
   const pts = [];
@@ -291,7 +295,7 @@ function step(dt) {
   eng.rpm += (tgt - eng.rpm) * (1 - Math.exp(-live / tau));
   eng.blip = Math.max(0, eng.blip - live);
   // The craft: extra thrust climbs, and it rides a soft spring.
-  const ty = HOVER_Y + (eng.rpm - eng.base) * 2.4 + (eng.base - BASE0) * 1.2;
+  const ty = craft.ty + (eng.rpm - eng.base) * 2.4 + (eng.base - BASE0) * 1.2;
   craft.vy += ((ty - craft.y) * 2.2 - craft.vy * 2.4) * live;
   craft.y += craft.vy * live;
   craft.vx += ((craft.tx - craft.x) * 0.9 - craft.vx * 1.6) * live;
@@ -370,8 +374,9 @@ function pose() {
   jets.forEach((j, i) => {
     j.n.copy(pts[i]).applyMatrix4(g.matrixWorld);
     j.a.copy(axis);
-    const len = j.n.y / Math.max(0.2, -axis.y);
-    j.c.copy(j.n).addScaledVector(axis, len);
+    const lenG = j.n.y / Math.max(0.2, -axis.y);
+    j.c.copy(j.n).addScaledVector(axis, lenG);
+    const len = Math.min(lenG, JET_MAX);
     const p = P[i];
     p.U.thr.value = i === 2 ? eng.rpm : thr;
     p.U.time.value = clock;
@@ -473,8 +478,17 @@ function touch() { lastInput = performance.now(); timeK = 1; wake(); }
 // A press opens the throttle at once; a tap leaves a short burst.
 let down = false, pid = null, at0 = null, moved = false, held = false, holdT = 0, pressT = 0;
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-// The drift target: the pointer's place across the stage, in metres.
-function steer(x) { craft.tx = clamp(((x / cssW) * 2 - 1) * 9, -5, 5); }
+// The emitter follows the pointer in the plane of the nozzles.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hit = new THREE.Vector3();
+const nozPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), -NOZ_Z);
+function steer(x, y) {
+  ndc.set((x / cssW) * 2 - 1, 1 - (y / cssH) * 2);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(nozPlane, hit)) return;
+  craft.tx = clamp(hit.x + 1.0, -5, 5);
+  // The nozzles run from 2 m to 14 m over the pad.
+  craft.ty = clamp(hit.y + NOZ_DY, 2 + NOZ_DY, 14 + NOZ_DY);
+}
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ready || (e.target !== renderer.domElement && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
@@ -491,7 +505,7 @@ stage.addEventListener('pointermove', e => {
   const p = local(e);
   if (!moved && Math.hypot(p[0] - at0[0], p[1] - at0[1]) < 8) return;
   moved = true;
-  steer(p[0]);
+  steer(p[0], p[1]);
   touch();
 });
 function end(e) {
@@ -500,7 +514,7 @@ function end(e) {
   down = false; pid = null; eng.hand = false;
   // A tap: a short burst of throttle, then back to the hover.
   if (!moved && !held) eng.blip = Math.max(0, 0.4 - (performance.now() - pressT) / 1000);
-  craft.tx = 0;
+  // The emitter stays where the hand left it.
   touch();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, end));
@@ -526,6 +540,8 @@ mark('build');
 try {
   await setup();
   ready = true;
+  // The craft stays hidden for now; the emitter works alone.
+  S.craft.grp.visible = false;
   applyTune();
   resize(true);
   // The gas runs for five seconds, so the first frame is a picture.

@@ -414,13 +414,15 @@ export function createFire({
       const core = float(1.0).sub(smoothstep(R.mul(0.35), R, r)).mul(smoothstep(-0.4, 0.1, sRaw)).mul(float(1.0).sub(smoothstep(L.sub(0.6), L.add(0.2), sRaw)));
       newVel.assign(mix(newVel, A.mul(K.x), core.mul(relax)));
       const land = P.add(A.mul(L));
+      // A jet that ends in free air makes no sheet on the floor.
+      const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
       const d = worldPos.xz.sub(land.xz);
       const rr = d.length().add(1e-3);
       const hgt = worldPos.y.sub(floorY);
       // The jet turns flat on the floor: a thin sheet runs out radially.
       const band = float(1.0).sub(smoothstep(0.3, 1.0, hgt)).mul(smoothstep(0.15, 0.8, rr)).mul(float(1.0).sub(smoothstep(2.5, 4.5, rr)));
       const out = vec3(d.x.div(rr), 0.04, d.y.div(rr)).mul(K.x.mul(0.65));
-      newVel.assign(mix(newVel, out, band.mul(relax).mul(0.6)));
+      newVel.assign(mix(newVel, out, band.mul(reach).mul(relax).mul(0.6)));
       // Past 4.5 m the sheet runs free; its shear rolls it into billows.
     }
 
@@ -506,13 +508,15 @@ export function createFire({
       temperature.addAssign(K.y.mul(core).mul(u.feed.x).mul(u.dt));
       density.addAssign(K.y.mul(core).mul(u.feed.y).mul(u.dt));
       const land = P.add(A.mul(L));
+      // A jet that ends in free air neither smokes nor steams the floor.
+      const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
       const rr = wp.xz.distance(land.xz);
       const hgt = wp.y.sub(floorY);
       // The exhaust strikes the floor and carries smoke out in the sheet.
-      const imp = float(1.0).sub(smoothstep(0.5, 2.5, rr)).mul(float(1.0).sub(smoothstep(0.2, 1.2, hgt)));
+      const imp = reach.mul(float(1.0).sub(smoothstep(0.5, 2.5, rr))).mul(float(1.0).sub(smoothstep(0.2, 1.2, hgt)));
       density.addAssign(K.y.mul(0.09).mul(imp).mul(u.dt));
       temperature.addAssign(K.y.mul(0.04).mul(imp).mul(u.dt));
-      const ring = smoothstep(0.4, 1.4, rr).mul(float(1.0).sub(smoothstep(2.0, 6.5, rr))).mul(float(1.0).sub(smoothstep(0.15, 0.9, hgt)));
+      const ring = reach.mul(smoothstep(0.4, 1.4, rr)).mul(float(1.0).sub(smoothstep(2.0, 6.5, rr))).mul(float(1.0).sub(smoothstep(0.15, 0.9, hgt)));
       const patch = smoothstep(0.45, 0.8, mx_noise_float(wp.mul(vec3(1.3, 0.0, 1.3)).add(vec3(u.time.mul(0.35), 0.0, u.time.mul(-0.2)))).mul(0.5).add(0.5));
       density.addAssign(K.z.mul(ring).mul(patch.mul(1.6).add(0.1)).mul(u.dt));
       temperature.addAssign(K.z.mul(0.05).mul(ring).mul(u.dt));

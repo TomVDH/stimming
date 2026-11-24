@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-22T20:05:22Z
+updated_at: 2026-11-24T03:49:22Z
 parent: stimming-oh7b
 ---
 
@@ -62,3 +62,6 @@ Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 bloc
 
 - Q1 to Q9 pass: console clean; 30 fps while drifting; 0 frames in 2 s at 65 s idle, when hidden, and in reduced motion once settled; 2 bar controls, 4 How rows; Space reheat; the audio context suspends after release.
 - Q10 frame times during hold and drag: 16.7 ms median, 16.7 ms p90 (vsync bound).
+
+- [x] Craft hidden; the emitter follows the pointer from 2 m to 14 m and stays put (Tom, 2026-11-23: "let's take the jet out for a bit -- and just have the emitter movable higher in the sky too")
+- [ ] Exhaust pass, docs/plans/jethover.md: guide flow, soot, dry ground, no background haze (Tom, 2026-11-23; first try rejected)
