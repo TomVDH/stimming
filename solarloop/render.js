@@ -123,7 +123,7 @@ uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
-uniform vec4 uEgg[4];
+uniform vec4 uEgg[4], uDim[2];
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -219,6 +219,15 @@ void main() {
     cool += uDisk2.y * 0.5 * smoothstep(0.2, 0.0, mu);
     // Dust in front of the disk dims it in slow patches.
     hot *= 1.0 - uDust * 0.55 * smoothstep(0.4, 0.75, fbm(vec3(P * 0.006, 5.0 + tb * 0.05)));
+    // The Great Dimming: a cool patch spreads over the south, then dust veils it.
+    if (uDim[0].w + uDim[1].x > 0.0) {
+      float s = dot(n, uDim[0].xyz);
+      float rag = fbm(vec3(P * 0.004, 2.0)) - 0.5;
+      hot *= 1.0 - 0.4 * uDim[1].x * smoothstep(-0.1, 0.6, s + 0.5 * rag);
+      float veil = smoothstep(-0.25, 0.45, s + 0.7 * rag) * (0.75 + 0.5 * fbm(vec3(P * 0.009, 6.0)));
+      hot *= (1.0 - 0.85 * uDim[0].w * veil) * (1.0 - 0.15 * uDim[0].w);
+      cool += 0.08 * uDim[0].w * veil * uDisk2.y;
+    }
   } else {
     float h = r - R;
     // Streamers: broad rays in the corona, and fine ones.
@@ -237,6 +246,13 @@ void main() {
       cool += uDust * env * (0.15 * smoothstep(0.45, 0.8, arcs) + 0.3 * knots);
       hot += uDust * 0.1 * exp(-h / 500.0) * (0.5 + warp);
     }
+  }
+  // The dimming's dust cloud reaches past the southern limb.
+  if (uDim[0].w > 0.0 && r >= R) {
+    float s = dot(P / r, normalize(uDim[0].xy + 1e-5));
+    float cloud = smoothstep(0.0, 0.7, s + 0.6 * (fbm(vec3(P * 0.005, 3.0)) - 0.5)) * exp(-(r - R) / 420.0);
+    hot *= 1.0 - 0.7 * uDim[0].w * cloud;
+    cool += 0.18 * uDim[0].w * cloud * fbm(vec3(P * 0.012, 8.0));
   }
   // A haze over each region: unresolved loops.
   for (int k = 0; k < ${NR}; k++) {
@@ -833,6 +849,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uFlW, v.flW);
     gl.uniform4fv(s.u.uFlB, v.flB);
     gl.uniform4fv(s.u.uEgg, v.egg);
+    gl.uniform4fv(s.u.uDim, v.dim);
     tri(gl, hdr, empty);
 
     if (v.count > 0) {

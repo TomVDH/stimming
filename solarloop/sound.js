@@ -324,11 +324,41 @@ export function makeSound(kit) {
     }
   }
 
+  // The Great Dimming: a low dusty swell, and a chord that falls and muffles.
+  function dim(band) {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const t = ac.currentTime + 0.01;
+    const d = voice(ac, 0);
+    d.gain.setValueAtTime(0, t);
+    d.gain.linearRampToValueAtTime(0.08, t + 4);
+    d.gain.setTargetAtTime(0.0001, t + 14, 5);
+    const lp = filt(ac, 'lowpass', 600, 0.8);
+    lp.frequency.setValueAtTime(600, t);
+    lp.frequency.exponentialRampToValueAtTime(90, t + 8);
+    noise(ac, t, 30, 0.35).connect(lp).connect(d);
+    send(ac, d, 0.6);
+    const root = (ROOT[band] || 220) / 2;
+    const pad = voice(ac, 0);
+    pad.gain.setValueAtTime(0, t);
+    pad.gain.linearRampToValueAtTime(0.05, t + 3);
+    pad.gain.setTargetAtTime(0.0001, t + 12, 5);
+    const plp = filt(ac, 'lowpass', 1200, 0.5);
+    plp.frequency.exponentialRampToValueAtTime(160, t + 10);
+    plp.connect(pad);
+    for (const m of [1, 1.189, 1.498]) {
+      const o = osc(ac, 'triangle', root * m, t, 30);
+      o.frequency.exponentialRampToValueAtTime(root * m * 0.94, t + 10);
+      o.connect(plp);
+    }
+    send(ac, pad, 0.5);
+  }
+
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     wind = null;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, tick, telegraph, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, tick, telegraph, dim, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

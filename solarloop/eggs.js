@@ -1,5 +1,6 @@
 // Solar loop easter eggs: a long hold on a star plays its real famous event.
 // Sun: the Carrington flare of 1 September 1859.
+// Betelgeuse: the Great Dimming of 2019 to 2020.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -15,7 +16,7 @@ export const CUE = 0.6;
 // An egg comes on its own about once per this many awake seconds.
 export const RARE = 25 * 60;
 // The star that holds each egg.
-export const EGGS = { sun: 'carrington' };
+export const EGGS = { sun: 'carrington', betelgeuse: 'dimming' };
 
 /* ---------- the Carrington flare ---------- */
 // Carrington and Hodgson saw two white kernels flash over a huge spot group.
@@ -51,4 +52,22 @@ export function carrington(egg) {
     spots: [[along(c, e, SPOT_GAP * 0.55), spot], [along(c, e, -SPOT_GAP * 0.45), spot * 0.75]],
     kernels: [[along(along(c, f, sep), e, 0.006), white], [along(along(c, f, -sep), e, -0.008), white * 0.85]],
   };
+}
+
+/* ---------- the Great Dimming ---------- */
+// Betelgeuse fell to about 36 percent of its light, its southern half dark.
+// A cool patch spread on its surface; then a dust cloud condensed over it.
+export const DIM_END = 36;
+// South in the star's frame.
+export const SOUTH = [0, -1, 0];
+export function makeDimming() {
+  return { kind: 'dimming', t: CUE - HOLD };
+}
+/** The cool patch and the dust veil, each from 0 to 1. */
+export function dimming(egg) {
+  const t = egg.t;
+  const clear = 1 - sstep(16, DIM_END, t);
+  const cool = (t < 0 ? 0.6 * sstep(CUE - HOLD, 0, t) : 0.6 + 0.4 * sstep(0, 3, t)) * clear;
+  const veil = sstep(0, 5, t) * clear;
+  return { cool, veil };
 }

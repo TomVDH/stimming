@@ -9,7 +9,7 @@ import { detail } from '../shared/detail.js';
 import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH } from './eggs.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -335,6 +335,7 @@ function startEgg(x, y) {
   st.time = now;
   setRot();
   if (kind === 'carrington') egg = makeCarrington(c);
+  else if (kind === 'dimming') egg = makeDimming();
   return !!egg;
 }
 // One step of the egg's clock; a hold let go early runs it back out.
@@ -356,14 +357,22 @@ function stepEgg(dt, holding) {
     // The storm reaches the earth: its telegraph lines spark.
     if (egg.t >= CARR_STORM && !egg.storm) { egg.storm = true; snd.telegraph(); }
     if (egg.t >= CARR_END) egg = null;
+  } else if (egg.kind === 'dimming') {
+    if (egg.t >= 0 && !egg.fired) { egg.fired = true; snd.dim(st.star); }
+    if (egg.t >= DIM_END) egg = null;
   }
 }
-// The egg's uniforms: two spots, then two kernels, each a view point and a weight.
-function eggFrame(out) {
-  out.fill(0);
-  if (egg?.kind !== 'carrington') return;
-  const c = carrington(egg);
-  [...c.spots, ...c.kernels].forEach(([p, w], k) => out.set([...toView(p), calm ? w * 0.7 : w], k * 4));
+// The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
+// The dimming: south in the view frame and the veil, then the cool patch.
+function eggFrame(out, dim) {
+  out.fill(0); dim.fill(0);
+  if (egg?.kind === 'carrington') {
+    const c = carrington(egg);
+    [...c.spots, ...c.kernels].forEach(([p, w], k) => out.set([...toView(p), calm ? w * 0.7 : w], k * 4));
+  } else if (egg?.kind === 'dimming') {
+    const d = dimming(egg);
+    dim.set([...toView(SOUTH), d.veil, d.cool, 0, 0, 0]);
+  }
 }
 
 /* ---------- frame state for the renderer ---------- */
@@ -374,7 +383,7 @@ const frameState = {
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
-  egg: new Float32Array(16),
+  egg: new Float32Array(16), dim: new Float32Array(8),
 };
 function makeFrame() {
   const f = frameState;
@@ -457,7 +466,7 @@ function makeFrame() {
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
-  eggFrame(f.egg);
+  eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');
   f.full = weight('full');
