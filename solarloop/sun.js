@@ -82,7 +82,7 @@ export const STARS = {
     row: 8, rsun: 8, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0.5, prom: 0.45, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.5, 0.05, 0.45], disk2: [100, 0.25, 0.3, 0.08], tex: [80, 9, 0.08, 0.38],
-    wide: 'sun', long: 'none', root: 164.81,
+    wide: 'none', long: 'none', root: 164.81,
   },
   // Regulus: a B star, four suns wide, spun almost to breaking.
   // Seen side-on: its equator is a third wider than its poles, and darker.
@@ -91,7 +91,7 @@ export const STARS = {
     row: 9, rsun: 4.2, expo: 1, hotW: 1, coolW: 0.85, loop: 0.5, prom: 0.5, dust: 0, rays: 1.1,
     hal: [0.6, 0.72, 1], streak: [0.55, 0.75, 1],
     disk: [1.45, 0.5, 0.06, 0.42], disk2: [85, 0.3, 0.3, 0.07], tex: [100, 9, 0.08, 0.45],
-    wide: 'sun', long: 'none', root: 174.61,
+    wide: 'none', long: 'none', root: 174.61,
   },
   // Vega: an A star, near three suns wide, pure white, spinning fast.
   // We see it pole-on: a round disk, hot at its centre, cooler at the rim.
@@ -100,15 +100,15 @@ export const STARS = {
     row: 10, rsun: 2.7, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.45, dust: 0, rays: 1,
     hal: [0.8, 0.85, 1], streak: [0.75, 0.82, 1],
     disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],
-    wide: 'sun', long: 'none', root: 185,
+    wide: 'none', long: 'none', root: 185,
   },
-  // Sirius: a white star twice the sun's size; the sun stands beside it.
+  // Sirius: a white star, near twice the sun's width.
   sirius: {
     ...FLARE,
     row: 7, rsun: 1.71, expo: 1, hotW: 1, coolW: 1, loop: 0.45, prom: 0.5, dust: 0, rays: 1,
     hal: [0.75, 0.8, 1], streak: [0.7, 0.8, 1],
     disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.4, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
-    wide: 'sun', long: 'none', root: 293.66,
+    wide: 'none', long: 'none', root: 293.66,
   },
   // Procyon: an F star, twice the sun's width, cream white.
   procyon: {
@@ -116,7 +116,7 @@ export const STARS = {
     row: 11, rsun: 2.05, expo: 1, hotW: 1, coolW: 1.05, loop: 0.75, prom: 0.75, dust: 0, rays: 0.95,
     hal: [1, 0.7, 0.4], streak: [1, 0.85, 0.6],
     disk: [1.8, 0.6, 0.1, 0.38], disk2: [60, 0.7, 0.4, 0.1], tex: [150, 14, 0.12, 0.55],
-    wide: 'sun', long: 'none', root: 207.65,
+    wide: 'none', long: 'none', root: 207.65,
   },
   // Epsilon Eridani: a young K star, spotty and active, three quarters of the sun.
   epseri: {
@@ -149,7 +149,7 @@ export const STARS = {
     row: 15, rsun: 3, expo: 1, hotW: 1, coolW: 1.2, loop: 0.95, prom: 0.95, dust: 0.4, rays: 0.85,
     hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
     disk: [1.8, 0.8, 0.08, 0.4], disk2: [70, 1, 0.6, 0.16], tex: [90, 12, 0.18, 0.6],
-    wide: 'sun', long: 'none', root: 185,
+    wide: 'none', long: 'none', root: 185,
   },
   // Arcturus: an orange giant, 25 suns wide.
   arcturus: {
@@ -157,15 +157,15 @@ export const STARS = {
     row: 16, rsun: 25.4, expo: 1, hotW: 1, coolW: 1.1, loop: 0.45, prom: 0.6, dust: 0.15, rays: 0.85,
     hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
     disk: [1.85, 1, 0.02, 0.32], disk2: [110, 0.6, 0.35, 0.07], tex: [30, 6, 0.05, 0.7],
-    wide: 'sun', long: 'sun', root: 138.59,
+    wide: 'none', long: 'none', root: 138.59,
   },
-  // Rigel: a blue supergiant, 79 suns wide; the sun is a bead beside it.
+  // Rigel: a blue supergiant, 79 suns wide.
   rigel: {
     ...FLARE, rain: 0.3,
     row: 2, rsun: 78.9, expo: 1, hotW: 1, coolW: 0.8, loop: 0.55, prom: 0.55, dust: 0, rays: 1.1,
     hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [60, 8, 0.1, 0.4],
-    wide: 'sun', long: 'sun', root: 329.63,
+    wide: 'none', long: 'none', root: 329.63,
   },
   // Betelgeuse: a red supergiant, 760 suns wide, with a handful of giant cells.
   betelgeuse: {
@@ -173,7 +173,7 @@ export const STARS = {
     row: 3, rsun: 764, expo: 1, hotW: 1, coolW: 1.1, loop: 0.3, prom: 0.65, dust: 0.45, rays: 0.8,
     hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
     disk: [1.9, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
-    wide: 'sun', long: 'sun', root: 164.81,
+    wide: 'none', long: 'none', root: 164.81,
   },
   // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
   vycma: {
@@ -181,16 +181,15 @@ export const STARS = {
     row: 4, rsun: 1420, expo: 0.95, hotW: 1, coolW: 1.1, loop: 0.18, prom: 0.55, dust: 1, rays: 0.75,
     hal: [0.9, 0.25, 0.1], streak: [1, 0.45, 0.28],
     disk: [1.9, 1.5, 0, 0.16], disk2: [140, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
-    wide: 'sun', long: 'sun', root: 110,
+    wide: 'none', long: 'none', root: 110,
   },
 };
 // Every star weights its loops by one temperature response.
 export const resp = lt => gauss(lt, 5.95, 0.2) + 0.04 * gauss(lt, 7.0, 0.3);
 // Scale bodies: diameter in km; bright bodies shine, dark ones block light.
-// kind: 0 bare rock, 1 a star.
+// kind: 0 bare rock. No body beside a star: only Mercury crosses the sun.
 export const BODIES = {
   mercury: { km: 4879, kind: 0 },
-  sun: { km: 1392700, kind: 1 },
   none: { km: 0, kind: 0 },
 };
 // A body's diameter in star units, where the star's radius is R.

@@ -643,21 +643,12 @@ float starLight(vec2 P) {
   return h < 0.0 ? 1.0 : exp(-h / 240.0) * 0.8 + 0.05;
 }
 // One scale body: b is x, y, radius in pixels, and weight.
-// Kinds: 0 bare rock, 1 a star.
+// Kind 0: bare rock, the only kind left.
 vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
   if (b.w <= 0.0) return c;
   vec2 e = fc - b.xy;
   float r = max(b.z, 0.7);
   float d = length(e) / r;
-  if (kind == 1.0) {
-    // A star too small to resolve still shines: a core and a halo.
-    float limb = sqrt(max(1.0 - d * d, 0.0));
-    // A resolved sun shows its darkened limb and its boiling surface.
-    float surf = 0.8 + 0.4 * fbm(vec3(e / max(r, 1.0) * 14.0, uTime * 0.02));
-    float core = smoothstep(1.0, 1.0 - 2.0 / r, d) * pow(limb, 0.5) * surf * 1.4 + exp(-dot(e, e) / (2.0 * (r * 0.3 + 1.2) * (r * 0.3 + 1.2)));
-    float halo = exp(-length(e) / (4.0 + r * 0.25)) * 0.5;
-    return c * (1.0 - smoothstep(1.0, 0.97, d) * b.w) + vec3(1.0, 0.82, 0.55) * (core + halo) * b.w;
-  }
   float disc = smoothstep(1.0, 1.0 - 1.5 / r, d);
   // The star stands behind the body: a crescent of light on its near side.
   vec2 to = normalize(uC * uRes - b.xy + 1e-4);

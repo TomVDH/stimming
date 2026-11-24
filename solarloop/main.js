@@ -93,9 +93,23 @@ function fitView(w, h, top = 0, bottom = 0) {
   // Pulled back, so the corona has room to stretch out.
   const hhF = narrow ? 1.45 * R / asp : 1.6 * R * h / free2;
   const hwF = hhF * asp;
-  fit.full = { cx: 0, cy: (top - bottom) * hhF / h * -1 + 0, hw: hwF };
-  fit.full.cy = -(bottom - top) * hhF / h;
+  fullBase = { cx: 0, cy: -(bottom - top) * hhF / h, hw: hwF };
+  fitFull();
+}
+// The full view zooms out up to 16 times farther: wheel, pinch, or the - and = keys.
+const ZOOM_MAX = 16;
+let fullBase = { cx: 0, cy: 0, hw: 1100 }, zoom = 1;
+function fitFull() {
+  fit.full = { cx: fullBase.cx * zoom, cy: fullBase.cy * zoom, hw: fullBase.hw * zoom };
   applyView();
+}
+function zoomBy(k) {
+  if (cam.mode !== 'full') return;
+  const z = clamp(zoom * k, 1, ZOOM_MAX);
+  if (z === zoom) return;
+  zoom = z;
+  fitFull();
+  poke();
 }
 // Eases between the framings; the width moves on a log scale, as a zoom does.
 function applyView() {
@@ -331,7 +345,7 @@ function makeFrame() {
   f.sc = Math.max(1, view.H / 900);
   // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
   f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
-  // Scale bodies at true size: one beside the limb, one in transit on the long lens.
+  // Mercury at true size, in transit on the long lens; nothing beside the limb.
   const ppm = view.H / (2 * view.hh);
   const px = (x, y) => [((x - view.cx) / view.hw * 0.5 + 0.5) * view.W, ((y - view.cy) / view.hh * 0.5 + 0.5) * view.H];
   const w = fit.wide, wh = w.hw / view.asp;
@@ -524,6 +538,35 @@ function endPointer(e) {
   poke();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, endPointer));
+// Zoom in the full view: the wheel, a two-finger pinch, the - and = keys.
+stage.addEventListener('wheel', e => {
+  if (cam.mode !== 'full') return;
+  e.preventDefault();
+  zoomBy(Math.exp(clamp(e.deltaY, -120, 120) * 0.004));
+}, { passive: false });
+const touches = new Map();
+let pinch0 = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+stage.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  touches.set(e.pointerId, local(e));
+  // A second finger ends the tap and the turn.
+  if (touches.size === 2) { pinch0 = spread(); pointer.drag = true; }
+});
+stage.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, local(e));
+  if (touches.size !== 2 || !pinch0) return;
+  const d = spread();
+  zoomBy(pinch0 / Math.max(d, 1));
+  pinch0 = d;
+});
+['pointerup', 'pointercancel'].forEach(t => stage.addEventListener(t, e => { touches.delete(e.pointerId); if (touches.size < 2) pinch0 = 0; }));
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea')) return;
+  if (e.key === '-' || e.key === '_') zoomBy(1.25);
+  else if (e.key === '=' || e.key === '+') zoomBy(0.8);
+});
 
 /* ---------- life cycle ---------- */
 whenVisible(stage, on => {

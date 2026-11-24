@@ -3,8 +3,8 @@
 Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
 A star's edge at a vast scale, graded like film. The look takes its cue from two kinds of film: the sun as a furnace, all gold and white light, and the slow, hazy, monumental frame of large-scale science fiction.
-Seventeen stars (Tom, 2026-11-23): one for each class on the main sequence, O to M, two brown dwarfs, and the stages of a star's life, from a protostar to a pulsar. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No planets, apart from Mercury in transit on our sun (Tom, 2026-11-23). Our sun hangs at true size beside each star larger than itself.
-Three views, stepped with L. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; a body crosses the disk: Mercury on our sun, our sun itself on Rigel and the giants.
+Seventeen stars (Tom, 2026-11-23): one for each class on the main sequence, O to M, two brown dwarfs, and the stages of a star's life, from a protostar to a pulsar. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No other bodies, apart from Mercury in transit on our sun (Tom, 2026-11-23).
+Three views, stepped with L. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; Mercury crosses our sun's disk.
 The film touch is light: fine grain, a soft colour split, a faint lens dirt, highlights that roll off to white.
 Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
 
@@ -15,6 +15,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 | Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
 | Star choice | A sheet in three groups: Main sequence (O to M), Brown dwarfs, Life stages. Keys 1 to 9 and 0 pick the main sequence and the brown dwarfs; the life stages are tap only |
+| Zoom (wheel, pinch, - and =) | Full view only: zooms out up to 16 times farther, and back |
 | Lens (L) | Steps through the long lens (the default), the wide view and the full star, zooming over two seconds |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
@@ -26,27 +27,27 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 
 ## The stars
 
-The model runs in star units: the star's radius is always 696, so on our sun one unit is one Mm. A scale body's size is its true diameter divided by the star's radius in suns. The image holds two light channels, hot plasma (the disk, the corona, the loops) and cool plasma (the prominences, the chromosphere, the rope); each star grades them through its own pair of colour ramps after a film tone curve.
+The model runs in star units: the star's radius is always 696, so on our sun one unit is one Mm. The image holds two light channels, hot plasma (the disk, the corona, the loops) and cool plasma (the prominences, the chromosphere, the rope); each star grades them through its own pair of colour ramps after a film tone curve.
 
-| Star | Radius (suns) | Look | Scale body: wide, long lens |
-|---|---|---|---|
-| Zeta Ophiuchi (O) | 8 | Violet blue to white, deep violet prominences, strong rays. A fast spinner seen side-on: its equator 15 percent wider than its poles, and darker | Our sun; none in transit |
-| Regulus (B) | 4.2 | Blue white, lilac prominences. Spun almost to breaking, seen side-on: its equator a third wider than its poles, and darker | Our sun; none in transit |
-| Vega (A) | 2.7 | Near pure white, pale blue prominences. A fast spinner seen pole-on, as from the earth: a round disk, hot and bright at its centre, cooler and darker at its rim | Our sun; none in transit |
-| Sirius | 1.71 | Blue white, pale rose prominences | Our sun, more than half its size; none in transit |
-| Procyon (F) | 2.05 | Cream to white, salmon prominences | Our sun; none in transit |
-| Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences | None beside it; Mercury in transit, 4.9 units |
-| Epsilon Eridani (K) | 0.74 | Deep orange, red orange prominences; young and active, so flares hit hard | None |
-| Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder | None |
-| Luhman 16 (L/T brown dwarf) | 0.1 | Magenta brown and dim; no loops or prominences. A cloud deck in six uneven bands round its spin axis: neighbour bands drift opposite ways, eddies curl their edges, dark storm ovals ride them | None |
-| WISE 0855 (Y brown dwarf) | 0.1 | Dark maroon and slate, the coldest; no loops or prominences. Four slow bands of water ice cloud, calmer than Luhman 16's | None |
-| T Tauri (protostar) | 3 | Amber in a light dusty envelope, red prominences, hard flares. A ringed dust disk circles it at a slant, from 1.3 radii out, with two dark gaps where young planets clear lanes; its inner rim glows, its near side crosses the star and dims it, and it turns faster near the star. A jet leaves each pole, with bright knots that travel outward | Our sun; none in transit |
-| Arcturus (red giant) | 25.4 | Orange, rose prominences, large granules, light dust | Our sun, beside it and in transit |
-| Rigel | 78.9 | Cold blue steel to white, lilac prominences, strong rays | Our sun, 17.7 units, a glowing bead |
-| Betelgeuse | 764 | Rust and orange; a handful of giant cells, deep limb darkening, a dusty envelope | Our sun, 1.8 units, a speck |
-| VY CMa | 1420 | Blood red, brown shadows; giant cells, a thick envelope of dust arcs and knots | Our sun, 1 unit, a speck of light |
-| Sirius B | 0.0084 | A white dwarf, cyan white and smooth | None |
-| Pulsar (the Vela pulsar, a neutron star) | 0.0000172 (12 km) | A dark violet sphere with two white-hot magnetic polar caps. It spins every 1.6 s: two narrow beam cones sweep from the caps like a lighthouse, with charge streaming out along them, and a cap flares when its beam faces the eye. 56 dipole field lines in three shells turn with it. A wind nebula surrounds it: a torus round the spin equator, brighter on its near side, and a wandering jet from each spin pole. Gravity bends the sky at its limb | None |
+| Star | Radius (suns) | Look |
+|---|---|---|
+| Zeta Ophiuchi (O) | 8 | Violet blue to white, deep violet prominences, strong rays. A fast spinner seen side-on: its equator 15 percent wider than its poles, and darker |
+| Regulus (B) | 4.2 | Blue white, lilac prominences. Spun almost to breaking, seen side-on: its equator a third wider than its poles, and darker |
+| Vega (A) | 2.7 | Near pure white, pale blue prominences. A fast spinner seen pole-on, as from the earth: a round disk, hot and bright at its centre, cooler and darker at its rim |
+| Sirius | 1.71 | Blue white, pale rose prominences |
+| Procyon (F) | 2.05 | Cream to white, salmon prominences |
+| Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences |
+| Epsilon Eridani (K) | 0.74 | Deep orange, red orange prominences; young and active, so flares hit hard |
+| Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder |
+| Luhman 16 (L/T brown dwarf) | 0.1 | Magenta brown and dim; no loops or prominences. A cloud deck in six uneven bands round its spin axis: neighbour bands drift opposite ways, eddies curl their edges, dark storm ovals ride them |
+| WISE 0855 (Y brown dwarf) | 0.1 | Dark maroon and slate, the coldest; no loops or prominences. Four slow bands of water ice cloud, calmer than Luhman 16's |
+| T Tauri (protostar) | 3 | Amber in a light dusty envelope, red prominences, hard flares. A ringed dust disk circles it at a slant, from 1.3 radii out, with two dark gaps where young planets clear lanes; its inner rim glows, its near side crosses the star and dims it, and it turns faster near the star. A jet leaves each pole, with bright knots that travel outward |
+| Arcturus (red giant) | 25.4 | Orange, rose prominences, large granules, light dust |
+| Rigel | 78.9 | Cold blue steel to white, lilac prominences, strong rays |
+| Betelgeuse | 764 | Rust and orange; a handful of giant cells, deep limb darkening, a dusty envelope |
+| VY CMa | 1420 | Blood red, brown shadows; giant cells, a thick envelope of dust arcs and knots |
+| Sirius B | 0.0084 | A white dwarf, cyan white and smooth |
+| Pulsar (the Vela pulsar, a neutron star) | 0.0000172 (12 km) | A dark violet sphere with two white-hot magnetic polar caps. It spins every 1.6 s: two narrow beam cones sweep from the caps like a lighthouse, with charge streaming out along them, and a cap flares when its beam faces the eye. 56 dipole field lines in three shells turn with it. A wind nebula surrounds it: a torus round the spin equator, brighter on its near side, and a wandering jet from each spin pole. Gravity bends the sky at its limb |
 
 The sun is the default: the furnace, and apart from Desert eclipse's white corona and pink prominences. The hum and the notes fall in key as the star grows.
 
@@ -56,7 +57,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 |---|---|
 | Regions | Fourteen active regions all round the limb: five over the top, five on the bottom left limb the long lens frames, four on the sides; on the near side, on the limb, behind it, and on the disk |
 | Prominences | Eight: hedgerows of fine upright threads, twisted arches with feet behind the limb, and tall curtains; three over the top, three on the bottom left limb, two on the sides. The largest arch stands 220 units high. Knots of cool plasma slide down every thread. An eruption lifts the prominence with growing speed (the arch swells into a bulb), fades it out by 17 s, and forms it again from 24 s to 44 s |
-| Scale | Mercury is a grey shaded sphere lit from behind by the star, with a thin sunlit rim. A body too large for the sky hangs in the top right corner, cut by the frame. A star body shows its darkened limb and surface, or, too small to resolve, a core and a halo. The transit crosses the disk and takes about five minutes |
+| Scale | Mercury is a grey shaded sphere lit from behind by the sun, with a thin sunlit rim. It crosses the disk on the long lens and the full view, in about five minutes. No other star has a body beside it |
 | Volume | A raymarched shell of haze and dust round the star, 32 steps per ray at half size (a quarter on slow machines), blurred twice, as Fire does. The lighting is Fire's smoke shading (a marked K3 section copied from `cloudbottle/scene.js`): a self-shadow march toward the star, Beer plus a multiple-scatter lobe, the powder term and a Henyey-Greenstein phase, so dust backlit at the limb glows. The light falls with the square of the distance. The dust absorbs as well as scatters, so lanes darken what lies behind them. Denser on the long lens and round the giants |
 | Loops | Bundles of three to six threads between two footpoints on the sphere, height about half the span, with a tilt, a shear and a turned axis. Each lives 24 to 46 s: it rises, shines, drains (knots slide down both legs with growing speed) and fades, then returns with a new shape. Faint long loops climb out of the frame |
 | Flows | Faint ripples climb from the feet: the upflows seen in real loops |
