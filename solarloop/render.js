@@ -127,6 +127,8 @@ uniform float uFar;
 uniform float uOff;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
+// Each region's bipole axis in the view frame, and its sunspot size.
+uniform vec4 uSpot[${NR}];
 uniform vec4 uFl[2], uFlB[2];
 uniform vec4 uEgg[4], uDim[2];
 in vec2 vUv;
@@ -137,24 +139,26 @@ void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
   float hot = 0.0, cool = 0.0;
+  // The sunspots' shade, applied last so no later light fills them.
+  float shade = 1.0;
   float tb = uTime * 0.02;
   if (r < R) {
     float mu = sqrt(max(1.0 - r * r / (R * R), 0.0));
     vec3 n = vec3(P / R, mu);
     vec3 q = uToSun * n;
-    // Granules boil: bright cells, dark lanes, drifting through time.
+    // Granules boil: bright cells, dark lanes; each cell lives about 7 s.
     // Noise bends the cells and blurs the lanes, so they never read as hexagons.
-    vec3 gq = q * uTex.x + vec3(0.0, 0.0, tb * 2.0);
+    vec3 gq = q * uTex.x + vec3(0.0, 0.0, tb * 7.5);
     gq += 0.45 * vec3(vn(gq * 0.7), vn(gq * 0.7 + 3.1), vn(gq * 0.7 + 6.3));
     float gran = smoothstep(-0.05, 0.9, cells(gq)) * (0.7 + 0.3 * vn(gq * 2.3));
-    // Swirls of plasma: noise bent by noise, slowly turning.
+    // Swirls of plasma: noise bent by noise; they writhe over about a minute.
     vec3 wq = q * uTex.y * 1.6;
-    vec3 warp = vec3(fbm(wq + tb * 0.1), fbm(wq + 5.1), fbm(wq + 9.3));
-    float turb = fbm(q * uTex.y + warp * 1.7 + vec3(0.0, 0.0, tb * 0.25));
+    vec3 warp = vec3(fbm(wq + tb * 0.8), fbm(wq + 5.1), fbm(wq + 9.3));
+    float turb = fbm(q * uTex.y + warp * 1.7 + vec3(0.0, 0.0, tb * 1.2));
     // The supergranule network, warped so it never reads as tiles.
     vec3 w = q * 22.0 + 0.8 * vec3(vn(q * 9.0), vn(q * 9.0 + 5.2), vn(q * 9.0 + 9.7));
-    float net = smoothstep(0.25, 0.0, cells(w + tb * 0.2));
-    float mot = fbm(q * 14.0 + vec3(0.0, tb * 0.3, 0.0));
+    float net = smoothstep(0.25, 0.0, cells(w + tb * 0.5));
+    float mot = fbm(q * 14.0 + vec3(0.0, tb * 1.0, 0.0));
     // Filaments: dark sinuous lanes of cool plasma seen from above.
     float fil = smoothstep(0.035, 0.0, abs(fbm(q * 5.0 + 3.1) - 0.5)) * smoothstep(0.45, 0.65, fbm(q * 3.0 + 8.0));
     float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
@@ -201,10 +205,30 @@ void main() {
       float a = acos(clamp(dot(n, uEgg[k].xyz), -1.0, 1.0));
       hot += uEgg[k].w * uDisk.x * (14.0 * exp(-pow(a / 0.0045, 2.0)) + 0.8 * exp(-a / 0.008));
     }
+    // Moss: bright plage under each region; the spots darken it after.
     for (int k = 0; k < ${NR}; k++) {
       float dd = 2.0 - 2.0 * dot(n, uReg[k].xyz);
       float m = exp(-dd / 0.006) * uReg[k].w;
       hot += uDisk2.z * uDisk.x * m * (0.4 + 1.2 * net + 0.6 * gran);
+    }
+    // Sunspots: a bipole along each region's axis; the leader whole, the follower broken.
+    for (int k = 0; k < ${NR}; k++) {
+      float sz = uSpot[k].w;
+      if (sz <= 0.0) continue;
+      vec3 rc = uReg[k].xyz, re = uSpot[k].xyz, rf = cross(rc, re);
+      // Faculae: bright plage round the group, strongest toward the limb.
+      vec3 dc = n - rc;
+      hot *= 1.0 + 0.35 * sz * (1.0 - mu) * exp(-dot(dc, dc) / 0.004);
+      for (int j = 0; j < 3; j++) {
+        float part = j == 0 ? 1.0 : j == 1 ? 0.7 : 0.45;
+        vec3 at = normalize(rc + re * (j == 0 ? 0.045 : j == 1 ? -0.05 : -0.075) + rf * (j == 2 ? 0.018 : 0.0));
+        float a = length(n - at) / (sz * part);
+        float rag = vn((n - at) * 900.0 + float(k * 3 + j));
+        // A full-size leader: a penumbra about 30 Mm across its radius.
+        float pen = smoothstep(0.045 * (0.8 + 0.4 * rag), 0.032, a);
+        float umb = smoothstep(0.02, 0.014, a);
+        shade *= 1.0 - 0.62 * pen - 0.33 * umb;
+      }
     }
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
@@ -361,6 +385,7 @@ void main() {
   }
   // Real light: the corona and everything round the disk lose weight to the disk.
   if (r >= R) { hot *= uOff; cool *= uOff; }
+  hot *= shade;
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
 
@@ -958,6 +983,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uFar, v.far);
     gl.uniform1f(s.u.uOff, v.off);
     gl.uniform4fv(s.u.uReg, v.regs);
+    gl.uniform4fv(s.u.uSpot, v.spots);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlB, v.flB);
     gl.uniform4fv(s.u.uEgg, v.egg);

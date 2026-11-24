@@ -45,7 +45,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
 // yso: a young star's dust disk and jets: its axis in the star's frame, and weight.
 // day: the true rotation period in days; the toy runs it 10,000 times faster.
-const FLARE = { day: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+// spots: sunspot strength; only stars with a convecting surface have them.
+const FLARE = { day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -66,14 +67,14 @@ export const STARS = {
   },
   // Our sun: a yellow dwarf, the furnace in gold and white.
   sun: {
-    ...FLARE, day: 25.4, row: 0, rsun: 1, expo: 1, hotW: 1, coolW: 1.15, loop: 1, prom: 1, dust: 0, rays: 0.9,
+    ...FLARE, spots: 1, day: 25.4, row: 0, rsun: 1, expo: 1, hotW: 1, coolW: 1.15, loop: 1, prom: 1, dust: 0, rays: 0.9,
     hal: [1, 0.42, 0.12], streak: [1, 0.7, 0.34],
     disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12], tex: [170, 16, 0.15, 0.55],
     wide: 'none', long: 'mercury', root: 220,
   },
   // Proxima: a small red flare star, a seventh of the sun's width.
   proxima: {
-    ...FLARE, day: 83, ribbon: 2.4, sat: 1.4, bubble: 0.3,
+    ...FLARE, spots: 1.5, day: 83, ribbon: 2.4, sat: 1.4, bubble: 0.3,
     row: 1, rsun: 0.154, expo: 1, hotW: 1, coolW: 1.2, loop: 0.8, prom: 0.9, dust: 0, rays: 0.7,
     hal: [1, 0.3, 0.1], streak: [1, 0.5, 0.3],
     disk: [1.7, 0.8, 0.1, 0.45], disk2: [40, 1.2, 0.7, 0.15], tex: [120, 12, 0.2, 0.7],
@@ -116,7 +117,7 @@ export const STARS = {
   },
   // Procyon: an F star, twice the sun's width, cream white.
   procyon: {
-    ...FLARE, day: 23,
+    ...FLARE, spots: 0.3, day: 23,
     row: 11, rsun: 2.05, expo: 1, hotW: 1, coolW: 1.05, loop: 0.75, prom: 0.75, dust: 0, rays: 0.95,
     hal: [1, 0.7, 0.4], streak: [1, 0.85, 0.6],
     disk: [1.8, 0.6, 0.1, 0.38], disk2: [60, 0.7, 0.4, 0.1], tex: [150, 14, 0.12, 0.55],
@@ -124,7 +125,7 @@ export const STARS = {
   },
   // Epsilon Eridani: a young K star, spotty and active, three quarters of the sun.
   epseri: {
-    ...FLARE, day: 11.2, ribbon: 1.9, sat: 1.2,
+    ...FLARE, spots: 1.3, day: 11.2, ribbon: 1.9, sat: 1.2,
     row: 12, rsun: 0.74, expo: 1, hotW: 1, coolW: 1.15, loop: 1, prom: 0.95, dust: 0, rays: 0.8,
     hal: [1, 0.38, 0.12], streak: [1, 0.6, 0.32],
     disk: [1.9, 0.85, 0.1, 0.4], disk2: [48, 1, 0.6, 0.14], tex: [140, 14, 0.2, 0.62],
@@ -149,7 +150,7 @@ export const STARS = {
   // T Tauri: a young star, three suns wide, still wrapped in its birth dust.
   // A ringed dust disk circles it at a slant; a jet leaves each pole.
   ttauri: {
-    ...FLARE, day: 2.8, ribbon: 2.1, sat: 1.3, bubble: 0.28, yso: [0.28, 0.9, 0.34, 1], grav: [0.28, 0.9, 0.34, 0],
+    ...FLARE, spots: 1.8, day: 2.8, ribbon: 2.1, sat: 1.3, bubble: 0.28, yso: [0.28, 0.9, 0.34, 1], grav: [0.28, 0.9, 0.34, 0],
     row: 15, rsun: 3, expo: 1, hotW: 1, coolW: 1.2, loop: 0.95, prom: 0.95, dust: 0.4, rays: 0.85,
     hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
     disk: [1.8, 0.8, 0.08, 0.4], disk2: [70, 1, 0.6, 0.16], tex: [90, 12, 0.18, 0.6],
@@ -157,7 +158,7 @@ export const STARS = {
   },
   // Arcturus: an orange giant, 25 suns wide.
   arcturus: {
-    ...FLARE, day: 730, bubble: 0.18,
+    ...FLARE, spots: 0.4, day: 730, bubble: 0.18,
     row: 16, rsun: 25.4, expo: 1, hotW: 1, coolW: 1.1, loop: 0.45, prom: 0.6, dust: 0.15, rays: 0.85,
     hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
     disk: [1.85, 1, 0.02, 0.32], disk2: [110, 0.6, 0.35, 0.07], tex: [30, 6, 0.05, 0.7],
@@ -215,23 +216,26 @@ export function magAxis(time) {
 /* ---------- regions ---------- */
 // psi: angle round the limb from its top. beta: toward the viewer (+) or behind (-).
 // theta: the bipole axis, 0 along the limb. span: half the footpoint gap.
+// psi runs clockwise round the limb from the north pole; the spin axis points up.
+// Every region sits in a belt 5 to 35 degrees from the equator, as on the sun.
 const REGION_DEFS = [
-  { psi: -0.17, beta: 0.03, theta: 0.12, span: [12, 69], len: 96, hk: 1.05, n: 16, lt: 5.95 },
-  { psi: 0.15, beta: -0.07, theta: -0.35, span: [21, 96], len: 84, hk: 1.15, n: 14, lt: 6.0 },
-  { psi: 0.42, beta: 0.16, theta: 1.1, span: [10, 42], len: 60, hk: 0.95, n: 10, lt: 5.9 },
-  { psi: -0.45, beta: -0.02, theta: 0.55, span: [15, 57], len: 75, hk: 1.0, n: 12, lt: 5.95 },
-  { psi: 0.015, beta: 0.2, theta: 0.3, span: [10, 39], len: 68, hk: 0.9, n: 10, lt: 5.9 },
-  // The bottom left limb: the long lens's corner.
-  { psi: -2.35, beta: 0.04, theta: 0.2, span: [12, 66], len: 90, hk: 1.1, n: 16, lt: 5.95 },
-  { psi: -2.62, beta: -0.06, theta: -0.3, span: [18, 90], len: 80, hk: 1.15, n: 14, lt: 6.0 },
-  { psi: -2.85, beta: 0.12, theta: 0.9, span: [10, 45], len: 60, hk: 0.95, n: 10, lt: 5.9 },
-  { psi: -2.1, beta: 0.1, theta: 0.5, span: [12, 50], len: 70, hk: 1.0, n: 12, lt: 5.95 },
-  { psi: -2.5, beta: 0.22, theta: 0.3, span: [10, 40], len: 65, hk: 0.9, n: 10, lt: 5.9 },
-  // The rest of the limb, so the full star is active all round.
-  { psi: 1.5, beta: 0.05, theta: 0.4, span: [12, 55], len: 70, hk: 1.0, n: 12, lt: 5.95 },
-  { psi: 2.3, beta: -0.04, theta: -0.2, span: [10, 48], len: 60, hk: 1.05, n: 10, lt: 5.95 },
-  { psi: -1.35, beta: 0.06, theta: 0.7, span: [12, 52], len: 66, hk: 1.0, n: 12, lt: 5.95 },
-  { psi: 2.95, beta: 0.1, theta: 0.1, span: [10, 44], len: 60, hk: 0.95, n: 10, lt: 5.9 },
+  // The west limb's northern belt, on the right: the wide view.
+  { psi: 1.12, beta: 0.03, theta: 0.12, span: [12, 69], len: 96, hk: 1.05, n: 16, lt: 5.95 },
+  { psi: 1.44, beta: -0.07, theta: -0.35, span: [21, 96], len: 84, hk: 1.15, n: 14, lt: 6.0 },
+  { psi: 1.71, beta: 0.16, theta: 1.1, span: [10, 42], len: 60, hk: 0.95, n: 10, lt: 5.9 },
+  { psi: 0.99, beta: -0.02, theta: 0.55, span: [15, 57], len: 75, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: 1.3, beta: 0.2, theta: 0.3, span: [10, 39], len: 68, hk: 0.9, n: 10, lt: 5.9 },
+  // Its southern belt: the long lens.
+  { psi: 1.86, beta: 0.04, theta: 0.2, span: [12, 66], len: 90, hk: 1.1, n: 16, lt: 5.95 },
+  { psi: 2.0, beta: -0.06, theta: -0.3, span: [18, 90], len: 80, hk: 1.15, n: 14, lt: 6.0 },
+  { psi: 2.12, beta: 0.12, theta: 0.9, span: [10, 45], len: 60, hk: 0.95, n: 10, lt: 5.9 },
+  { psi: 2.06, beta: -0.25, theta: 0.5, span: [12, 50], len: 70, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: 1.93, beta: 0.22, theta: 0.3, span: [10, 40], len: 65, hk: 0.9, n: 10, lt: 5.9 },
+  // The rest of the belts: the near disk, the far side and behind.
+  { psi: 0.0, beta: 1.26, theta: 0.4, span: [12, 55], len: 70, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: 3.14, beta: -1.33, theta: -0.2, span: [10, 48], len: 60, hk: 1.05, n: 10, lt: 5.95 },
+  { psi: -1.13, beta: -0.48, theta: 0.7, span: [12, 52], len: 66, hk: 1.0, n: 12, lt: 5.95 },
+  { psi: -2.04, beta: 0.1, theta: 0.1, span: [10, 44], len: 60, hk: 0.95, n: 10, lt: 5.9 },
 ];
 // The number of regions: the disk pass takes one uniform each.
 export const NR = REGION_DEFS.length;
@@ -241,18 +245,19 @@ export const NR = REGION_DEFS.length;
 // len: the footprint along the limb; h: the height, both in Mm.
 const PROM_DEFS = [
   // A hedgerow: a curtain of fine upright threads.
-  { type: 'hedge', psi: -0.3, beta: 0.015, theta: 0, len: 260, h: 165, n: 80 },
+  { type: 'hedge', psi: 0.99, beta: 0.015, theta: 0, len: 260, h: 165, n: 80 },
   // An arch: a twisted rope that rises from behind the limb.
-  { type: 'arch', psi: 0.3, beta: -0.035, theta: 0.08, len: 270, h: 205, n: 18 },
-  // A tall curtain: the wall that fills the long lens's sky.
-  { type: 'hedge', psi: 0.68, beta: 0.01, theta: 0, len: 140, h: 240, n: 46 },
-  // The bottom left limb, framed by the long lens.
-  { type: 'arch', psi: -2.5, beta: -0.03, theta: 0.06, len: 250, h: 220, n: 18 },
-  { type: 'hedge', psi: -2.2, beta: 0.015, theta: 0, len: 200, h: 150, n: 60 },
-  { type: 'hedge', psi: -2.85, beta: 0.01, theta: 0, len: 150, h: 230, n: 46 },
-  // The sides, for the full star.
-  { type: 'arch', psi: 1.55, beta: -0.03, theta: 0.1, len: 200, h: 160, n: 14 },
-  { type: 'hedge', psi: -1.4, beta: 0.01, theta: 0, len: 180, h: 120, n: 50 },
+  { type: 'arch', psi: 1.59, beta: -0.035, theta: 0.08, len: 270, h: 205, n: 18 },
+  // A tall curtain: the wall that fills the wide view's sky.
+  { type: 'hedge', psi: 1.3, beta: 0.01, theta: 0, len: 140, h: 240, n: 46 },
+  // The southern belt, framed by the long lens.
+  { type: 'arch', psi: 1.82, beta: -0.03, theta: 0.06, len: 250, h: 220, n: 18 },
+  { type: 'hedge', psi: 2.12, beta: 0.015, theta: 0, len: 200, h: 150, n: 60 },
+  // The east limb, for the full star.
+  { type: 'hedge', psi: -1.56, beta: 0.01, theta: 0, len: 150, h: 230, n: 46 },
+  // The polar crowns, for the full star.
+  { type: 'arch', psi: 2.84, beta: -0.03, theta: 0.1, len: 200, h: 160, n: 14 },
+  { type: 'hedge', psi: -0.11, beta: 0.01, theta: 0, len: 180, h: 120, n: 50 },
 ];
 // An eruption lifts the prominence off; it forms again by this time.
 export const PROM_END = 46;
@@ -302,7 +307,8 @@ export function makeSun() {
         threads: 3, tall: 1.6 + 1.4 * h(8), faint: 0.2, turn: (h(10) - 0.5) * 1.2, mid: 0,
       });
     }
-    return { ...d, ri, c, e, f, bundles, lastFlare: -1e9 };
+    // spot: where Activity opens this region's sunspots, 0 to 1.
+    return { ...d, ri, c, e, f, bundles, lastFlare: -1e9, spot: hash(ri, 11, 5) };
   });
   return { regions, proms, flares: [] };
 }

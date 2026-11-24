@@ -90,9 +90,10 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
 // Three framings on one zoom axis: the long lens on the bottom left limb, the wide dome, the full star.
 // z is 0 on the long lens, 1 on the wide view, 2 on the full star.
-// Past 2 the full view pulls back: z 4 is 32 times farther (Tom, 2026-11-24).
+// Past 2 the full view pulls back: z 6 is 32 times farther (Tom, 2026-11-24).
+// The pull-back moves about as fast per step as the views before it.
 const VIEWS = ['long', 'wide', 'full'];
-const Z_MAX = 4;
+const Z_MAX = 6;
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
 // Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
 const z0 = 0;
@@ -114,7 +115,7 @@ const weight = name => {
   return z <= 1 ? ease(clamp(z)) : 1 - ease(clamp(z - 1));
 };
 // How far the full view pulls back at z.
-const pullBack = z => 2 ** (Math.max(0, z - 2) * 2.5);
+const pullBack = z => 2 ** (Math.max(0, z - 2) * 1.25);
 // A pull-back as words: x5.7, x32.
 const pullText = z => { const k = pullBack(z); return `×${k < 9.95 ? k.toFixed(1) : Math.round(k)}`; };
 function fitView(w, h, top = 0, bottom = 0) {
@@ -124,19 +125,19 @@ function fitView(w, h, top = 0, bottom = 0) {
   // Wide enough that the limb reads as a dome and the prominences tower.
   const hw = narrow ? 260 : asp < 1.2 ? 380 : 520;
   const hh = hw / asp;
-  const free = Math.max(0.4 * h, h - top - bottom);
-  // The limb stands about a quarter of the way up the free part of the stage.
-  const yb = bottom + (narrow ? 0.3 : 0.26) * free;
-  fit.wide = { cx: 0, cy: R + hh - yb * 2 * hh / h, hw };
-  // The long lens: the star fills the frame; its bottom left limb cuts off the corner.
-  // The arc runs from the foot's middle to the left side's middle; space fills the corner.
+  // The wide view looks at the west limb from the side (Tom, 2026-11-24).
+  // The limb stands upright about a third of the way in from the left.
+  const xb = (narrow ? 0.3 : 0.34) * w;
+  fit.wide = { cx: R + hw - xb * 2 * hw / w, cy: -(bottom - top) * hh / h, hw };
+  // The long lens: a close crop of the same limb, 20 degrees south.
+  // The star fills most of the frame; its limb runs down the right side at a slant.
   const hwL = narrow ? 150 : asp < 1.2 ? 210 : 280;
   const hhL = hwL / asp;
-  // On a tall phone the corner cut is too steep; a fixed angle keeps the arc low.
-  const psi = -Math.PI + (narrow ? 0.6 : Math.atan2(hhL, hwL));
+  const psi = Math.PI / 2 + 0.35;
   const nx = Math.sin(psi), ny = Math.cos(psi);
-  const d = 0.5 * (hwL * -nx + hhL * -ny);
-  fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL, psi };
+  // The limb stands a quarter of the frame in from its edge, along psi.
+  const d = 0.5 * (hwL * Math.abs(nx) + hhL * Math.abs(ny));
+  fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL, psi, d };
   // The full star: the whole disk, its prominences and some sky round it.
   const free2 = Math.max(0.4 * h, h - top - bottom);
   // Pulled back, so the corona has room to stretch out.
@@ -148,7 +149,7 @@ function fitView(w, h, top = 0, bottom = 0) {
 // The stops as frame numbers: log width, then the centre over the width.
 // Past the full star only the width grows, so the centre holds.
 function stops() {
-  return [0, 1, 2, 3, 4].map(i => {
+  return Array.from({ length: Z_MAX + 1 }, (_, i) => {
     const f = fit[VIEWS[Math.min(2, i)]], hw = f.hw * pullBack(i);
     return [Math.log(hw), f.cx / f.hw, f.cy / f.hw];
   });
@@ -232,17 +233,18 @@ function stepZoom(dt) {
   rail.show(cam.z, cam.to);
   return true;
 }
+const mul = (A, B) => A.map(row => [0, 1, 2].map(c => row[0] * B[0][c] + row[1] * B[1][c] + row[2] * B[2][c]));
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 function setRot() {
   const cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), cy = Math.cos(st.yaw), sy = Math.sin(st.yaw);
   const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
-  const T = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
+  const TP = mul(rx, ry);
   // The star turns on its own axis at its true rate, sped up.
   const B = STARS[shown];
   const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
-  M = S ? T.map(row => [0, 1, 2].map(c => row[0] * S[0][c] + row[1] * S[1][c] + row[2] * S[2][c])) : T;
+  M = S ? mul(TP, S) : TP;
 }
 // A turn by angle a about the axis u (Rodrigues).
 function axisTurn(u, a) {
@@ -348,7 +350,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', min: 0.3, max: 3, step: 0.05, value: 1, persist: true },
-    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
     ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndTelegraph', 'Egg: telegraph'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
@@ -379,7 +381,7 @@ const chart = makeChart({
 });
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
-  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [3, pullText(3)], [4, pullText(4)]],
+  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [4, pullText(4)], [6, pullText(6)]],
   max: Z_MAX,
   text: zoomText,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
@@ -591,7 +593,7 @@ function eggFrame(out, dim) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
+  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
@@ -627,6 +629,11 @@ function makeFrame() {
   f.time = st.time;
   const star = STARS[shown];
   f.band = star;
+  // Sunspots: Activity opens each region's spots in turn and grows them.
+  sun.regions.forEach((rg, k) => {
+    const open = ease(clamp((act * 1.2 - rg.spot) / 0.25));
+    f.spots.set([...toView(rg.e), star.spots * open * (0.4 + 0.6 * act)], k * 4);
+  });
   f.count = strands(sun, st.time, { star: shown, activity: act, spin: st.spin }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
@@ -649,8 +656,8 @@ function makeFrame() {
   // The transit runs along a chord across the disk, over about five minutes.
   const span = 2.4 * Math.hypot(L.hw, lh);
   const s0 = ((st.time * 1.5 + span * 0.5) % span) - span / 2;
-  const depth = R - 0.5 * (L.hw * -Math.sin(L.psi) + lh * -Math.cos(L.psi)) - 0.45 * lh;
-  // It climbs away from the foot of the frame.
+  const depth = R - L.d - 0.45 * lh;
+  // It runs along the limb, across the disk.
   const bx = depth * Math.sin(L.psi) - tx * s0, by = depth * Math.cos(L.psi) - ty * s0;
   const [qx, qy] = px(bx, by);
   const on = star.long === 'none' ? 0 : Math.min(1, Math.max(0, (R - Math.hypot(bx, by)) / 6));
@@ -666,12 +673,13 @@ function makeFrame() {
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   // Past the full star the view pulls back; far runs 0 to 1 by x32.
-  const far = ease(clamp((cam.z - 2) / 2));
+  const far = ease(clamp((cam.z - 2) / 4));
   f.far = far;
   f.cam.set([st.yaw, st.pitch, star.lensing, far]);
   // Real light (Tom, 2026-11-24): up close the star is masked so the corona shows.
   // Pulled back, the exposure rises and the disk outshines what lies round it.
-  const real = ease(clamp((cam.z - 1.2) / 2.4));
+  // It is full by x16.
+  const real = ease(clamp((cam.z - 1.2) / 4));
   const lift = 2 ** (2.2 * real * fxv('fxReal'));
   // Off-disk light keeps a quarter of its look against the lifted disk; far off it fades.
   f.off = (1 - 0.75 * real) / lift * (1 - 0.8 * far);
