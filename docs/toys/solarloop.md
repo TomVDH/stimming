@@ -1,4 +1,6 @@
-# Solar loop (`solarloop`)
+# Star catalog (`solarloop`)
+
+Named Solar loop until 2026-11-24 (Tom renamed it); the folder and address stay `solarloop`.
 
 Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
