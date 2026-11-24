@@ -1,8 +1,6 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
-// A flare: the brass blast, a rush as the rope lifts, a low roar,
-// a slow chord while the arcade glows.
-// A drag: a low wind that follows the speed of the turn.
+// A flare or a lifting prominence: the deep synth only (Tom). A drag is silent.
 // Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
@@ -306,102 +304,17 @@ export function makeSound(kit) {
   // A prominence lifts off: the blast, a long rising rush, a tone that bends up.
   function rise(pan, band, k = 1) {
     const ac = kit.live();
-    if (!ac || !kit.noise) return;
-    const t = ac.currentTime + 0.005;
-    const K = clamp(k, 0.3, 1);
-    braam(ac, t, pan, band, K, 9);
-    const r = voice(ac, pan * 0.6);
-    r.gain.setValueAtTime(0, t);
-    r.gain.linearRampToValueAtTime(0.12 * K, t + 6);
-    r.gain.exponentialRampToValueAtTime(0.0002, t + 15);
-    const bp = filt(ac, 'bandpass', 90, 1.2);
-    bp.frequency.setValueAtTime(90, t);
-    bp.frequency.exponentialRampToValueAtTime(2200, t + 13);
-    noise(ac, t, 15.2, 0.6).connect(bp).connect(r);
-    send(ac, r, 0.7);
-    const root = (ROOT[band] || 220) / 2;
-    const tg = voice(ac, pan * 0.4);
-    tg.gain.setValueAtTime(0, t + 1);
-    tg.gain.linearRampToValueAtTime(0.05 * K, t + 7);
-    tg.gain.exponentialRampToValueAtTime(0.0002, t + 18);
-    const o = osc(ac, 'triangle', root, t + 1, 17.5);
-    o.frequency.setValueAtTime(root, t + 1);
-    o.frequency.exponentialRampToValueAtTime(root * 1.498, t + 14);
-    o.connect(tg);
-    send(ac, tg, 0.6);
+    if (!ac) return;
+    // Only the deep synth (Tom): no rush, no bending tone.
+    braam(ac, ac.currentTime + 0.005, pan, band, clamp(k, 0.3, 1), 9);
   }
 
-  // The flare: every layer starts now or later on the audio clock.
+  // The flare: only the deep synth (Tom): no wind, no roar, no chord.
   function flare(pan, band, k = 1) {
     const ac = kit.live();
-    if (!ac || !kit.noise) return;
-    const t = ac.currentTime + 0.005;
-    const K = clamp(k, 0.3, 1);
-    braam(ac, t, pan, band, K * 0.7, 6);
-    // No crack on the tap (Tom): the brass blast carries the hit.
-    // The rush: noise swept upward as the rope lifts away.
-    const r = voice(ac, pan * 0.7);
-    r.gain.setValueAtTime(0, t + 0.1);
-    r.gain.linearRampToValueAtTime(0.14 * K, t + 1.3);
-    r.gain.exponentialRampToValueAtTime(0.0002, t + 4.6);
-    const bp = filt(ac, 'bandpass', 160, 1.4);
-    bp.frequency.setValueAtTime(160 * jit(0.1), t + 0.1);
-    bp.frequency.exponentialRampToValueAtTime(1500 * jit(0.12), t + 3.6);
-    noise(ac, t + 0.1, 4.7, 0.8).connect(bp).connect(r);
-    send(ac, r, 0.6);
-    // The roar: a low buzz under the whole eruption.
-    const lo = voice(ac, pan * 0.4);
-    lo.gain.setValueAtTime(0, t);
-    lo.gain.linearRampToValueAtTime(0.09 * K, t + 0.6);
-    lo.gain.exponentialRampToValueAtTime(0.0002, t + 7);
-    const lp = filt(ac, 'lowpass', 220, 0.9);
-    for (const f of [41.2, 41.2 * 1.006]) osc(ac, 'sawtooth', f * jit(0.02), t, 7.1).connect(lp);
-    lp.connect(lo);
-    // The glow: a slow chord while the arcade shines.
-    const root = (ROOT[band] || 220) / 2;
-    const pad = voice(ac, pan * 0.5);
-    pad.gain.setValueAtTime(0, t + 1.5);
-    pad.gain.linearRampToValueAtTime(0.05 * K, t + 8);
-    pad.gain.setValueAtTime(0.05 * K, t + 16);
-    pad.gain.exponentialRampToValueAtTime(0.0002, t + 34);
-    const plp = filt(ac, 'lowpass', 900, 0.5);
-    plp.connect(pad);
-    for (const m of [1, 1.4983, 2, 2.9966]) {
-      const a = osc(ac, 'triangle', root * m * jit(0.004), t + 1.5, 33);
-      a.detune.value = (Math.random() - 0.5) * 12;
-      a.connect(plp);
-    }
-    send(ac, pad, 0.4);
+    if (!ac) return;
+    braam(ac, ac.currentTime + 0.005, pan, band, clamp(k, 0.3, 1) * 0.7, 6);
   }
-
-  // The turn: a low wind whose level follows the drag speed.
-  let wind = null;
-  function turn(speed) {
-    const ac = kit.live();
-    if (!ac || !kit.noise) return;
-    if (!wind || wind.ac !== ac) {
-      const g = voice(ac, 0);
-      const lp = filt(ac, 'lowpass', 240, 0.9);
-      const src = ac.createBufferSource();
-      src.buffer = kit.noise; src.loop = true; src.playbackRate.value = 0.5;
-      src.connect(lp).connect(g);
-      src.start();
-      track(src);
-      wind = { ac, g, lp, src };
-    }
-    const v = clamp(speed / 900, 0, 1);
-    wind.g.gain.setTargetAtTime(0.16 * v, ac.currentTime, 0.06);
-    wind.lp.frequency.setTargetAtTime(160 + 520 * v, ac.currentTime, 0.08);
-  }
-  function endTurn() {
-    if (!wind) return;
-    const { ac, g, src } = wind;
-    g.gain.setTargetAtTime(0, ac.currentTime, 0.12);
-    try { src.stop(ac.currentTime + 0.8); } catch { /* already stopped */ }
-    wind = null;
-  }
-
-
 
   // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
   function tick() {
@@ -472,9 +385,8 @@ export function makeSound(kit) {
 
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
-    wind = null;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, tick, telegraph, dim, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, tick, telegraph, dim, quiet, get busy() { return pending > 0; } };
 }
