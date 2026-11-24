@@ -32,6 +32,32 @@ const st = {
   next: 0,
 };
 const sun = makeSun();
+// The star on screen: it trails st.star through the switch dip.
+let shown = st.star;
+// The switch dip: the frame darkens, the star swaps, the light returns.
+let dip = null;
+const DIP_DOWN = 0.25, DIP_UP = 0.7;
+// The dip's light, from 1 down to a near black and back.
+const dipLight = () => {
+  if (!dip) return 1;
+  const k = dip.t < DIP_DOWN ? 1 - dip.t / DIP_DOWN : (dip.t - DIP_DOWN) / DIP_UP;
+  return 0.06 + 0.94 * ease(clamp(k));
+};
+// Steps the dip; the star swaps at the dark point. True while it runs.
+function stepDip(dt) {
+  if (shown !== st.star && !dip) {
+    // Reduced motion and the first frame swap at once.
+    if (calm || !started) { shown = st.star; applyView(); return false; }
+    dip = { t: 0 };
+  }
+  if (!dip) return false;
+  // A new pick on the way up turns back down from the same light.
+  if (shown !== st.star && dip.t > DIP_DOWN) dip.t = DIP_DOWN * (1 - (dip.t - DIP_DOWN) / DIP_UP);
+  dip.t += dt;
+  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; applyView(); }
+  if (dip.t >= DIP_DOWN + DIP_UP) dip = null;
+  return true;
+}
 // The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
 const FLUID = new URLSearchParams(location.search).has('fluid');
 // The fluid's run: its clock and the prominence it lives on, or null.
@@ -136,7 +162,7 @@ function applyView() {
   view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
   view.hh = view.hw / view.asp;
   // An oblate star: the view stretches its equator across the screen.
-  const ob = 1 + STARS[st.star].oblate;
+  const ob = 1 + STARS[shown].oblate;
   view.cx /= ob; view.hw /= ob;
   setRot();
 }
@@ -160,7 +186,7 @@ function setRot() {
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
   const T = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
   // The star turns on its own axis at its true rate, sped up.
-  const B = STARS[st.star];
+  const B = STARS[shown];
   const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
   M = S ? T.map(row => [0, 1, 2].map(c => row[0] * S[0][c] + row[1] * S[1][c] + row[2] * S[2][c])) : T;
 }
@@ -184,7 +210,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; }, get shown() { return [shown, dip?.t ?? -1]; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -400,7 +426,7 @@ function makeFrame() {
   });
   f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
-    const fv = flareView(fl, st.star);
+    const fv = flareView(fl, shown);
     f.fl.set([...toView(fv.c), 0], k * 4);
     f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
@@ -413,9 +439,9 @@ function makeFrame() {
     f.sat.set([sx, sy, calm ? S * 0.6 : S, 0], k * 4);
   });
   f.time = st.time;
-  const star = STARS[st.star];
+  const star = STARS[shown];
   f.band = star;
-  f.count = strands(sun, st.time, { star: st.star, activity: act }, ren.data);
+  f.count = strands(sun, st.time, { star: shown, activity: act }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
@@ -465,7 +491,7 @@ function makeFrame() {
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
-  f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
+  f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   if (rip) {
     // The ring slows as it spreads; reduced motion keeps it small and still.
@@ -499,7 +525,7 @@ function fluidFrame(r) {
     box: new Float32Array([...e, ...c, ...g]),
     boxT: new Float32Array([e[0], c[0], g[0], e[1], c[1], g[1], e[2], c[2], g[2]]),
     origin: new Float32Array(c.map(x => x * R)),
-    gain: 0.024 * STARS[st.star].prom,
+    gain: 0.024 * STARS[shown].prom,
   };
   r.first = false;
   r.dt = 0;
@@ -541,13 +567,14 @@ function frame(now) {
     if (hoverAt) readHover();
     const glowing = stepLit(dt);
     const easing = stepZoom(dt);
+    const dipping = stepDip(dt);
     if (rip && (rip.t += dt) >= RIP_LIFE) rip = null;
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || easing || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
-    if (drifting > 0) snd.hum(st.star);
-    if (STARS[st.star].beam && drifting > 0) pulse();
+    lively = zooming || easing || dipping || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    if (drifting > 0) snd.hum(shown);
+    if (STARS[shown].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
