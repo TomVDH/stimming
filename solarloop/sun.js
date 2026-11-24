@@ -97,9 +97,10 @@ export const STARS = {
     wide: 'none', long: 'none', root: 174.61,
   },
   // Vega: an A star, near three suns wide, pure white, spinning fast.
-  // We see it pole-on: a round disk, hot at its centre, cooler at the rim.
+  // Shown side-on (Tom), not pole-on as from the earth.
+  // Its equator is a fifth wider than its poles, and 2000 K cooler.
   vega: {
-    ...FLARE, day: 0.52, grav: [0, 0, 1, 0.45],
+    ...FLARE, day: 0.52, oblate: 0.19, grav: [0, 1, 0, 0.45],
     row: 10, rsun: 2.7, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.45, dust: 0, rays: 1,
     hal: [0.8, 0.85, 1], streak: [0.75, 0.82, 1],
     disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],

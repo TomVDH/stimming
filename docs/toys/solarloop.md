@@ -33,7 +33,7 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 |---|---|---|
 | Zeta Ophiuchi (O) | 8 | Violet blue to white, deep violet prominences, strong rays. A fast spinner seen side-on: its equator 15 percent wider than its poles, and darker |
 | Regulus (B) | 4.2 | Blue white, lilac prominences. Spun almost to breaking, seen side-on: its equator a third wider than its poles, and darker |
-| Vega (A) | 2.7 | Near pure white, pale blue prominences. A fast spinner seen pole-on, as from the earth: a round disk, hot and bright at its centre, cooler and darker at its rim |
+| Vega (A) | 2.7 | Near pure white, pale blue prominences. A fast spinner shown side-on, not pole-on as from the earth (Tom, 2026-11-23): its equator a fifth wider than its poles, the poles hot and bright, the equator about 2000 K cooler and darker |
 | Sirius | 1.71 | Blue white, pale rose prominences |
 | Procyon (F) | 2.05 | Cream to white, salmon prominences |
 | Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences |
