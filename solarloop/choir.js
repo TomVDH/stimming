@@ -53,6 +53,7 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // glowStyle, arpGap, glowRise, glowHold, glowFade: the glow's shape. stack: old, unlimited taps.
 // blastMix, glowMix: a level per tap voice, set on the lab's tap bench.
 // swTurn: the swell keeps pace with the toy's Turn speed; swR is its speed at x10k.
+// pingLvl, pingDecay, pingOct, humLvl: a pulsar's beam ping and its spin hum (Tom, 2026-11-24).
 export const SUN = {
   wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12,
   dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, norm: 1, key: 0,
@@ -61,6 +62,7 @@ export const SUN = {
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
   glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
   blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1], swTurn: false,
+  pingLvl: 1, pingDecay: 1.2, pingOct: 0, humLvl: 1,
   fx: fx0(),
 };
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
@@ -957,6 +959,60 @@ export function tapBus(ac, { out, hall, track = n => n }) {
         });
         shapeGlow(h, p, at);
       }
+    },
+  };
+}
+
+// The pulsar ping: a short glass bell on each beam flash, on a note of the chord.
+// FM with an off-key ratio of 3.5 gives the glass; the bright index dies first.
+// o.f: the note in Hz. Returns the ping's gain; the caller pans it and sends it on.
+export function ping(ac, { t, f, p = SUN, out, track = n => n }) {
+  const g = ac.createGain(), dec = p.pingDecay;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(0.05 * p.pingLvl, t + 0.004);
+  g.gain.setTargetAtTime(0, t + 0.01, dec / 4.6);
+  g.connect(out);
+  const c = ac.createOscillator(), m = ac.createOscillator(), mg = ac.createGain();
+  c.frequency.value = f;
+  m.frequency.value = f * 3.5;
+  mg.gain.setValueAtTime(f * 3.5 * 1.8, t);
+  mg.gain.setTargetAtTime(f * 0.2, t, dec / 8);
+  m.connect(mg).connect(c.frequency);
+  c.connect(g);
+  for (const o of [c, m]) { o.start(t); o.stop(t + dec + 0.3); track(o); }
+  return g;
+}
+// The pulsar hum: past 2.5 flashes a second the pings merge into a tone.
+// Its pitch is the flash rate five octaves up; it buzzes at the flash rate.
+// Returns a handle: set(rate, at) moves it, and stop(at) ends it.
+export function pulsarHum(ac, { p = SUN, out, track = n => n }) {
+  const g = ac.createGain(), buzz = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
+  g.gain.value = 0;
+  buzz.gain.value = 0.6;
+  depth.gain.value = 0.4;
+  lfo.connect(depth).connect(buzz.gain);
+  const c = ac.createOscillator(), m = ac.createOscillator(), mg = ac.createGain();
+  m.connect(mg).connect(c.frequency);
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 3000; lp.Q.value = 0.7;
+  c.connect(lp).connect(buzz).connect(g).connect(out);
+  const t = ac.currentTime;
+  for (const o of [c, m, lfo]) { o.start(t); track(o); }
+  // The hum rises from 2.5 to 4 flashes a second, so the pings hand over to it.
+  // 0.015 sits the hum near the choir's level, not over it.
+  const level = r => 0.015 * p.humLvl * clamp((r - 2.5) / 1.5, 0, 1);
+  return {
+    set(rate, at = ac.currentTime) {
+      const f = rate * 32;
+      c.frequency.setTargetAtTime(f, at, 0.15);
+      m.frequency.setTargetAtTime(f * 2, at, 0.15);
+      mg.gain.setTargetAtTime(f * 1.2, at, 0.15);
+      lfo.frequency.setTargetAtTime(rate, at, 0.15);
+      g.gain.setTargetAtTime(level(rate), at, 0.3);
+    },
+    stop(at = ac.currentTime) {
+      g.gain.setTargetAtTime(0, at, 0.4);
+      for (const o of [c, m, lfo]) o.stop(at + 2);
     },
   };
 }

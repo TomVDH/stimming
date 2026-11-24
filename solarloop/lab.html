@@ -241,7 +241,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
 </div>
 
 <script type="module">
-import { choir, tapBus, NORM, seeded, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, chordOf, scaleOf, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, ping as pingVoice, pulsarHum, NORM, seeded, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, chordOf, scaleOf, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
 import { VERSIONS } from './legacy.js';
 import { ROOT, makeSound, nearOf } from './sound.js';
 import { CHART } from './chart.js';
@@ -317,6 +317,13 @@ const SECS = [
     { k: 'glowFade', label: 'Glow fade', help: 'Time to fade away.', tap: 1, min: 2, max: 40, step: 1, ends: ['short', 'long'], show: sec },
     { k: 'stack', label: 'Stack taps', help: 'On: every tap adds up, with no limit, as before 24 November.', tap: 1, check: 1 },
   ] },
+  { title: 'Pulsar', intro: 'A beam star pings on each flash: a glass bell on the notes of the chord, one per flash. When the spin runs fast, the pings merge into a hum. The toy plays these on the neutron star.', rows: [
+    { k: 'pulsarCtl', label: 'Try it', help: 'Lab only: flashes at a spin rate, as in the toy.', pulsarCtl: 1 },
+    { k: 'pingLvl', label: 'Ping level', help: 'Level of each flash ping.', min: 0, max: 2, step: 0.05, ends: ['off', 'double'], show: db, tap: 1 },
+    { k: 'pingDecay', label: 'Ping ring', help: 'How long each ping rings.', min: 0.2, max: 4, step: 0.1, ends: ['short', 'long'], show: sec, tap: 1 },
+    { k: 'pingOct', label: 'Ping octave', help: 'Moves the pings up or down.', options: [['-1', 'One octave down'], ['0', 'Home'], ['1', 'One octave up']], num: 1, tap: 1 },
+    { k: 'humLvl', label: 'Hum level', help: 'Level of the hum when the spin runs fast.', min: 0, max: 2, step: 0.05, ends: ['off', 'double'], show: db, tap: 1 },
+  ] },
   { title: 'Level', intro: 'Two parts. Normalization makes every star as loud as the Sun, measured. Your level sits on top: 0 dB keeps the star level with all the others.', rows: [
     { k: 'norm', label: 'Normalization', help: 'Measured against the Sun. Measure again after a big change of sound.', normRow: 1 },
     { k: 'gain', label: 'Your level', help: 'Your setting for this star, on top of normalization.', min: 0.25, max: 4, step: 0.01, ends: ['-12 dB', '+12 dB'], show: db },
@@ -388,6 +395,7 @@ for (const s of SECS) {
     const chips = r.restart ? '<span class="chip" title="A change restarts the choir.">↻</span>' : '';
     let c;
     if (r.editor) { c = '<div class="prog" id="prog"></div><div class="acts" style="margin:4px 8px"><button class="sm" id="addCh">Add chord</button></div>'; row.style.gridTemplateColumns = '1fr'; }
+    else if (r.pulsarCtl) c = `<div class="acts"><button class="sm" id="pPing" title="Plays one flash ping.">Ping</button><label class="sw" title="Pings on every flash, at the spin rate."><input type="checkbox" id="pOn"> Flashes</label><label class="sw" style="flex:1;min-width:180px" title="Flashes a second. The toy turns once each 1.6 s (0.63). The voice egg spins up to Vela's 11.2.">Spin <input type="range" id="pRate" min="0.3" max="11.2" step="0.05" value="0.63" style="flex:1"> <i id="o_pRate" style="font-style:normal;color:var(--ink);min-width:70px">0.63 a s</i></label></div>`;
     else if (r.normRow) c = `<span class="acts"><button id="match" title="Measures this star against the Sun and sets its normalization.">Measure this star again</button><button id="normAll" title="Measures every star against the Sun, about 2 minutes, and writes the NORM table for choir.js.">Normalize every star</button></span>`;
     else if (r.scale) c = `<select>${HARMONIES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select><small class="mute" id="scaleNotes" style="display:block;margin-top:4px;font-size:12px"></small>`;
     else if (r.song) c = `<select>${Object.entries(PROGRESSIONS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}<option value="custom" disabled>Custom</option></select><small class="mute" id="progDesc" style="display:block;margin-top:4px;font-size:12px"></small>`;
@@ -567,6 +575,7 @@ function show() {
       $('progDesc').textContent = nm === 'custom' ? 'Your own chords.' : nm === 'sun' && p.harmony !== 'cross' ? `No chord list: one chord, held in ${harmName(p.harmony)}.` : pr.desc + sets;
       continue;
     }
+    if (r.pulsarCtl) { v.textContent = ''; continue; }
     if (r.normRow) {
       const nv = p.norm ?? 1, fresh = normLab[sel];
       v.textContent = (nv === 1 ? '0 dB' : db(nv)) + (fresh ? ' (new)' : '');
@@ -662,7 +671,7 @@ function edit(fn, tapEdit = false) {
   tuned[sel] = p;
   show();
   if (!cur || cur.id !== sel) return;
-  if (tapEdit) { taps.set(heard(p), cur.v.chordAt(ac.currentTime).tones); cur.p = clone(p); return; }
+  if (tapEdit) { taps.set(heard(p), cur.v.chordAt(ac.currentTime).tones); cur.p = clone(p); if (pHum) { pHum.stop(); pHum = null; } return; }
   if (structural(cur.p, p)) {
     $('busy').style.visibility = 'visible';
     clearTimeout(deb);
@@ -674,7 +683,7 @@ function edit(fn, tapEdit = false) {
 }
 for (const { r, input, on, v } of Object.values(rows)) {
   if (r.editor) continue;
-  if (r.normRow) continue;
+  if (r.normRow || r.pulsarCtl) continue;
   if (r.scale) { input.addEventListener('change', () => edit(q => { q.harmony = harmV(input.value); })); continue; }
   if (r.song) {
     input.addEventListener('change', () => edit(q => {
@@ -825,7 +834,7 @@ const CMP = [['Song', p => p.prog ? (progName(p) === 'custom' ? 'custom' : PROGR
   ['Octaves', p => p.oct.join(' / ')], ['Slowed choir', p => p.slowed ? 'on' : 'off'], ['Singing', p => p.voice], ['Vowel', p => p.vowel], ['Brightness', p => p.bright], ['Resonance', p => p.res], ['Filter sweep', p => p.fmot],
   ['Analog swell', p => p.swellAmt], ['Chorus', p => p.chorus], ['Voice drift', p => p.aDrift], ['Metal', p => p.metal], ['Distance', p => p.dist], ['Room', p => p.rev], ['Echo level', p => p.mix], ['Width', p => p.width],
   ['Melody speed', p => p.step], ['Swell', p => `${p.swD} at ${p.swR} Hz${p.swTurn ? ', follows the turn' : ''}`], ['Level', p => `norm ${(p.norm ?? 1) === 1 ? '0 dB' : db(p.norm ?? 1)}, yours ${db(p.gain)}`], ['Effects', p => FX.filter(([k]) => p.fx[k].on).map(([k, n]) => `${n} ${p.fx[k].amt}`).join(', ') || 'none'],
-  ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off'], ['Blast voices', p => (p.blastMix || SUN.blastMix).join(' / ')], ['Glow voices', p => (p.glowMix || SUN.glowMix).join(' / ')]];
+  ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off'], ['Pulsar', p => `ping ${p.pingLvl ?? 1}, ring ${p.pingDecay ?? 1.2} s, octave ${p.pingOct ?? 0}, hum ${p.humLvl ?? 1}`], ['Blast voices', p => (p.blastMix || SUN.blastMix).join(' / ')], ['Glow voices', p => (p.glowMix || SUN.glowMix).join(' / ')]];
 function drawCompare() {
   if (!sel) return;
   const cols = [['Now', VOICES[sel]], ...(tuned[sel] ? [['Yours', tuned[sel]]] : []), ...Object.values(VERSIONS).map(v => [v.name, v.of(sel)]).filter(c => c[1])];
@@ -834,6 +843,33 @@ function drawCompare() {
     return `<tr><th>${n}</th>${cols.map(([, p], i) => { const v = String(f(p)); return `<td class="${i && v !== now ? 'diff' : ''}">${v}</td>`; }).join('')}</tr>`;
   }).join('');
 }
+
+// The pulsar: a ping per flash below 2.5 flashes a second, a hum above.
+let pStep = 0, pT = 0, pHum = null;
+const pRate = () => +$('pRate').value;
+function pingNow() {
+  if (!sel) pick('neutron');
+  if (!cur) start(sel);
+  const t = ac.currentTime + 0.005, p = P(cur.id), ch = cur.v.chordAt(t);
+  const tones = ch.tones.map(x => fold(ch.root * x));
+  pStep = (pStep + 1) % tones.length;
+  const g = pingVoice(ac, { t, f: rootOf(cur.id) * 2 * tones[pStep] * 2 ** (p.pingOct || 0), p, out: tapOut });
+  const h = ac.createGain(); h.gain.value = 0.5; g.connect(h).connect(hallIn);
+}
+function pulsar() {
+  clearTimeout(pT);
+  if (!$('pOn').checked || !ac) { pHum?.stop(); pHum = null; return; }
+  const r = pRate();
+  if (r > 1.2) {
+    if (!pHum) pHum = pulsarHum(ac, { p: P(cur.id), out: tapOut });
+    pHum.set(r);
+  } else if (pHum) { pHum.stop(); pHum = null; }
+  if (r <= 2.5) pingNow();
+  pT = setTimeout(pulsar, 1000 / r);
+}
+$('pPing').onclick = () => pingNow();
+$('pOn').onchange = () => { if ($('pOn').checked && !cur) { if (!sel) pick('neutron'); else start(sel); } pulsar(); };
+$('pRate').oninput = e => { $('o_pRate').textContent = (+e.target.value).toFixed(2) + ' a s'; if (pHum) pHum.set(pRate()); };
 
 // The tap bench: a level per voice (saved), and mute and solo (heard only).
 const mute = { blastMix: Array(6).fill(false), glowMix: Array(5).fill(false) };

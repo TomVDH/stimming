@@ -19,7 +19,8 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [x] Ask Tom which tap layers stay; cut the rest (Tom kept the brass blast and the glow chord) (chimes cut 2026-11-23: no visible cause; rain drips cut, Tom)
 - [x] Tom hears the choir swell on the Sun: rejected; the original brass blast is back, exact (Tom: "the best")
 - [x] Pulsar tick removed: sound, Dev row, the beam and egg triggers, the lab button (Tom, 2026-11-24)
-- [ ] Pulsar: a new sound for the beam sweep and the Vela voice egg; Tom picks it
+- [x] Pulsar sound: Tom picked a tuned ping per flash plus a hum for the fast spin; ping() and pulsarHum() in choir.js, snd.ping and snd.spin, the lab's Pulsar section (2026-11-24)
+- [ ] main.js calls snd.ping per beam flash and snd.spin during the voice egg (objects chat, bean 5c18)
 - [x] Wooshes: all cut (ede9215e). Rule: add no sound layer Tom has not asked for by name.
 - [ ] The hit: Tom heard an "attack sound" on a flare. Check what is left of the hit with Tom.
 - [x] Telegraph cut: the Carrington egg's clicks and sparks, its Dev row and the lab button (Tom, 2026-11-24)

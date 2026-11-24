@@ -1,5 +1,5 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
-import { choir, tapBus, preset, keyed, zoomAt, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, ping as pingVoice, pulsarHum, preset, keyed, zoomAt, renderBed, LOOP } from './choir.js';
 import { STARS } from './sun.js';
 // Space is silent, so the sound is a sonification: each part has a visible cause.
 // A flare: the deep synth, then a slow glow chord. A lifting prominence: the synth only. A drag is silent.
@@ -242,6 +242,37 @@ export function makeSound(kit, opt = () => undefined) {
     tapsOf(ac).glow({ t, root: keyOf(band) / 2, K, p: preset(band), pan, room: roomOf(ac, band), chordRoot: ch ? ch.root : 1, notes: ch ? ch.tones : null });
   }
 
+  // A pulsar: a tuned ping on each beam flash, and a hum once the flashes run together.
+  // The pings walk the chord the choir sings now, one note per flash.
+  let pingStep = 0, hum2 = null, spinRate = 0;
+  // A voice starts shut; the ping and hum carry their own envelopes.
+  const open = g => { g.gain.value = 1; return g; };
+  const fold = r => { while (r >= 2) r /= 2; while (r < 1) r *= 2; return r; };
+  // main.js calls this once per flash; pan is where the beam meets the eye, -1 to 1.
+  function ping(pan, band) {
+    const ac = kit.live();
+    if (!ac || !on('sndPing') || spinRate > 2.5) return;
+    const t = ac.currentTime + 0.003, p = preset(band), ch = chordOf(ac, band, t);
+    const tones = ch ? ch.tones.map(x => fold(ch.root * x)) : [1, 1.25, 1.5];
+    pingStep = (pingStep + 1) % tones.length;
+    const g = pingVoice(ac, { t, f: keyOf(band) * 2 * tones[pingStep] * 2 ** (p.pingOct || 0), p, out: open(voice(ac, pan * 0.5)), track });
+    send(ac, g, 0.5);
+  }
+  // main.js calls this each frame while the spin runs fast (flashes a second), and 0 at the end.
+  function spin(rate, band) {
+    const ac = kit.live();
+    spinRate = rate;
+    if (!ac || !on('sndPing')) return;
+    if (rate > 1.2 && !hum2) {
+      const out = open(voice(ac, 0));
+      hum2 = pulsarHum(ac, { p: preset(band), out, track });
+      send(ac, out, 0.3);
+    }
+    if (!hum2) return;
+    if (rate <= 1.2) { hum2.stop(); hum2 = null; return; }
+    hum2.set(rate);
+  }
+
   // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
@@ -265,8 +296,9 @@ export function makeSound(kit, opt = () => undefined) {
 
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
+    hum2 = null; spinRate = 0;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, setTurn, dim, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, quiet, get busy() { return pending > 0; } };
 }
