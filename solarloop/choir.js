@@ -53,7 +53,8 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // glowStyle, arpGap, glowRise, glowHold, glowFade: the glow's shape. stack: old, unlimited taps.
 // blastMix, glowMix: a level per tap voice, set on the lab's tap bench.
 // swTurn: the swell keeps pace with the toy's Turn speed; swR is its speed at x10k.
-// pingLvl, pingDecay, pingOct, pingSweep, pingRes, pingSub, pingStatic, humLvl: a pulsar's beam zap and spin hum.
+// wob, wobBend, wobOpen, wobTail: a pulsar's choir wobbles with each beam flash (Tom, 2026-11-24).
+// Tom: no ping, no notes; a subdued highlight inside the pad that swells and releases in about 0.3 s.
 export const SUN = {
   wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12,
   dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, norm: 1, key: 0,
@@ -62,7 +63,7 @@ export const SUN = {
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
   glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
   blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1], swTurn: false,
-  pingLvl: 1, pingDecay: 0.45, pingOct: 0, pingSweep: 0.1, pingRes: 9, pingSub: 0, pingStatic: 0, humLvl: 1,
+  wob: 0, wobBend: 8, wobOpen: 0.8, wobTail: 0.8,
   fx: fx0(),
 };
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
@@ -115,7 +116,7 @@ export const VOICES = {
   sgra: P({ ...song('phrygian'), ...ARP, ...ANALOG, det: 14, res: 5, fmot: 0.5, bright: 0.5, step: 16, dist: 0.85, rev: 14, mix: 1.8, width: 1.9, oct: [0.6, 0.8, 1.1], swR: 0.03, swD: 0.2, glowWave: 'sawtooth', fx: { dark: 0.5, echo: 0.45 }, gain: 1 }),
   // 3C 273: the first quasar, radio-loud and billions of light years away. A far transmission.
   qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 1 }),
-  neutron: P({ ...song('overtones'), ...ARP, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 1 }),
+  neutron: P({ ...song('overtones'), ...ARP, wob: 0.7, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 1 }),
 };
 // Normalization: each star's level against the Sun, measured offline.
 // K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render (2026-11-24).
@@ -420,6 +421,20 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   // One shared pitch drift: 3 cents at 0.2 Hz (Tom).
   const drift = G(motion.drift ? 3 : 0);
   { const o = ac.createOscillator(); o.frequency.value = 0.2; src(o, t).connect(drift); }
+  // The pulsar wobble: the choir itself bends, opens, dips and shimmers with each flash.
+  // bend (cents), open (filter and vowel) and tail (reverb) are offsets that a flash swells.
+  // At a fast spin two waves at the flash rate make it a vibrato and a tremolo.
+  let wob = null;
+  if (live || p.wob > 0) {
+    const cs = () => { const c = ac.createConstantSource(); c.offset.value = 0; src(c, t); return c; };
+    wob = { bend: cs(), open: cs(), tail: cs(), trem: G(1), vibG: G(0), tremG: G(0) };
+    wob.vibO = lfo(1, 1, wob.vibG.gain).o;
+    wob.vibO.disconnect();
+    wob.vibO.connect(wob.vibG);
+    wob.tremO = ac.createOscillator();
+    wob.tremO.frequency.value = 1;
+    src(wob.tremO, t).connect(wob.tremG).connect(wob.trem.gain);
+  }
   // The analog pad: each unison voice drifts on its own slow wave.
   // Each of the three waves feeds the detune of one unison voice.
   if (live || p.aDrift > 0) n.aDrift = [0.07, 0.11, 0.13].map(r => lfo(r, 0, G(0).gain));
@@ -450,6 +465,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
       o.detune.value = u * p.det;
       if (u) n.unison.push({ o, u });
       drift.connect(o.detune);
+      if (wob) { wob.bend.connect(o.detune); wob.vibG.connect(o.detune); }
       if (n.aDrift) n.aDrift[ui % 3].g.connect(o.detune);
       // FM: a modulator a fifth up, index 2.2, gives the glassy synth.
       let m = null, mg = null;
@@ -471,6 +487,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   const first = prog ? chordOf(prog[0], harmony) : null;
   const firstV = first ? voiced(first, p.voicing) : null;
   const layers = p.slowed ? LAYERS : [LAYERS[0]];
+  const cut0 = L => clamp(L.lp * p.bright, 500, 11000);
   for (let oi = 0; oi < 3; oi++) {
     if (!live && p.oct[oi] <= 0) continue;
     const sh = 2 ** -oi;
@@ -487,7 +504,12 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
       }
       // The bare path is 1.4 times quieter than the formants, so it gains 1.4.
       if (live || p.voice < 1) { lay.direct = G(0); soft.connect(lay.direct).connect(lay.bus); }
-      lay.bus.connect(sw);
+      if (wob) {
+        // A flash opens the filter and lifts the vowel.
+        wob.open.connect(G(cut0(L) * 0.9)).connect(soft.frequency);
+        for (const fm of lay.forms) wob.open.connect(G(fm.f * 0.3)).connect(fm.bp.frequency);
+        lay.bus.connect(wob.trem);
+      } else lay.bus.connect(sw);
       n.layers.push(lay);
       // The melody has its own gain, for the zoom's melody layer.
       const leadG = G(1);
@@ -524,6 +546,11 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
       v.leads[0].push(note(base * lo * sh, 0.45, 0, p.melody !== 'off', leadG));
       v.leads[1].push(note(base * lo * sh, 0.45, 0, false, leadG));
     }
+  }
+  if (wob) {
+    wob.trem.connect(sw);
+    if (n.wet) wob.tail.connect(G(1.2 * p.mix)).connect(n.wet.gain);
+    if (n.hallS) wob.tail.connect(G(0.8 * p.mix)).connect(n.hallS.gain);
   }
   // Notes sounding at once: chord notes and one lead, per octave and layer.
   const chordN = () => prog ? voiced(chordOf(prog[0], harmony), p.voicing).length : held ? held.chord.length : SHARED.length + 1;
@@ -569,6 +596,32 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   v.set = np => { Object.assign(p, np, { oct: [...np.oct] }); apply(false); };
   // Sets the Turn speed as a factor of x10k; a swell with swTurn follows it.
   v.setTurn = k => { if (Math.abs(k - turnK) > turnK * 0.01) { turnK = k; apply(false); } };
+  // A flash: the choir bends down and back, opens, dips, and leaves a shimmer in the reverb.
+  // Each offset gets an anchor at the flash, so a ramp never starts from an older event.
+  const anchor = (prm, at) => { prm.cancelScheduledValues(at); prm.setValueAtTime(prm.value, at); };
+  const swell1 = (prm, at, peak, rise, tau) => { anchor(prm, at); prm.linearRampToValueAtTime(peak, at + rise); prm.setTargetAtTime(0, at + rise, tau); };
+  v.pulse = (at = ac.currentTime, k = 1) => {
+    if (!wob || !(p.wob > 0)) return;
+    const w = p.wob * k;
+    swell1(wob.bend.offset, at, -p.wobBend * w, 0.1, 0.2);
+    swell1(wob.open.offset, at, p.wobOpen * w, 0.1, 0.2);
+    swell1(wob.tail.offset, at, p.wobTail * w * 0.8, 0.2, 1.2);
+    anchor(wob.trem.gain, at);
+    wob.trem.gain.linearRampToValueAtTime(1 - 0.2 * Math.min(1, w), at + 0.08);
+    wob.trem.gain.setTargetAtTime(1, at + 0.08, 0.2);
+  };
+  // A fast spin, in flashes a second: the wobbles fuse into a vibrato and a tremolo at that rate.
+  // The choir opens further as the rate climbs toward Vela's 11.2. Rate 0 settles it.
+  v.spin = rate => {
+    if (!wob) return;
+    const at = ac.currentTime, k = clamp((rate - 1.2) / 3, 0, 1) * p.wob;
+    wob.vibO.frequency.setTargetAtTime(Math.max(0.1, rate), at, 0.2);
+    wob.tremO.frequency.setTargetAtTime(Math.max(0.1, rate), at, 0.2);
+    wob.vibG.gain.setTargetAtTime(p.wobBend * 0.6 * k, at, 0.3);
+    wob.tremG.gain.setTargetAtTime(0.25 * k, at, 0.3);
+    wob.open.offset.setTargetAtTime(p.wobOpen * 0.5 * clamp(rate / 11.2, 0, 1) * p.wob, at, 0.5);
+    wob.tail.offset.setTargetAtTime(p.wobTail * 0.4 * k, at, 0.5);
+  };
   // Sets the zoom layers: low, mid, high, melody and fx gains.
   v.setLayers = z => { Object.assign(layer, z); apply(false); };
   // A filter swell: the low pass dips, then opens over swellA s.
@@ -959,79 +1012,6 @@ export function tapBus(ac, { out, hall, track = n => n }) {
         });
         shapeGlow(h, p, at);
       }
-    },
-  };
-}
-
-// The pulsar zap: on each beam flash, a raw synth hit on a note of the chord (Tom: no bell).
-// Two detuned saws pass a resonant low pass that sweeps from 5 kHz down to the note in pingSweep s.
-// The sweep is the dispersion of a real pulse: high frequencies arrive first.
-// pingSub adds a short low thump; pingStatic a little radio hiss. Both are off by default.
-// o.f: the note in Hz. Returns the zap's gain; the caller pans it and sends it on.
-export function ping(ac, { t, f, p = SUN, out, track = n => n }) {
-  const g = ac.createGain(), dec = p.pingDecay, sw = Math.max(0.02, p.pingSweep);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.06 * p.pingLvl, t + 0.003);
-  g.gain.setTargetAtTime(0, t + 0.01, dec / 4.6);
-  g.connect(out);
-  const lp = ac.createBiquadFilter();
-  lp.type = 'lowpass'; lp.Q.value = p.pingRes;
-  lp.frequency.setValueAtTime(5000, t);
-  lp.frequency.exponentialRampToValueAtTime(Math.max(80, f * 1.5), t + sw);
-  lp.connect(g);
-  const end = t + dec + 0.3;
-  for (const dt of [-8, 8]) {
-    const o = ac.createOscillator();
-    o.type = 'sawtooth'; o.frequency.value = f; o.detune.value = dt;
-    o.connect(lp); o.start(t); o.stop(end); track(o);
-  }
-  if (p.pingSub > 0) {
-    // The thump: a sine that falls from 120 to 45 Hz in 80 ms.
-    const sg = ac.createGain(), so = ac.createOscillator();
-    sg.gain.setValueAtTime(0, t); sg.gain.linearRampToValueAtTime(0.08 * p.pingSub, t + 0.004); sg.gain.setTargetAtTime(0, t + 0.02, 0.04);
-    so.frequency.setValueAtTime(120, t); so.frequency.exponentialRampToValueAtTime(45, t + 0.08);
-    so.connect(sg).connect(out); so.start(t); so.stop(t + 0.4); track(so);
-  }
-  if (p.pingStatic > 0) {
-    // The receiver: a soft band of noise that fades in 0.3 s.
-    const n = ac.createBufferSource(), b = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.4), ac.sampleRate), d = b.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    n.buffer = b;
-    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1800; bp.Q.value = 1.2;
-    const ng = ac.createGain(); ng.gain.setValueAtTime(0.02 * p.pingStatic, t); ng.gain.setTargetAtTime(0, t + 0.02, 0.08);
-    n.connect(bp).connect(ng).connect(out); n.start(t); track(n);
-  }
-  return g;
-}
-// The pulsar hum: past 2.5 flashes a second the zaps merge into a tone.
-// Two detuned saws, five octaves over the flash rate, through a resonant low pass.
-// The level buzzes at the flash rate. Returns a handle: set(rate, at) and stop(at).
-export function pulsarHum(ac, { p = SUN, out, track = n => n }) {
-  const g = ac.createGain(), buzz = ac.createGain(), lfo = ac.createOscillator(), depth = ac.createGain();
-  g.gain.value = 0;
-  buzz.gain.value = 0.6;
-  depth.gain.value = 0.4;
-  lfo.connect(depth).connect(buzz.gain);
-  const lp = ac.createBiquadFilter();
-  lp.type = 'lowpass'; lp.frequency.value = 1200; lp.Q.value = 4;
-  lp.connect(buzz).connect(g).connect(out);
-  const saws = [-7, 7].map(dt => { const o = ac.createOscillator(); o.type = 'sawtooth'; o.detune.value = dt; o.connect(lp); return o; });
-  const t = ac.currentTime;
-  for (const o of [...saws, lfo]) { o.start(t); track(o); }
-  // The hum rises from 2.5 to 4 flashes a second, so the zaps hand over to it.
-  // 0.012 sits the hum near the choir's level, not over it.
-  const level = r => 0.012 * p.humLvl * clamp((r - 2.5) / 1.5, 0, 1);
-  return {
-    set(rate, at = ac.currentTime) {
-      const f = rate * 32;
-      for (const o of saws) o.frequency.setTargetAtTime(f, at, 0.15);
-      lp.frequency.setTargetAtTime(Math.max(300, f * 4), at, 0.15);
-      lfo.frequency.setTargetAtTime(rate, at, 0.15);
-      g.gain.setTargetAtTime(level(rate), at, 0.3);
-    },
-    stop(at = ac.currentTime) {
-      g.gain.setTargetAtTime(0, at, 0.4);
-      for (const o of [...saws, lfo]) o.stop(at + 2);
     },
   };
 }
