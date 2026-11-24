@@ -5,7 +5,7 @@ status: todo
 type: task
 priority: normal
 created_at: 2026-11-24T22:21:22Z
-updated_at: 2026-11-24T23:45:13Z
+updated_at: 2026-11-24T23:46:11Z
 parent: stimming-e35i
 ---
 
@@ -27,3 +27,7 @@ Starts after the objects chat has added its objects (stimming-mhpz and the quasa
 - [ ] Read MisterPrada/singularity's raymarch: how it marches the bent ray through a volumetric disc, its noise for the clouds, its lighting and step count
 - [ ] A raymarched volumetric disc for Cygnus X-1, Sagittarius A* and the quasar: turbulent cloud density, emission hot near the inner edge, Doppler beaming, lensing along the march
 - [ ] Frame time held near the toy's budget (the volume pass already runs at half size)
+
+## Scope, Tom 2026-11-24: a light touch
+
+"we will minimally add some volumetrics -- i like our current black hole -- we will just add a bit in for depth and fidelity". Keep the current holes as they are. Add a thin layer of raymarched volumetric gas over the existing disc for depth: a few soft cloud wisps that catch the disc's light and bend with the lensing, after MisterPrada/singularity's clouds. No rebuild of the disc, the shadow, the ring or the lensing; the earlier checklist items beyond the volumetric layer are optional, only if Tom asks.
