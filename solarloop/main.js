@@ -11,6 +11,7 @@ import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
+import { makeRail } from './rail.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -87,16 +88,30 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 
 /* ---------- the view: a telescope, so an orthographic projection ---------- */
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
-// Three framings, in L's order: the long lens (the quarter cut), the full star, the wide dome.
-const VIEWS = ['long', 'full', 'wide'];
+// Three framings on one zoom axis: the long lens on the bottom left limb, the wide dome, the full star.
+// z is 0 on the long lens, 1 on the wide view, 2 on the full star.
+// Past 2 the full view pulls back: z 3 is 4 times farther, z 4 is 16 times.
+const VIEWS = ['long', 'wide', 'full'];
+const Z_MAX = 4;
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
 // Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
-// cam eases from one framing to the next; t runs from 0 to 1.
-const cam = { mode: 'long', from: '', t: 1 };
-cam.from = cam.mode;
+const z0 = 0;
+// cam glides z from one value to the next; t runs from 0 to 1 over dur seconds.
+const cam = {
+  z: z0, from: z0, to: z0, t: 1, dur: 0,
+  // The nearest stop names the framing.
+  get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
+};
 const ease = t => t * t * (3 - 2 * t);
-// How much of a framing is in the current view, from 0 to 1.
-const weight = name => { const k = ease(cam.t); return (cam.from === name ? 1 - k : 0) + (cam.mode === name ? k : 0); };
+// How much of a framing is in the current view, from 0 to 1; the weights add to 1.
+const weight = name => {
+  const z = Math.min(cam.z, 2), i = VIEWS.indexOf(name);
+  if (i === 0) return 1 - ease(clamp(z));
+  if (i === 2) return ease(clamp(z - 1));
+  return z <= 1 ? ease(clamp(z)) : 1 - ease(clamp(z - 1));
+};
+// How far the full view pulls back at z.
+const pullBack = z => 2 ** (Math.max(0, z - 2) * 2);
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
   const narrow = asp < 0.8;
@@ -122,76 +137,51 @@ function fitView(w, h, top = 0, bottom = 0) {
   // Pulled back, so the corona has room to stretch out.
   const hhF = narrow ? 1.45 * R / asp : 1.6 * R * h / free2;
   const hwF = hhF * asp;
-  fullBase = { cx: 0, cy: -(bottom - top) * hhF / h, hw: hwF };
-  fitFull();
-}
-// The full view zooms out up to 16 times farther: wheel, pinch, or the - and = keys.
-const ZOOM_MAX = 16;
-let fullBase = { cx: 0, cy: 0, hw: 1100 }, zoom = 1, zoomTo = 1, zoomV = 0;
-function fitFull() {
-  fit.full = { cx: fullBase.cx * zoom, cy: fullBase.cy * zoom, hw: fullBase.hw * zoom };
+  fit.full = { cx: 0, cy: -(bottom - top) * hhF / h, hw: hwF };
   applyView();
 }
-// The input sets a target; the zoom follows it on a spring.
-// Zooming in past the full star carries on into the long lens (Tom).
-// The push must build a little once the view rests at x1, so one wheel tick never jumps.
-let pushIn = 1;
-function zoomBy(k) {
-  if (cam.mode !== 'full') return;
-  if (k < 1 && zoomTo <= 1.0001 && zoom < 1.1) {
-    pushIn *= k;
-    if (pushIn < 0.6) { pushIn = 1; goView('long'); }
-    return;
-  }
-  pushIn = 1;
-  const z = clamp(zoomTo * k, 1, ZOOM_MAX);
-  if (z === zoomTo) return;
-  zoomTo = z;
-  // Reduced motion jumps straight to the target.
-  if (calm || !started) { zoom = z; zoomV = 0; fitFull(); }
-  setLabel(labels.lens, lensLabel());
-  poke();
-}
-// A heavy spring in log space: it reaches the target in about 1.5 s, a few percent past.
-function stepZoom(dt) {
-  const x = Math.log(zoom), X = Math.log(zoomTo);
-  if (Math.abs(X - x) < 1e-4 && Math.abs(zoomV) < 1e-3) {
-    if (zoom !== zoomTo) { zoom = zoomTo; fitFull(); }
-    zoomV = 0;
-    return false;
-  }
-  const w = 2.4, damp = 0.72;
-  zoomV += (w * w * (X - x) - 2 * damp * w * zoomV) * dt;
-  zoom = Math.exp(x + zoomV * dt);
-  fitFull();
-  return true;
-}
-// Eases between the framings; the width moves on a log scale, as a zoom does.
+// Mixes the two framings round z; the width moves on a log scale, as a zoom does.
+// The ease holds the view near each stop, so the stops feel like detents.
 function applyView() {
-  const k = ease(cam.t);
-  const a = fit[cam.from], b = fit[cam.mode];
-  view.cx = a.cx + (b.cx - a.cx) * k;
-  view.cy = a.cy + (b.cy - a.cy) * k;
-  view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
+  const z = cam.z, i = Math.min(1, Math.floor(z));
+  const a = fit[VIEWS[i]], b = fit[VIEWS[i + 1]], k = z >= 2 ? 1 : ease(z - i), s = pullBack(z);
+  view.cx = (a.cx + (b.cx - a.cx) * k) * s;
+  view.cy = (a.cy + (b.cy - a.cy) * k) * s;
+  view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k) * s;
   view.hh = view.hw / view.asp;
   // An oblate star: the view stretches its equator across the screen.
   const ob = 1 + STARS[shown].oblate;
   view.cx /= ob; view.hw /= ob;
   setRot();
 }
-// L steps through the framings: long lens, full star, wide dome.
-function toggleLens() { goView(VIEWS[(VIEWS.indexOf(cam.mode) + 1) % VIEWS.length]); }
-// Eases to a framing; a move during a zoom starts from wherever the view now stands.
-function goView(mode) {
-  if (mode === cam.mode) return;
-  if (cam.t < 1) { cam.from = cam.t < 0.5 ? cam.from : cam.mode; }
-  else cam.from = cam.mode;
-  cam.mode = mode;
-  cam.t = !started || calm ? 1 : 0;
+// Glides the zoom to z over dur seconds, from wherever the view now stands.
+function glideTo(z, dur) {
+  z = clamp(z, 0, Z_MAX);
+  cam.from = cam.z; cam.to = z; cam.t = 0;
+  cam.dur = !started || calm ? 0 : dur;
+  if (!cam.dur) { cam.z = z; cam.t = 1; }
+  store.set('lensZ', z.toFixed(3));
   applyView();
   setLabel(labels.lens, lensLabel());
   readHover();
+  rail?.show(cam.z, cam.to);
   poke();
+}
+// L jumps to the next stop in Tom's order: long lens, full star, wide dome, then back.
+function toggleLens() {
+  glideTo(cam.to < 0.5 ? 2 : cam.to > 1.5 ? 1 : 0, 2);
+}
+// The wheel, a pinch and the - and = keys move the zoom by dz.
+// Close to a stop, a pause settles the zoom on it.
+let settle = 0;
+function zoomBy(dz) {
+  if (chart?.isOpen) return;
+  glideTo(cam.to + dz, 0.25);
+  clearTimeout(settle);
+  settle = setTimeout(() => {
+    const s = Math.round(cam.to);
+    if (s <= 2 && Math.abs(cam.to - s) > 0.001 && Math.abs(cam.to - s) < 0.15) glideTo(s, 0.4);
+  }, 350);
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -225,7 +215,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [zoom, zoomTo]; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -266,14 +256,18 @@ const PICKS = [
 const DIGITS = '1234567890';
 // The bar's labels: the star with its swatch, and the view with its zoom.
 const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
-const lensLabel = () => `Lens · ${cam.mode === 'full' && zoomTo > 1.01 ? `Full ×${zoomTo < 9.95 ? zoomTo.toFixed(1) : Math.round(zoomTo)}` : cam.mode}`;
+const zoomText = z => {
+  const name = VIEWS[Math.min(2, Math.round(z))], k = pullBack(z);
+  return z > 2.02 ? `full ×${k < 9.95 ? k.toFixed(1) : Math.round(k)}` : name;
+};
+const lensLabel = () => `Lens · ${zoomText(cam.to)}`;
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
   st.star = v;
   egg = null;
   store.set('star', v);
   // A new star opens on the whole star.
-  goView('full');
+  glideTo(2, 2);
   applyView();
   setLabel(labels.star, starLabel());
   chart?.sync();
@@ -298,8 +292,9 @@ const ui = initPage({ id: ID, bar: {
   help: [
     ['click', 'Tap a region to flare it, or a prominence to lift it off'],
     ['drag', 'Drag to turn the star (the long lens holds still)'],
-    ['L', 'Step through the long lens, the wide view and the full star'],
-    ['scroll', 'Zoom out and in on the full star'],
+    ['scroll', 'Zoom from the long lens through the wide view to the full star, and farther out'],
+    ['L', 'Jump to the next lens stop: long, wide, full'],
+    ['S', 'Open the star chart'],
     ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
     ['[', 'Step to the previous star; ] steps to the next'],
   ],
@@ -315,12 +310,22 @@ const chart = makeChart({
   get: () => st.star,
   onPick: pickStar,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
+  onOpen: on => { if (on) rail.hide(); },
+});
+const rail = makeRail({
+  frame: stage.closest('.stim-frame') || stage.parentElement,
+  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [3, '×4'], [4, '×16']],
+  max: Z_MAX,
+  text: zoomText,
+  cover: () => ui.cover?.() || { top: 58, bottom: 56 },
+  onPick: z => glideTo(z, Math.max(0.6, Math.abs(z - cam.z) * 0.7)),
 });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented || chart.isOpen) return;
   if (e.target.closest?.('input, textarea, select, .s2-sheet, .sg-sheet')) return;
   const i = DIGITS.indexOf(e.key);
   if (i >= 0) pickStar(PICKS[i].value);
+  else if (e.key === 's' || e.key === 'S') chart.open(true);
   else if (e.key === '[' || e.key === ']') {
     const at = PICKS.findIndex(x => x.value === st.star);
     pickStar(PICKS[(at + (e.key === ']' ? 1 : -1) + PICKS.length) % PICKS.length].value);
@@ -647,12 +652,14 @@ function frame(now) {
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
-    // The lens zooms over about two seconds.
+    // The zoom glides: a lens step over two seconds, the wheel in a quarter second.
     const zooming = cam.t < 1;
     if (zooming) {
-      cam.t = Math.min(1, cam.t + dt / 2);
-      if (cam.t >= 1) cam.from = cam.mode;
+      cam.t = Math.min(1, cam.t + dt / cam.dur);
+      const k = cam.dur >= 1 ? ease(cam.t) : 1 - (1 - cam.t) ** 3;
+      cam.z = cam.from + (cam.to - cam.from) * k;
       applyView();
+      rail.show(cam.z, cam.to);
     }
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
@@ -667,7 +674,6 @@ function frame(now) {
     // The star turns under a still mouse.
     if (hoverAt) readHover();
     const glowing = stepLit(dt);
-    const easing = stepZoom(dt);
     const dipping = stepDip(dt);
     // A still press past the cue starts the star's egg under it.
     const holding = pointer.id !== null && !pointer.drag;
@@ -680,7 +686,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || easing || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     if (STARS[shown].beam && (drifting > 0 || egg?.kind === 'voice')) pulse();
     again = lively || drifting > 0;
@@ -718,7 +724,7 @@ function schedule(delay = 0) {
 }
 // The Dev toggles turn the hum and the rumble on and off.
 // Closeness for the mix: 1 on the long lens, 0 on the full star, below 0 zoomed out.
-const nearness = () => Math.log(fullBase.hw / view.hw) / Math.log(fullBase.hw / fit.long.hw);
+const nearness = () => Math.log(fit.full.hw / view.hw) / Math.log(fit.full.hw / fit.long.hw);
 function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness()); }
 function poke() {
   lastInput = performance.now();
@@ -774,11 +780,10 @@ stage.addEventListener('pointermove', e => {
   readHover();
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); });
-// Zoom in the full view: the wheel, a two-finger pinch, the - and = keys.
+// Zoom through every view: the wheel, a two-finger pinch, the - and = keys.
 stage.addEventListener('wheel', e => {
-  if (cam.mode !== 'full') return;
   e.preventDefault();
-  zoomBy(Math.exp(clamp(e.deltaY, -120, 120) * 0.004));
+  zoomBy(clamp(e.deltaY, -120, 120) * 0.0025);
 }, { passive: false });
 const touches = new Map();
 let pinch0 = 0;
@@ -794,14 +799,14 @@ stage.addEventListener('pointermove', e => {
   touches.set(e.pointerId, local(e));
   if (touches.size !== 2 || !pinch0) return;
   const d = spread();
-  zoomBy(pinch0 / Math.max(d, 1));
+  zoomBy(Math.log2(pinch0 / Math.max(d, 1)));
   pinch0 = d;
 });
 ['pointerup', 'pointercancel'].forEach(t => stage.addEventListener(t, e => { touches.delete(e.pointerId); if (touches.size < 2) pinch0 = 0; }));
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea')) return;
-  if (e.key === '-' || e.key === '_') zoomBy(1.25);
-  else if (e.key === '=' || e.key === '+') zoomBy(0.8);
+  if (e.key === '-' || e.key === '_') zoomBy(0.25);
+  else if (e.key === '=' || e.key === '+') zoomBy(-0.25);
 });
 
 /* ---------- life cycle ---------- */
