@@ -11,7 +11,7 @@ parent: stimming-y9pf
 Tom (2026-11-23): "Would like more faraway POV", "I'd maybe want it to be released in a port or lagoon / wider waterway than a canal" (picked Port basin), "perhaps we can use frietkot like silhouettes", then "I think this is not the sweeping quality we're looking for.." and "Yes, plan it". Plan: docs/plans/shiplaunch.md, section Sweep.
 
 - [x] Base: 200 m port basin, the pier shot, Frietkot figure cards
-- [ ] Wave wall: impact source, shoal before the pier, crest spray (source and shoal built, uncommitted; crest spray not built)
+- [x] Wave wall: impact source, sink, shoal before the pier, the pier moved in front of her (crest spray across the basin left for the light stage)
 - [ ] Camera sweep: waiting wide, crane down, pier, wave, pull back; reduced-motion cuts; tall keyframes
 - [ ] Light: shared sky and clouds, shafts through the spray, flare, grade, sun path
 - [ ] Detail: hull, crane and shed, yard, harbour, water
@@ -35,3 +35,8 @@ Seen in the close frames, to fix in later stages:
 - The camera EYE still sits at PIER.x0 + 3, PIER.z0 + 11 with lens 40: at the new pier it frames the hull too tight (the strip used lens 62).
 
 Next, in plan order: finish the wave wall (crest spray, QA, commit), then the camera sweep, light, detail.
+
+## Resumed (2026-11-23, Tom via the orchestrator: "commit, merge and push and proceed until the sessions truly need my instructions")
+
+- Wave wall committed. Ridge capped at 6.5 m (WALL.max). Pier lens 62 degrees.
+- QA (headless Edge, D3D11): console clean, phone console clean; 8.1 ms mean, 9.3 ms p95 through the hit; drifting 33 rAF a second, none after 62 s idle, none hidden, none at rest under reduced motion; the audio context suspends at the end.

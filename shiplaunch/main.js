@@ -229,7 +229,7 @@ function placeHull() {
 const EYE = new THREE.Vector3(PIER.x0 + 3, PIER.top + 2.5, PIER.z0 + 11);
 const AIM = new THREE.Vector3(10, 4, START_Z + 8);
 // The lens keeps the hull's width: a tall stage widens the vertical view.
-const LENS = { wide: 40, tall: 62 };
+const LENS = { wide: 62, tall: 78 };
 if (globalThis.__launch) globalThis.__cam = { EYE, AIM, LENS, frame: () => frame3() };
 function frame3() {
   const asp = cssW / cssH;
@@ -314,6 +314,10 @@ function setDrop(v) {
 let mistLive = false, mistShown = false;
 let simT = 0, draftOn = false, hitAt = -1, yaw = 0, yawGoal = 0;
 const SUB = 1 / 240;
+// The wave wall: the impact ridge's height per metre of Drop.
+// The ridge stays under max metres, so she is not buried.
+const WALL = { k: 3, max: 6.5 };
+if (globalThis.__launch) globalThis.__wall = WALL;
 function step(dt) {
   // The water line under her: the level a beam's width out each side.
   const off = HULL.B / 2 + 3;
@@ -323,7 +327,7 @@ function step(dt) {
   stepLaunch(L, dt);
   const delay = camera.position.distanceTo(tmpV.set(0, 4, L.gz)) / 343, px = 0.1;
   for (const e of L.events.splice(0)) {
-    if (e.type === 'hit') { hitAt = simT; hullU.uWet.value = 1; snd.hit(Math.min(1, e.v / 7), delay, px); snd.cheer(delay + 2.2, 0.6 + 0.4 * Math.min(1, e.v / 7)); crowd.cheer(true); }
+    if (e.type === 'hit') { hitAt = simT; hullU.uWet.value = 1; canal.impact(-46, 46, L.gz + HULL.B / 2 + 7, Math.min(WALL.max, WALL.k * drop * Math.min(1.3, e.v / 6))); snd.hit(Math.min(1, e.v / 7), delay, px); snd.cheer(delay + 2.2, 0.6 + 0.4 * Math.min(1, e.v / 7)); crowd.cheer(true); }
     else if (e.type === 'release') snd.release(delay, px);
     else if (e.type === 'move') snd.groan(delay, px);
   }

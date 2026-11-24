@@ -19,17 +19,17 @@ Idea 222 (Slipway), grown to XXXL: Tom's pick of 2026-11-23. Beans `stimming-y9p
 ## Rules
 
 - One fixed shot, one hull, one launch, scaled by the Drop. No modes.
-- Metres and seconds. The hull's motion is a solved cross-section (sway, heave, roll); the wave is a shallow-water sim the hull drives. Nothing is scripted after the cut.
+- Metres and seconds. The hull's motion is a solved cross-section (sway, heave, roll); the wave is a shallow-water sim the hull drives. At the hit an impact ridge, scaled by the Drop and her impact speed, joins the sim; the sim carries the rest.
 - Sound from the hull comes late by its distance at 343 m/s.
 - The loop runs at full rate from the cut until she rolls under 0.3 degrees, the spray and mist are gone and the basin is calm, 75 s after the hit at most. Bunting and chop drift at 30 fps until the toy sleeps.
 
 ## Direction
 
-- 3D, three.js 0.170, at true scale. A yard on a port basin in flat land, low winter sun behind the yard, seen from the head of a stone pier among the crowd, about 150 m from the berth (Tom: "Would like more faraway POV"; he picked a port basin over a canal).
+- 3D, three.js 0.170, at true scale. A yard on a port basin in flat land, low winter sun behind the yard, seen from the head of a stone pier among the crowd, broadside on, about 55 m off her side (Tom: "Would like more faraway POV"; he picked a port basin over a canal). The sweep (planned) adds the far views.
 - References: the Westerbroek and Hoogezand side launches (Wikimedia Commons, `Category:Sideways_launching`), the LST and LCS side launches, two Polygoon newsreels. No real yard, ship or place name.
 - An 88 m short-sea coaster, green over a red-brown bottom, a white house aft, bunting from bow to mast to bridge.
 - The launch: the grease holds one to three seconds, she slides 12 m down 1 in 10 ways, tips off the edge outboard-down, hits, rolls back toward the yard and down to calm. Four wires to rust heaps on the berth pull her up; the heaps tear across the concrete.
-- The basin: 200 m wide and 6 m deep, closed at the west end, open east to the outer harbour. A 512 x 256 pipe-model sim at 1 m cells covers it, the pier and the quays. The hull's underside presses the water as a pressure head, so the wave comes from her drop. In open water it spreads: about 1.4 m beside her, about 0.1 m at the pier. Water on the pier deck makes the crowd step back.
+- The basin: 200 m wide and 6 m deep, closed at the west end, open east to the outer harbour. A 512 x 256 pipe-model sim at 1 m cells covers it, the pier and the quays. The hull's underside presses the water as a pressure head. At the hit a ridge rises beside her over 1.2 s (at most 6.5 m) and runs out as a wall; a slow sink over the basin takes its water back over 20 s. A rubble apron before the pier head (6 m to 1.5 m deep over 40 m) slows the wall and grows it. At Drop 1.5 the wall is about 1.5 m across the basin and 1.7 m at the pier head, half a metre over the deck; at Drop 0.6 it stays under the deck. Water on the deck makes the crowd step back.
 - Spray: dense spray and drops off her waterline and the pier's faces (after Ponlai's spray kinds); the foam pattern is Ponlai's, ported to GLSL. Mist, chain dust and grease smoke: a K3 fluid (Volcano's port), lit by Fire's smoke light from `shared/smoke.js` (`smLight`, `smPhase`, `smConsts`), backlit by the sun.
 - The crowd: flat figure cards in profile, Frietkot's `walker()` shape (Tom: "perhaps we can use frietkot like silhouettes"). Against the low sun they are ink with a sunlit rim. They face the berth; after the hit some wave and point.
 
@@ -72,7 +72,7 @@ Web Audio on the shared kit, muted by default: the rope, the trigger weight and 
 
 ## QA
 
-Captures: `docs/qa/shiplaunch/`. Headless Edge on D3D11 (RTX 3070), 1280 x 800: 8.2 ms mean and 9.3 ms at the 95th percentile through the hit. Console clean. The idle, hidden, reduced-motion and sound results are in the beans.
+Captures: `docs/qa/shiplaunch/` (from the basin build, before the pier moved). Headless Edge on D3D11 (RTX 3070), 1280 x 800: 8.1 ms mean and 9.3 ms at the 95th percentile through the hit. Console clean. The idle, hidden, reduced-motion and sound results are in the beans.
 
 ## Open
 

@@ -12,6 +12,13 @@ export const X0 = -240, Z0 = -30;
 const G = 9.81;
 // The hull's pressure head: water under her is pushed out this hard.
 const KAPPA = 4;
+// The impact ridge rises over SRC_T seconds; the sink takes it back over SINK_T.
+const SRC_T = 1.2, SINK_T = 20;
+// The open water of the basin, in square metres, for the sink.
+const WET_AREA = (X0 + NX * CELL - CANAL.xWest) * (CANAL.zQuay - CANAL.zYard);
+// The apron's depth at the pier head.
+const SHOAL = 1.5;
+const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 const TRI = new THREE.BufferGeometry();
 TRI.setAttribute('position', new THREE.Float32BufferAttribute([-1, -1, 0, 3, -1, 0, -1, 3, 0], 3));
@@ -22,6 +29,9 @@ precision highp float;
 precision highp sampler2D;
 uniform sampler2D tS, tF, tB, tH;
 uniform float uDt;
+// The impact source: x from, x to, the ridge's z, its width.
+uniform vec4 uSrc;
+uniform float uSrcRate, uSink;
 const ivec2 R = ivec2(${NX}, ${NZ});
 const float L = ${CELL.toFixed(2)};
 bool inside(ivec2 c) { return c.x >= 0 && c.y >= 0 && c.x < R.x && c.y < R.y; }
@@ -85,6 +95,15 @@ void main() {
   // The sponge eases the water back to rest at the ends.
   float sp = sponge(c);
   h = mix(h, max(0.0, -b), uDt * 1.5 * sp);
+  // The hit raises a ridge beside her; it runs out as the wave wall.
+  vec2 P = vec2(${X0.toFixed(1)}, ${Z0.toFixed(1)}) + (vec2(c) + 0.5) * L;
+  if (uSrcRate > 0.0) {
+    float along = smoothstep(uSrc.x - 12.0, uSrc.x, P.x) * (1.0 - smoothstep(uSrc.y, uSrc.y + 12.0, P.x));
+    float g = exp(-0.5 * pow((P.y - uSrc.z) / uSrc.w, 2.0));
+    h += uDt * uSrcRate * g * along;
+  }
+  // A slow sink over the basin takes that water back.
+  if (b < 0.0) h = max(0.0, h - uDt * uSink);
   // Velocity from the mean flow through the faces.
   float qx = 0.5 * ((inL - f.x) + (f.y - inR));
   float qz = 0.5 * ((inB - f.z) + (f.w - inT));
@@ -223,7 +242,8 @@ export function makeCanal(renderer, drop) {
   const init = new Float32Array(NX * NZ * 4);
   const initTex = new THREE.DataTexture(init, NX, NZ, THREE.RGBAFormat, THREE.FloatType);
 
-  const U = { tS: { value: null }, tF: { value: null }, tB: { value: bedTex }, tH: { value: draft.texture }, uDt: { value: 1 / 240 } };
+  const U = { tS: { value: null }, tF: { value: null }, tB: { value: bedTex }, tH: { value: draft.texture }, uDt: { value: 1 / 240 },
+    uSrc: { value: new THREE.Vector4() }, uSrcRate: { value: 0 }, uSink: { value: 0 } };
   const pass = fs => new THREE.Mesh(TRI, new THREE.RawShaderMaterial({ uniforms: U, vertexShader: 'in vec3 position;\n' + VS, fragmentShader: '#define gl_FragColor fc\nout highp vec4 fc;\n' + fs, glslVersion: THREE.GLSL3 }));
   const scene = new THREE.Scene();
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -252,7 +272,11 @@ export function makeCanal(renderer, drop) {
       if (z < CANAL.zYard) b = Math.abs(x) < 64 ? wayTop(z, d) - 0.55 : 1.7;
       else if (x < CANAL.xWest) b = CANAL.quayTop;
       else if (x > PIER.x0 && x < PIER.x1 && z > PIER.z0 && z <= CANAL.zQuay) b = PIER.top;
-      else if (z <= CANAL.zQuay) b = -CANAL.depth;
+      else if (z <= CANAL.zQuay) {
+        // A rubble apron before the pier: the wave slows, grows and breaks.
+        const dx = Math.max(PIER.x0 - x, 0, x - PIER.x1), dz = Math.max(PIER.z0 - z, 0);
+        b = -CANAL.depth + (CANAL.depth - SHOAL) * (1 - sstep(0, 40, Math.hypot(dx, dz)));
+      }
       // The quay rises gently inland, so a sheet of water drains back.
       else b = CANAL.quayTop + (z - CANAL.zQuay) * 0.006;
       const k = (j * NX + i) * 4;
@@ -265,6 +289,8 @@ export function makeCanal(renderer, drop) {
 
   function reset(d = drop) {
     drop = d;
+    srcLeft = sinkLeft = 0;
+    U.uSrcRate.value = U.uSink.value = 0;
     setBed(d);
     for (const t of S) run(copy, t);
     for (const t of Fl) { renderer.setRenderTarget(t); renderer.setClearColor(0x000000, 0); renderer.clear(); }
@@ -293,6 +319,9 @@ export function makeCanal(renderer, drop) {
   /** Runs n sub-steps of dt seconds. */
   function step(n, dt) {
     U.uDt.value = dt;
+    U.uSrcRate.value = srcLeft > 0 ? srcH / SRC_T : 0;
+    U.uSink.value = sinkLeft > 0 ? sinkRate : 0;
+    srcLeft -= n * dt; sinkLeft -= n * dt;
     for (let i = 0; i < n; i++) {
       U.tS.value = S[0].texture; U.tF.value = Fl[0].texture;
       run(flux, Fl[1]);
@@ -304,6 +333,17 @@ export function makeCanal(renderer, drop) {
     U.tS.value = S[0].texture;
     run(surface, surf);
     renderer.setRenderTarget(null);
+  }
+
+  /* ---------- the impact source ---------- */
+  let srcLeft = 0, sinkLeft = 0, srcH = 0, sinkRate = 0;
+  /** At the hit: a ridge of height h, sigma m wide, along x0 to x1 at z. */
+  function impact(x0, x1, z, h, sigma = 6) {
+    U.uSrc.value.set(x0, x1, z, sigma);
+    srcH = h; srcLeft = SRC_T;
+    // The sink returns the same volume over SINK_T seconds.
+    const vol = h * Math.sqrt(2 * Math.PI) * sigma * (x1 - x0 + 12);
+    sinkRate = vol / (WET_AREA * SINK_T); sinkLeft = SINK_T;
   }
 
   /* ---------- readback ---------- */
@@ -420,7 +460,7 @@ export function makeCanal(renderer, drop) {
 
   reset(drop);
   return { probe,
-    group, WU, U, step, reset, drawHull, clearDraft, drawMirror, setMirrorSize, readColumn, readPatch, clearPatch, levelAt, wetAt, etaAt,
+    group, WU, U, step, reset, impact, drawHull, clearDraft, drawMirror, setMirrorSize, readColumn, readPatch, clearPatch, levelAt, wetAt, etaAt,
     get drop() { return drop; },
   };
 }

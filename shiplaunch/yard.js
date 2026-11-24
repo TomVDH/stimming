@@ -8,7 +8,7 @@ import * as THREE from 'three';
 // The basin is closed at xWest and opens east to the outer harbour.
 export const CANAL = { zYard: -27.5, zQuay: 172.5, depth: 6, quayTop: 1.0, xWest: -230 };
 // A stone pier runs out from the north quay; the crowd stands on its head.
-export const PIER = { x0: -116, x1: -104, z0: 78, top: 1.0 };
+export const PIER = { x0: -16, x1: -4, z0: 42, top: 1.0 };
 // The ways: 1 in 10 across the berth, eight of them under the hull.
 export const WAYS = { slope: 0.1, xs: [-35, -25, -15, -5, 5, 15, 25, 35], back: -60 };
 // The hull: an 88 m short-sea coaster.
