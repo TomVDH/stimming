@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-24T05:37:15Z
-updated_at: 2026-11-24T05:53:40Z
+updated_at: 2026-11-24T06:07:41Z
 parent: stimming-oh7b
 ---
 
@@ -24,3 +24,5 @@ Small responses to the hand that make Solar loop feel alive. Tom picks which to 
 ## Summary of Changes
 
 Six micro-interactions on branch claude/solarloop-micro-346300, each approved live by Tom: cursor reads the region; hover glow 15 percent; press charge to 1.6 times; empty-sky tap ring with a soft note (no flare); zoom on a heavy spring, 1.4 s; star switch dip. Not built: turn inertia, sound ticks (Tom did not pick them). Not merged to main.
+
+Tom, 2026-11-23: the empty-sky ring is removed. An empty-sky tap now flares nothing.

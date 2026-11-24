@@ -596,7 +596,6 @@ function noiseVolume(n) {
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
-uniform vec4 uRip;
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
@@ -615,13 +614,6 @@ float kern(vec2 fc) {
     if (S <= 0.0) continue;
     vec2 d = (fc - uSat[k].xy) / uSc;
     s += S * (6.0 * exp(-dot(d, d) / 90.0) + 1.2 * exp(-dot(d, d) / 2400.0));
-  }
-  // A tap on empty sky: a faint ring of light spreads through the haze.
-  if (uRip.w > 0.0) {
-    vec2 e = fc - uRip.xy;
-    float w = 0.09 * uRip.z + 4.0 * uSc;
-    float x = (length(e) - uRip.z) / w;
-    s += uRip.w * exp(-x * x) * (0.55 + 0.9 * vn(vec3(e / uSc * 0.012, uRip.z * 0.004)));
   }
   return s;
 }
@@ -887,7 +879,6 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, f, 'uVol', 4, volA);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
-    gl.uniform4fv(f.u.uRip, v.rip);
     gl.uniform4fv(f.u.uView, v.view);
     gl.uniform4f(f.u.uMix, B.rays, B.hotW, B.coolW, v.shimmer);
     gl.uniform4fv(f.u.uBodyA, v.bodyA);

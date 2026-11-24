@@ -12,7 +12,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 
 | Input | Does |
 |---|---|
-| Click or tap the stage | Flares the region under the tap, or lifts off the prominence under the tap. A tap on empty sky, far from both, flares nothing: a thin ring of the star's light spreads from it over 1.8 s, with a soft low note |
+| Click or tap the stage | Flares the region under the tap, or lifts off the prominence under the tap. A tap on empty sky, far from both, flares nothing |
 | Point (mouse) | The cursor reads the region under it: a pointer over a region or prominence, grab on the wide and full views, an arrow on the still long lens. The target under the pointer brightens 15 percent |
 | Press and hold | The target swells to 1.6 times its light over about a second; the flare goes on release. A drag cancels it |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
@@ -119,11 +119,11 @@ Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trim
 
 ## Frame loop
 
-- Lively while a flare or an eruption runs, the lens zooms, the zoom spring settles, a drag turns the star, a target's hover or press light eases, a sky ring spreads, or a star switch dips.
+- Lively while a flare or an eruption runs, the lens zooms, the zoom spring settles, a drag turns the star, a target's hover or press light eases or a star switch dips.
 - Drifting at 30 fps: the loops' life cycle.
 - Asleep 60 s after the last input: the drift eases to a stop over 2 s and the loop stops.
 - Hidden tab: the loop and both clocks stop.
-- Reduced motion: no drift; the loop sleeps at once. A tap still flares, softer (70 percent) and slower (80 percent); the shot noise holds still. The zoom and the star switch jump; a sky ring stays small and still, and softer.
+- Reduced motion: no drift; the loop sleeps at once. A tap still flares, softer (70 percent) and slower (80 percent); the shot noise holds still. The zoom and the star switch jump.
 - Slow frames step down one rung, then two (`shared/detail.js`): a lower pixel ratio, then fewer bloom levels.
 
 ## Sound
