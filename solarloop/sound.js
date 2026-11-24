@@ -172,7 +172,7 @@ export function makeSound(kit) {
 
   // The star's voice while the toy is awake, in two layers.
   // The space rumble: a constant, dense, deep surround drone, a seamless loop.
-  // The hum: a soft angelic organ choir that wobbles slightly; its top voice slowly sings.
+  // The hum: a soft angelic organ choir, steady; its top voice slowly sings.
   // A major pentatonic for the top voice, in semitones above the chord's root.
   const SING = [12, 14, 16, 19, 21, 24, 21, 19, 16, 14];
   // Organ drawbars by harmonic: 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1'.
@@ -291,14 +291,6 @@ export function makeSound(kit) {
     }
     const root = (ROOT[band] || 220) / 2;
     const os = [];
-    const lfo = (hz, depth, target) => {
-      const l = osc(ac, 'sine', hz, t, 1e5);
-      const lg = ac.createGain();
-      lg.gain.value = depth;
-      l.connect(lg).connect(target);
-      os.push(l);
-      return l;
-    };
     const g = ac.createGain();
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(1, t + 6);
@@ -327,19 +319,12 @@ export function makeSound(kit) {
     // The organ choir: each note is three voices a few cents apart, so it shimmers.
     const choir = ac.createGain();
     choir.gain.value = 0.022;
-    // A slow swell in loudness: the slight wobble of breath in a choir.
-    lfo(0.23, 0.004, choir.gain);
     const air = filt(ac, 'highshelf', 3000, 0.7);
     air.gain.value = 3;
     const top = filt(ac, 'lowpass', 9000, 0.5);
     const humOn = ac.createGain();
     humOn.gain.value = layers.hum ? 1 : 0;
     choir.connect(air).connect(top).connect(humOn).connect(g);
-    // The wobble: a slow drift of pitch and a faint fast shimmer, shared by every voice.
-    const wob = ac.createGain();
-    wob.gain.value = 1;
-    lfo(0.35, 6, wob);
-    lfo(5.2, 2, wob);
     const note = (f, amp) => {
       const vo = ac.createGain();
       vo.gain.value = amp;
@@ -350,7 +335,6 @@ export function makeSound(kit) {
         o.setPeriodicWave(waveFor(ac, f));
         o.frequency.value = f;
         o.detune.value = c;
-        wob.connect(o.detune);
         o.start(t); o.stop(t + 1e5);
         track(o).connect(vo);
         os.push(o);
