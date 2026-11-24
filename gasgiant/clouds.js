@@ -45,6 +45,74 @@ uniform float uZ;
 ${VOL_NOISE}
 void main() { o = volAt(vec3(vUv, uZ)); }`;
 
+// The top deck's swirls, baked once into a 2D tile 2,048 km square.
+// Whirls lie on angle and log radius, after Tornado alley's deck, so arms never wind up.
+// r: the billow height. g: fine streaks along the arms. b: the whirl weight. a: folded ridges.
+export const SW_TILE = 2048;
+export const SWIRL_FS = /* glsl */`#version 300 es
+precision highp float;
+precision highp sampler3D;
+in vec2 vUv;
+out vec4 o;
+uniform sampler3D uVol;
+// The cells each way: a uniform, so D3D does not unroll the loop.
+uniform int uReach;
+const float TILE = ${SW_TILE.toFixed(1)}, CELL = 256.0, NC = 8.0;
+vec3 th3(vec2 c) { vec3 p = vec3(dot(c, vec2(127.1, 311.7)), dot(c, vec2(269.5, 183.3)), dot(c, vec2(419.2, 371.9))); return fract(sin(p) * 43758.5453); }
+// The noise at a point in volume units; the volume repeats every unit.
+vec4 nz(vec3 p) { return textureLod(uVol, p, 0.0); }
+// The billow, streak and ridge values at one noise point.
+vec3 layer(vec3 p, vec3 ps) {
+  vec4 a = nz(p), b = nz(p * vec3(2.0, 2.0, 1.0) + 0.37), s = nz(ps);
+  float bill = a.a * 0.7 + b.a * 0.3;
+  float rg = 1.0 - abs(2.0 * (a.r * 0.6 + b.r * 0.4) - 1.0);
+  return vec3(bill, s.g, rg * rg);
+}
+void main() {
+  vec2 w = vUv * TILE;
+  // The open field: bands stretched east to west, with a slow warp. The tile repeats.
+  vec4 wp = nz(vec3(vUv * 2.0, 0.71));
+  vec2 u = vUv + (wp.rg - 0.5) * 0.06;
+  vec3 n0 = layer(vec3(u.x * 6.0, u.y * 16.0, 0.13), vec3(u.x * 12.0, u.y * 48.0, 0.57));
+  // The two strongest whirls each read their own noise; the values blend.
+  // Blending their noise points squeezes the texture into streaks.
+  float w1 = 0.0, w2 = 0.0, wc = 0.0;
+  vec3 p1 = vec3(0.0), p2 = vec3(0.0), s1 = vec3(0.0), s2 = vec3(0.0);
+  vec2 cb = floor(w / CELL);
+  int side = 2 * uReach + 1;
+  for (int k = 0; k < side * side; k++) {
+    vec2 c = cb + vec2(float(k % side - uReach), float(k / side - uReach));
+    vec2 cm = mod(c, NC);
+    vec3 r = th3(cm + 7.0), r2 = th3(cm + 19.0);
+    // One cell in ten holds no whirl; the rest vary in size.
+    if (r2.z < 0.1) continue;
+    vec2 q = w - (c + 0.2 + 0.6 * r.xy) * CELL;
+    float R = CELL * (0.45 + 0.85 * r.z * r.z);
+    float rr = max(length(q), 0.5);
+    float wt = 1.0 - smoothstep(R * 0.4, R, rr);
+    if (wt <= 0.0) continue;
+    float spin = r2.x < 0.5 ? -1.0 : 1.0;
+    float lr = log(rr / R);
+    // Inside 0.3 R the arms stop winding: a calm core, not tight rings.
+    float ang = spin * atan(q.y, q.x) - (0.6 + 0.7 * r2.y) * max(lr, -1.2);
+    // Across the arms the noise runs fast; along them, slowly.
+    vec3 pt = vec3(cos(ang) * 0.45 + r.x, sin(ang) * 0.45 + r.y, lr * 0.12 + r2.y);
+    vec3 ps = vec3(cos(ang) * 0.9 + r.y, sin(ang) * 0.9 + r.x, lr * 0.25 + r2.x);
+    wc = max(wc, wt * (1.0 - smoothstep(0.0, 0.3 * R, rr)));
+    if (wt > w1) { w2 = w1; p2 = p1; s2 = s1; w1 = wt; p1 = pt; s1 = ps; }
+    else if (wt > w2) { w2 = wt; p2 = pt; s2 = ps; }
+  }
+  float W = w1 + w2, wS = clamp(W, 0.0, 1.0);
+  vec3 nw = n0;
+  if (w1 > 0.0) {
+    vec3 a = layer(p1, s1);
+    vec3 b = w2 > 0.02 ? layer(p2, s2) : a;
+    nw = (a * w1 + b * w2) / W;
+  }
+  vec3 n = mix(n0, nw, wS);
+  o = vec4(n.x, n.y, clamp(wS * 0.7 + wc * 0.3, 0.0, 1.0), n.z);
+}`;
+
 const MARCH_SRC = /* glsl */`#version 300 es
 precision highp float;
 precision highp sampler3D;
@@ -52,6 +120,8 @@ in vec2 vUv;
 out vec4 o;
 uniform sampler2D uMap, uLut;
 uniform sampler3D uVol;
+// The top deck's baked swirls: SWIRL_FS.
+uniform sampler2D uSwirl;
 uniform vec3 uCam, uFwd, uRight, uUp;
 uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
 uniform vec4 uFlash[4];
@@ -59,9 +129,12 @@ uniform vec4 uFlash[4];
 uniform vec4 uTune;
 // Dev tuning: the strength of the god rays.
 uniform float uRays;
+// ?qa: 1 slope, 2 fold, 3 sun, 4 inner, 5 sky and diffuse, 9 many twisters.
+uniform float uDbg;
 ${COMMON}
 ${CLOUDS}
 const float SIG = 1.1;
+const float SW_TILE = ${SW_TILE.toFixed(1)};
 const float TOP = 42.0, BOT = -505.0;
 // This program's zone: it holds only the layers in it.
 const float ZLO = 0.0, ZHI = 0.0;
@@ -78,6 +151,15 @@ vec3 gAlb = vec3(1.0);
 float gOpen = 0.0;
 // gUnder: 1 on a void's ceiling, where the floor's light bounces up.
 float gUnder = 0.0;
+// gFold: 1 in the top deck's folds and valleys, 0 on its crests.
+float gFold = 0.0;
+// gTw: a twister's side to the light (-1 to 1), its depth 0 core to 1 rim, its height 0 to 1.
+// gTw.w is 1 where a twister sets the density.
+vec4 gTw = vec4(0.0);
+// gFace: the sun on the top deck's slope over the sun on flat cloud; 1 off the deck.
+float gFace = 1.0;
+// The swirl tile's height, in km: rolls, arms and folded ridges.
+float swH(vec4 sw) { return 13.0 * (sw.r - 0.5) + 2.0 * sw.a - 0.7; }
 // gDeep: km under a deck's top, for the light that diffuses down into it; -1 outside.
 float gDeep = -1.0;
 // The floor's colour, for the light it bounces up.
@@ -184,7 +266,8 @@ float stormsIn(vec3 p, float h, float flo, float cei, float seed, float cs, floa
       res = 0.3 * smoothstep(rc, rc * 0.4, e) * smoothstep(0.45, 0.8, st) * hang;
     }
     // A twister drops from the rain-free base at the curtain's edge.
-    if (r2.z > 1.0 - tw) {
+    // ?qa view 9 drops a twister at every curtain.
+    if (r2.z > 1.0 - (uDbg > 8.5 ? 1.0 : tw)) {
       float an = r2.x * 6.2832;
       vec2 tc = c + vec2(cos(an), sin(an) / 1.7) * rc * 1.05;
       // It wanders slowly; the foot trails the top; the rope sways.
@@ -199,7 +282,13 @@ float stormsIn(vec3 p, float h, float flo, float cei, float seed, float cs, floa
         // The wall swirls on angle and log radius, as in Tornado alley, so it never winds up.
         float a = atan(q.y, q.x) - uT * (0.4 + 0.5 * r2.x) - 2.0 * log(max(rr, 0.05));
         float sw = textureLod(uVol, vec3(cos(a) * 0.4 + r2.x, h / (H * 0.6) - uT * 0.01, sin(a) * 0.4 + r2.y), 0.0).r;
-        res = max(res, smoothstep(rad * 1.25 + 0.3, rad * 0.5, rr) * (0.35 + 0.9 * sw) * mix(0.45, 1.0, smoothstep(0.0, 0.15, f)));
+        float twd = smoothstep(rad * 1.25 + 0.3, rad * 0.5, rr) * (0.35 + 0.9 * sw) * mix(0.45, 1.0, smoothstep(0.0, 0.15, f));
+        if (twd > res) {
+          res = twd;
+          // Its side to the light comes from above, slanted to the sun, as deepLight() sets it.
+          vec3 lt = deepLight(normalize(p - PC));
+          gTw = vec4(dot(q / max(rr, 1e-3), normalize(lt.xz + 1e-5)), clamp(rr / (rad * 1.25 + 0.3), 0.0, 1.0), f, 1.0);
+        }
       }
     }
   }
@@ -216,6 +305,9 @@ float dens(vec3 p, float lod, float fine, float full) {
   gOpen = 0.0;
   gUnder = 0.0;
   gDeep = -1.0;
+  gFold = 0.0;
+  gFace = 1.0;
+  gTw = vec4(0.0);
   if (h < min(TOP, ZHI) && h > max(BOT, ZLO)) {
     vec4 m = mapAt(p.xz);
     // A slow, wide warp breaks the noise lattice; the fine octave turns off its axes.
@@ -232,7 +324,8 @@ float dens(vec3 p, float lod, float fine, float full) {
     if (wS > 0.0) {
       float lr = log(max(sr, 0.03)) - 0.00012 * uTMap;
       float ang = atan(se.y, se.x) + 0.0014 * uTMap - 2.6 * lr;
-      vec3 sp = vec3(cos(ang) * 1.6 + lr * 6.0, h * 0.04, sin(ang) * 1.6);
+      // Tornado alley's ratio of log radius to angle: arms, not rings.
+      vec3 sp = vec3(cos(ang) * 1.6 + lr * 2.0, h * 0.04, sin(ang) * 1.6);
       vec4 s1 = textureLod(uVol, sp + vec3(0.0, uT * 0.0006, 0.0), 0.0);
       vec4 s2 = textureLod(uVol, sp * vec3(3.1, 2.0, 3.1) + vec3(0.37, uT * 0.0015, 0.71), 0.0);
       n1 = mix(n1, s1, wS);
@@ -249,7 +342,20 @@ float dens(vec3 p, float lod, float fine, float full) {
     if (h > 0.0) {
       // The ammonia deck: tops follow the map; billows stand on them; a lumpy ceiling below.
       // Billows stand taller in the zones and the storm, where the cloud is thick.
-      float top = 4.0 + 20.0 * m.r + (6.0 + 5.0 * m.r) * (nb - 0.5) * (1.0 + m.a);
+      // The swirls set the big forms: arms, rolls and folds, after Tornado alley's deck.
+      // The mip level follows the pixel's footprint: 2 km a texel.
+      float tk = 120.0 * (exp2(lod) - 1.0);
+      float mip = max(0.0, log2(max(tk, 1.0) * 0.0015));
+      vec4 sw = textureLod(uSwirl, p.xz / SW_TILE + vec2(0.37, 0.61), mip);
+      float big = swH(sw) + 2.0 * fine * (sw.g - 0.5);
+      // After Tornado alley's storm base: a step toward the sun finds the lit side of each roll.
+      // gFace is the sun on the slope over the sun on flat cloud.
+      if (full > 0.5) {
+        vec2 sxz = normalize(SUN.xz + 1e-5);
+        float s = (swH(textureLod(uSwirl, (p.xz + sxz * 5.0) / SW_TILE + vec2(0.37, 0.61), mip)) - swH(sw)) / 5.0;
+        gFace = clamp((SUN.y - s * length(SUN.xz)) / max(SUN.y, 0.05), 0.0, 2.5);
+      }
+      float top = 6.0 + 14.0 * m.r + big + 2.5 * (nb - 0.5);
       // Relief at Juno's scale: cells, popcorn heads and folded ridges, in km.
       // Convective cells 4 km across heap the tops.
       float rel = 5.0 * (n2.b - 0.45);
@@ -260,15 +366,14 @@ float dens(vec3 p, float lod, float fine, float full) {
       vec4 n3 = textureLod(uVol, vec3(qr.x / 150.0, h * 0.03, qr.z / 34.0) + vec3(0.21, 0.4, 0.47), 0.0);
       float rg = 1.0 - abs(2.0 * n3.a - 1.0);
       rel += 4.0 * rg * rg * rg - 1.4;
-      rel *= fine * (0.4 + 0.6 * m.r);
+      rel *= fine * (0.25 + 0.4 * m.r);
       top += rel;
       // The underside belongs to the void below: the deck runs down to 0.
       float base = -1.0 + 2.0 * (nb - 0.5);
       float sh = min(top - h, (h - base) * 0.7);
-      // Holes open in the low belts; zones and the storm stay closed.
-      float cov = smoothstep(0.22, 0.42, nc.a + 0.55 * (m.r - 0.45) + 0.08 * (nb - 0.5));
+      // The cover is whole: no holes, no breaks (Tom, 2026-11-24). The void's rays keep their own breaks.
       // A crisp top near the eye lets the heads cast shadows.
-      d = smoothstep(0.0, 0.35 + 0.85 * lod, sh) * (0.55 + 0.45 * n1.b) * cov * (1.0 - breakAt(p.xz, 3.1, 0.0));
+      d = smoothstep(0.0, 0.35 + 0.85 * lod, sh) * (0.55 + 0.45 * n1.b);
       // Inside, the deck churns: dense billows round thin pockets the eye sees through.
       // The top keeps its skin; the pockets open from 2 km down.
       // Pockets are 4 km across; the interior is thin enough to see billows 3 to 5 km off.
@@ -283,6 +388,8 @@ float dens(vec3 p, float lod, float fine, float full) {
       float sat = clamp(m.b + 0.35 * (1.0 - ao), 0.0, 1.0);
       gAlb = mix(vec3(0.86, 0.9, 0.88), pal(m.g + 0.22 * (n1.a - 0.5) + 0.12 * (n2.a - 0.5)), sat);
       gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0) * ao;
+      // Folds and troughs between the arms go dark; the crests keep the light.
+      gFold = clamp(smoothstep(1.5, -6.0, big + 0.6 * rel) * 0.6 + 0.6 * (1.0 - smoothstep(0.2, 0.9, gFace)), 0.0, 1.0);
       // Thunderheads: a few 90 km cells in the zones punch up to 30 to 38 km.
       // Cauliflower sides widen upward; the anvil spreads in the top fifth.
       vec2 tc = floor(p.xz / 90.0);
@@ -488,6 +595,7 @@ float dens(vec3 p, float lod, float fine, float full) {
         gBounceC = pal(vd.w);
       }
       float sd = stormsIn(p, h, vd.x, vd.y, vd.z, vk.x, vk.y, vk.z);
+      if (sd <= d) gTw = vec4(0.0);
       if (sd > d) {
         d = sd;
         gAlb = mix(pal(vd.w + 0.1 * n1.a), vec3(0.85), 0.35);
@@ -557,6 +665,9 @@ void main() {
         float under = gUnder;
         float deep = gDeep;
         vec3 bc = gBounceC;
+        float fold = gFold;
+        float face = gFace;
+        vec4 tw = gTw;
         if (tHit < 0.0) tHit = t;
         float h = altOf(p);
         vec4 L = lut(h);
@@ -574,7 +685,8 @@ void main() {
         float powder = 1.0 - exp(-2.0 * tau - 0.6);
         lit = mix(lit, lit * powder, 0.35) + 0.025;
         float ring = ringShadow(p);
-        vec3 sun = L.rgb * L.a * lit * ph * ring * 0.85;
+        // The skin takes the slope's light; deeper in, the cloud does not.
+        vec3 sun = L.rgb * L.a * lit * ph * ring * 0.85 * mix(1.0, face, open);
         // The light from above lights what it reaches; it glows forward when the eye looks toward it.
         float phD = mix(1.0, clPhase(dot(rd, ld)), 0.4);
         vec3 diffuse = L.rgb * (1.0 - L.a) * (0.07 + 0.45 * open * open + 1.0 * lit * phD) * uTune.y;
@@ -586,9 +698,31 @@ void main() {
         vec3 bounce = L.rgb * mix(vec3(1.0), bc * 1.3, 0.5) * (1.0 - L.a) * uTune.z * 2.0 * under;
         // Sunlight diffuses down into a deck: none at the skin, most 3 to 6 km in, then it fades.
         vec3 inner = deep >= 0.0 ? L.rgb * 1.2 * (1.0 - exp(-deep / 1.5)) * exp(-deep / 14.0) * (0.25 + 0.75 * lit) : vec3(0.0);
+        // A roll turned from the sun glows little inside; its folds stay dark.
+        inner *= (0.15 + 0.85 * clamp(face, 0.0, 1.0)) * (1.0 - 0.8 * fold);
+        // After Tornado alley's storm base: folds lose the light from above and the sky.
+        diffuse *= mix(1.0, 0.22, fold);
+        sky *= mix(1.0, 0.35, fold);
+        // On the top deck the sun leads; shade keeps little fill, as under Tornado alley's deck.
+        float topK = h > 0.0 && deep >= 0.0 ? 1.0 : 0.0;
+        float shK = mix(1.0, mix(0.25, 1.0, clamp(lit, 0.0, 1.0)), topK);
+        sky *= shK;
+        diffuse *= shK;
+        sun *= 1.0 + 0.6 * topK;
         vec3 Lc = alb * (sun + diffuse + sky + bounce + inner);
+        // A twister takes Tornado alley's funnel light (shellCol in tornado/funnel.js).
+        // The lit side falls off into the body; the shade side fills cool slate, less with depth.
+        if (tw.w > 0.5) {
+          float tod = (1.0 - tw.x) * 1.1 + (1.0 - tw.y) * 0.9 * (0.5 - 0.5 * tw.x) + smoothstep(0.45, 1.0, tw.z) * 0.9;
+          float tl = (exp(-tod) + 0.3 * exp(-tod * 0.4) + 0.05 * exp(-tod * 0.16)) / 1.35;
+          vec3 amb = (sky + bounce + diffuse * 0.3) * vec3(0.7, 0.85, 1.2) * (0.3 + 0.55 * tw.z) * exp(-max(0.0, 1.0 - tw.y) * 1.6);
+          Lc = alb * ((sun + diffuse) * tl * 1.8 + amb * 1.5);
+        }
+        // Shade in the folds takes a bruised violet, never a grey wash.
+        Lc *= mix(vec3(1.0), vec3(0.88, 0.8, 1.1), fold * (1.0 - clamp(lit, 0.0, 1.0)) * 0.8);
         // Deep in a deck, dense cores shade themselves and thin wisps catch the light between them.
         if (deep > 1.5) Lc *= mix(1.0, mix(1.35, 0.45, smoothstep(0.08, 0.5, dn)), smoothstep(1.5, 4.0, deep));
+        if (uDbg > 0.5 && uDbg < 8.5) Lc = uDbg < 1.5 ? vec3(face * 0.25) : uDbg < 2.5 ? vec3(fold * 0.5) : uDbg < 3.5 ? alb * sun : uDbg < 4.5 ? alb * inner : alb * (sky + diffuse);
         // Flashes light the cloud round them, with no shadow.
         for (int k = 0; k < 4; k++) {
           vec4 f = uFlash[k];

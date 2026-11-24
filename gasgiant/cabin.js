@@ -58,6 +58,8 @@ uniform float uIce, uStress, uCrush, uNear;
 uniform vec3 uEye;
 uniform mat3 uLook;
 uniform vec2 uTan, uShake;
+// uFrame: 0 takes the window away, so the outside fills the screen.
+uniform float uFrame;
 uniform float uBloomK, uTime, uWipe, uFrost, uWet, uRush, uHeat, uFlash, uAsp, uEntry, uDeck;
 const float PI = 3.14159265;
 // The window, metres: the rim opening narrows to the outer pane.
@@ -193,6 +195,12 @@ void main() {
   vec3 d = uLook * dE;
   vec3 v = -d;
   // The entry's flame and the flashes light the cabin with the window.
+  if (uFrame < 0.5) {
+    vec3 c0 = outside(clamp(vUv + uShake, 0.001, 0.999));
+    c0 = mix(c0, vec3(0.7, 0.74, 0.78), smoothstep(0.0, 0.06, uCrush) * (1.0 - smoothstep(0.06, 0.2, uCrush)));
+    o = vec4(c0 * (1.0 - smoothstep(0.15, 0.4, uCrush)), 1.0);
+    return;
+  }
   vec3 W = winLight() + uEntry * vec3(0.9, 0.3, 0.09) + uFlash * FLASH_C * 0.6 * uDeck;
   vec3 col;
   // The wall: z = BOW * x * x, solved along the ray.

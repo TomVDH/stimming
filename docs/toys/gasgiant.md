@@ -32,6 +32,8 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Bright rings arch over the northern sky, seen from their unlit side. Their shadow lies on the deck.
 - A low sun at the side, 10 degrees up (Tom, 2026-11-23): the heads on the deck throw long shadows.
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
+- The top deck (Tom, 2026-11-24): whole cover with no holes or breaks, and large swirls like Tornado alley's. A tile 2,048 km square, baked once at load, holds whirls 230 to 660 km across with spiral arms and calm cores. A step toward the sun lights each roll's sunward side. On the deck the sun leads; shade keeps little fill and takes a bruised violet in the folds, as under Tornado alley's storm base.
+- Twisters keep their simple form but take Tornado alley's funnel light (Tom, 2026-11-24): a lit flank that falls off into the body, cool slate shade that darkens with depth, a darker top under the ceiling.
 - At the first touch the capsule skims the tops to their horizon; a few thunderheads punch up to 30 to 38 km with anvils; the haze lid's sheets pass as veils. Inside the white deck, dense billows stand against brighter gaps (Tom, 2026-11-23).
 - Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
 - Three decks with a void under each of the upper two (Tom, 2026-11-23). Hourglass towers join each floor to its ceiling, far off in the haze.
@@ -59,7 +61,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - The voids are expansive stretches, as in Tornado alley (Tom, 2026-11-23): in a void the eye sees to the horizon, 1,600 km, where floor and ceiling meet. Towers gather in clusters and lines with open plains between; some join floor and ceiling, some rise as plumes, some hang. Rain curtains hang from the ceilings; a rare twister drops at a curtain's edge (Tom, 2026-11-23).
 - Light gets into the clouds (Tom, 2026-11-23): under the deck tops it comes down through the ceiling, slanted to the sun's side; thin parts glow, cores go dark.
 - Each void's ceiling is a storm base after Tornado alley's (Tom, 2026-11-23): folded lumps on a warped field, broad rolls, scud; the lit floor lights the crests, the folds go black.
-- God rays and scale (Tom, 2026-11-23): ragged breaks 20 to 40 km across cut through each void's ceiling and the deck above. Light falls through them in slanted shafts that glow in the gas, brightest toward the light, and lands in soft pools on the floors and towers; the rest lies in shade. From above, a break opens onto the lit void below.
+- God rays and scale (Tom, 2026-11-23): ragged breaks 20 to 40 km across cut through each void's ceiling and the deck above. Light falls through them in slanted shafts that glow in the gas, brightest toward the light, and lands in soft pools on the floors and towers; the rest lies in shade. From above, the top deck stays whole; a break in a lower deck opens onto the lit void below.
 - Each layer tints the light. The light fades slowly through the abyss and fails under the last deck. The eye opens up to 8 times as the light fails; flashes dim to match.
 - The window has two layers (Tom, 2026-11-23). Against it: the storm's near fog streams past, curtains and banks in the near 32 m after Window seat's, lit by the flashes from their bearing. On it: beads, runs and fog from the shared wet pane, frost in orbit, ammonia rime in the white deck, mist deep down, veils of hue and brightness, heat shimmer.
 - Under stress the pane bows in and the view swells; from 120 km down long jagged cracks run in from the rim, branch and join in a web; each new crack jolts the capsule. At 640 km the hull fails: a burst, then black, and the toy wakes at the top.
@@ -103,16 +105,16 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `main.js` | Bar, capsule and eye, gestures, frame loop, ladder |
 | `world.js` | Planet, decks, light table, ring profile, palette, shared GLSL |
 | `map.js` | Pass 1: bands, the storm, its wake |
-| `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into three zone programs |
+| `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into three zone programs. `SWIRL_FS` bakes the top deck's swirl tile |
 | `sky.js` | Space, sun, rings, limb haze |
 | `post.js` | Pass 4: the composite. The final grade |
 | `cabin.js` | The capsule: wall, bezel, liner, panes; the window's two layers (near fog copied from Window seat, wet pane from `shared/wetglass.js`), cracks, the crush |
 | `bolts.js` | Lightning timing |
 | `sound.js` | Web Audio |
 
-Dev: `?dev` shows the Dev sheet (Tom, 2026-11-23), in groups: Go to (any layer); View (cabin on or off, pitch, yaw past the drag's limits); Render (pixels auto or native, clouds at half or full size, steps 1x to 2x); Sun (azimuth, elevation); Exposure (exposure, eye gain cap); Clouds (light into cloud, ambient, floor bounce, haze reach, god rays); Storm (flash strength); Window (near fog, drops, pane fog, cracks by depth, off or full); Reset. The values persist, and apply without `?dev` too.
+Dev: `?dev` shows the Dev sheet (Tom, 2026-11-23), in groups: Go to (any layer); View (window frame on or off: off takes away wall, bezel, liner, panes and the pane's weather, so the clouds fill the screen; pitch, yaw past the drag's limits); Render (pixels auto or native, clouds at half or full size, steps 1x to 2x); Sun (azimuth, elevation); Exposure (exposure, eye gain cap); Clouds (light into cloud, ambient, floor bounce, haze reach, god rays); Storm (flash strength); Window (near fog, drops, pane fog, cracks by depth, off or full); Reset. The values persist, and apply without `?dev` too.
 
-Links: `?alt=-14` starts at that height; `?out` shows the outside with no cabin; `?qa` exposes the state as `__gg`, times each shader link, and `__gg.bench(n)` times n frames on the GPU.
+Links: `?alt=-14` starts at that height; `?out` shows the outside with no cabin; `?qa` exposes the state as `__gg`, times each shader link, and `__gg.bench(n)` times n frames on the GPU. `__gg.tune(id, v)` sets a dev value; `__gg.dbg` shows one light term on the clouds (1 slope, 2 fold, 3 sun, 4 inner, 5 sky and diffuse) or 9, a twister at every curtain.
 
 ## QA
 

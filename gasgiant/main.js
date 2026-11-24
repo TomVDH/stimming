@@ -9,7 +9,7 @@ import { loadWatch } from '../shared/loadwatch.js';
 import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
-import { BAKE_FS, marchFS, zoneFor } from './clouds.js';
+import { BAKE_FS, SWIRL_FS, marchFS, zoneFor } from './clouds.js';
 import { COMPOSITE_FS, FINAL_FS, BOKEH_FS } from './post.js';
 import { wetGlassMotion } from '../shared/wetglass.js';
 import { CABIN_FS } from './cabin.js';
@@ -101,7 +101,8 @@ const slider = (group, id, label, min, max, step) => ({ type: 'slider', group, i
 const choice = (group, id, label, options) => ({ type: 'choice', group, id: 'gg_' + id, label, value: TUNE_DEF[id], persist: true, options: options.map(([value, l]) => ({ value, label: l })), onPick: v => tune(id, v) });
 const DEV = [
   { type: 'choice', group: 'Go to', id: 'gg_goto', label: 'Layer', value: 'top', options: GOTO, onPick: goTo },
-  choice('View', 'cabin', 'Cabin', [['on', 'On'], ['off', 'Off']]),
+  // Off takes away the whole window: wall, bezel, liner, panes and the pane's weather.
+  choice('View', 'cabin', 'Window frame', [['on', 'On'], ['off', 'Off']]),
   slider('View', 'devPitch', 'Pitch', -60, 60, 1),
   slider('View', 'devYaw', 'Yaw', -180, 180, 1),
   choice('Render', 'pix', 'Pixels', [['auto', 'Auto'], ['native', 'Native']]),
@@ -154,7 +155,7 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const watch = loadWatch(ID, canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null;
+let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null;
 let W = 1, H = 1, cssW = 1, cssH = 1;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 const flash = new Float32Array(16);
@@ -194,7 +195,7 @@ async function setup() {
   // Only the march zone the eye starts in links before the first frame.
   const zone = zoneFor(S.alt);
   const src = {
-    bake: BAKE_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
+    bake: BAKE_FS, swirl: SWIRL_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
   };
   const set = {};
   for (const [k, fs] of Object.entries(src)) set[k] = program(gl, TRI_VS, pruneGLSL(fs));
@@ -204,10 +205,13 @@ async function setup() {
     P = set;
   } else P = await linked(gl, set);
   link.all = Math.round(performance.now() - t0);
+  // ?qa: the GL context and the swirl tile, for checks.
+  if (QS.has('qa')) Object.assign(globalThis.__gg, { gl, tune, swirlTex: () => swirl });
   MZ[zone] = P.march;
   if (QS.has('qa')) globalThis.__gg.link = link;
   watch.step('bake');
   bakeVolume(64);
+  bakeSwirl(1024);
   lut = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, lut);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, LUT_N, 1, 0, gl.RGBA, gl.FLOAT, lightTable());
@@ -234,6 +238,21 @@ function bakeVolume(n) {
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.deleteFramebuffer(fb);
+}
+
+// The top deck's swirls: one draw into a 1024 square tile that repeats, with mips.
+function bakeSwirl(n) {
+  swirl = target(gl, n, n, { format: gl.RGBA8, mips: true });
+  gl.useProgram(P.swirl.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_3D, vol);
+  gl.uniform1i(P.swirl.u.uVol, 0);
+  gl.uniform1i(P.swirl.u.uReach, 2);
+  tri(gl, swirl, vao);
+  gl.bindTexture(gl.TEXTURE_2D, swirl.tex);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.generateMipmap(gl.TEXTURE_2D);
 }
 
 function resize(force = false) {
@@ -411,12 +430,14 @@ function render(dt) {
   sunTo(M);
   gl.uniform4f(M.u.uTune, TUNE.ms, TUNE.amb, TUNE.bounce, TUNE.haze);
   gl.uniform1f(M.u.uRays, TUNE.rays);
+  gl.uniform1f(M.u.uDbg, globalThis.__gg?.dbg || 0);
   const u = M.u;
   bind(gl, M, 'uMap', 0, T.map);
   bind(gl, M, 'uLut', 1, { tex: lut });
   gl.activeTexture(gl.TEXTURE2);
   gl.bindTexture(gl.TEXTURE_3D, vol);
   gl.uniform1i(u.uVol, 2);
+  if (u.uSwirl) bind(gl, M, 'uSwirl', 4, swirl);
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
   gl.uniform1f(u.uT, S.tC);
@@ -479,6 +500,8 @@ function render(dt) {
   gl.uniformMatrix3fv(c.uLook, false, b.lookM);
   gl.uniform2fv(c.uTan, b.tan);
   gl.uniform1f(c.uBloomK, 0.55);
+  // With no frame the clouds fill the screen; bloom and shake stay.
+  gl.uniform1f(c.uFrame, cabinOff() ? 0 : 1);
   gl.uniform1f(c.uTime, S.tGlass);
   gl.uniform1f(c.uWipe, S.wipe);
   // Entry heat melts the frost; it forms again only near the top.
@@ -497,8 +520,7 @@ function render(dt) {
   gl.uniform2f(c.uShake, a * (Math.sin(ph * 37) + 0.5 * Math.sin(ph * 61)), a * (Math.sin(ph * 41 + 1) + 0.5 * Math.sin(ph * 73)));
   tri(gl, T.cabin, vao);
   gl.useProgram(P.fin.p);
-  // ?out shows the outside alone, for look work.
-  bind(gl, P.fin, 'uScene', 0, cabinOff() ? T.scene : T.cabin);
+  bind(gl, P.fin, 'uScene', 0, T.cabin);
   gl.uniform1f(P.fin.u.uExp, 0.3 * gainAt(S.lum) * TUNE.expo);
   gl.uniform1f(P.fin.u.uSeed, frameNo % 97);
   gl.uniform1f(P.fin.u.uAsp, W / H);
