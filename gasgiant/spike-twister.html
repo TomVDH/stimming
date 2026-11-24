@@ -41,11 +41,11 @@ float fbm(vec3 p, int oct) {
   return s;
 }
 // The axis leans in a slow S, so the column reads as one huge body bending in the wind.
-vec2 axisAt(float y) { float f = y / H; return vec2(2.6 * sin(f * 2.4 + 0.3) * f, 1.4 * sin(f * 3.1 + 1.2) * f); }
-// The radius in km: a broad skirt at the floor, a long waist, a vast flare into the ceiling.
+vec2 axisAt(float y) { float f = y / H; return vec2(4.2 * sin(f * 3.0 + 0.3) * f, 2.4 * sin(f * 3.8 + 1.2) * f); }
+// The radius in km: a thin rope at the floor widens steadily into the ceiling's flare.
 float radAt(float y) {
   float f = clamp(y / H, 0.0, 1.0);
-  return 0.95 + 0.6 * f + 4.2 * exp(-f * 12.0) + 7.5 * pow(smoothstep(0.6, 1.0, f), 2.0);
+  return 0.55 + 2.4 * pow(f, 1.6) + 2.2 * exp(-f * 16.0) + 6.0 * pow(smoothstep(0.7, 1.0, f), 2.0);
 }
 // The density at p, 0 to 1.
 float dens(vec3 p, int oct) {
@@ -60,8 +60,10 @@ float dens(vec3 p, int oct) {
   float n = fbm(c * 1.7 + vec3(0.0, 0.0, r * 0.4), oct);
   // Two helical ridges wind up the column.
   float hel = 0.5 + 0.5 * cos(2.0 * a + p.y * 0.9);
-  // Stacked bands climb it, a dense collar every 2.6 km.
-  float bands = smoothstep(0.45, 0.95, 0.5 + 0.5 * sin((p.y / 2.6 - uT * 2.0) * 2.0 * PI + n * 3.0));
+  // Collars spiral up the column, so they sweep instead of ringing it.
+  // The angle term keeps the phase continuous across the atan seam.
+  float ph = (p.y / 2.6 - uT * 2.0) * 2.0 * PI + a + 1.4 * sin(a + p.y * 0.25) + n * 4.0;
+  float bands = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(ph));
   float edge = R * (0.62 + 0.5 * n + 0.32 * hel + 0.26 * bands) - r;
   float d = smoothstep(0.0, 0.5 + 0.6 * f, edge);
   // The skirt at the floor is torn and dusty; the flare frays into the ceiling.
