@@ -562,10 +562,11 @@ function flareStrands(fl, B, out, n) {
   const rib = C.ribbon(t) * B.ribbon * fl.k;
   if (rib > 0.001) {
     for (const s of [-1, 1]) {
-      for (let k = 0; k < 3; k++) {
-        const wob = (hash(fl.seed, k, s + 5) - 0.5) * 3;
+      // Five strands per ribbon: a bright core and a frayed edge.
+      for (let k = 0; k < 5; k++) {
+        const wob = (hash(fl.seed, k, s + 5) - 0.5) * (3 + k);
         const A = foot(rg, s * (sep + wob), -len / 2 + k * 3), Bf = foot(rg, s * (sep - wob), len / 2 - k * 4);
-        n = put(out, n, A, 0.9, Bf, 0, 1.3 + k * 0.5, rib * (k === 0 ? 1.4 : 0.6), k, 0, 0, 0, 0, 1);
+        n = put(out, n, A, 0.9, Bf, 0, 1.1 + k * 0.45, rib * (k === 0 ? 1.3 : 0.65 - 0.08 * k), k, 0, 0, 0, 0, 1);
       }
     }
   }
@@ -594,16 +595,30 @@ function flareStrands(fl, B, out, n) {
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
     const drain = clamp((tau - 12) / 13);
-    for (let k = 0; k < 2; k++) {
-      const A = foot(rg, a + (q(3 + k) - 0.5) * 3, off + (q(5 + k) - 0.5) * 4 + 2);
-      const Bf = foot(rg, -a + (q(7 + k) - 0.5) * 3, off + (q(9 + k) - 0.5) * 4 - 2);
-      n = put(out, n, A, a * 1.2 + 3, Bf, (q(11) - 0.5) * 0.2, 1.1 + 0.6 * q(12 + k), I * (k ? 0.55 : 0.8), q(14) * 7, drain);
+    // Three threads per arcade loop: a loop is a bundle of strands.
+    for (let k = 0; k < 3; k++) {
+      // Each thread takes its own hash slots: 20, 30, 40, 50 and 60 apart by k.
+      const A = foot(rg, a + (q(20 + k) - 0.5) * 3, off + (q(30 + k) - 0.5) * 4 + 2);
+      const Bf = foot(rg, -a + (q(40 + k) - 0.5) * 3, off + (q(50 + k) - 0.5) * 4 - 2);
+      n = put(out, n, A, a * 1.2 + 3, Bf, (q(11) - 0.5) * 0.2, 1.0 + 0.5 * q(60 + k), I * [0.7, 0.5, 0.35][k], q(14) * 7, drain);
     }
   }
   return n;
 }
 
 /* ---------- flares ---------- */
+// A flare site where the hand taps the disk (Tom, 2026-11-24).
+// It carries what a flare needs from a region: its frame, span and length.
+// c is the tapped point in the star's frame; the bipole runs east to west.
+export function makeSite(c) {
+  let e = cross([0, 1, 0], c);
+  if (Math.hypot(e[0], e[1], e[2]) < 1e-3) e = [1, 0, 0];
+  e = norm(e);
+  return { c, e, f: cross(c, e), span: [12, 60], len: 80, hk: 1, lastFlare: -1e9, site: true };
+}
+// The flare's pace: slower on every star, and slower still on a large one.
+// The sun runs at 0.75; a supergiant takes about four times as long.
+export const flarePace = B => 0.75 / clamp(Math.pow(B.rsun, 0.18), 0.8, 3.5);
 export function startFlare(sun, rg, time, k = 1) {
   sun.flares = sun.flares.filter(f => f.rg !== rg);
   if (sun.flares.length >= MAX_FLARES) sun.flares.shift();

@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, BCRIT, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
+import { R, BCRIT, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
@@ -528,11 +528,23 @@ function pickAt(x, y) {
 }
 // A target counts as under the hand within this many CSS pixels.
 const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
-// A tap anywhere flares the nearest region or lifts the nearest prominence.
+// The point of the near disk under a stage point, in the star's frame, or null.
+function diskAt(x, y) {
+  if (!canTap()) return null;
+  const vx = view.cx + (x / cssW * 2 - 1) * view.hw, vy = view.cy + (1 - y / cssH * 2) * view.hh;
+  const rr = (vx * vx + vy * vy) / (R * R);
+  if (rr >= 0.985) return null;
+  const v = [vx / R, vy / R, Math.sqrt(1 - rr)];
+  // M is a rotation, so its transpose takes the view frame back to the star's.
+  return [0, 1, 2].map(c => M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]);
+}
+// A tap near a region or a prominence answers there.
+// Anywhere else on the near disk, a flare starts where the hand is (Tom, 2026-11-24).
 function flareNear(x, y) {
-  const { t, prom } = pickAt(x, y);
-  if (!t) return;
-  if (prom) eruptAt(t); else flareAt(t);
+  const { t, prom, d } = pickAt(x, y);
+  if (t && d < reach()) { if (prom) eruptAt(t); else flareAt(t); return; }
+  const s = diskAt(x, y);
+  if (s) flareAt(makeSite(s));
 }
 
 /* ---------- hover: the cursor reads the region under it ---------- */
@@ -541,10 +553,11 @@ let hoverAt = null, cursor = '';
 function readHover() {
   let c = 'default';
   if (pointer.drag && canTurn()) c = 'grabbing';
-  else if (hoverAt && pointer.id === null && pickAt(hoverAt[0], hoverAt[1]).d < reach()) c = 'pointer';
+  else if (hoverAt && pointer.id === null && (pickAt(hoverAt[0], hoverAt[1]).d < reach() || diskAt(hoverAt[0], hoverAt[1]))) c = 'pointer';
   else if (canTurn()) c = 'grab';
   if (c !== cursor) { cursor = c; stage.style.cursor = c; }
-  const t = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]).t : null;
+  const near = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]) : null;
+  const t = near && near.d < reach() ? near.t : null;
   if (t !== aimed) { aimed = t; poke(); }
 }
 // The target the mouse points at; it glows a little.
@@ -806,8 +819,9 @@ function frame(now) {
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
     const swaying = stepSway(dt);
+    const settling = stepTurnBack(dt);
     const adapting = stepEye(dt);
-    stepFlares(sun, dt * (calm ? 0.8 : 1));
+    stepFlares(sun, dt * flarePace(STARS[shown]) * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
     if (FLUID) {
       // A new framing may show another prominence: the fluid moves to it.
@@ -832,7 +846,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || swaying || adapting || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || swaying || settling || adapting || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
@@ -909,6 +923,21 @@ stage.addEventListener('pointermove', e => {
   if (farAt(cam.z) > 0) poke();
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
+
+/* ---------- turn back: a released star eases home ---------- */
+// After a drag the star turns back to its home angle over about 3 s (Tom, 2026-11-24).
+const back = { vp: 0, vy: 0 };
+const BACK_T = 0.9;
+// Steps the return; true while the star still turns.
+function stepTurnBack(dt) {
+  if (pointer.drag || (st.pitch === 0 && st.yaw === 0)) return false;
+  if (calm) { st.pitch = st.yaw = 0; back.vp = back.vy = 0; setRot(); return false; }
+  [st.pitch, back.vp] = follow(st.pitch, 0, back.vp, BACK_T, dt);
+  [st.yaw, back.vy] = follow(st.yaw, 0, back.vy, BACK_T, dt);
+  if (Math.abs(st.pitch) + Math.abs(st.yaw) + Math.abs(back.vp) + Math.abs(back.vy) < 1e-4) { st.pitch = st.yaw = 0; back.vp = back.vy = 0; }
+  setRot();
+  return true;
+}
 
 /* ---------- the eye: light adapts late to the zoom ---------- */
 // Zooming in from far, the glare and flare overpower for a moment, then the exposure settles (Tom, 2026-11-24).
