@@ -292,7 +292,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), spin: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
+  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
 };
 function makeFrame() {
@@ -358,10 +358,14 @@ function makeFrame() {
   if (star.beam) f.beam.set([...toView(magAxis(st.time)), star.beam]); else f.beam.fill(0);
   // The spin axis carries the wind nebula's torus and jets.
   if (star.beam) f.spin.set([...toView(SPIN), star.beam]); else f.spin.fill(0);
+  // A young star's disk and jets turn with the star.
+  const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
+  f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   f.cam.set([st.yaw, st.pitch, star.lensing, 0]);
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
-  f.film.set([0.018, 0, 0.35, 0]);
+  // w: the star's dust, which keeps the haze over its disk.
+  f.film.set([0.018, 0, 0.35, star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight');

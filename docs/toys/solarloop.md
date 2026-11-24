@@ -40,7 +40,7 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 | Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder | None |
 | Luhman 16 (L/T brown dwarf) | 0.1 | Magenta brown and dim; no loops or prominences. A cloud deck in six uneven bands round its spin axis: neighbour bands drift opposite ways, eddies curl their edges, dark storm ovals ride them | None |
 | WISE 0855 (Y brown dwarf) | 0.1 | Dark maroon and slate, the coldest; no loops or prominences. Four slow bands of water ice cloud, calmer than Luhman 16's | None |
-| T Tauri (protostar) | 3 | Amber in a dusty envelope, red prominences, hard flares | Our sun; none in transit |
+| T Tauri (protostar) | 3 | Amber in a light dusty envelope, red prominences, hard flares. A ringed dust disk circles it at a slant, from 1.3 radii out, with two dark gaps where young planets clear lanes; its inner rim glows, its near side crosses the star and dims it, and it turns faster near the star. A jet leaves each pole, with bright knots that travel outward | Our sun; none in transit |
 | Arcturus (red giant) | 25.4 | Orange, rose prominences, large granules, light dust | Our sun, beside it and in transit |
 | Rigel | 78.9 | Cold blue steel to white, lilac prominences, strong rays | Our sun, 17.7 units, a glowing bead |
 | Betelgeuse | 764 | Rust and orange; a handful of giant cells, deep limb darkening, a dusty envelope | Our sun, 1.8 units, a speck |
@@ -73,9 +73,10 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | `render.js` | Raw WebGL2: the disk and corona pass, instanced strands, bloom (`shared/glow.js`), light rays, the final pass, the colour ramps |
 | `sound.js` | Web Audio |
 
-- The disk pass: boiling granules, swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the wave front over the disk and the dimming behind it, the bubble's shell and cavity.
+- The disk pass: boiling granules (bent by noise, so they never read as hexagons), swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the wave front over the disk and the dimming behind it, the bubble's shell and cavity.
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
 - Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light: a smooth glow. No screen-fixed spokes (Tom, 2026-11-23: they read as a static starburst); the corona and haze volumes carry the structure.
+- The haze volume shows over a star's disk only on dusty stars (Tom, 2026-11-23: it read as blobs on every star).
 - Fast spinners: the view stretches an oblate star's equator across the screen, so the disk, the loops and the volumes all take the same shape. Gravity darkening dims the disk toward the spin equator.
 - The final pass: bent light round a neutron star, heat shimmer at the limb, the volume over the light, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, faint lens dirt (round the star only, never over its disk: Tom, 2026-11-23), highlights that roll off to white, a vignette and fine grain. Reduced motion stills the grain.
 

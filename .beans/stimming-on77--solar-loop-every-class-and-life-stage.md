@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-24T04:58:48Z
-updated_at: 2026-11-24T05:25:39Z
+updated_at: 2026-11-24T05:28:56Z
 parent: stimming-oh7b
 ---
 
@@ -18,9 +18,11 @@ Tom, 2026-11-23: redo Solar loop's stars (follows stimming-e35i). Planets out (o
 - [x] 4. Vega and the oblate shape (oblate, gdark)
 - [ ] 5. Classes O, B, F, K: Zeta Ophiuchi, Regulus, Procyon, Epsilon Eridani
 - [x] 6. Brown dwarfs: Luhman 16, WISE 0855
-- [ ] 7. Stages: T Tauri, Arcturus
+- [x] 7. Stages: T Tauri, Arcturus
 - [ ] 8. Supernova on Rigel, Betelgeuse, VY CMa
 
 - [x] Starburst out: the light ray pass loses its screen-fixed spokes (Tom, 2026-11-23)
 
 - [x] Lens dirt off the star disk (Tom, 2026-11-23)
+
+- [x] No hexagon granules and no haze blobs over the disk (Tom, 2026-11-23)

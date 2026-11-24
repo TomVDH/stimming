@@ -119,7 +119,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud;
+uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
@@ -138,7 +138,10 @@ void main() {
     vec3 n = vec3(P / R, mu);
     vec3 q = uToSun * n;
     // Granules boil: bright cells, dark lanes, drifting through time.
-    float gran = smoothstep(0.0, 0.6, cells(q * uTex.x + vec3(0.0, 0.0, tb * 2.0)));
+    // Noise bends the cells and blurs the lanes, so they never read as hexagons.
+    vec3 gq = q * uTex.x + vec3(0.0, 0.0, tb * 2.0);
+    gq += 0.45 * vec3(vn(gq * 0.7), vn(gq * 0.7 + 3.1), vn(gq * 0.7 + 6.3));
+    float gran = smoothstep(-0.05, 0.9, cells(gq)) * (0.7 + 0.3 * vn(gq * 2.3));
     // Swirls of plasma: noise bent by noise, slowly turning.
     vec3 wq = q * uTex.y * 1.6;
     vec3 warp = vec3(fbm(wq + tb * 0.1), fbm(wq + 5.1), fbm(wq + 9.3));
@@ -272,6 +275,40 @@ void main() {
     float wig = 60.0 * sin(abs(y) * 0.004 - uTime * 0.6) * smoothstep(0.0, R * 2.0, abs(y));
     float jet = exp(-pow((x - wig) / (R * 0.08 + abs(y) * 0.04), 2.0)) * exp(-abs(y) / (R * 3.5)) * smoothstep(R * 0.9, R * 1.5, abs(y));
     hot += uSpin.w * 0.35 * jet * (0.6 + 0.8 * fbm(vec3(y * 0.004 - uTime * 0.8 * sign(y), x * 0.01, 2.0)));
+  }
+  // A young star: a ringed dust disk at a slant, and a jet from each pole.
+  if (uYso.w > 0.0) {
+    vec3 a = uYso.xyz;
+    // The disk plane under this pixel; the eye looks along z.
+    float z = -(P.x * a.x + P.y * a.y) / max(a.z, 0.15);
+    vec3 X = vec3(P, z);
+    float rho = length(X);
+    vec3 e1 = normalize(cross(a, vec3(0.0, 0.0, 1.0)) + 1e-5);
+    vec3 e2 = cross(a, e1);
+    // The disk turns faster near the star, as orbits do.
+    float phi = atan(dot(X, e2), dot(X, e1)) + uTime * 0.02 * pow(R / max(rho, R), 1.5);
+    float x = rho / R;
+    // Dust from an inner rim at 1.3 radii; dark gaps where young planets clear lanes.
+    float sig = smoothstep(1.2, 1.5, x) * exp(-(x - 1.3) / 2.2);
+    sig *= 1.0 - 0.75 * exp(-pow((x - 2.05) / 0.08, 2.0)) - 0.6 * exp(-pow((x - 2.9) / 0.12, 2.0));
+    sig *= 0.65 + 0.7 * fbm(vec3(cos(phi) * x * 2.0, sin(phi) * x * 2.0, x * 0.5));
+    float tau = sig * 1.4 / max(a.z, 0.2);
+    // The near half of the disk crosses the star and dims it.
+    if (r < R && z > 0.0) hot *= exp(-tau);
+    float seen = r < R && z < 0.0 ? 0.0 : 1.0;
+    // Starlight scatters off the dust; the inner rim glows hottest.
+    cool += uYso.w * seen * sig * (1.6 * pow(1.3 / max(x, 1.3), 1.5) + 1.2 * exp(-pow((x - 1.32) / 0.08, 2.0)));
+    hot += uYso.w * seen * sig * 0.35 * pow(1.3 / max(x, 1.3), 2.0);
+    // The jets: a thin flow with bright knots that travel outward.
+    vec2 ax = length(a.xy) > 1e-3 ? normalize(a.xy) : vec2(0.0, 1.0);
+    float s = dot(P, ax), c = P.x * ax.y - P.y * ax.x;
+    float d = abs(s) / R;
+    float jw = R * (0.05 + 0.035 * d);
+    float jet = exp(-pow(c / jw, 2.0)) * smoothstep(0.9, 1.4, d) * exp(-d / 5.0);
+    float knots = 0.35 + 1.6 * pow(0.5 + 0.5 * sin(d * 5.0 - uTime * 0.25), 6.0);
+    float jvis = r < R ? 0.0 : 1.0;
+    cool += uYso.w * jvis * jet * knots * 2.0;
+    hot += uYso.w * jvis * jet * knots * 0.5;
   }
   // The erupting bubble: a faint shell, dim inside.
   for (int k = 0; k < 2; k++) {
@@ -582,6 +619,9 @@ float kern(vec2 fc) {
 }
 vec2 sig(vec2 uv, float kx) {
   vec4 v = texture(uVol, uv);
+  // No haze over the disk, save on dusty stars: it read as blobs on every star.
+  float off = smoothstep(R * 0.97, R * 1.03, length(uView.xy + (uv * 2.0 - 1.0) * uView.zw));
+  v = mix(vec4(0.0, 0.0, 0.0, 1.0), v, max(off, min(uFilm.w, 1.0)));
   // The volume dims what lies behind it and adds the star light it scatters.
   vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x * uFx1.y) * v.a + texture(uBloom, uv).rgb * 0.38 * uFx1.x;
   return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15);
@@ -779,6 +819,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
+    gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);

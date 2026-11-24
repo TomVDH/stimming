@@ -41,7 +41,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // oblate: how much wider the equator is than the poles, seen side-on.
 // grav: the spin axis in the star's frame, and the gravity darkening at its equator.
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
-const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0] };
+// yso: a young star's dust disk and jets: its axis in the star's frame, and weight.
+const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -142,9 +143,10 @@ export const STARS = {
     wide: 'none', long: 'none', root: 329.63,
   },
   // T Tauri: a young star, three suns wide, still wrapped in its birth dust.
+  // A ringed dust disk circles it at a slant; a jet leaves each pole.
   ttauri: {
-    ...FLARE, ribbon: 2.1, sat: 1.3, bubble: 0.28,
-    row: 15, rsun: 3, expo: 1, hotW: 1, coolW: 1.2, loop: 0.95, prom: 0.95, dust: 0.75, rays: 0.85,
+    ...FLARE, ribbon: 2.1, sat: 1.3, bubble: 0.28, yso: [0.28, 0.9, 0.34, 1],
+    row: 15, rsun: 3, expo: 1, hotW: 1, coolW: 1.2, loop: 0.95, prom: 0.95, dust: 0.4, rays: 0.85,
     hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
     disk: [1.8, 0.8, 0.08, 0.4], disk2: [70, 1, 0.6, 0.16], tex: [90, 12, 0.18, 0.6],
     wide: 'sun', long: 'none', root: 185,
