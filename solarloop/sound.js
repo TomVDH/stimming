@@ -140,6 +140,19 @@ export function makeSound(kit, opt = () => undefined) {
     drone.voice.setLayers(z);
   }
 
+  // The switch crossfade: the old voice leaves over XOUT s, the new one enters over XIN s.
+  // The new voice waits XWAIT s, so it rises out of the wipe's dark point.
+  const XOUT = 7, XIN = 6, XWAIT = 0.25;
+  // A quarter sine in, a quarter cosine out: the two powers sum to one.
+  function ease(prm, at, dur, up) {
+    const n = 96, c = new Float32Array(n), from = up ? 0 : prm.value;
+    for (let i = 0; i < n; i++) { const x = i / (n - 1) * Math.PI / 2; c[i] = up ? Math.sin(x) : from * Math.cos(x); }
+    // A new gain starts at 1; it must hold silent until its curve begins.
+    if (up) { prm.value = 0; prm.setValueAtTime(0, at - 0.005); }
+    else if (prm.cancelAndHoldAtTime) prm.cancelAndHoldAtTime(at - 0.005);
+    else { prm.cancelScheduledValues(at - 0.005); prm.setValueAtTime(from, at - 0.005); }
+    prm.setValueCurveAtTime(c, at, dur);
+  }
   function hum(band) {
     const ac = kit.live();
     if (!ac) return;
@@ -148,15 +161,15 @@ export function makeSound(kit, opt = () => undefined) {
       return;
     }
     const t = ac.currentTime + 0.01;
+    // A star switch crossfades at equal power: the old voice eases out, the new one in (Tom).
     if (drone && drone.ac === ac) {
-      for (const x of [drone.g, drone.gc]) x.gain.setTargetAtTime(0, t, 1.2);
-      for (const o of drone.os) { try { o.stop(t + 6); } catch { /* stopped */ } }
+      for (const x of [drone.g, drone.gc]) ease(x.gain, t, XOUT, false);
+      for (const o of drone.os) { try { o.stop(t + XOUT + 0.5); } catch { /* stopped */ } }
     }
     const root = keyOf(band) / 2;
     const os = [];
     const g = ac.createGain();
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(1, t + 6);
+    ease(g.gain, t + XWAIT, XIN, true);
     g.connect(kit.out);
     send(ac, g, 0.8, hallOf(ac));
 
@@ -164,8 +177,7 @@ export function makeSound(kit, opt = () => undefined) {
     const humOn = ac.createGain();
     humOn.gain.value = layers.h;
     const gc = ac.createGain();
-    gc.gain.setValueAtTime(0, t);
-    gc.gain.linearRampToValueAtTime(1, t + 4);
+    ease(gc.gain, t + XWAIT, XIN, true);
     humOn.connect(gc).connect(kit.out);
     const voice = choir(ac, { t, base: root * 4, p: preset(band), out: humOn, hall: hallOf(ac), os, track });
     voice.setLayers(layers.z);

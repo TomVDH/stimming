@@ -41,7 +41,8 @@ const sun = makeSun();
 let shown = st.star;
 // The switch dip: the frame darkens, the star swaps, the light returns.
 let dip = null;
-const DIP_DOWN = 0.25, DIP_UP = 0.7;
+// Down 0.4 s and up 1.1 s: a little longer, so the choir crossfade has room (Tom, 2026-11-24).
+const DIP_DOWN = 0.4, DIP_UP = 1.1;
 // The dip's light, from 1 down to a near black and back.
 const dipLight = () => {
   if (!dip) return 1;
