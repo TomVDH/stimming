@@ -101,7 +101,8 @@ coneMat.colorNode = Fn(() => {
     // The tail feathers out, broken by the flow.
     const fz = U.len.mul(U.feather).max(0.2);
     const tail = float(1.0).sub(smoothstep(U.len.sub(fz), U.len, s.add(tn.sub(0.5).mul(fz).mul(0.9).mul(U.turb))));
-    const live = smoothstep(-0.05, 0.08, s).mul(tail).mul(tail);
+    // Nothing shows under the floor.
+    const live = smoothstep(-0.05, 0.08, s).mul(tail).mul(tail).mul(smoothstep(0.0, 0.05, P.y));
     // The hot core: narrow, white-yellow, strongest near the nozzle.
     const core = exp(rr.mul(rr).mul(-9.0)).mul(exp(s.div(thr.mul(2.0).add(0.8)).negate()));
     // The sheath: orange near the nozzle, violet blue further down.
@@ -147,6 +148,24 @@ const sp = pass(scene, camera);
 const col = sp.getTextureNode();
 pipe.outputNode = renderOutput(col.add(bloom(col, 0.5, 0.5, 0.8)));
 pipe.outputColorTransform = false;
+
+/* ---------- drag: the jet follows the pointer ---------- */
+// The nozzle moves in the plane z = 0, from 1 m to 11 m up.
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hit = new THREE.Vector3();
+const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+let dragging = false;
+function moveTo(e) {
+  ndc.set((e.clientX / innerWidth) * 2 - 1, 1 - (e.clientY / innerHeight) * 2);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(plane, hit)) return;
+  U.noz.value.set(Math.max(-12, Math.min(12, hit.x)), Math.max(1, Math.min(11, hit.y)), 0);
+  placeCone();
+}
+const cv = renderer.domElement;
+cv.style.cursor = 'grab';
+cv.addEventListener('pointerdown', e => { dragging = true; cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing'; moveTo(e); });
+cv.addEventListener('pointermove', e => { if (dragging) moveTo(e); });
+cv.addEventListener('pointerup', () => { dragging = false; cv.style.cursor = 'grab'; });
 
 /* ---------- loop ---------- */
 addEventListener('resize', () => {
