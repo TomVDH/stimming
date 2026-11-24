@@ -359,7 +359,6 @@ function flareAt(rg) {
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
-  fl.snapped = 0;
   poke();
 }
 // Space flares each region in view in turn.
@@ -496,7 +495,6 @@ function stepEgg(dt, holding) {
     if (egg.t >= 0 && !egg.fired) {
       egg.fired = true;
       const fl = startFlare(sun, egg.rg, st.time, calm ? 1.1 : 1.6);
-      fl.snapped = 0;
       snd.flare(clamp(toCss(toView(egg.rg.c.map(x => x * R)))[0] / cssW * 2 - 1, -1, 1), st.star, 1);
     }
     // The storm reaches the earth: its telegraph lines spark.
@@ -683,7 +681,6 @@ function frame(now) {
         fluidRun.t += fluidRun.dt;
       }
     }
-    for (const fl of sun.flares) cueArcade(fl);
     // The star turns under a still mouse.
     if (hoverAt) readHover();
     const glowing = stepLit(dt);
@@ -726,14 +723,6 @@ function pulse() {
     lastFace = face;
   }
   lastTurn = turn;
-}
-// Each arcade loop that snaps in plays its note once.
-function cueArcade(fl) {
-  while (fl.snapped < ARCADE && fl.t >= flareCurve.born(fl.snapped)) {
-    const p = regionPoint(fl.rg);
-    snd.snap(fl.snapped, clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star);
-    fl.snapped++;
-  }
 }
 function rest() {
   snd.quiet();

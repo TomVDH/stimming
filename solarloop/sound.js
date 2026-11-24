@@ -1,6 +1,6 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
-// A flare: the brass blast, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
+// A flare: the brass blast, a rush as the rope lifts, a low roar,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
 // A tap on empty sky: a soft low note.
@@ -8,8 +8,6 @@
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-// A minor pentatonic over two octaves: each arcade loop sounds one step higher.
-const STEPS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
 // The key falls as the star grows: the hypergiant hums lowest.
 const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 220, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
 
@@ -389,22 +387,6 @@ export function makeSound(kit) {
     }
   }
 
-  // One arcade loop snaps in: a glassy note, one step above the last.
-  function snap(j, pan, band) {
-    const ac = kit.live();
-    if (!ac) return;
-    const t = ac.currentTime + 0.004;
-    const f = (ROOT[band] || 220) * Math.pow(2, STEPS[j % STEPS.length] / 12) * jit(0.004);
-    const lvl = 0.07 * Math.pow(0.93, j) * jit(0.2);
-    const g = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.3, -1, 1));
-    env(g, t, lvl, 0.006, 1.6 * jit(0.2));
-    osc(ac, 'sine', f, t, 1.8).connect(g);
-    const h = ac.createGain();
-    h.gain.value = 0.28;
-    osc(ac, 'sine', f * 2.756, t, 0.6).connect(h).connect(g);
-    send(ac, g, 0.7);
-  }
-
   // The turn: a low wind whose level follows the drag speed.
   let wind = null;
   function turn(speed) {
@@ -520,5 +502,5 @@ export function makeSound(kit) {
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, hush, tick, telegraph, dim, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, hush, tick, telegraph, dim, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }
