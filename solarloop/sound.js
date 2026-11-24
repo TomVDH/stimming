@@ -91,69 +91,10 @@ export function makeSound(kit) {
     const c = new Float32Array(1024);
     for (let i = 0; i < c.length; i++) { const x = i / 511.5 - 1; c[i] = Math.tanh(2.2 * x) / Math.tanh(2.2); }
     clip.curve = c;
-    // Oversampled, so the clip adds warmth with no aliasing grit.
-    clip.oversample = '4x';
     return clip;
-  }
-  // The sun's blast is a choir instead: bright, airy, angelic (Tom).
-  // Its vowel opens from oo to ah and closes again: wooOAAAaoooo.
-  function choirSwell(ac, t, pan, band, K, len = 6) {
-    const root = ROOT[band] || 220;
-    const g = voice(ac, pan * 0.3);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.07 * K, t + 0.35);
-    g.gain.setTargetAtTime(0.0001, t + 1.3, len / 4);
-    // Two formants glide oo, ah, oo; a low pass opens with them for the air.
-    const f1 = ac.createBiquadFilter(), f2 = ac.createBiquadFilter();
-    f1.type = f2.type = 'peaking';
-    f1.Q.value = 2.2; f2.Q.value = 2.6;
-    f1.gain.value = 9; f2.gain.value = 7;
-    const lp = filt(ac, 'lowpass', 900, 0.4);
-    for (const [prm, a, b, c] of [[f1.frequency, 320, 760, 360], [f2.frequency, 850, 1180, 900], [lp.frequency, 1200, 9000, 1800]]) {
-      prm.setValueAtTime(a, t);
-      prm.exponentialRampToValueAtTime(b, t + 0.55);
-      prm.exponentialRampToValueAtTime(c, t + len);
-    }
-    const shelf = filt(ac, 'highshelf', 4000, 0.7);
-    shelf.gain.value = 5;
-    const bus = ac.createGain();
-    bus.gain.value = 1;
-    bus.connect(f1).connect(f2).connect(lp).connect(shelf).connect(g);
-    // A vibrato that grows in after the onset, as a held voice does.
-    const vib = osc(ac, 'sine', 5.1, t, len + 1);
-    const vg = ac.createGain();
-    vg.gain.setValueAtTime(0, t);
-    vg.gain.linearRampToValueAtTime(9, t + 1.2);
-    vib.connect(vg);
-    // Root, fifth, octave, tenth, and a quiet octave above for shimmer; three voices each.
-    for (const [m, a] of [[1, 1], [1.5, 0.75], [2, 0.7], [2.5198, 0.45], [4, 0.18]]) {
-      const f = root * m;
-      const vo = ac.createGain();
-      vo.gain.value = a / 3;
-      vo.connect(bus);
-      for (const c of [-9, 0, 9]) {
-        const o = ac.createOscillator();
-        o.setPeriodicWave(waveFor(ac, f));
-        o.frequency.value = f;
-        o.detune.value = c + (Math.random() - 0.5) * 3;
-        vg.connect(o.detune);
-        o.start(t); o.stop(t + len + 1);
-        track(o).connect(vo);
-      }
-    }
-    // Breath: a whisper of bright noise riding the swell.
-    if (kit.noise) {
-      const br = ac.createGain();
-      br.gain.setValueAtTime(0, t);
-      br.gain.linearRampToValueAtTime(0.012 * K, t + 0.45);
-      br.gain.setTargetAtTime(0.0001, t + 1.2, len / 5);
-      noise(ac, t, len + 1, 1).connect(filt(ac, 'bandpass', 7000, 0.8)).connect(br).connect(g);
-    }
-    send(ac, g, 1);
   }
   // The blast: stacked saws an octave and a fifth apart, a filter that opens and closes.
   function braam(ac, t, pan, band, K, len = 6) {
-    if (band === 'sun') { choirSwell(ac, t, pan, band, K, len); return; }
     const root = (ROOT[band] || 220) / 4;
     const g = voice(ac, pan * 0.3);
     g.gain.setValueAtTime(0, t);
