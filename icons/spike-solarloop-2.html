@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon spike: Star catalog 2</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+/* The page copies the menu tokens; it is dark only. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.6 0.02 275);
+  --line: oklch(0.26 0.014 275);
+  --intro-bg: oklch(0.16 0.012 275);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.35 var(--sans);
+  padding: clamp(28px, 5vw, 56px) max(16px, 3vw) 72px; -webkit-font-smoothing: antialiased;
+}
+h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.lede { margin: 0 0 clamp(28px, 4vw, 44px); color: var(--muted); font-size: 13px; }
+section { margin-bottom: clamp(36px, 5vw, 56px); }
+h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.row { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 18px; }
+.dir { display: grid; gap: 10px; align-content: start; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.dir header { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.dir header b { font-size: 15px; font-weight: 800; }
+.dir header span { color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+/* Icon tiles: 128 and 64 on the menu ground; a hairline marks the square. */
+.icons { display: flex; align-items: end; gap: 12px; }
+.tile { display: grid; place-items: center; outline: 1px dashed oklch(0.3 0.015 275); outline-offset: 0; cursor: pointer; touch-action: none; }
+.tile:focus-visible { outline: 2px solid oklch(0.84 0.13 205); }
+.tile svg { display: block; overflow: visible; }
+.t128, .t128 svg { width: 128px; height: 128px; }
+.t64, .t64 svg { width: 64px; height: 64px; }
+.t256, .t256 svg { width: 256px; height: 256px; }
+.big { margin-bottom: 4px; }
+/* Emblems: the flash box and the dark glass, as the intro shows them. */
+.emb { display: flex; gap: 12px; }
+.emb > div { position: relative; display: grid; place-items: center; width: 100px; height: 100px; overflow: hidden; }
+.emb i { position: relative; display: block; width: 76px; aspect-ratio: 1; background: currentColor; mask: var(--emblem) center / contain no-repeat; mask-mode: luminance; }
+.flash { background: #fff; color: var(--intro-bg); }
+.glass { color: #fff; background: oklch(0.3 0.06 300); }
+.glass::before {
+  content: ""; position: absolute; inset: -20%;
+  background:
+    radial-gradient(circle at 30% 30%, oklch(0.75 0.15 60) 0 18%, transparent 19%),
+    radial-gradient(circle at 75% 40%, oklch(0.7 0.17 340) 0 16%, transparent 17%),
+    radial-gradient(circle at 50% 80%, oklch(0.72 0.12 200) 0 20%, transparent 21%);
+}
+.glass::after { content: ""; position: absolute; inset: 0; backdrop-filter: blur(14px) brightness(0.45); -webkit-backdrop-filter: blur(14px) brightness(0.45); background: oklch(0.1 0.01 275 / 0.2); }
+.glass i { z-index: 1; }
+.idea { margin: 0; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>Icon spike: Star catalog 2</h1>
+<p class="lede">Star catalog (was Solar loop), round 2, for the new name (Tom, 2026-11-24). Current: round 1's A, on the menu today. A: an open star catalog with a star rising off its spine. D: the closed catalog is the block, the star hovers over it.</p>
+<div id="out"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script>
+(() => {
+  const { gsap } = window;
+  // Menu motion runs at 30 fps.
+  gsap.ticker.fps(30);
+  const NS = 'http://www.w3.org/2000/svg';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.appendChild(e); return e; };
+  const poly = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  const EMB_HEAD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">';
+  // Linear and radial gradients as markup; the stops take OKLCH by style.
+  const lg = (id, stops, a = 'x1="0" y1="0" x2="0" y2="1"') => `<linearGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, a = 'cx="0.5" cy="0.5" r="0.5"') => `<radialGradient id="${id}" ${a}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color: ${c}; stop-opacity: ${op}"/>`).join('')}</radialGradient>`;
+  const blur = (id, s) => `<filter id="${id}" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="${s}"/></filter>`;
+  // The menu's shared light: a rim and a soft top-left glint.
+  const light = u => lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"') + rg(`${u}lit`, [[0, '#fff', 0.38], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"');
+  // A body in the menu's language: gradient, then lit, then a rim 2 wide.
+  const body = (d, u, fill, extra = '') => `<path d="${d}" fill="url(#${u}${fill})"${extra}/><path d="${d}" fill="url(#${u}lit)"/><path d="${d}" fill="none" stroke="url(#${u}rim)" stroke-width="2" stroke-linejoin="round"/>`;
+  // A small looping clock that runs only while a tile is live.
+  const clock = fn => {
+    let on = false;
+    const tick = () => fn(gsap.ticker.time);
+    return { start() { if (!on) { on = true; gsap.ticker.add(tick); } }, stop() { if (on) { on = false; gsap.ticker.remove(tick); } } };
+  };
+
+  const DIRS = [];
+
+  // The toy's tokens: the 171 band's gold, a hot white core, the dark sky.
+  const SUNC = [[0, 'oklch(0.84 0.15 82)'], [0.55, 'oklch(0.68 0.16 62)'], [1, 'oklch(0.46 0.14 45)']];
+  const LOOPC = [[0, 'oklch(0.99 0.05 95)'], [0.5, 'oklch(0.9 0.13 85)'], [1, 'oklch(0.74 0.16 66)']];
+  const HOTC = [[0, '#fff'], [0.45, 'oklch(0.97 0.08 92)', 0.8], [1, 'oklch(0.85 0.15 80)', 0]];
+  const TOPC = [[0, 'oklch(0.86 0.14 84)'], [1, 'oklch(0.66 0.16 62)']];
+  const LEFT = [[0, 'oklch(0.62 0.16 58)'], [1, 'oklch(0.5 0.15 48)']];
+  const RIGHT = [[0, 'oklch(0.44 0.14 45)'], [1, 'oklch(0.33 0.11 40)']];
+
+  // A tube along a centre line: points [[x, y], ...] and a width.
+  const tube = (pts, w) => {
+    const L = [], Q = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+      let tx = b[0] - a[0], ty = b[1] - a[1];
+      const l = Math.hypot(tx, ty) || 1;
+      tx /= l; ty /= l;
+      L.push([p[0] - ty * w / 2, p[1] + tx * w / 2]);
+      Q.push([p[0] + ty * w / 2, p[1] - tx * w / 2]);
+    });
+    return 'M' + L.concat(Q.reverse()).map(p => `${f(p[0])} ${f(p[1])}`).join('L') + 'Z';
+  };
+  // A loop from foot a to foot b, apex height h, lean k: steep legs, a round top.
+  const arch = (a, b, h, k = 0, n = 32) => Array.from({ length: n + 1 }, (_, i) => {
+    const s = i / n, lift = h * Math.sqrt(Math.max(0, 4 * s * (1 - s)));
+    return [lerp(a[0], b[0], s) + k * lift, lerp(a[1], b[1], s) - lift];
+  });
+  // The rope that lifts off in a flare: a bulb with a narrow neck.
+  const bulb = (cx, by, h, w) => arch([cx - w * 0.3, by], [cx + w * 0.3, by], h, 0).map(([x, y], i, a) => {
+    const s = i / (a.length - 1);
+    return [x - Math.sin(s * Math.PI * 2) * w * 0.45, y];
+  });
+  const defs = u => `${light(u)}${blur(`${u}b`, 2.4)}${blur(`${u}h`, 10)}${blur(`${u}g`, 4)}
+          ${lg(`${u}loop`, LOOPC)}${rg(`${u}hot`, HOTC)}`;
+  // Loops in the menu's language. Classes: loops, hot, kern, rope.
+  // Two lighter threads run inside each loop: a loop is a bundle of strands.
+  const threads = l => [-0.24, 0.2].map(d => {
+    const dx = l.b[0] - l.a[0], dy = l.b[1] - l.a[1], n = Math.hypot(dx, dy), o = d * l.w;
+    const p = arch([l.a[0] - dx / n * o, l.a[1] - dy / n * o], [l.b[0] + dx / n * o, l.b[1] + dy / n * o], l.h + o, l.k);
+    return `<path d="${tube(p, l.w * 0.2)}" fill="#fff" opacity="${d < 0 ? 0.5 : 0.3}"/>`;
+  }).join('');
+  const loopArt = (u, L, kern, rope) => `
+        <g class="loops" data-o="${f(kern[0])} ${f(kern[1])}">${L.map(l => body(tube(l.p, l.w), u, 'loop') + threads(l)).join('')}</g>
+        <g class="hot" opacity="0">${L.map(l => `<path d="${tube(l.p, l.w * 0.5)}" fill="#fff"/>`).join('')}</g>
+        <path class="rope" d="${tube(rope, 4)}" fill="url(#${u}loop)" opacity="0"/>`;
+  const kernArt = (u, k, r) => `<ellipse class="kern" cx="${f(k[0])}" cy="${f(k[1])}" rx="${f(r * 1.6)}" ry="${f(r)}" fill="url(#${u}hot)" opacity="0.55"/>`;
+  // The shared motion: the region flares; loops flash and lift, the rope leaves.
+  // Leave settles everything back.
+  const run = svg => {
+    const loops = svg.querySelector('.loops'), hot = svg.querySelector('.hot'), kern = svg.querySelector('.kern'), rope = svg.querySelector('.rope');
+    const o = loops.dataset.o;
+    let tl = null;
+    return {
+      enter() {
+        if (tl) tl.kill();
+        tl = gsap.timeline();
+        tl.to(kern, { opacity: 1, scale: 1.7, svgOrigin: o, duration: 0.12, ease: 'power3.out' })
+          .to(hot, { opacity: 0.85, duration: 0.12 }, '<')
+          .set(rope, { opacity: 1, y: 0, scale: 0.6, svgOrigin: o })
+          .to(rope, { y: -34, scale: 1.25, svgOrigin: o, opacity: 0, duration: 1.1, ease: 'power2.in' }, '<')
+          .to(loops, { scaleY: 1.08, svgOrigin: o, duration: 0.5, ease: 'back.out(2)' }, '<')
+          .to(hot, { opacity: 0.25, duration: 1.2, ease: 'sine.out' }, '<0.15')
+          .to(kern, { opacity: 0.8, scale: 1.2, svgOrigin: o, duration: 1.2, ease: 'sine.out' }, '<');
+      },
+      move(p) {
+        if (!p) return;
+        const [ox] = o.split(' ').map(Number);
+        gsap.to(loops, { skewX: clamp((p[0] - ox) * 0.12, -8, 8), svgOrigin: o, duration: 0.5, ease: 'power2.out' });
+      },
+      leave() {
+        if (tl) tl.kill();
+        tl = null;
+        gsap.to(loops, { scaleY: 1, skewX: 0, svgOrigin: o, duration: 0.6, ease: 'power2.inOut' });
+        gsap.to(hot, { opacity: 0, duration: 0.6 });
+        gsap.to(kern, { opacity: 0.55, scale: 1, svgOrigin: o, duration: 0.6 });
+        gsap.set(rope, { opacity: 0 });
+      },
+    };
+  };
+
+  /* ================= Current: round 1's A, on the menu today ================= */
+
+  // The sun's edge as a gold dome; loops stand on it, their feet in the surface.
+  const DC = [64, 172], DR = 84, CHORD = 114;
+  const dome = x => DC[1] - Math.sqrt(DR * DR - (x - DC[0]) ** 2);
+  const hwA = Math.sqrt(DR * DR - (CHORD - DC[1]) ** 2);
+  const domeD = `M${f(64 - hwA)} ${CHORD}A${DR} ${DR} 0 0 1 ${f(64 + hwA)} ${CHORD}Z`;
+  const ft = (x, d = 4) => [x, dome(x) + d];
+  const loop = (a, b, h, k, w) => ({ a, b, h, k, w, p: arch(a, b, h, k) });
+  const LA = [
+    loop(ft(26), ft(88), 74, 0.05, 10),
+    loop(ft(40), ft(76), 46, 0.04, 8),
+    loop(ft(93), ft(115), 28, -0.12, 6.5),
+  ];
+  const KA = [57, dome(57) + 1];
+  DIRS.push({
+    l: 'Current', name: 'Menu icon',
+    box: [64 - hwA, 14, hwA * 2, CHORD - 14],
+    idea: 'The sun\'s edge as a gold dome in the 171 band\'s colours, with three loops of glowing plasma standing on it: a tall loop, a smaller one nested inside, a low one to the right, their feet in a hot white glow. The pointer flares the region: the feet flash, the loops brighten and lift, a rope of plasma rises off and fades.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${defs(u)}${lg(`${u}sun`, SUNC)}</defs>
+        <ellipse cx="62" cy="66" rx="46" ry="40" fill="oklch(0.62 0.15 66)" opacity="0.5" filter="url(#${u}h)"/>
+        ${loopArt(u, LA, KA, bulb(57, 46, 34, 26))}
+        ${body(domeD, u, 'sun')}
+        <g opacity="0.5">
+          <ellipse cx="30" cy="106" rx="12" ry="4" fill="oklch(0.5 0.14 48)" filter="url(#${u}b)"/>
+          <ellipse cx="96" cy="104" rx="14" ry="4.5" fill="oklch(0.5 0.14 48)" filter="url(#${u}b)"/>
+          <ellipse cx="66" cy="108" rx="10" ry="3" fill="oklch(0.55 0.15 52)" filter="url(#${u}b)"/>
+        </g>
+        <ellipse cx="60" cy="${f(dome(60) + 5)}" rx="40" ry="5" fill="oklch(0.95 0.1 90)" opacity="0.4" filter="url(#${u}g)"/>
+        ${kernArt(u, KA, 9)}`;
+      return run(svg);
+    },
+  });
+
+
+  /* ================= Star catalog: shared parts ================= */
+
+  // The catalog's tokens: a midnight cover, cream pages, a gold-white star.
+  const NAVY = [[0, 'oklch(0.44 0.1 265)'], [1, 'oklch(0.26 0.08 268)']];
+  const PAGE = [[0, 'oklch(0.97 0.03 92)'], [1, 'oklch(0.8 0.06 78)']];
+  const STAR = [[0, '#fff'], [0.42, 'oklch(0.96 0.09 92)'], [1, 'oklch(0.8 0.16 72)']];
+  const PLEFT = [[0, 'oklch(0.9 0.05 88)'], [1, 'oklch(0.74 0.07 74)']];
+  const SPINE = [[0, 'oklch(0.3 0.08 266)'], [1, 'oklch(0.2 0.06 268)']];
+  const starDefs = u => `${light(u)}${blur(`${u}b`, 2.4)}${blur(`${u}h`, 10)}${blur(`${u}g`, 5)}
+          ${rg(`${u}star`, STAR, 'cx="0.4" cy="0.36" r="0.66"')}
+          ${rg(`${u}glow`, [[0, 'oklch(0.92 0.12 88)', 0.9], [1, 'oklch(0.8 0.15 75)', 0]])}`;
+  // The star: a glow, an anamorphic streak (hidden at rest), the glossy orb.
+  const starArt = (u, c, r) => `
+        <g class="star" data-o="${f(c[0])} ${f(c[1])}">
+          <ellipse class="glow" cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(r * 2)}" ry="${f(r * 2)}" fill="url(#${u}glow)" opacity="0.7"/>
+          <ellipse class="streak" cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(r * 3.2)}" ry="${f(r * 0.32)}" fill="oklch(0.95 0.09 90)" opacity="0" filter="url(#${u}g)"/>
+          ${body(`M${f(c[0] - r)} ${f(c[1])}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`, u, 'star')}
+        </g>`;
+  // The shared motion: the star swells and flares; the pages lift.
+  // It leans toward the pointer; leave settles everything back.
+  const runStar = svg => {
+    const star = svg.querySelector('.star'), glow = svg.querySelector('.glow'), streak = svg.querySelector('.streak'), pages = svg.querySelector('.pages');
+    const o = star.dataset.o, po = pages?.dataset.o;
+    let tl = null;
+    return {
+      enter() {
+        if (tl) tl.kill();
+        tl = gsap.timeline();
+        tl.to(star, { scale: 1.12, svgOrigin: o, duration: 0.35, ease: 'back.out(2)' })
+          .to(glow, { opacity: 1, scale: 1.3, svgOrigin: o, duration: 0.3, ease: 'power2.out' }, '<')
+          .to(streak, { opacity: 0.95, scaleX: 1.25, svgOrigin: o, duration: 0.18, ease: 'power3.out' }, '<')
+          .to(streak, { opacity: 0.4, scaleX: 1, svgOrigin: o, duration: 1.2, ease: 'sine.out' })
+          .to(glow, { opacity: 0.85, scale: 1.12, svgOrigin: o, duration: 1.2, ease: 'sine.out' }, '<');
+        if (pages) gsap.to(pages, { scaleY: 1.06, svgOrigin: po, duration: 0.5, ease: 'back.out(2)' });
+      },
+      move(p) {
+        if (!p) return;
+        const [ox] = o.split(' ').map(Number);
+        gsap.to(star, { x: clamp((p[0] - ox) * 0.1, -6, 6), duration: 0.6, ease: 'power2.out' });
+      },
+      leave() {
+        if (tl) tl.kill();
+        tl = null;
+        gsap.to(star, { scale: 1, x: 0, svgOrigin: o, duration: 0.6, ease: 'power2.inOut' });
+        gsap.to(glow, { opacity: 0.7, scale: 1, svgOrigin: o, duration: 0.6 });
+        gsap.to(streak, { opacity: 0, scaleX: 1, svgOrigin: o, duration: 0.5 });
+        if (pages) gsap.to(pages, { scaleY: 1, svgOrigin: po, duration: 0.6, ease: 'power2.inOut' });
+      },
+    };
+  };
+
+  /* ================= A: Shaded object ================= */
+
+  // An open star catalog; a star rises off its spine.
+  const SP = [64, 106];
+  const pageL = `M64 106L16 98C14 90 14 80 16 72C34 64 50 66 64 76Z`;
+  const pageR = `M64 106L112 98C114 90 114 80 112 72C94 64 78 66 64 76Z`;
+  const coverL = `M64 112L10 103C8 94 8 80 10 70L18 68C15 80 15 90 16 98L64 106Z`;
+  const coverR = `M64 112L118 103C120 94 120 80 118 70L110 68C113 80 113 90 112 98L64 106Z`;
+  // Two bold catalog rows on each page.
+  const rows = side => [80, 88].map((y, i) => {
+    const x0 = side < 0 ? 24 : 72, x1 = side < 0 ? 56 : 104;
+    return `<path d="M${x0} ${y + i * 0.5}L${x1} ${y + 2 + i * 0.5}" stroke="oklch(0.6 0.06 75)" stroke-width="3.5" stroke-linecap="round" opacity="0.45"/>`;
+  }).join('');
+  const SA = [64, 40], RA = 20;
+  DIRS.push({
+    l: 'A', name: 'Shaded object',
+    box: [8, SA[1] - RA * 1.6, 112, 112 - (SA[1] - RA * 1.6)],
+    idea: 'An open star catalog: cream pages on a midnight cover, two bold rows on each page, and a glossy gold-white star rising off the spine in a soft glow. The pointer swells the star: an anamorphic streak flashes across it, as in the toy, the pages lift, and the star leans toward the pointer.',
+    art(svg, u) {
+      svg.innerHTML = `<defs>${starDefs(u)}${lg(`${u}navy`, NAVY)}${lg(`${u}page`, PAGE)}</defs>
+        <ellipse cx="64" cy="70" rx="50" ry="40" fill="oklch(0.6 0.13 75)" opacity="0.35" filter="url(#${u}h)"/>
+        ${body(coverL, u, 'navy')}${body(coverR, u, 'navy')}
+        <g class="pages" data-o="${SP[0]} ${SP[1]}">${body(pageL, u, 'page')}${body(pageR, u, 'page')}${rows(-1)}${rows(1)}</g>
+        ${starArt(u, SA, RA)}`;
+      return runStar(svg);
+    },
+    emblem: `${EMB_HEAD}<path d="${coverL}" fill="#5a5a5a"/><path d="${coverR}" fill="#5a5a5a"/><path d="${pageL}" fill="#8a8a8a"/><path d="${pageR}" fill="#8a8a8a"/><circle cx="${SA[0]}" cy="${SA[1]}" r="${RA}" fill="#fff"/></svg>`,
+  });
+
+  /* ================= D: Isometric block ================= */
+
+  // The closed catalog is the block: a midnight cover, cream page edges, a dark spine.
+  const CYD = 80, HXD = 30, HYD = 22, TD = 16;
+  const isoD = (gx, gy) => [64 + (gx - gy) * 0.866, CYD + (gx + gy) * 0.5];
+  const ND = isoD(-HXD, -HYD), ED = isoD(HXD, -HYD), SD = isoD(HXD, HYD), WD = isoD(-HXD, HYD);
+  const dn = (p, k = 1) => [p[0], p[1] + TD * k];
+  const SDp = [64, CYD - 46], RD = 17;
+  DIRS.push({
+    l: 'D', name: 'Isometric block',
+    box: [WD[0], SDp[1] - RD * 1.6, ED[0] - WD[0], SD[1] + TD - (SDp[1] - RD * 1.6)],
+    idea: 'The closed star catalog is the block at 30 degrees: a midnight cover on top, the cream page edges on the left face, the dark spine on the right, a rim on the top edges. The same gold-white star hovers over it in a soft glow and flares under the pointer, as A does.',
+    art(svg, u) {
+      const top = poly([ND, ED, SD, WD]);
+      svg.innerHTML = `<defs>${starDefs(u)}
+          ${lg(`${u}top`, NAVY, 'x1="0.2" y1="0" x2="0.6" y2="1"')}
+          ${lg(`${u}L`, PLEFT)}${lg(`${u}R`, SPINE)}</defs>
+        <ellipse cx="64" cy="${SDp[1] + 10}" rx="40" ry="36" fill="oklch(0.6 0.13 75)" opacity="0.4" filter="url(#${u}h)"/>
+        <path d="${poly([ED, SD, WD, dn(WD), dn(SD), dn(ED)])}" fill="oklch(0.05 0.01 240)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([WD, SD, dn(SD), dn(WD)])}" fill="url(#${u}L)"/>
+        <path d="${poly([SD, ED, dn(ED), dn(SD)])}" fill="url(#${u}R)"/>
+        <path d="${top}" fill="url(#${u}top)"/>
+        <path d="${top}" fill="url(#${u}lit)"/>
+        <path d="M${f(WD[0])} ${f(WD[1])}L${f(ND[0])} ${f(ND[1])}L${f(ED[0])} ${f(ED[1])}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${f(WD[0])} ${f(WD[1])}L${f(SD[0])} ${f(SD[1])}L${f(ED[0])} ${f(ED[1])}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <ellipse cx="64" cy="${CYD}" rx="22" ry="8" fill="oklch(0.95 0.1 90)" opacity="0.4" filter="url(#${u}g)"/>
+        ${starArt(u, SDp, RD)}`;
+      return runStar(svg);
+    },
+    emblem: `${EMB_HEAD}<path d="${poly([WD, SD, dn(SD), dn(WD)])}" fill="#5a5a5a"/><path d="${poly([SD, ED, dn(ED), dn(SD)])}" fill="#3a3a3a"/><path d="${poly([ND, ED, SD, WD])}" fill="#8a8a8a"/><circle cx="${SDp[0]}" cy="${SDp[1]}" r="${RD}" fill="#fff"/></svg>`,
+  });
+
+  /* ================= Gallery ================= */
+  const NAME = 'Star catalog';
+  // Every icon is framed to its drawing, so its long side fills 110 of 128.
+  const fitIcon = (svg, box) => {
+    if (!box) return;
+    const side = Math.max(box[2], box[3]), size = (side * 128) / 110, cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+    svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  };
+  const local = (svg, e) => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height];
+  };
+  const out = document.getElementById('out');
+  const sec = document.createElement('section');
+  sec.id = 'row-solarloop';
+  sec.innerHTML = `<h2>${NAME}</h2><div class="row"></div>`;
+  out.append(sec);
+  let uid = 0;
+  window.EMBLEMS = {};
+  for (const D of DIRS) {
+    const file = `solarloop-${D.l.toLowerCase()}`;
+    // The emblem rides in the page, so it also shows from a file.
+    if (D.emblem) window.EMBLEMS[file] = D.emblem;
+    const url = D.emblem ? `'data:image/svg+xml,${encodeURIComponent(D.emblem)}'` : '';
+    const card = document.createElement('article');
+    card.className = 'dir';
+    card.id = file;
+    card.innerHTML = `<header>${D.l === 'Current' ? `<b>${D.l}</b>` : `<b>${D.l}</b><span>· ${D.name}</span>`}</header>
+      <div class="tile t256 big" tabindex="0" aria-label="${NAME} ${D.l}, 256"></div>
+      <div class="icons"><div class="tile t128" tabindex="0" aria-label="${NAME} ${D.l}, 128"></div><div class="tile t64" tabindex="0" aria-label="${NAME} ${D.l}, 64"></div></div>
+      ${url ? `<div class="emb"><div class="flash"><i style="--emblem: url(${url})"></i></div><div class="glass"><i style="--emblem: url(${url})"></i></div></div>` : ''}
+      ${D.idea ? `<p class="idea">${D.idea}</p>` : ''}`;
+    sec.querySelector('.row').append(card);
+    card.querySelectorAll('.tile').forEach(tileEl => {
+      const svg = el('svg', { viewBox: '0 0 128 128', 'aria-hidden': 'true' }, tileEl);
+      const c = D.art(svg, `u${++uid}`);
+      fitIcon(svg, D.box);
+      if (reduce) return;
+      tileEl.addEventListener('pointerenter', e => c.enter(local(svg, e)));
+      tileEl.addEventListener('pointermove', e => c.move(local(svg, e)));
+      tileEl.addEventListener('pointerleave', () => c.leave());
+      tileEl.addEventListener('focus', () => c.enter(null));
+      tileEl.addEventListener('blur', () => c.leave());
+    });
+  }
+  // A dump page lists the emblems for export.
+  if (new URLSearchParams(location.search).has('dump')) {
+    const pre = document.createElement('pre');
+    pre.id = 'dump';
+    pre.textContent = JSON.stringify(window.EMBLEMS);
+    document.body.append(pre);
+  }
+})();
+</script>
+</body>
+</html>
