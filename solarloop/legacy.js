@@ -51,6 +51,7 @@ const DRAFT = {
 };
 
 // The organ choir: what every star but the Sun sang before 24 November.
+// Bodies added later have no older versions.
 // The old organ wave, three voices 7 cents apart, one octave of notes.
 // Bass, root, fifth, octave and tenth; the top voice slides along a pentatonic line.
 // It sang through the toy's echo hall, with no swell. Its low pass sat at 9 kHz.
@@ -65,5 +66,5 @@ const ORGAN = P({
 export const VERSIONS = {
   synth: { name: 'Synth draft', desc: 'The current synths, with no loudness match. Taps use the old sound.', of: id => SYNTH[id] },
   draft: { name: 'First draft', desc: 'Choirs, organs, reeds and flutes. No synths. No loudness match. Taps use the old sound.', of: id => DRAFT[id] },
-  organ: { name: 'Organ choir', desc: 'The sound of all stars but the Sun before 24 November. Taps use the old sound.', of: id => id === 'sun' ? SYNTH.sun : ORGAN },
+  organ: { name: 'Organ choir', desc: 'The sound of all stars but the Sun before 24 November. Taps use the old sound.', of: id => id === 'sun' ? SYNTH.sun : SYNTH[id] ? ORGAN : undefined },
 };

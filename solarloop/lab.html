@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex">
 <style>html { background: oklch(0.13 0.01 260); }</style>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solar loop choir lab</title>
+<title>Star catalog choir lab</title>
 <link rel="stylesheet" href="../shared/fonts/fonts.css">
 <style>
 /* Solar loop choir lab: hear each star as in the toy, then shape its song and save it. */
@@ -242,11 +242,11 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
 <script type="module">
 import { choir, tapBus, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
 import { VERSIONS } from './legacy.js';
-import { ROOT, makeSound } from './sound.js';
+import { ROOT, makeSound, nearOf } from './sound.js';
 import { CHART } from './chart.js';
 
-const NAMES = { zetaoph: 'Zeta Ophiuchi', regulus: 'Regulus', vega: 'Vega', sirius: 'Sirius', procyon: 'Procyon', sun: 'Sun', epseri: 'Epsilon Eridani', proxima: 'Proxima Centauri', luhman: 'Luhman 16', wise: 'WISE 0855', ttauri: 'T Tauri', arcturus: 'Arcturus', rigel: 'Rigel', betelgeuse: 'Betelgeuse', vycma: 'VY Canis Majoris', siriusb: 'Sirius B', neutron: 'Neutron star' };
-const GROUPS = [['Main sequence', ['zetaoph', 'regulus', 'vega', 'sirius', 'procyon', 'sun', 'epseri', 'proxima']], ['Brown dwarfs and young', ['luhman', 'wise', 'ttauri']], ['Giants', ['arcturus', 'rigel', 'betelgeuse', 'vycma']], ['Remnants', ['siriusb', 'neutron']]];
+const NAMES = { zetaoph: 'Zeta Ophiuchi', regulus: 'Regulus', vega: 'Vega', sirius: 'Sirius', procyon: 'Procyon', sun: 'Sun', epseri: 'Epsilon Eridani', proxima: 'Proxima Centauri', luhman: 'Luhman 16', wise: 'WISE 0855', ttauri: 'T Tauri', arcturus: 'Arcturus', rigel: 'Rigel', betelgeuse: 'Betelgeuse', vycma: 'VY Canis Majoris', siriusb: 'Sirius B', neutron: 'Neutron star', cygx1: 'Cygnus X-1', sgra: 'Sagittarius A*', qso: '3C 273 (quasar)' };
+const GROUPS = [['Main sequence', ['zetaoph', 'regulus', 'vega', 'sirius', 'procyon', 'sun', 'epseri', 'proxima']], ['Brown dwarfs and young', ['luhman', 'wise', 'ttauri']], ['Giants', ['arcturus', 'rigel', 'betelgeuse', 'vycma']], ['Remnants', ['siriusb', 'neutron']], ['Black holes and quasars', ['cygx1', 'sgra', 'qso']]];
 const $ = id => document.getElementById(id);
 const NN = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 const note = f => { const n = Math.round(12 * Math.log2(f / 440) + 69); return NN[n % 12] + (Math.floor(n / 12) - 1); };
@@ -354,6 +354,8 @@ for (const [g, ids] of GROUPS) {
   h.className = 'grp'; h.textContent = g;
   $('list').append(h);
   for (const id of ids) {
+    // A body that the chart does not list yet stays out of the lab.
+    if (!CHART[id]) { delete NAMES[id]; continue; }
     const b = document.createElement('button');
     b.className = 'star'; b.id = 'r_' + id;
     b.innerHTML = `<span>${NAMES[id]}</span><span class="k" id="w_${id}"></span><small>${CHART[id].cls}</small><small class="k" id="t_${id}" style="grid-column:1/-1;text-align:left"></small>`;
@@ -444,12 +446,12 @@ function build(id, quick) {
 }
 // Applies the zoom mix at the current zoom: choir level, rumble level and layers.
 function mix(c = cur) {
-  const z = zoomAt(near, ZK);
+  const z = zoomAt(nearOf(near, c?.id), ZK);
   if (c) { c.hum.gain.setTargetAtTime($('humOn').checked ? dB(z.choir) : 0, ac.currentTime, 0.1); c.v.setLayers(z); }
   rum?.g.gain.setTargetAtTime(rumLvl(z), ac.currentTime, 0.1);
   drawZoom();
 }
-const rumLvl = (z = zoomAt(near, ZK)) => $('rumOn').checked ? 0.12 * dB(z.rumble) * +$('rum').value : 0;
+const rumLvl = (z = zoomAt(nearOf(near, cur?.id), ZK)) => $('rumOn').checked ? 0.12 * dB(z.rumble) * +$('rum').value : 0;
 const beds = {};
 async function rumbleFor(id) {
   const root = rootOf(id) / 2;
@@ -685,6 +687,7 @@ $('reset').onclick = () => { if (!sel) return; delete tuned[sel]; show(); if (cu
 $('ver').onchange = () => {
   if (!sel || !$('ver').value) return;
   const k = $('ver').value, p = k === 'now' ? VOICES[sel] : VERSIONS[k].of(sel);
+  if (!p) { $('verNote').textContent = `${NAMES[sel]} has no ${VERSIONS[k].name.toLowerCase()}: it is new.`; $('ver').value = ''; return; }
   tuned[sel] = clone(p);
   $('verNote').textContent = k === 'now' ? 'Loaded: the preset in choir.js.' : `Loaded: ${VERSIONS[k].name}. ${VERSIONS[k].desc}`;
   show();
@@ -770,7 +773,7 @@ const CMP = [['Song', p => p.prog ? (progName(p) === 'custom' ? 'custom' : PROGR
   ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off'], ['Blast voices', p => (p.blastMix || SUN.blastMix).join(' / ')], ['Glow voices', p => (p.glowMix || SUN.glowMix).join(' / ')]];
 function drawCompare() {
   if (!sel) return;
-  const cols = [['Now', VOICES[sel]], ...(tuned[sel] ? [['Yours', tuned[sel]]] : []), ...Object.values(VERSIONS).map(v => [v.name, v.of(sel)])];
+  const cols = [['Now', VOICES[sel]], ...(tuned[sel] ? [['Yours', tuned[sel]]] : []), ...Object.values(VERSIONS).map(v => [v.name, v.of(sel)]).filter(c => c[1])];
   $('cmp').innerHTML = `<tr><th></th>${cols.map(c => `<th>${c[0]}</th>`).join('')}</tr>` + CMP.map(([n, f]) => {
     const now = String(f(cols[0][1]));
     return `<tr><th>${n}</th>${cols.map(([, p], i) => { const v = String(f(p)); return `<td class="${i && v !== now ? 'diff' : ''}">${v}</td>`; }).join('')}</tr>`;

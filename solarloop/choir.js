@@ -88,6 +88,13 @@ export const VOICES = {
   betelgeuse: P({ harmony: 3, glowWave: 'sawtooth', chord: 'minor', det: 10, res: 5.5, fmot: 0.35, voice: 0.5, vowel: 0.75, metal: 0.2, bright: 0.7, step: 12, dist: 0.35, rev: 11, mix: 1.2, width: 1.6, oct: [0.9, 0.7, 1], swR: 0.05, swD: 0.3, fx: { dark: 0.25 }, gain: 1 }),
   vycma: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 14, res: 6, fmot: 0.5, vowel: 0.65, metal: 0.15, bright: 0.6, step: 14, dist: 0.7, rev: 12, mix: 1.5, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.04, swD: 0.25, fx: { dark: 0.4, echo: 0.4 }, gain: 0.27 }),
   siriusb: P({ ...song('overtones'), ...ARP, glowWave: 'sine', wave: 'fm', res: 5, fmot: 0.3, voice: 0.2, vowel: 1.3, metal: 0.55, bright: 1.3, step: 9, dist: 0.6, rev: 10, mix: 1.5, width: 1.5, oct: [1, 0.4, 0.15], swR: 0.1, swD: 0.1, fx: { machine: 0.4, echo: 0.4 }, gain: 0.45 }),
+  // The holes and the quasar: far, cold and slow (2026-11-24). Taps never fire on them.
+  // Cygnus X-1: a black hole fed by a blue supergiant; X-ray hot. Glassy FM overtones.
+  cygx1: P({ ...song('overtones'), ...ARP, wave: 'fm', voice: 0.1, det: 8, res: 6, fmot: 0.4, metal: 0.35, bright: 1.1, step: 10, dist: 0.75, rev: 13, mix: 1.7, width: 1.8, oct: [0.9, 0.7, 0.8], swR: 0.05, swD: 0.12, glowWave: 'sine', fx: { sweep: 0.35, dark: 0.3, echo: 0.35 }, gain: 0.27 }),
+  // Sagittarius A*: the hole at the centre of our galaxy. The deepest, slowest pad.
+  sgra: P({ ...song('phrygian'), ...ARP, ...ANALOG, det: 14, res: 5, fmot: 0.5, bright: 0.5, step: 16, dist: 0.85, rev: 14, mix: 1.8, width: 1.9, oct: [0.6, 0.8, 1.1], swR: 0.03, swD: 0.2, glowWave: 'sawtooth', fx: { dark: 0.5, echo: 0.45 }, gain: 0.16 }),
+  // 3C 273: the first quasar, radio-loud and billions of light years away. A far transmission.
+  qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 0.08 }),
   neutron: P({ ...song('overtones'), ...ARP, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 0.07 }),
 };
 export const preset = band => VOICES[band] || SUN;
@@ -615,7 +622,8 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 export function chordLabel(c, harmony) {
   const ch = chordOf(c, harmony);
-  const minor = ch.third && Math.log2(ch.third) * 12 < 3.5;
+  // Only chords with a real third read as minor; sus and cluster chords keep capitals.
+  const minor = ['triad', 'minor', 'add9', 'seventh'].includes(c.kind) && ch.third && Math.log2(ch.third) * 12 < 3.5;
   const deg = ROMAN[c.deg] || String(c.deg + 1);
   const name = (c.shift ? (c.shift < 0 ? '♭' : '♯') : '') + (minor ? deg.toLowerCase() : deg);
   // The case shows major or minor, so those kinds need no word.

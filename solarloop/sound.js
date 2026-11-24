@@ -1,5 +1,6 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 import { choir, tapBus, preset, keyed, zoomAt, renderBed, LOOP } from './choir.js';
+import { STARS } from './sun.js';
 // Space is silent, so the sound is a sonification: each part has a visible cause.
 // A flare: the deep synth, then a slow glow chord. A lifting prominence: the synth only. A drag is silent.
 // Awake: a voice over a constant deep surround rumble.
@@ -9,7 +10,13 @@ const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // The key falls as the star grows: the hypergiant hums lowest.
 // The Sun sits in A sharp (Tom, 2026-11-24), set by ear with its choir.
-export const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
+// The holes and the quasar take the roots set in sun.js (2026-11-24).
+export const ROOT = { cygx1: 98, sgra: 82.41, qso: 73.42, neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
+
+// A hole's full view stands `reach` times farther back, so its nearness reads low.
+// The shift puts its full view back on the full-star stop: x16 sits at -1.4.
+const NEAR_LN = Math.log(16) / 1.4;
+export const nearOf = (near, band) => near + Math.log(STARS[band]?.reach || 1) / NEAR_LN;
 
 // `opt(id)` reads a Dev row; a missing row means on, at level 1.
 export function makeSound(kit, opt = () => undefined) {
@@ -128,6 +135,7 @@ export function makeSound(kit, opt = () => undefined) {
   // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
   const dB = x => 10 ** (x / 20);
   function mixLayers(hum, rumble, near = 0) {
+    near = nearOf(near, drone?.band);
     const z = zoomAt(near);
     const h = hum ? lvl('sndHumLvl') * dB(z.choir) : 0;
     const r = rumble ? dB(z.rumble) * lvl('sndRumbleLvl') : 0;
