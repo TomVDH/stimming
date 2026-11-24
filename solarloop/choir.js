@@ -91,10 +91,10 @@ export const VOICES = {
 export const preset = band => VOICES[band] || SUN;
 
 // The zoom mix, one for all stars: a level and layer gains at each zoom stop.
-// near: 1 on the long lens, 0 on the full star, below 0 zoomed out (x4 at -0.7, x16 at -1.4).
+// near: 1 on the long lens, 0 on the full star, below 0 zoomed out (x4 at -0.7, x32 at -1.75).
 // choir and rumble are in dB; low, mid, high, melody and fx are gains.
 export const ZOOM = [
-  { stop: 'far', near: -1.4, choir: -9, rumble: -9, low: 1, mid: 0, high: 0, melody: 0, fx: 1 },
+  { stop: 'far', near: -1.75, choir: -9, rumble: -9, low: 1, mid: 0, high: 0, melody: 0, fx: 1 },
   { stop: 'out', near: -0.7, choir: -3, rumble: 0, low: 1, mid: 1, high: 0.3, melody: 0.3, fx: 1 },
   { stop: 'full', near: 0, choir: 0, rumble: 0, low: 1, mid: 1, high: 1, melody: 1, fx: 1 },
   { stop: 'wide', near: 0.69, choir: 0, rumble: 1, low: 1, mid: 1, high: 1, melody: 1.25, fx: 1 },
