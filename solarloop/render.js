@@ -82,6 +82,9 @@ const LUTS = [
   // WR 124: violet blue to white in its wind; the nebula glows hydrogen pink.
   [['000000', 0], ['05060e', 0.1], ['161c40', 0.26], ['3a4c9a', 0.44], ['7a8ee0', 0.6], ['bcc8ff', 0.74], ['eef1ff', 0.86], ['ffffff', 1]],
   [['000000', 0], ['0e0308', 0.12], ['3a0a22', 0.3], ['821e48', 0.5], ['d0507a', 0.68], ['f6a8c0', 0.84], ['fff0f4', 1]],
+  // The Thorne-Zytkow object: deep crimson to a peach white where the core shows.
+  [['000000', 0], ['0e0302', 0.1], ['300a04', 0.27], ['6c1a08', 0.45], ['b23a10', 0.62], ['e8702a', 0.78], ['ffb884', 0.9], ['fff2e6', 1]],
+  [['000000', 0], ['120204', 0.1], ['3c0810', 0.3], ['801620', 0.5], ['c8402c', 0.68], ['f4906a', 0.84], ['fff0e6', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -309,6 +312,8 @@ uniform vec4 uFl[2], uFlB[2];
 uniform vec4 uEgg[4], uDim[2];
 // A Wolf-Rayet wind: its glow, its clumps, the nebula's light, the nebula's radius in R.
 uniform vec4 uWind;
+// A buried neutron star shown in cutaway through the disk.
+uniform float uCore;
 // A black hole: on, the disc's tilt toward the eye, disc light, disc heat.
 uniform vec4 uHole;
 // One pixel in Schwarzschild radii, and the lensed stars' gain.
@@ -420,6 +425,24 @@ void main() {
     }
     // A Wolf-Rayet wind veils the disk: clumps drift outward across its face.
     if (uWind.x > 0.0) hot *= 0.82 + 0.36 * fbm(q * 11.0 + vec3(0.0, 0.0, 2.2 * log(1.03 - mu) - uTime * 0.05));
+    // A Thorne-Zytkow object in cutaway: the envelope thins toward the middle, so the inside shows.
+    // Within: a white-gold core zone, a ragged burning shell, the neutron star at the heart.
+    // The neutron star is drawn far larger than its true 20 km.
+    if (uCore > 0.0) {
+      float x = r / R;
+      float pulse = 0.75 + 0.25 * sin(uTime * 0.7) * sin(uTime * 0.23 + 1.0);
+      hot *= 1.0 - uCore * 0.7 * smoothstep(0.9, 0.15, x);
+      // The burning shell, seen through: brightest where its rim stands edge-on.
+      float S = 0.34;
+      float rag = fbm(q * 7.0 + vec3(0.0, 0.0, tb * 2.0));
+      float rim = exp(-pow((x - S * (0.82 + 0.36 * rag)) / 0.04, 2.0)) * (0.25 + 1.6 * rag * rag);
+      float shell = rim + 0.3 * S / sqrt(max(S * S - x * x, 0.004)) * smoothstep(S * 1.05, S * 0.8, x) * (0.4 + 1.2 * rag * rag);
+      // The core zone: hot gas round the neutron star.
+      float zone = exp(-x * x / 0.018) * (0.7 + 0.6 * fbm(q * 12.0 + vec3(tb * 3.0)));
+      // The neutron star: a white-hot point and its halo.
+      float ns = exp(-x * x / 0.00012) * 6.0 + exp(-x * x / 0.0025) * 1.2;
+      hot += uCore * uDisk.x * (0.75 * shell + 0.9 * zone * pulse + ns * pulse);
+    }
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
     // A neutron star's magnetic poles burn hot: a white cap in a soft ring.
@@ -1229,6 +1252,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uDim, v.dim);
     gl.uniform4fv(s.u.uHole, v.hole);
     gl.uniform4fv(s.u.uWind, v.band.wind);
+    gl.uniform1f(s.u.uCore, v.band.core);
     gl.uniform2fv(s.u.uHoleSky, v.holeSky);
     gl.uniform1f(s.u.uJet, v.jet);
     gl.uniform1i(s.u.uZero, 0);

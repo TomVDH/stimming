@@ -51,7 +51,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // hole: a black hole's disc tilt toward the eye, disc light, disc heat, lensed star gain.
 // reach: how much farther the full view stands back. jet: a quasar's jet light.
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
-const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+// core: a buried neutron star shown in cutaway through the disk.
+const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -70,6 +71,15 @@ export const STARS = {
     hal: [0.6, 0.6, 1], streak: [0.6, 0.72, 1],
     disk: [1.4, 0.12, 0.3, 0.3], disk2: [260, 0, 0, 0], tex: [40, 4, 0, 0.3],
     wide: 'none', long: 'none', root: 155.56,
+  },
+  // A Thorne-Zytkow object: the 1977 prediction, a red supergiant round a neutron star.
+  // No one is confirmed; this is the model. A cutaway shows the core through the disk.
+  tzo: {
+    ...FLARE, day: 13000, ribbon: 1.2, bubble: 0.15, core: 1,
+    row: 21, rsun: 1000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.3, prom: 0.6, dust: 0.35, rays: 0.8,
+    hal: [1, 0.3, 0.12], streak: [1, 0.5, 0.3],
+    disk: [1.85, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [6, 2.8, 0, 0.8],
+    wide: 'none', long: 'none', root: 103.83,
   },
   // Sirius B: a white dwarf, a star's mass in a ball smaller than the earth.
   siriusb: {
