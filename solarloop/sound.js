@@ -10,7 +10,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // A minor pentatonic over two octaves: each arcade loop sounds one step higher.
 const STEPS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
 // The key falls as the star grows: the hypergiant hums lowest.
-const ROOT = { neutron: 440, siriusb: 392, proxima: 261.63, sun: 220, sirius: 196, rigel: 146.83, betelgeuse: 123.47, vycma: 110 };
+const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 220, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
 
 export function makeSound(kit) {
   let pending = 0;

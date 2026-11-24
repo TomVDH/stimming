@@ -71,6 +71,30 @@ export const STARS = {
     disk: [1.7, 0.8, 0.1, 0.45], disk2: [40, 1.2, 0.7, 0.15], tex: [120, 12, 0.2, 0.7],
     wide: 'none', long: 'none', root: 261.63,
   },
+  // Zeta Ophiuchi: an O star, eight suns wide, hot violet blue.
+  zetaoph: {
+    ...FLARE, rain: 0.2, wave: 0.7,
+    row: 8, rsun: 8, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0.5, prom: 0.45, dust: 0, rays: 1.25,
+    hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
+    disk: [1.5, 0.5, 0.05, 0.45], disk2: [100, 0.25, 0.3, 0.08], tex: [80, 9, 0.08, 0.38],
+    wide: 'sun', long: 'none', root: 164.81,
+  },
+  // Regulus: a B star, four suns wide, blue white.
+  regulus: {
+    ...FLARE, rain: 0.3,
+    row: 9, rsun: 4.2, expo: 1, hotW: 1, coolW: 0.85, loop: 0.5, prom: 0.5, dust: 0, rays: 1.1,
+    hal: [0.6, 0.72, 1], streak: [0.55, 0.75, 1],
+    disk: [1.45, 0.5, 0.06, 0.42], disk2: [85, 0.3, 0.3, 0.07], tex: [100, 9, 0.08, 0.45],
+    wide: 'sun', long: 'none', root: 174.61,
+  },
+  // Vega: an A star, near three suns wide, pure white.
+  vega: {
+    ...FLARE,
+    row: 10, rsun: 2.7, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.45, dust: 0, rays: 1,
+    hal: [0.8, 0.85, 1], streak: [0.75, 0.82, 1],
+    disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],
+    wide: 'sun', long: 'none', root: 185,
+  },
   // Sirius: a white star twice the sun's size; the sun stands beside it.
   sirius: {
     ...FLARE,
@@ -78,6 +102,54 @@ export const STARS = {
     hal: [0.75, 0.8, 1], streak: [0.7, 0.8, 1],
     disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.4, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
     wide: 'sun', long: 'none', root: 293.66,
+  },
+  // Procyon: an F star, twice the sun's width, cream white.
+  procyon: {
+    ...FLARE,
+    row: 11, rsun: 2.05, expo: 1, hotW: 1, coolW: 1.05, loop: 0.75, prom: 0.75, dust: 0, rays: 0.95,
+    hal: [1, 0.7, 0.4], streak: [1, 0.85, 0.6],
+    disk: [1.8, 0.6, 0.1, 0.38], disk2: [60, 0.7, 0.4, 0.1], tex: [150, 14, 0.12, 0.55],
+    wide: 'sun', long: 'none', root: 207.65,
+  },
+  // Epsilon Eridani: a young K star, spotty and active, three quarters of the sun.
+  epseri: {
+    ...FLARE, ribbon: 1.9, sat: 1.2,
+    row: 12, rsun: 0.74, expo: 1, hotW: 1, coolW: 1.15, loop: 1, prom: 0.95, dust: 0, rays: 0.8,
+    hal: [1, 0.38, 0.12], streak: [1, 0.6, 0.32],
+    disk: [1.9, 0.85, 0.1, 0.4], disk2: [48, 1, 0.6, 0.14], tex: [140, 14, 0.2, 0.62],
+    wide: 'none', long: 'none', root: 233.08,
+  },
+  // Luhman 16: an L/T brown dwarf, Jupiter's width, magenta brown.
+  luhman: {
+    ...FLARE, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, wave: 0.3,
+    row: 13, rsun: 0.1, expo: 0.9, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.4,
+    hal: [0.8, 0.25, 0.3], streak: [0.9, 0.4, 0.45],
+    disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.7],
+    wide: 'none', long: 'none', root: 293.66,
+  },
+  // WISE 0855: a Y brown dwarf, the coldest known; dark, with water ice clouds.
+  wise: {
+    ...FLARE, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, wave: 0.2,
+    row: 14, rsun: 0.1, expo: 0.85, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.25,
+    hal: [0.5, 0.25, 0.3], streak: [0.6, 0.4, 0.45],
+    disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.75],
+    wide: 'none', long: 'none', root: 329.63,
+  },
+  // T Tauri: a young star, three suns wide, still wrapped in its birth dust.
+  ttauri: {
+    ...FLARE, ribbon: 2.1, sat: 1.3, bubble: 0.28,
+    row: 15, rsun: 3, expo: 1, hotW: 1, coolW: 1.2, loop: 0.95, prom: 0.95, dust: 0.75, rays: 0.85,
+    hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
+    disk: [1.8, 0.8, 0.08, 0.4], disk2: [70, 1, 0.6, 0.16], tex: [90, 12, 0.18, 0.6],
+    wide: 'sun', long: 'none', root: 185,
+  },
+  // Arcturus: an orange giant, 25 suns wide.
+  arcturus: {
+    ...FLARE, bubble: 0.18,
+    row: 16, rsun: 25.4, expo: 1, hotW: 1, coolW: 1.1, loop: 0.45, prom: 0.6, dust: 0.15, rays: 0.85,
+    hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
+    disk: [1.85, 1, 0.02, 0.32], disk2: [110, 0.6, 0.35, 0.07], tex: [30, 6, 0.05, 0.7],
+    wide: 'sun', long: 'sun', root: 138.59,
   },
   // Rigel: a blue supergiant, 79 suns wide; the sun is a bead beside it.
   rigel: {

@@ -3,7 +3,7 @@
 Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
 A star's edge at a vast scale, graded like film. The look takes its cue from two kinds of film: the sun as a furnace, all gold and white light, and the slow, hazy, monumental frame of large-scale science fiction.
-Eight stars, from a neutron star a city wide to the hypergiant VY Canis Majoris. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No planets, apart from Mercury in transit on our sun (Tom, 2026-11-23). Our sun hangs at true size beside Sirius and the giants.
+Seventeen stars (Tom, 2026-11-23): one for each class on the main sequence, O to M, two brown dwarfs, and the stages of a star's life, from a protostar to a pulsar. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No planets, apart from Mercury in transit on our sun (Tom, 2026-11-23). Our sun hangs at true size beside each star larger than itself.
 Three views, stepped with L. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; a body crosses the disk: Mercury on our sun, our sun itself on Rigel and the giants.
 The film touch is light: fine grain, a soft colour split, a faint lens dirt, highlights that roll off to white.
 Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
@@ -14,7 +14,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 |---|---|
 | Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
-| Star choice (1 to 8) | Neutron star, Sirius B, Proxima, Sun, Sirius, Rigel, Betelgeuse, VY CMa: smallest to largest |
+| Star choice | A sheet in three groups: Main sequence (O to M), Brown dwarfs, Life stages. Keys 1 to 9 and 0 pick the main sequence and the brown dwarfs; the life stages are tap only |
 | Lens (L) | Steps through the long lens (the default), the wide view and the full star, zooming over two seconds |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
@@ -30,14 +30,23 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 
 | Star | Radius (suns) | Look | Scale body: wide, long lens |
 |---|---|---|---|
-| Neutron star | 0.0000172 (12 km) | Electric blue to white, a smooth surface with white-hot magnetic poles. It spins every 1.6 s: two beams sweep from the poles and the frame burns white each time one passes the eye; 30 dipole field lines turn with it; gravity bends the sky at its limb | None |
-| Sirius B | 0.0084 | A white dwarf, cyan white and smooth | None |
-| Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences | None beside it; Mercury in transit, 4.9 units |
-| Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder | None |
+| Zeta Ophiuchi (O) | 8 | Violet blue to white, deep violet prominences, strong rays | Our sun; none in transit |
+| Regulus (B) | 4.2 | Blue white, lilac prominences | Our sun; none in transit |
+| Vega (A) | 2.7 | Near pure white, pale blue prominences | Our sun; none in transit |
 | Sirius | 1.71 | Blue white, pale rose prominences | Our sun, more than half its size; none in transit |
+| Procyon (F) | 2.05 | Cream to white, salmon prominences | Our sun; none in transit |
+| Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences | None beside it; Mercury in transit, 4.9 units |
+| Epsilon Eridani (K) | 0.74 | Deep orange, red orange prominences; young and active, so flares hit hard | None |
+| Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder | None |
+| Luhman 16 (L/T brown dwarf) | 0.1 | Magenta brown and dim; no loops or prominences | None |
+| WISE 0855 (Y brown dwarf) | 0.1 | Dark maroon and slate, the coldest; no loops or prominences | None |
+| T Tauri (protostar) | 3 | Amber in a dusty envelope, red prominences, hard flares | Our sun; none in transit |
+| Arcturus (red giant) | 25.4 | Orange, rose prominences, large granules, light dust | Our sun, beside it and in transit |
 | Rigel | 78.9 | Cold blue steel to white, lilac prominences, strong rays | Our sun, 17.7 units, a glowing bead |
 | Betelgeuse | 764 | Rust and orange; a handful of giant cells, deep limb darkening, a dusty envelope | Our sun, 1.8 units, a speck |
 | VY CMa | 1420 | Blood red, brown shadows; giant cells, a thick envelope of dust arcs and knots | Our sun, 1 unit, a speck of light |
+| Sirius B | 0.0084 | A white dwarf, cyan white and smooth | None |
+| Neutron star | 0.0000172 (12 km) | Electric blue to white, a smooth surface with white-hot magnetic poles. It spins every 1.6 s: two beams sweep from the poles and the frame burns white each time one passes the eye; 30 dipole field lines turn with it; gravity bends the sky at its limb | None |
 
 The sun is the default: the furnace, and apart from Desert eclipse's white corona and pink prominences. The hum and the notes fall in key as the star grows.
 
@@ -118,6 +127,6 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 | Q5 | Hidden tab: 0 rAF in 2 s |
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
 | Q7 | Star choice, Flare, Lens, Activity slider (4 controls); How to play has 3 rows |
-| Q8 | 1 to 8, L (three views) and Space each do their job |
+| Q8 | 1 to 9 and 0, L (three views) and Space each do their job |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |
