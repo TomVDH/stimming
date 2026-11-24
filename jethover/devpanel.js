@@ -2,9 +2,9 @@
 // It floats over the corner, folds to one chip, and drags by its title.
 // Values persist under stimming.jethover.dev.<id>.
 
-const KEY = id => `stimming.jethover.dev.${id}`;
-const load = id => { try { return localStorage.getItem(KEY(id)); } catch { return null; } };
-const store = (id, v) => { try { localStorage.setItem(KEY(id), String(v)); } catch { /* storage is optional */ } };
+let prefix = 'stimming.jethover.dev.';
+const load = id => { try { return localStorage.getItem(prefix + id); } catch { return null; } };
+const store = (id, v) => { try { localStorage.setItem(prefix + id, String(v)); } catch { /* storage is optional */ } };
 
 const CSS = `
 .jdev { position: fixed; top: 12px; left: 12px; z-index: 50; width: 240px; max-height: calc(100vh - 24px); overflow: auto;
@@ -26,14 +26,16 @@ const CSS = `
 `;
 
 /**
- * Builds the panel when the address has ?dev.
+ * Builds the panel when the address has ?dev, or always with { always: true }.
  * Rows: slider {type, id, group, label, min, max, step, value, onInput},
  * toggle {type, id, group, label, value, onToggle}, choice {type, id, group, label, value, options, onPick}.
  * Each row's stored value replaces its value before the panel shows.
  * @param {any[]} rows
  * @returns {Record<string, any>} The starting value of each row.
  */
-export function devPanel(rows) {
+export function devPanel(rows, { always = false, key = '' } = {}) {
+  // A key gives a page its own stored values.
+  if (key) prefix = `stimming.jethover.${key}.`;
   const start = {};
   for (const r of rows) {
     const raw = load(r.id);
@@ -45,7 +47,7 @@ export function devPanel(rows) {
     }
     start[r.id] = v;
   }
-  if (!new URLSearchParams(location.search).has('dev')) return start;
+  if (!always && !new URLSearchParams(location.search).has('dev')) return start;
 
   const style = document.createElement('style');
   style.textContent = CSS;
