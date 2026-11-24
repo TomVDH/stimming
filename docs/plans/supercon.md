@@ -40,7 +40,7 @@ Reference photos: Wikimedia Commons, search "superconductor levitation magnet" (
 
 ## Look
 
-- Fog: a raymarched volume of puffs, born at the puck's rim, sinking and spreading on the track and bench. Fire's smoke shading (K3 lighting copy).
+- Fog: a raymarched volume of puffs, born at the puck's rim, sinking and spreading on the track and bench. Fire's smoke shading, from `shared/smoke.js`.
 - Frost: a white crystal crust on the top and the rim, eroded by noise as it warms; then a wet sheen.
 - One bloom with a threshold, a grade with a vignette and grain.
 

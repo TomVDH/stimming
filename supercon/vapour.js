@@ -1,9 +1,11 @@
 // Superconductor track: the nitrogen fog. A raymarched volume at half resolution.
 // Puffs are born at the puck's rim, sink, and spread on the track and the bench.
 // Lighting is Fire's smoke shading (Tom, 2026-11-22: "fire toy smoke shader -- always").
+// The light comes from shared/smoke.js; this file keeps its taps and its tau scale.
 import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { SMOKE, SM_FIRE, smConsts } from '../shared/smoke.js';
 import { TRACK, TOP, PUCK, boil } from './sim.js';
 
 const MAXP = 16;
@@ -95,23 +97,14 @@ float densLite(vec3 p) {
   float b = puffs(p);
   return b * (texture(uNoise, p * NS - vec3(0.0, -uT * 0.2, 0.0)).r * 0.9 + 0.05);
 }
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
-// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
-const float ABSORB = 2.0, AMBIENT = 0.5, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+${SMOKE}
+${smConsts(SM_FIRE)}
+// Fire's smoke light (shared/smoke.js) after a short self-shadow march.
 float lightT(vec3 p, vec3 k) {
   // Three taps toward the lamp; a far tap stands for the rest of the cloud.
   float sum = densLite(p + k * 0.006) * 0.006 + densLite(p + k * 0.016) * 0.01 + densLite(p + k * 0.036) * 0.02;
-  float tau = sum * SIG * ABSORB * 0.5;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT, 0.0, 1.0);
+  return smLight(sum * SIG * smAbsorb * 0.5, smMulti, smPowder, smAmbient);
 }
-/* ---------- end K3 lighting ---------- */
 float h12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 void main() {
   // The view ray, and the distance to the first solid surface.
@@ -144,7 +137,7 @@ void main() {
     // Fire's detail term: grain on the density.
     d *= 0.85 + 0.35 * (texture(uNoise, p * NS * 7.0 + vec3(0.0, uT * 0.4, 0.0)).g * 2.0 - 1.0);
     vec3 k = normalize(uLamp - p);
-    float ph = hg(dot(rd, k), G_HG) * 12.56637;
+    float ph = smPhase(dot(rd, k), smG) * 12.56637;
     vec3 Li = uLampCol * lightT(p, k) * ph;
     Li += vec3(0.06, 0.075, 0.1);
     float al = 1.0 - exp(-max(d, 0.0) * SIG * dt);

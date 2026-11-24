@@ -31,7 +31,7 @@ Idea 130, group A, a science toy: a frosty puck floats and locks over a magnet t
 - A dark room. A bench of black epoxy with wipe marks and fine wear. One cool lamp from the upper left throws the puck's shadow and lights the fog; a faint blue fill from behind.
 - The ring: 0.34 m across. Two rows of nickel-plated magnet blocks (56 a row) with a steel strip between them, on a low base of black anodised aluminium.
 - The puck: a disc 66 mm across and 5 mm thick, wrapped in film over a dark disc with a faint gold coat. Frost: drifts of thick crust, a dusting of rime between them, ragged rime on the rim, and a few ice glints. Warm, the film is wet and glassy.
-- Fog: a raymarched volume in Fire's smoke shading (K3 lighting copy in `vapour.js`). Puffs are born at the rim, sink, and spread on the track and the bench; a gliding puck leaves a trail.
+- Fog: a raymarched volume in Fire's smoke shading: the light comes from `shared/smoke.js` (`SM_FIRE`); `vapour.js` keeps its own taps toward the lamp and its tau scale. Puffs are born at the rim, sink, and spread on the track and the bench; a gliding puck leaves a trail.
 - True details: the gap under the puck and its shadow on the track; the puck leans out a little at speed; a push rocks it along the track; nitrogen beads skate on their own vapour (Leidenfrost) and shrink away.
 
 ## Controls
