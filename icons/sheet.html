@@ -539,14 +539,22 @@ const base = new URL('./', location.href).href;
 const EMB_FIX = `<script>
 (() => {
   const CUT = new Set(${JSON.stringify([...gone])});
+  // The data URI goes unquoted, so it fits in any attribute or style string.
+  const enc = s => encodeURIComponent(s).replace(/[()'!*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const swap = v => v.replace(/url\\((["']?)spike\\/emblems\\/([\\w-]+)\\.svg\\1\\)/g, (m, q, f) => {
+    const s = window.EMBLEMS && window.EMBLEMS[f];
+    if (s) return 'url(data:image/svg+xml,' + enc(s) + ')';
+    return CUT.has(f) ? 'url(archive/emblems/' + f + '.svg)' : m;
+  });
+  // Markup is rewritten before it is parsed, so the old file is never asked for.
+  const html = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { ...html, set(v) { html.set.call(this, typeof v === 'string' && v.includes('spike/emblems/') ? swap(v) : v); } });
+  const adj = Element.prototype.insertAdjacentHTML;
+  Element.prototype.insertAdjacentHTML = function (p, v) { return adj.call(this, p, typeof v === 'string' && v.includes('spike/emblems/') ? swap(v) : v); };
   const fix = el => {
     const v = el.getAttribute('style');
     if (!v || !v.includes('spike/emblems/')) return;
-    const w = v.replace(/url\\((["']?)spike\\/emblems\\/([\\w-]+)\\.svg\\1\\)/g, (m, q, f) => {
-      const s = window.EMBLEMS && window.EMBLEMS[f];
-      if (s) return 'url("data:image/svg+xml,' + encodeURIComponent(s) + '")';
-      return CUT.has(f) ? 'url(archive/emblems/' + f + '.svg)' : m;
-    });
+    const w = swap(v);
     if (w !== v) el.setAttribute('style', w);
   };
   new MutationObserver(ms => {
