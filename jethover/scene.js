@@ -82,7 +82,7 @@ export function blendTod(hour) {
   }
   return out;
 }
-// The apron: wet concrete slabs round the pad, out to this radius.
+// The apron: dry concrete slabs round the pad, out to this radius.
 export const APRON_R = 260;
 
 /* ---------- the sky, shared by the background and the apron ---------- */
@@ -184,7 +184,7 @@ export const farCountry = Fn(([d]) => {
   return c;
 });
 
-/* ---------- the apron: wet concrete, glow pools, a mirror of the far country ---------- */
+/* ---------- the apron: dry concrete and glow pools ---------- */
 function apronMaterial(U) {
   const m = new THREE.MeshBasicNodeMaterial({ fog: false });
   m.colorNode = Fn(() => {
@@ -220,26 +220,12 @@ function apronMaterial(U) {
       hot.addAssign(U.hotCol.mul(U.hot[i].w).mul(exp(q2.div(-0.5)).mul(2.2).add(float(0.5).div(q2.div(2.0).add(1.0)))));
     }
     const c = alb.mul(E).add(hot.mul(apron.mul(0.65).add(0.35)).mul(alb.mul(4.0).add(0.25))).toVar();
-    // Damp patches: a mirror for the far country and the plumes.
-    const wet = smoothstep(0.55, 0.85, n2(p.mul(0.03).add(4.0)).mul(0.6).add(n2(p.mul(0.3)).mul(0.25)).add(n2(p.mul(1.7)).mul(0.15))).mul(apron);
+    // Dry ground: a faint, blurred sheen at grazing angles, no mirror.
+    // The view is near grazing, so a smooth floor would read as water.
     const cosv = max(V.y.negate(), 0.0);
     const fres = float(1.0).sub(cosv).pow(5.0).mul(0.98).add(0.02);
     const R = reflect(V, vec3(0, 1, 0));
-    // Rough concrete blurs the mirror; wet patches keep it sharp.
-    const refl = farCountry(normalize(R.add(vec3(0, float(0.006).mul(float(1.0).sub(wet)), 0)))).mul(fres).mul(wet.mul(0.75).add(0.12)).toVar();
-    // Each plume mirrors as a soft streak toward the eye.
-    for (let i = 0; i < 2; i++) {
-      const a = U.hot[i].xyz;
-      const rd = normalize(R.xz.add(1e-5));
-      const to = a.xz.sub(p);
-      const along = max(dot(to, rd), 0.0);
-      const side = to.sub(rd.mul(along)).length();
-      const hgt = along.mul(R.y).div(max(R.xz.length(), 1e-3));
-      const span = U.noz[i].y;
-      const w = along.mul(float(1.0).sub(wet)).mul(0.02).add(0.35);
-      const mk = exp(side.mul(side).div(w.mul(w)).negate()).mul(float(1.0).sub(smoothstep(span.mul(0.6), span.add(0.5), hgt)));
-      refl.addAssign(U.hotCol.mul(U.hot[i].w).mul(mk).mul(wet.mul(1.6).add(0.3)).mul(fres.add(0.15)));
-    }
+    const refl = farCountry(normalize(R.add(vec3(0, 0.08, 0)))).mul(fres).mul(0.05);
     c.addAssign(refl);
     // Haze thickens with distance toward the horizon colour.
     const f = float(1.0).sub(exp(dist.mul(U.haze).negate()));

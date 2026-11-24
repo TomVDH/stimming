@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-24T04:16:45Z
+updated_at: 2026-11-24T04:22:49Z
 parent: stimming-oh7b
 ---
 
@@ -71,3 +71,5 @@ Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 bloc
 - [x] Dev: Fluid and Soot rows, Show layer view (heat red, soot green); soot in the 2D plane glows hot and turns black as it cools (Tom, 2026-11-23: "can we get some controls for the fluid smoke etc?")
 
 - [x] Low-fi Dev panel (devpanel.js) in place of the Dev sheet; the hot air at real time with a fast flicker (Tom, 2026-11-23: "low fi pop over", "far more fast and less gel like")
+
+- [x] Dry ground in place of the wet mirror (Tom, 2026-11-23: "it is not floating above water")
