@@ -131,7 +131,6 @@ void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
   float hot = 0.0, cool = 0.0;
-  float ang = atan(P.x, P.y);
   float tb = uTime * 0.02;
   if (r < R) {
     float mu = sqrt(max(1.0 - r * r / (R * R), 0.0));
@@ -204,18 +203,22 @@ void main() {
     hot *= 1.0 - uDust * 0.55 * smoothstep(0.4, 0.75, fbm(q * 4.2 + vec3(5.0, 0.0, tb * 0.05)));
   } else {
     float h = r - R;
+    // The direction of this point in the star's frame: the sky turns with the star.
+    // Noise on a 3D direction has no seam where a 2D angle would wrap.
+    vec3 sp = uToSun * vec3(P, 0.0);
+    vec3 u = sp / max(length(sp), 1.0);
     // Streamers: broad rays in the corona, and fine ones.
-    float st = fbm(vec3(ang * 7.0, h * 0.002 - tb * 0.1, 1.3));
-    float fine = fbm(vec3(ang * 48.0, h * 0.006 - tb * 0.3, 4.1));
+    float st = fbm(u * 1.1 + vec3(0.0, 0.0, h * 0.002 - tb * 0.1 + 1.3));
+    float fine = fbm(u * 7.6 + vec3(0.0, 0.0, h * 0.006 - tb * 0.3 + 4.1));
     hot = uDisk.w * (exp(-h / uDisk2.x) * (0.6 + 0.8 * fine) + 0.3 * exp(-h / 360.0) * (0.4 + 1.2 * st * st));
     // The chromosphere: a thin bright rim, and a ragged fringe of spicules.
-    float sh = 3.0 + 9.0 * pow(vn(vec3(ang * 300.0, uTime * 0.05, 0.5)), 2.0);
-    cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(vec3(ang * 900.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
+    float sh = 3.0 + 9.0 * pow(vn(u * 48.0 + vec3(0.0, 0.0, uTime * 0.05 + 0.5)), 2.0);
+    cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(u * 143.0 + vec3(0.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
     if (uDust > 0.0) {
       // The envelope: arcs and knots of ejected dust, lit by the star.
-      float warp = fbm(vec3(P * 0.006, 1.0));
-      float arcs = fbm(vec3(ang * 5.0, h * 0.006, 7.0) + 0.6 * warp);
-      float knots = pow(fbm(vec3(P * 0.012, 3.0 + tb * 0.05)), 3.0);
+      float warp = fbm(sp * 0.006 + vec3(0.0, 0.0, 1.0));
+      float arcs = fbm(u * 0.8 + vec3(0.0, 0.0, h * 0.006 + 7.0) + 0.6 * warp);
+      float knots = pow(fbm(sp * 0.012 + vec3(0.0, 0.0, 3.0 + tb * 0.05)), 3.0);
       float env = exp(-h / 260.0);
       cool += uDust * env * (0.15 * smoothstep(0.45, 0.8, arcs) + 0.3 * knots);
       hot += uDust * 0.1 * exp(-h / 500.0) * (0.5 + warp);
