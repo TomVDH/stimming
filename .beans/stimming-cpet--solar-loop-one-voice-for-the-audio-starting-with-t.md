@@ -25,7 +25,11 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [x] Remove hush() once the micro branch's caller removal reaches feature/stimming-on77 and is merged here
 - [x] Dev Sound rows: hum, rumble and interaction levels; on/off for tap blast, tap glow, lift, pulsar tick, telegraph, Dimming (Tom)
 - [x] Sun choir redo: choir plus slowed choir, Ionian and pentatonic crossfade, no wobble, 7 s reverb (Tom picked it by ear)
-- [ ] Other stars follow the same voice in their own keys
+- [x] Other stars follow the same voice in their own keys: choir.js presets, synths for the giants and odd stars, gains matched to the Sun (2026-11-24)
+- [x] Choir lab (solarloop/lab.html): wobble toggles, holds, synth, space and sci-fi filters, tap settings, Match loudness, preset copy
+- [x] Tap sounds per star: blast wave, glow wave, glow chord, levels
+- [ ] Tom listens to every star in the toy and tunes in the lab
+- [ ] Tom refines the tap sounds per star
 - [ ] Bring the side-branch sounds (eggs, micro) into the same voice
 - [ ] Doc Sound section true
 
