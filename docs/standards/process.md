@@ -38,14 +38,14 @@ Toy chats share one checkout and one git index.
 
 ## QA
 
-- Headless Playwright with GPU flags: `--enable-gpu --ignore-gpu-blocklist --use-angle=metal --enable-unsafe-webgpu`. On Windows, use `--use-angle=d3d11`.
-- Every visual change: 1280 px, 375 x 812 and 812 x 375. The shell measures collisions; never trust a breakpoint alone.
+- Check in the in-app browser pane only, on the one dev server at port 8000. Never launch Playwright, Chrome or Edge, headless or not (Tom, 2026-11-23: "stop spawning Chrome"). This replaces the 2026-11-16 Playwright default.
+- Every visual change: resize the pane to 1280 px, 375 x 812 and 812 x 375. The shell measures collisions; never trust a breakpoint alone.
 - Check: script syntax (`node --check`), a clean console, every control and gesture, reduced motion, hidden tab, idle sleep, sound suspends after a gesture.
 - Tests: `npm test` runs `node --test tests/*.test.mjs`, then `tests/run.sh` against the dev server on port 8000 (`stimming-04og` builds this). `tests/bar-v2.html` must pass.
 - Pure logic gets a `.test.mjs`. Looks get Tom's eye.
 - Show Tom screenshots early. Show a page over `http://localhost:8000/`, never a file link.
 - Never leave timing holds or debug builds in a toy file. Restore only the `localStorage` keys a check changed.
-- Load times: `tools/loadtime.mjs`. Railgun clouds: `npx -y -p playwright@1.63.0 node tools/clouds-check.mjs`.
+- Load times: `tools/loadtime.mjs`. Railgun clouds: `npx -y -p playwright@1.63.0 node tools/clouds-check.mjs`. Both launch a browser: run them only when Tom asks.
 
 ## Shelves and sign-off
 
@@ -66,10 +66,10 @@ Toy chats share one checkout and one git index.
 
 | Task | Command |
 |---|---|
-| Dev server | `npm run dev` (port 8000, rebuilds TypeScript toys), then <http://localhost:8000/>. `python3 -m http.server 8000` works after `npm run build`. |
+| Dev server | `npm run dev` (port 8000, rebuilds TypeScript toys), then <http://localhost:8000/>. `python3 -m http.server 8000` works after `npm run build`. One server only, serving the main checkout; side sessions never start one. |
 | Type check | `npm run check` |
 | Commit and push | `tools/commit.sh -m "<Area>: what (bean-id)" -- <paths>` |
-| Stills / loops | `npx -y -p playwright@1.63.0 node tools/stills.mjs [id ...]` (same for `tools/loops.mjs`) |
+| Stills / loops | `npx -y -p playwright@1.63.0 node tools/stills.mjs [id ...]` (same for `tools/loops.mjs`). They launch a browser: run them only when Tom asks. |
 
 - GitHub Pages deploys every push to `main` (`.github/workflows/pages.yml`) to <https://tomvdh.github.io/stimming/>.
 - The claude.ai Artifact is retired. Never publish to it.
