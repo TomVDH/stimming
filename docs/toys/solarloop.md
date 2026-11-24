@@ -4,7 +4,7 @@ Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
 A star's edge at a vast scale, graded like film. The look takes its cue from two kinds of film: the sun as a furnace, all gold and white light, and the slow, hazy, monumental frame of large-scale science fiction.
 Seventeen stars (Tom, 2026-11-23): one for each class on the main sequence, O to M, two brown dwarfs, and the stages of a star's life, from a protostar to a pulsar. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No other bodies, apart from Mercury in transit on our sun (Tom, 2026-11-23).
-Three views, stepped with L. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; Mercury crosses our sun's disk.
+Three views, stepped with L in this order: the long lens, the full star, the wide view (Tom, 2026-11-23). The long lens, where every visit opens, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; Mercury crosses our sun's disk.
 The film touch is light: fine grain, a soft colour split, a faint lens dirt, highlights that roll off to white.
 Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
 
@@ -20,7 +20,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 | Keys 1 to 0 | Pick the main sequence (O to M) and the two brown dwarfs |
 | [ and ] | Step to the previous or the next star, through all seventeen |
 | Zoom (wheel, pinch, - and =) | Full view only: zooms out up to 16 times farther, and back. The input sets a target; the view glides to it on a heavy spring, in about 1.4 s, a few percent past, then settles (Tom, 2026-11-23) |
-| Lens (L) | Steps through the long lens (the default), the wide view and the full star, zooming over two seconds. The button shows the view, and the zoom on the full star (`Full ×2.0`) |
+| Lens (L) | Steps through the long lens (the quarter cut, where every visit opens), the full star and the wide view (the top half), zooming over two seconds. Picking a new star opens it on the full star. The button shows the view, and the zoom on the full star (`Full ×2.0`) |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
 
@@ -146,7 +146,7 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 - Each arcade loop that snaps in: a glassy note, one step up a minor pentatonic scale. The star sets the key.
 - The glow: a slow chord while the arcade shines.
 - The rain: soft drips, each a falling note, from 12 s.
-- A drag: a low wind that follows the speed of the turn.
+- A drag is silent (Tom, 2026-11-23: no woosh).
 - A tap on empty sky: a soft low note, an octave under the star's key.
 - A wide hall: three long echoes.
 

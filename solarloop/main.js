@@ -87,13 +87,12 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 
 /* ---------- the view: a telescope, so an orthographic projection ---------- */
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
-// Three framings: the long lens on the bottom left limb, the wide dome, the full star.
-const VIEWS = ['long', 'wide', 'full'];
+// Three framings, in L's order: the long lens (the quarter cut), the full star, the wide dome.
+const VIEWS = ['long', 'full', 'wide'];
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
-// The long lens is the default (Tom, 2026-11-23).
-const saved = store.get('lens');
+// Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
 // cam eases from one framing to the next; t runs from 0 to 1.
-const cam = { mode: VIEWS.includes(saved) ? saved : 'long', from: '', t: 1 };
+const cam = { mode: 'long', from: '', t: 1 };
 cam.from = cam.mode;
 const ease = t => t * t * (3 - 2 * t);
 // How much of a framing is in the current view, from 0 to 1.
@@ -171,14 +170,15 @@ function applyView() {
   view.cx /= ob; view.hw /= ob;
   setRot();
 }
-// L steps through the framings: long lens, wide dome, full star.
-function toggleLens() {
-  // A step during a zoom starts from wherever the view now stands.
+// L steps through the framings: long lens, full star, wide dome.
+function toggleLens() { goView(VIEWS[(VIEWS.indexOf(cam.mode) + 1) % VIEWS.length]); }
+// Eases to a framing; a move during a zoom starts from wherever the view now stands.
+function goView(mode) {
+  if (mode === cam.mode) return;
   if (cam.t < 1) { cam.from = cam.t < 0.5 ? cam.from : cam.mode; }
   else cam.from = cam.mode;
-  cam.mode = VIEWS[(VIEWS.indexOf(cam.mode) + 1) % VIEWS.length];
+  cam.mode = mode;
   cam.t = !started || calm ? 1 : 0;
-  store.set('lens', cam.mode);
   applyView();
   setLabel(labels.lens, lensLabel());
   readHover();
@@ -263,6 +263,8 @@ function pickStar(v) {
   st.star = v;
   egg = null;
   store.set('star', v);
+  // A new star opens on the whole star.
+  goView('full');
   applyView();
   setLabel(labels.star, starLabel());
   chart?.sync();
@@ -763,11 +765,9 @@ stage.addEventListener('pointermove', e => {
   if (e.pointerId !== pointer.id) return;
   const [x, y] = local(e);
   const now = performance.now();
-  const speed = Math.hypot(x - pointer.x, y - pointer.y) / Math.max(1, now - pointer.at) * 1000;
   pointer.x = x; pointer.y = y; pointer.at = now;
   if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) { pointer.drag = true; pressed = null; readHover(); }
   if (!pointer.drag) return;
-  snd.turn(speed);
   // The surface follows the hand, like a ball rolled under it.
   const k = 0.75 / Math.max(320, cssH);
   // The long lens holds still: the camera never moves there.
@@ -781,7 +781,6 @@ function endPointer(e) {
   if (e.pointerId !== pointer.id) return;
   // A press that started an egg is not a tap.
   const tap = e.type === 'pointerup' && !pointer.drag && !pointer.egg;
-  if (pointer.drag) snd.endTurn();
   pointer.id = null; pointer.drag = false; pressed = null;
   if (tap) flareNear(pointer.x, pointer.y);
   readHover();
