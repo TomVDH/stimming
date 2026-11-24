@@ -1,6 +1,6 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
-// A flare: the brass blast, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
+// A flare: the brass blast, a rush as the rope lifts, a low roar,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
 // A tap on empty sky: a soft low note.
@@ -8,8 +8,6 @@
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
-// A minor pentatonic over two octaves: each arcade loop sounds one step higher.
-const STEPS = [0, 3, 5, 7, 10, 12, 15, 17, 19, 22, 24];
 // The key falls as the star grows: the hypergiant hums lowest.
 const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 220, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
 
@@ -91,69 +89,10 @@ export function makeSound(kit) {
     const c = new Float32Array(1024);
     for (let i = 0; i < c.length; i++) { const x = i / 511.5 - 1; c[i] = Math.tanh(2.2 * x) / Math.tanh(2.2); }
     clip.curve = c;
-    // Oversampled, so the clip adds warmth with no aliasing grit.
-    clip.oversample = '4x';
     return clip;
-  }
-  // The sun's blast is a choir instead: bright, airy, angelic (Tom).
-  // Its vowel opens from oo to ah and closes again: wooOAAAaoooo.
-  function choirSwell(ac, t, pan, band, K, len = 6) {
-    const root = ROOT[band] || 220;
-    const g = voice(ac, pan * 0.3);
-    g.gain.setValueAtTime(0, t);
-    g.gain.linearRampToValueAtTime(0.07 * K, t + 0.35);
-    g.gain.setTargetAtTime(0.0001, t + 1.3, len / 4);
-    // Two formants glide oo, ah, oo; a low pass opens with them for the air.
-    const f1 = ac.createBiquadFilter(), f2 = ac.createBiquadFilter();
-    f1.type = f2.type = 'peaking';
-    f1.Q.value = 2.2; f2.Q.value = 2.6;
-    f1.gain.value = 9; f2.gain.value = 7;
-    const lp = filt(ac, 'lowpass', 900, 0.4);
-    for (const [prm, a, b, c] of [[f1.frequency, 320, 760, 360], [f2.frequency, 850, 1180, 900], [lp.frequency, 1200, 9000, 1800]]) {
-      prm.setValueAtTime(a, t);
-      prm.exponentialRampToValueAtTime(b, t + 0.55);
-      prm.exponentialRampToValueAtTime(c, t + len);
-    }
-    const shelf = filt(ac, 'highshelf', 4000, 0.7);
-    shelf.gain.value = 5;
-    const bus = ac.createGain();
-    bus.gain.value = 1;
-    bus.connect(f1).connect(f2).connect(lp).connect(shelf).connect(g);
-    // A vibrato that grows in after the onset, as a held voice does.
-    const vib = osc(ac, 'sine', 5.1, t, len + 1);
-    const vg = ac.createGain();
-    vg.gain.setValueAtTime(0, t);
-    vg.gain.linearRampToValueAtTime(9, t + 1.2);
-    vib.connect(vg);
-    // Root, fifth, octave, tenth, and a quiet octave above for shimmer; three voices each.
-    for (const [m, a] of [[1, 1], [1.5, 0.75], [2, 0.7], [2.5198, 0.45], [4, 0.18]]) {
-      const f = root * m;
-      const vo = ac.createGain();
-      vo.gain.value = a / 3;
-      vo.connect(bus);
-      for (const c of [-9, 0, 9]) {
-        const o = ac.createOscillator();
-        o.setPeriodicWave(waveFor(ac, f));
-        o.frequency.value = f;
-        o.detune.value = c + (Math.random() - 0.5) * 3;
-        vg.connect(o.detune);
-        o.start(t); o.stop(t + len + 1);
-        track(o).connect(vo);
-      }
-    }
-    // Breath: a whisper of bright noise riding the swell.
-    if (kit.noise) {
-      const br = ac.createGain();
-      br.gain.setValueAtTime(0, t);
-      br.gain.linearRampToValueAtTime(0.012 * K, t + 0.45);
-      br.gain.setTargetAtTime(0.0001, t + 1.2, len / 5);
-      noise(ac, t, len + 1, 1).connect(filt(ac, 'bandpass', 7000, 0.8)).connect(br).connect(g);
-    }
-    send(ac, g, 1);
   }
   // The blast: stacked saws an octave and a fifth apart, a filter that opens and closes.
   function braam(ac, t, pan, band, K, len = 6) {
-    if (band === 'sun') { choirSwell(ac, t, pan, band, K, len); return; }
     const root = (ROOT[band] || 220) / 4;
     const g = voice(ac, pan * 0.3);
     g.gain.setValueAtTime(0, t);
@@ -173,27 +112,31 @@ export function makeSound(kit) {
 
   // The star's voice while the toy is awake, in two layers.
   // The space rumble: a constant, dense, deep surround drone, a seamless loop.
-  // The hum: a soft angelic organ choir that wobbles slightly; its top voice slowly sings.
+  // The hum: a soft angelic organ choir, steady; its top voice slowly sings.
   // A major pentatonic for the top voice, in semitones above the chord's root.
   const SING = [12, 14, 16, 19, 21, 24, 21, 19, 16, 14];
   // Organ drawbars by harmonic: 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1'.
   const BARS = { 1: 1, 2: 0.7, 3: 0.42, 4: 0.5, 5: 0.12, 6: 0.22, 8: 0.18 };
   // "Ah" formants: centre in Hz, width, weight.
   const AH = [[700, 130, 1], [1150, 160, 0.6], [2600, 260, 0.28], [3300, 300, 0.12]];
+  const TAIL = 0.2;
   // One wave per note: organ partials plus a choir's vowel shape over the harmonics.
   const waves = new Map();
   function waveFor(ac, f) {
     const key = Math.round(f);
     const hit = waves.get(key);
     if (hit && hit.ac === ac) return hit.w;
-    const N = 40;
+    // Harmonics reach 11 kHz, so the top is open and crisp.
+    const N = clamp(Math.floor(11000 / f), 8, 200);
     const re = new Float32Array(N + 1), im = new Float32Array(N + 1);
     for (let h = 1; h <= N; h++) {
       const hz = h * f;
       let vow = 0;
       for (const [c, w, a] of AH) vow += a * Math.exp(-(((hz - c) / w) ** 2));
       const organ = BARS[h] || 0;
-      im[h] = 0.62 * organ + 0.38 * vow / Math.pow(h, 0.35);
+      // A tail that falls 6 dB an octave fills the air above the vowel.
+      const tail = TAIL / h;
+      im[h] = 0.62 * organ + 0.38 * vow / Math.pow(h, 0.35) + tail;
     }
     const w = ac.createPeriodicWave(re, im);
     waves.set(key, { ac, w });
@@ -253,15 +196,29 @@ export function makeSound(kit) {
   let bed = null;
   let drone = null;
   // Which layers sound: the Dev toggles set them.
-  const layers = { hum: true, rumble: true };
-  function mixLayers(hum, rumble) {
-    if (layers.hum === hum && layers.rumble === rumble) return;
-    layers.hum = hum; layers.rumble = rumble;
+  const layers = { hum: true, rumble: true, lvl: 1 };
+  // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
+  // The rumble grows as the view closes in on the star (Tom).
+  // Level in dB by closeness, against the old fixed level (Tom).
+  // Long lens +2.3, wide view +1, full star 0; it fades only far out.
+  const RUMBLE = [[-1.4, -9], [-0.7, 0], [0, 0], [0.69, 1], [1, 2.3]];
+  function rumbleAt(near) {
+    const P = RUMBLE, x = clamp(near, P[0][0], P[P.length - 1][0]);
+    let i = 1;
+    while (i < P.length - 1 && x > P[i][0]) i++;
+    const [x0, y0] = P[i - 1], [x1, y1] = P[i];
+    return Math.pow(10, (y0 + (y1 - y0) * (x - x0) / (x1 - x0)) / 20);
+  }
+  function mixLayers(hum, rumble, near = 0) {
+    const lvl = rumble ? rumbleAt(near) : 0;
+    if (layers.hum === hum && Math.abs(layers.lvl - lvl) < 0.01) return;
+    layers.hum = hum; layers.rumble = rumble; layers.lvl = lvl;
     if (!drone) return;
     const t = drone.ac.currentTime;
     drone.humOn.gain.setTargetAtTime(hum ? 1 : 0, t, 0.4);
-    drone.rumOn.gain.setTargetAtTime(rumble ? 1 : 0, t, 0.4);
+    drone.rumOn.gain.setTargetAtTime(lvl, t, 0.4);
   }
+
   // Queues the top voice's next notes: one every 7 to 11 s, gliding between them.
   function singOn(d, from) {
     const ac = d.ac;
@@ -288,14 +245,6 @@ export function makeSound(kit) {
     }
     const root = (ROOT[band] || 220) / 2;
     const os = [];
-    const lfo = (hz, depth, target) => {
-      const l = osc(ac, 'sine', hz, t, 1e5);
-      const lg = ac.createGain();
-      lg.gain.value = depth;
-      l.connect(lg).connect(target);
-      os.push(l);
-      return l;
-    };
     const g = ac.createGain();
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(1, t + 6);
@@ -304,7 +253,7 @@ export function makeSound(kit) {
 
     // The space rumble: a seamless rendered loop, added once it is ready.
     const rumOn = ac.createGain();
-    rumOn.gain.value = layers.rumble ? 1 : 0;
+    rumOn.gain.value = layers.rumble ? layers.lvl : 0;
     rumOn.connect(g);
     const me = { ac, band };
     const bedP = bed && bed.ac === ac && bed.root === root ? Promise.resolve(bed.b) : renderBed(ac, root).then(b => (bed = { ac, root, b }).b);
@@ -324,19 +273,12 @@ export function makeSound(kit) {
     // The organ choir: each note is three voices a few cents apart, so it shimmers.
     const choir = ac.createGain();
     choir.gain.value = 0.022;
-    // A slow swell in loudness: the slight wobble of breath in a choir.
-    lfo(0.23, 0.004, choir.gain);
     const air = filt(ac, 'highshelf', 3000, 0.7);
     air.gain.value = 3;
     const top = filt(ac, 'lowpass', 9000, 0.5);
     const humOn = ac.createGain();
     humOn.gain.value = layers.hum ? 1 : 0;
     choir.connect(air).connect(top).connect(humOn).connect(g);
-    // The wobble: a slow drift of pitch and a faint fast shimmer, shared by every voice.
-    const wob = ac.createGain();
-    wob.gain.value = 1;
-    lfo(0.35, 6, wob);
-    lfo(5.2, 2, wob);
     const note = (f, amp) => {
       const vo = ac.createGain();
       vo.gain.value = amp;
@@ -347,7 +289,6 @@ export function makeSound(kit) {
         o.setPeriodicWave(waveFor(ac, f));
         o.frequency.value = f;
         o.detune.value = c;
-        wob.connect(o.detune);
         o.start(t); o.stop(t + 1e5);
         track(o).connect(vo);
         os.push(o);
@@ -444,22 +385,6 @@ export function makeSound(kit) {
       s.connect(d);
       send(ac, d, 0.5);
     }
-  }
-
-  // One arcade loop snaps in: a glassy note, one step above the last.
-  function snap(j, pan, band) {
-    const ac = kit.live();
-    if (!ac) return;
-    const t = ac.currentTime + 0.004;
-    const f = (ROOT[band] || 220) * Math.pow(2, STEPS[j % STEPS.length] / 12) * jit(0.004);
-    const lvl = 0.07 * Math.pow(0.93, j) * jit(0.2);
-    const g = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.3, -1, 1));
-    env(g, t, lvl, 0.006, 1.6 * jit(0.2));
-    osc(ac, 'sine', f, t, 1.8).connect(g);
-    const h = ac.createGain();
-    h.gain.value = 0.28;
-    osc(ac, 'sine', f * 2.756, t, 0.6).connect(h).connect(g);
-    send(ac, g, 0.7);
   }
 
   // The turn: a low wind whose level follows the drag speed.
@@ -577,5 +502,5 @@ export function makeSound(kit) {
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, hush, tick, telegraph, dim, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, hush, tick, telegraph, dim, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

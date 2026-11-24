@@ -136,14 +136,13 @@ Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trim
 Muted by default. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
 
 - Awake, the star's voice in two layers (Tom, 2026-11-23). The star sets the key: the larger the star, the lower.
-  - The space rumble: a constant, dense, deep surround drone, subtle (Tom, 2026-11-23). It renders once per star into a 24 s stereo loop whose last 3 s crossfade into its start, so it repeats with no seam: two independent deep noise beds, one per side, under twelve low sines round the root two octaves down, each placed across the stereo field. No swells: it holds steady.
-  - The hum: a soft angelic organ choir (Tom: crisp, it wobbles slightly). Each note is a custom wave, organ drawbars plus an "ah" vowel shape, played by three voices 7 cents apart. A 16' bass, then root, fifth, octave and major tenth. A slow pitch drift and a faint fast shimmer make it wobble; air above 3 kHz keeps it crisp. Its top voice sings a major pentatonic line, one note every 7 to 11 s, gliding between them. Tuned on the sun first.
+  - The space rumble: a constant, dense, deep surround drone, subtle (Tom, 2026-11-23). It renders once per star into a 24 s stereo loop whose last 3 s crossfade into its start, so it repeats with no seam: two independent deep noise beds, one per side, under twelve low sines round the root two octaves down, each placed across the stereo field. No swells: it holds steady. It grows as the view closes in (Tom, 2026-11-23): Against the old fixed level: the long lens +2.3 dB, the wide view +1 dB, the full star 0 dB (Tom). Zoomed out, it holds 0 dB to about 4 times, then fades to -9 dB at 16 times.
+  - The hum: a soft angelic organ choir, crisp and steady (Tom, 2026-11-23: no wobble). Each note is a custom wave, organ drawbars plus an "ah" vowel shape, played by three voices 7 cents apart. A 16' bass, then root, fifth, octave and major tenth. Its harmonics reach 11 kHz: above the vowel they fall 6 dB an octave, so the top is open and crisp (Tom, 2026-11-23: it sounded like a 128 kbps file; the old wave stopped at 4 kHz). Its top voice sings a major pentatonic line, one note every 7 to 11 s, gliding between them. Tuned on the sun first.
 - A pulsar ticks: a dry click on a short thump each time a beam sweeps past the eye.
 - A flare or an eruption lands on a low brass blast: stacked saws through a soft clip, a filter that opens and closes.
 - An eruption: a long rush swept upward over 13 s, and a tone that bends up a fifth.
 
 - The flare: no crack on the tap (Tom, 2026-11-23: he keeps the brass blast); a rush of noise swept upward as the rope lifts; a low roar under the eruption.
-- Each arcade loop that snaps in: a glassy note, one step up a minor pentatonic scale. The star sets the key.
 - The glow: a slow chord while the arcade shines.
 - The rain: soft drips, each a falling note, from 12 s.
 - A drag is silent (Tom, 2026-11-23: no woosh).
