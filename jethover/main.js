@@ -67,7 +67,7 @@ const tune = {
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
   reach: 3, fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
-  sAmount: 1, sLife: 1, sDark: 1, sGlow: 1, sootOn: true, view: 'off',
+  sLife: 1, sDark: 1, sGlow: 1, viewHeat: false,
 };
 const slider = (id, group, label, min, max, step) => ({
   type: 'slider', id, group, label, min, max, step, value: tune[id],
@@ -94,14 +94,10 @@ const DEV_ROWS = [
   slider('fDrag', 'Fluid', 'Drag', 0, 5, 0.05),
   slider('fJet', 'Fluid', 'Jet speed', 0.2, 2, 0.05),
   slider('fHeat', 'Fluid', 'Jet heat', 0, 2, 0.05),
-  { type: 'toggle', id: 'sootOn', group: 'Soot', label: 'Soot', value: true, onToggle: v => { tune.sootOn = v; applyTune(); touch(); } },
-  slider('sAmount', 'Soot', 'Amount', 0, 3, 0.05),
+  slider('sDark', 'Soot', 'Darkness', 0, 1.33, 0.01),
   slider('sLife', 'Soot', 'Lifetime', 0.2, 4, 0.05),
-  slider('sDark', 'Soot', 'Darkness', 0, 3, 0.05),
   slider('sGlow', 'Soot', 'Hot glow', 0, 3, 0.05),
-  { type: 'choice', id: 'view', group: 'View', label: 'Show layer', value: 'off', options: [
-    { value: 'off', label: 'Off' }, { value: 'heat', label: 'Heat' }, { value: 'soot', label: 'Soot' }, { value: 'both', label: 'Both' },
-  ], onPick: v => { tune.view = v; applyTune(); touch(); } },
+  { type: 'toggle', id: 'viewHeat', group: 'View', label: 'Show heat', value: false, onToggle: v => { tune.viewHeat = v; applyTune(); touch(); } },
   slider('expo', 'Look', 'Exposure', 0.5, 1.6, 0.01),
   slider('bloom', 'Look', 'Bloom', 0, 2, 0.05),
   slider('grain', 'Look', 'Grain', 0, 2, 0.05),
@@ -370,10 +366,12 @@ function applyTune() {
   const h2 = heat2.u;
   h2.curlK.value = 6 * tune.fSwirl; h2.lift.value = 14 * tune.fLift; h2.cool.value = 0.5 * tune.fCool; h2.damp.value = 0.15 * tune.fDrag;
   h2.shim.value = 0.6 * tune.shim; h2.shimSize.value = 0.25 * tune.shimSize; h2.shimSpeed.value = 9 * tune.hSpeed;
-  h2.sootFeed.value = 3 * tune.sAmount; h2.sootFade.value = 0.4 / tune.sLife;
-  U.soot.value = tune.sootOn ? 1 : 0; U.sootDark.value = 1.6 * tune.sDark; U.sootGlow.value = 1.2 * tune.sGlow;
-  U.viewHeat.value = tune.view === 'heat' || tune.view === 'both' ? 1 : 0;
-  U.viewSoot.value = tune.view === 'soot' || tune.view === 'both' ? 1 : 0;
+  U.viewHeat.value = tune.viewHeat ? 1 : 0;
+  // Soot: Fire's smoke in the exhaust gas, pale steam toward black.
+  const sd = Math.min(1, 0.75 * tune.sDark);
+  gasF.u.smokeTint.value.setRGB(0.9 + (0.05 - 0.9) * sd, 0.86 + (0.045 - 0.86) * sd, 0.8 + (0.04 - 0.8) * sd);
+  gasF.u.dissipation.value = 0.7 / tune.sLife;
+  gasF.u.glowGain.value = tune.sGlow;
   gasF.u.emitDensity.value = 2000 * tune.exSmoke; gasF.u.emitTemperature.value = 330 * tune.exHeat;
   frame3();
   applyTime();

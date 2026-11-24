@@ -1,5 +1,4 @@
 // Jet hover: the hot air as a 2D sim in the nozzle plane, after Schlieren candle.
-// The heat grid holds heat in x and soot in y.
 // The velocity grid is coarse; the heat grid is four times finer.
 // MacCormack transport keeps the heat filaments sharp.
 // The slope of the heat bends the frame.
@@ -39,10 +38,6 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     damp: uniform(0.15),
     // The air loses heat, per second.
     cool: uniform(0.5),
-    // Soot each jet core puts out, per second.
-    sootFeed: uniform(3.0),
-    // How fast soot thins, per second.
-    sootFade: uniform(0.4),
     // Fine shimmer over the heat: amount, cell size in metres, speed.
     shim: uniform(0.6), shimSize: uniform(0.25), shimSpeed: uniform(9.0),
     time: uniform(0),
@@ -191,7 +186,7 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     const ex = vec2(1 / TX, 0), ey = vec2(0, 1 / TY);
     const a = S(src, i0).xy, b = S(src, i0.add(ex)).xy, cc = S(src, i0.add(ey)).xy, d = S(src, i0.add(ex).add(ey)).xy;
     const T = S(hatT, p).xy.add(S(src, p).xy.sub(S(backT, p).xy).mul(0.5)).clamp(min(min(a, b), min(cc, d)), max(max(a, b), max(cc, d))).toVar();
-    T.mulAssign(exp(vec2(u.cool, u.sootFade).negate().mul(u.dt)));
+    T.x.mulAssign(exp(u.cool.negate().mul(u.dt)));
     // The top and side walls let heat and soot out.
     // A wide band clears them fast, so nothing piles up at a wall.
     const edge = min(min(p.x, float(1).sub(p.x)), float(1).sub(p.y));
@@ -202,14 +197,12 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     for (let j = 0; j < 2; j++) {
       const k = core(wp, j, 0.8);
       T.x.assign(mix(T.x, max(T.x, u.jetK[j].w), k.mul(u.dt).mul(40.0).clamp(0, 1)));
-      T.y.addAssign(k.mul(u.sootFeed).mul(u.jetK[j].w).mul(u.dt));
       // Past its reach the jet's heat mixes away fast.
       const N = u.jetN[j], s0 = wp.sub(N.xy).dot(N.zw);
       const r0 = wp.sub(N.xy).sub(N.zw.mul(s0)).length();
       const past = smoothstep(u.jetK[j].x, u.jetK[j].x.add(1.2), s0).mul(float(1.0).sub(smoothstep(1.0, 3.0, r0))).mul(u.jetK[j].w.sign());
       T.x.mulAssign(float(1.0).sub(past.mul(u.dt).mul(4.0)).max(0.0));
     }
-    T.y.assign(T.y.min(4.0));
     textureStore(dst, c, vec4(T, 0, 1)).toWriteOnly();
   })().compute(TX * TY);
 
@@ -244,8 +237,8 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     // Fast small cells break the heat into a flicker, not a gel.
     const q = world(uv()).div(u.shimSize);
     const n = mx_noise_float(vec3(q.x, q.y.add(u.time.mul(u.shimSpeed)), u.time.mul(u.shimSpeed).mul(0.37)));
-    // Red: heat with flicker, for the bend. Green: soot. Blue: plain heat.
-    return vec4(T.x.mul(n.mul(u.shim).add(1.0)), T.y, T.x, 1);
+    // Red: heat with flicker, for the bend. Blue: plain heat.
+    return vec4(T.x.mul(n.mul(u.shim).add(1.0)), 0, T.x, 1);
   })();
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat);
   mesh.position.set(origin[0] + W / 2, origin[1] + H / 2, z);
