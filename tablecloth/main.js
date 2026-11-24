@@ -33,7 +33,7 @@ const ui = initPage({ id: ID, bar: {
   keys: [['drag', 'pull the cloth'], ['release', 'yank'], ['space', 'yank'], ['r', 'reset']],
   // Bar v3 lists every input in How to play: one instruction per row.
   help: [
-    ['drag', 'Drag the hanging hem down and toward you'],
+    ['drag', 'Drag the hanging hem down and away from the table'],
     ['release', 'Flick and let go: a fast yank leaves the table set'],
     ['space', 'Press Space to yank at the Speed set'],
     ['r', 'Press R to set the table again'],
@@ -109,8 +109,8 @@ function release(e) {
     const a = T[0], b = T[T.length - 1], dt = Math.max(0.016, (b.t - a.t) / 1000);
     vx = (b.x - a.x) / dt; vy = (b.y - a.y) / dt;
   }
-  // An arm follows through faster than a mouse flick: the release gains half again.
-  letGo(sim, vx * 1.5, vy * 1.5);
+  // An arm follows through faster than a mouse flick: the release doubles.
+  letGo(sim, vx * 2, vy * 2);
   poke();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, release));
@@ -143,7 +143,7 @@ function fit(force = false) {
   if (changed || force) {
     // On High the first rung falls back to Standard, not to 1x.
     const dpr = rung === 0 ? pixelRatio(w, h, { budget: 2.6e6 }) : rung === 1 ? pixelRatio(w, h, { budget: 1.4e6, maxDpr: 1, quality: 'standard' }) : 1;
-    S.resize(w, h, dpr, { bloomScale: rung >= 2 ? 0.33 : 0.5, samples: rung >= 2 ? 0 : 4, shadow: rung >= 2 ? 1024 : 2048 });
+    S.resize(w, h, dpr, { bloomScale: rung >= 2 ? 0.33 : 0.5, samples: rung >= 2 ? 0 : 4, shadow: rung >= 2 ? 1024 : 2048, occlusion: rung === 0 });
   }
   S.frame(w, h, cover());
 }

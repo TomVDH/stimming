@@ -6,6 +6,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
 import { TOP, TABLE, CLOTH } from './shapes.js';
 import { DIMS, planOf, block, BLOCK_N, BY0, LEGS, LEG_R } from './sim.js';
 import { makeTableware, liquidMats } from './ware.js';
@@ -22,6 +24,31 @@ const NOISE = /* glsl */`
     f = f * f * (3.0 - 2.0 * f);
     return mix(mix(mix(hh(i), hh(i + vec3(1, 0, 0)), f.x), mix(hh(i + vec3(0, 1, 0)), hh(i + vec3(1, 1, 0)), f.x), f.y),
                mix(mix(hh(i + vec3(0, 0, 1)), hh(i + vec3(1, 0, 1)), f.x), mix(hh(i + vec3(0, 1, 1)), hh(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+  }
+  // Bump mapping from a height in metres, as three's bump map does it.
+  // Screen derivatives of the height tilt the view-space normal.
+  vec3 bumpN(vec3 n, float h, vec3 pos) {
+    vec3 dx = dFdx(pos), dy = dFdy(pos);
+    vec3 r1 = cross(dy, n), r2 = cross(n, dx);
+    float det = dot(dx, r1);
+    vec3 g = sign(det) * (dFdx(h) * r1 + dFdy(h) * r2);
+    return normalize(abs(det) * n - g);
+  }
+`;
+// Damask: one repeat is 26 cm, a rosette with a half-drop leaf and waving stems.
+// It returns the satin share, 0 in the matte ground and 1 in the figure.
+const DAMASK = /* glsl */`
+  float damask(vec2 c) {
+    vec2 p = c / 0.26;
+    vec2 q = fract(p) - 0.5, q2 = fract(p + 0.5) - 0.5;
+    float r = length(q), a = atan(q.y, q.x);
+    float petals = smoothstep(0.01, 0.003, abs(r - (0.13 + 0.04 * cos(a * 10.0))) - 0.012);
+    float heart = smoothstep(0.075, 0.065, r) * (0.55 + 0.45 * cos(a * 16.0));
+    float r2 = length(q2), a2 = atan(q2.y, q2.x);
+    float leaf = smoothstep(0.012, 0.004, abs(r2 - 0.075 - 0.035 * cos(a2 * 4.0)) - 0.012);
+    float w = abs(sin((p.x + p.y) * 3.14159 + 0.5 * sin(p.x * 12.566)));
+    float stem = smoothstep(0.1, 0.04, w) * smoothstep(0.24, 0.3, r) * smoothstep(0.17, 0.22, r2);
+    return clamp(petals + heart + leaf + stem, 0.0, 1.0);
   }
 `;
 
@@ -111,7 +138,20 @@ export function createScene(canvas, { onLost } = {}) {
           diffuseColor.rgb *= 1.0 - 0.55 * seam;
         }`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = 0.38 + 0.25 * vn(vF * vec3(2.0, 1.0, 40.0));`);
+        roughnessFactor = 0.38 + 0.25 * vn(vF * vec3(2.0, 1.0, 40.0));`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // Each board's eased edge dips into the seam; the grain stands a hair proud.
+          float row = floor(vF.z / 0.14);
+          float off = hh(vec3(row, 3.0, 1.0)) * 2.0;
+          float col = floor((vF.x + off) / 1.6);
+          float id = hh(vec3(row, col, 7.0));
+          vec2 q = vec2(fract((vF.x + off) / 1.6) * 1.6, fract(vF.z / 0.14) * 0.14);
+          float edge = min(min(q.y, 0.14 - q.y), min(q.x, 1.6 - q.x));
+          float h = -0.0012 * (1.0 - smoothstep(0.0, 0.004, edge));
+          h += 0.00012 * vn(vec3(vF.x * 3.0, vF.z * 90.0 + id * 40.0, id * 9.0));
+          normal = bumpN(normal, h, -vViewPosition);
+        }`);
   };
   const floor = new THREE.Mesh(keep(new THREE.PlaneGeometry(30, 30)), floorMat);
   floor.rotation.x = -Math.PI / 2;
@@ -192,6 +232,13 @@ export function createScene(canvas, { onLost } = {}) {
           float fig = vn(vW * vec3(4.0, 8.0, 9.0));
           diffuseColor.rgb *= 0.78 + 0.3 * ring + 0.22 * fig;
           diffuseColor.rgb *= 0.92 + 0.08 * vn(vW * vec3(400.0, 400.0, 30.0));
+        }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // Open pores and the rings stand out a little through the clear coat.
+          float r = vn(vec3(vW.x * 1.5, vW.y * 30.0, vW.z * 26.0)) * 3.0 + vW.z * 14.0;
+          float h = 0.00006 * smoothstep(0.35, 0.65, abs(fract(r) - 0.5) * 2.0) - 0.00005 * smoothstep(0.6, 0.9, vn(vW * vec3(300.0, 300.0, 22.0)));
+          normal = bumpN(normal, h, -vViewPosition);
         }`);
   };
   // The drawn top sits a hair inside the cloth's block, so its edge never shows through.
@@ -318,7 +365,7 @@ export function createScene(canvas, { onLost } = {}) {
     }
   }
   const clothMat = keep(new THREE.MeshPhysicalMaterial({
-    color: new THREE.Color(0.91, 0.91, 0.92), roughness: 0.72, sheen: 1, sheenRoughness: 0.45, sheenColor: new THREE.Color(1, 0.99, 0.97),
+    color: new THREE.Color(0.9, 0.9, 0.91), roughness: 0.72, sheen: 1, sheenRoughness: 0.4, sheenColor: new THREE.Color(1, 0.99, 0.97), specularIntensity: 0.6,
     side: THREE.DoubleSide, envMapIntensity: 0.5,
   }));
   const fireU = { uT: { value: 0 } };
@@ -326,7 +373,7 @@ export function createScene(canvas, { onLost } = {}) {
     sh.uniforms.uT = fireU.uT;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vC; attribute vec3 aBurn; varying vec3 vB;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvB = aBurn; vC = uv * vec2(' + CLOTH.w.toFixed(2) + ', ' + CLOTH.d.toFixed(2) + ');');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vC; varying vec3 vB; uniform float uT;' + NOISE)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vC; varying vec3 vB; uniform float uT; float gSat = 0.0;' + NOISE + DAMASK)
       .replace('#include <color_fragment>', `#include <color_fragment>
         {
           vec2 e = min(vC, vec2(${CLOTH.w.toFixed(2)}, ${CLOTH.d.toFixed(2)}) - vC);
@@ -351,11 +398,26 @@ export function createScene(canvas, { onLost } = {}) {
         {
           vec2 e = min(vC, vec2(${CLOTH.w.toFixed(2)}, ${CLOTH.d.toFixed(2)}) - vC);
           float edge = min(e.x, e.y);
-          // Damask: satin figures in a matte ground, seen only in the sheen.
-          vec2 q = vC * 26.0;
-          float fig = smoothstep(0.25, 0.4, sin(q.x) * sin(q.y) + 0.45 * sin((q.x + q.y) * 0.5));
-          float band = smoothstep(0.0, 0.002, abs(edge - 0.075) - 0.004) * smoothstep(0.0, 0.002, abs(edge - 0.09) - 0.002);
-          roughnessFactor = mix(0.48, 0.82, fig * band);
+          // Damask: satin figures in a matte ground, seen in the sheen and the gloss.
+          // A satin border band runs 8 cm inside the hem.
+          float band = 1.0 - smoothstep(0.0, 0.002, abs(edge - 0.08) - 0.012) * smoothstep(0.1, 0.11, edge);
+          float sat = edge < 0.095 ? 1.0 - band : damask(vC);
+          gSat = sat;
+          roughnessFactor = mix(0.76, 0.6, sat);
+        }`)
+      .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+        // Satin floats catch a tighter, brighter sheen than the matte ground.
+        material.sheenRoughness = mix(0.5, 0.3, gSat);
+        material.sheenColor *= mix(0.88, 1.12, gSat);`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // Soft creases from folding, and the weave where the pixel can hold it.
+          float h = 0.0005 * vn(vec3(vC * vec2(9.0, 14.0), 3.0)) + 0.00025 * vn(vec3(vC * 46.0, 7.0));
+          vec2 wv = vC * 1300.0;
+          float fade = 1.0 - smoothstep(0.25, 0.6, max(fwidth(wv.x), fwidth(wv.y)));
+          h += 0.00003 * fade * (sin(wv.x * 6.2832) + sin(wv.y * 6.2832));
+          h += 0.00003 * damask(vC);
+          normal = bumpN(normal, h, -vViewPosition);
         }`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         {
@@ -459,6 +521,25 @@ export function createScene(canvas, { onLost } = {}) {
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture: new THREE.DepthTexture(1, 1) });
   const composer = new EffectComposer(renderer, rt);
   composer.addPass(new RenderPass(scene, camera));
+  // Ambient occlusion darkens folds, corners and the floor under the table.
+  // It multiplies into the read buffer in place: no swap, so the fire still reads the scene's depth.
+  const gtao = new GTAOPass(scene, camera, 2, 2);
+  gtao.output = GTAOPass.OUTPUT.Off;
+  gtao.updateGtaoMaterial({ radius: 0.22, distanceExponent: 1.4, thickness: 1.2, scale: 1.0, samples: 12 });
+  gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+  class AOPass extends Pass {
+    constructor() { super(); this.needsSwap = false; }
+    setSize(w, h) { gtao.setSize(w, h); }
+    render(r, writeBuffer, readBuffer) {
+      gtao.render(r, writeBuffer, readBuffer);
+      gtao.blendMaterial.uniforms.intensity.value = 0.85;
+      gtao.blendMaterial.uniforms.tDiffuse.value = gtao.pdRenderTarget.texture;
+      gtao.renderPass(r, gtao.blendMaterial, readBuffer);
+    }
+    dispose() { gtao.dispose(); }
+  }
+  const ao = new AOPass();
+  composer.addPass(ao);
   const fire = createFire(renderer, camera, LAMP);
   composer.addPass(fire.pass);
   // The fire's own light: warm, low, flickering, no shadow.
@@ -483,25 +564,46 @@ export function createScene(canvas, { onLost } = {}) {
   composer.addPass(grade);
 
   /* ---------- shot ---------- */
-  // Low at the table's pull-end corner, looking back along it.
-  const look = new THREE.Vector3(), base = new THREE.Vector3();
+  // A side three-quarter view at standing eye height.
+  // The table runs across the frame; the pull end and its floor are on the right.
+  const look = new THREE.Vector3(), base = new THREE.Vector3(), off = new THREE.Vector3(), aim = new THREE.Vector3();
   let aspect = 1;
   function frame(w, h, cov = 0) {
     aspect = w / h;
     const tall = aspect < 0.9;
     camera.aspect = aspect;
-    camera.fov = tall ? 50 : 40;
-    const az = tall ? 0.42 : 0.5, el = tall ? 0.5 : 0.47, dist = tall ? 3.6 : 2.45;
-    look.set(tall ? 0.4 : 0.42, tall ? 0.46 : 0.52, 0.0);
+    camera.fov = tall ? 52 : 36;
+    const az = tall ? 0.62 : 1.12, el = tall ? 0.52 : 0.36, dist = tall ? 4.0 : 2.75;
+    look.set(tall ? 0.28 : 0.42, tall ? 0.42 : 0.45, 0.0);
     base.set(look.x + Math.cos(az) * Math.cos(el) * dist, look.y + Math.sin(el) * dist, look.z + Math.sin(az) * Math.cos(el) * dist);
-    camera.position.copy(base);
-    camera.lookAt(look);
+    place();
     camera.setViewOffset(w, h, 0, (cov * h) / 2, w, h);
     camera.updateProjectionMatrix();
-    camera.updateMatrixWorld();
     grade.uniforms.uAspect.value = aspect;
   }
-  function resize(w, h, dpr, { bloomScale = 0.5, samples = 4, shadow = 2048 } = {}) {
+  function place() {
+    camera.position.copy(base).add(off);
+    camera.lookAt(aim.copy(look).add(off));
+    camera.updateMatrixWorld();
+  }
+  // The shot drifts a little toward the action: a fire, or pieces on the floor.
+  // It moves at most 35 cm and never under reduced motion.
+  const want = new THREE.Vector3();
+  function follow(sim, dt) {
+    want.set(0, 0, 0);
+    if (!sim.calm && !sim.reset) {
+      let n = 0, x = 0, z = 0;
+      if (sim.burning > 0) { x = sim.fireC[0]; z = sim.fireC[2]; n = 1; }
+      else for (const b of sim.bodies) if (!b.gone && b.y < TOP - 0.1) { x += b.x; z += b.z; n++; }
+      if (n) want.set(clamp((x / n - look.x) * 0.4, -0.35, 0.35), 0, clamp((z / n) * 0.25, -0.2, 0.2));
+    }
+    const k = Math.min(1, dt * 1.2);
+    const before = off.lengthSq();
+    off.lerp(want, k);
+    if (off.lengthSq() + before > 1e-8) place();
+  }
+  function resize(w, h, dpr, { bloomScale = 0.5, samples = 4, shadow = 2048, occlusion = true } = {}) {
+    ao.enabled = occlusion;
     renderer.setPixelRatio(dpr);
     renderer.setSize(w, h, false);
     composer.setPixelRatio(dpr);
@@ -616,8 +718,11 @@ export function createScene(canvas, { onLost } = {}) {
       ware.setPuddle(m.material, p);
     });
     fireTick(sim, t);
+    follow(sim, Math.min(1 / 20, Math.max(0, t - lastFollow)));
+    lastFollow = t;
     painted = true;
   }
+  let lastFollow = 0;
   /* ---------- fire ---------- */
   let lastT = 0, smokeLeft = 0;
   function fireTick(sim, t) {
@@ -673,6 +778,7 @@ export function createScene(canvas, { onLost } = {}) {
     ware.dispose();
     pmrem.dispose();
     composer.dispose?.();
+    gtao.dispose();
     fire.dispose();
     rt.depthTexture?.dispose();
     bloom.dispose?.();

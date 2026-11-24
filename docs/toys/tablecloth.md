@@ -30,7 +30,7 @@ Idea 112, group E, a physics loop: drag the cloth edge and yank it; plates and g
 
 ## Direction
 
-- 3D. A fixed camera at the table's pull-end corner, above and back, looking along the table. The floor in front of the pull end is in frame for the crash. A tall frame stands further back.
+- 3D. A side three-quarter view at standing eye height (Tom, 2026-11-23: "arrange camera better"). The table runs across the frame; the pull end and its floor are on the right, for the crash and the fire. A tall frame looks from nearer the pull end, so the table foreshortens. The shot drifts up to 35 cm toward a fire or toward pieces on the floor; never under reduced motion.
 - A dining room at night: one warm pendant lamp above the table makes a pool of light; the room falls off into dark haze. At the far end, a painted wall with a wainscot and a tall window on the night; faint moonlight comes through it. The window and the lamp shade give the glass and the steel their highlights.
 - A walnut table, 1.4 x 0.85 m, on four turned legs, a bead under the apron; oak boards.
 - White satin damask cloth, 2.1 x 1.5 m, about 0.33 m of drop each side. Damask figures and a border band show only in the sheen; a doubled hem.
@@ -53,7 +53,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 |---|---|
 | Press near the hanging hem | The hand takes the whole hem |
 | Drag | The cloth follows the hand on the upright plane down the table's middle |
-| Release with speed | The hand follows through at 1.5 times the release speed until the cloth clears the table |
+| Release with speed | The hand follows through at twice the release speed until the cloth clears the table |
 | Release slowly | The hem drops where it is |
 | Keys | Space yanks; R resets |
 | Wheel, pinch, tilt | None |
@@ -64,12 +64,13 @@ Bar v3, from the `bar` spec in `initPage()`.
 |---|---|
 | Stack type | Scene |
 | Tier | three.js 0.170, WebGL 2 |
-| Post | RenderPass, the fire's volume pass, UnrealBloomPass, OutputPass, a grade pass (vignette, grain) |
+| Post | RenderPass, ground-truth ambient occlusion (GTAOPass, on the top quality rung only), the fire's volume pass, UnrealBloomPass, OutputPass, a grade pass (vignette, grain) |
+| Materials | Physically based throughout: MeshPhysicalMaterial and MeshStandardMaterial under one image-based light and the shadowed lamp. Glass refracts by transmission. Oak, walnut and linen take procedural albedo, roughness and a bump normal in the shader; the linen's damask lives in its roughness and sheen. |
 | Files | `index.html`, `main.js` (page, input, loop), `shapes.js` (profiles, layout, shard plans), `sim.js` (cloth, pieces, liquid, shards, fire spread, reset), `scene.js` (three.js), `ware.js` (tableware meshes and materials), `fire.js` (fire and smoke), `sound.js` |
 
 ## Sim
 
-- Cloth: 48 x 34 Verlet particles at 120 Hz, six passes of structural, shear and bend links, a tether from the held hem along the path over the table's edges, collision with the table block (top and apron) and the floor, friction on both. The drawn mesh is the grid upsampled three times by Catmull-Rom and pushed out of the table.
+- Cloth: 56 x 40 Verlet particles at 120 Hz, six passes of structural, shear and bend links, a tether from the held hem along the path over the table's edges, collision with the table block (top and apron) and the floor, friction on both. The drawn mesh is the grid upsampled three times by Catmull-Rom and pushed out of the table.
 - No clipping: the midpoints of the cloth's links and quads collide with the table, so a corner never cuts through between particles. The cloth keeps clear of the legs and, on the floor, of itself.
 - Pieces: own rigid bodies after Wrecking ball (sphere sets) at 240 Hz. Plane contacts take normal passes, then one friction impulse and one torsional impulse at the contact centroid. On the top, friction under the cloth takes the cloth's velocity.
 - Off the top, a piece meets the cloth's own surface: the nearest triangle of the cloth's quads, found through a 5 cm grid. A piece keeps to its own side of the cloth; it learns its side only while the two are apart. The cloth goes round the pieces from its side too. A piece that lands on cloth over the floor breaks as on the floor.
@@ -96,12 +97,12 @@ The slow-frame watchdog steps down: pixel ratio 1, then smaller bloom, no multis
 
 ## QA
 
-Captures: `docs/qa/tablecloth/` (01 blockout to 10 icons; 11 to 17 for the second pass: the new look, the slow ride, the fire, its ash). Q1 to Q10 passed on 2026-11-23, headless Edge on the RTX 3070 (D3D11), and again after the second pass: a clean console through Space, R, a slow drag, a fast flick and a full fire; Space yanks and R resets and puts the fire out; a hidden page draws no frames; reduced motion stops after the reset; the drift asks 31.5 frames a second and none after 64 s; the audio context suspends after the toy settles, the fire's too. Frame time: 10.6 ms mean through a yank, 7.8 ms mean with over 900 particles burning. Tom checks fps on a real screen.
+Captures: `docs/qa/tablecloth/` (01 blockout to 10 icons; 11 to 17 for the second pass: the new look, the slow ride, the fire, its ash). Q1 to Q10 passed on 2026-11-23, headless Edge on the RTX 3070 (D3D11), and again after the second pass: a clean console through Space, R, a slow drag, a fast flick and a full fire; Space yanks and R resets and puts the fire out; a hidden page draws no frames; reduced motion stops after the reset; the drift asks 31.5 frames a second and none after 64 s; the audio context suspends after the toy settles, the fire's too. Frame time: 10.6 ms mean through a yank, 7.8 ms mean with over 900 particles burning. After the third pass (finer cloth, transmission, occlusion; captures 18 to 23): 17.8 ms mean through a yank, 13 ms mean in a full fire; the first quality step drops the occlusion. Tom checks fps on a real screen.
 
 ## Open
 
 - 3D or flat: 3D by default.
-- The shot: the setting is small so the crash zone fits. A closer shot is Tom's call.
+- The shot: the side three-quarter view of the third pass; Tom judges it.
 - The Dutch name: draft Tafelkleedtruc.
 - The icon pick: A of spike tablecloth-1 is on the menu until Tom picks.
 - Fire on a slow drag: the cloth catches each time the candle falls on or near it. A fast yank leaves the candle standing, so no fire.

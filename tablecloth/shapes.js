@@ -6,7 +6,7 @@ export const TOP = 0.75;              // table top height
 export const TABLE = { hx: 0.7, hz: 0.425, th: 0.04, re: 0.02 };
 // The slab is a bullnose plate: a core rectangle swept by a 2 cm circle.
 TABLE.cy = TOP - TABLE.re;
-export const CLOTH = { w: 2.1, d: 1.5, nx: 48, nz: 34, thick: 0.003 };
+export const CLOTH = { w: 2.1, d: 1.5, nx: 56, nz: 40, thick: 0.003 };
 
 /* ---------- profiles ---------- */
 // Dinner plate, 27 cm: foot ring, well, verge, rolled rim.

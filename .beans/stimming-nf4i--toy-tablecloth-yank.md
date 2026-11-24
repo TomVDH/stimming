@@ -28,6 +28,11 @@ Build Tablecloth yank (idea 112, group E, a physics loop) as a Lab toy: an MVP a
   - [x] Fire and smoke drawn with Fire's method (K3 port to three.js 0.170 WebGL2)
   - [x] Fire sound; reset puts the fire out
   - [x] QA captures and doc update
+- [x] Pass 3, in Tom's words: "arrange camera better, a bit better quality in fabric, also pbr and shade this properly"
+  - [x] Side three-quarter camera that drifts toward the action
+  - [x] Cloth grid 56 x 40; damask, creases and weave in the linen
+  - [x] Bump normals on oak, walnut and linen; transmission glass; GTAO
+  - [x] QA captures 18 to 23 and doc update
 - [ ] Tom's sign-off
 - [ ] Tom sets the Dutch name
 - [ ] Record the session cost
@@ -44,3 +49,4 @@ Build Tablecloth yank (idea 112, group E, a physics loop) as a Lab toy: an MVP a
 - Open for Tom: 3D or flat (3D by default), a closer shot, the Dutch name (draft Tafelkleedtruc), the icon pick.
 - Pass 2 (2026-11-23): captures 11 to 17. Embers: a fallen flame alone lit the cloth in half the runs, as the candle often lands past the hem; a spray of burning wax as it lands lights it in 10 of 10 slow drags. Fire costs 7.8 ms mean a frame with over 900 particles burning (headless Edge, RTX 3070). The yank outcomes moved: 6 m/s all stand, 4 m/s all stand, 3 m/s one or two fall, 2 m/s about five fall.
 - Tom, 2026-11-23: flames more orange (done: the hot ramp stops turn toward orange); the blaze size and the fire under reduced motion stay as built.
+- Pass 3 (2026-11-23): 17.8 ms mean frame through a yank, 13 ms in a full fire (headless Edge, RTX 3070), up from 10.6 and 7.8; GTAO drops at the first quality step. The flick gain went from 1.5 to 2, as the side view maps a mouse flick to a slower pull. The fast yank still leaves all 11 pieces standing.

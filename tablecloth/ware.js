@@ -26,6 +26,17 @@ function glassMat(alpha0 = 0.05, alpha1 = 0.5, tint = [0, 0, 0]) {
   return m;
 }
 
+// Clear glass: transmission refracts what lies behind, with a faint green body.
+function clearGlass(thickness) {
+  return new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, transmission: 1, thickness, ior: 1.5, roughness: 0.015, metalness: 0,
+    specularIntensity: 1, envMapIntensity: 1.5, side: THREE.DoubleSide,
+    // The liquid inside draws after the glass, so the glass must not hide it.
+    depthWrite: false,
+    attenuationColor: new THREE.Color(0.86, 0.95, 0.92), attenuationDistance: 0.06,
+  });
+}
+
 export function makeTableware(keep) {
   const own = [];
   const k = x => (own.push(x), x);
@@ -44,8 +55,8 @@ export function makeTableware(keep) {
   const chinaShard = k(china.clone());
   chinaShard.onBeforeCompile = china.onBeforeCompile;
   chinaShard.side = THREE.DoubleSide;
-  const glass = k(glassMat(0.04, 0.5));
-  const glassShard = k(glassMat(0.12, 0.6));
+  const glass = k(clearGlass(0.004));
+  const glassShard = k(clearGlass(0.003));
   const brass = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.78, 0.55, 0.24), metalness: 1, roughness: 0.3, envMapIntensity: 1.2 }));
   const steel = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.9, 0.91, 0.93), metalness: 1, roughness: 0.13, envMapIntensity: 1.6 }));
   const wax = k(new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.94, 0.9, 0.82), roughness: 0.55, sheen: 0.4, sheenColor: new THREE.Color(1, 0.9, 0.75) }));
@@ -206,7 +217,7 @@ export function liquidMats(kind, keep) {
   const mk = cap => {
     const m = wine
       ? new THREE.MeshPhysicalMaterial({ color: new THREE.Color(0.14, 0.004, 0.018), roughness: 0.03, clearcoat: 1, clearcoatRoughness: 0.02, transparent: true, opacity: 0.96, emissive: new THREE.Color(0.035, 0.0, 0.004), side: THREE.DoubleSide })
-      : glassMat(cap ? 0.06 : 0.03, cap ? 0.55 : 0.25, [0.004, 0.006, 0.007]);
+      : glassMat(cap ? 0.04 : 0.02, cap ? 0.4 : 0.16, [0.004, 0.006, 0.007]);
     const prev = m.onBeforeCompile;
     m.onBeforeCompile = (sh, r) => {
       prev.call(m, sh, r);

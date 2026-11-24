@@ -29,14 +29,14 @@ Sources: University of Maryland lecture demo "Tablecloth" (lecdem.physics.umd.ed
 ## Hero
 
 1. Press the hanging hem: the hand takes the whole hem.
-2. Drag: the cloth follows the hand, down and toward the viewer.
+2. Drag: the cloth follows the hand, down and away from the table.
 3. Fast: let go mid-flick and the hand follows through. The cloth whips out from under the setting. Plates rattle, glasses rock, wine sloshes, the candle flame leans. All stays on the table, a few centimetres closer to the pull end. The cloth flies past and drops to the floor.
 4. Slow: the setting rides with the cloth. The near pieces reach the edge, tip and fall. Glass and porcelain shatter on the boards; wine and water splash; cutlery clatters; the candle goes out.
 5. Reset: the pieces lift, the cloth flies back under them, the shards fade, and each piece lowers into its place with a soft clink. The table resets by itself 2.5 s after all comes to rest.
 
 ## Sim
 
-- Cloth: Verlet particles on a 48 x 34 grid at 120 Hz, structural, shear and bend links, a tether to the held hem along the path over the table's edges, collision with the table block (top and apron) and the floor, friction on both.
+- Cloth: Verlet particles on a 56 x 40 grid at 120 Hz, structural, shear and bend links, a tether to the held hem along the path over the table's edges, collision with the table block (top and apron) and the floor, friction on both.
 - Pieces: rigid bodies after Wrecking ball (sphere sets) at 240 Hz; plane contacts solve friction once at the contact centroid. Each contact under the cloth takes the cloth's velocity at that point; elsewhere the table's wood.
 - Shatter: a glass or plate that meets the floor fast breaks into curved shards (lathe patches of its own shape) and glitter. The foot and stem of a wine glass survive.
 - Liquid: each glass has a slosh oscillator (first mode of a cylinder). The surface stays level in the world and lags the glass. A tipped glass pours.
@@ -49,13 +49,21 @@ Tom: "improve the look of the models and the assets, incl no collision clipping 
 2. Look: turned legs and an apron bead; candle drips; whiter linen with a weave and a hem stitch; deeper wine; brighter steel; a far wall with a wainscot and a night window; moonlight.
 3. Fire: a fallen candle stays lit and throws embers; the cloth catches, burns up its folds, chars and burns through to ash. Flames and smoke follow Fire's method, ported to three.js 0.170 WebGL2 (`tablecloth/fire.js`, K3). The fire lights the room; it has its own sound. Reset puts it out.
 
+## Third pass (Tom, 2026-11-23)
+
+Tom: "arrange camera better, a bit better quality in fabric, also pbr and shade this properly".
+
+1. Camera: a side three-quarter view; the pull end and its floor on the right. It drifts toward a fire or a fall.
+2. Fabric: the cloth grid goes to 56 x 40. Linen takes a damask figure in roughness and sheen, soft creases and the weave as bump relief.
+3. PBR: oak, walnut and linen gain bump normals; glass refracts by transmission; GTAO darkens folds and corners.
+
 ## Sound
 
 Raw Web Audio on the shared kit, muted by default. Cloth hiss that follows the slip speed, a snap as the trailing edge clears, plate chatter, glass clinks, cutlery ticks, a slosh, the crash of porcelain and glass on the floor, the clatter of steel, a small dining room echo.
 
 ## Bar v3
 
-Actions: Yank (Space): a clean yank at the Speed set (0.6 to 8 m/s, log scale). Reset (R). Slider: Speed. Help rows for drag, release, Space and R. A released flick follows through at 1.5 times its speed.
+Actions: Yank (Space): a clean yank at the Speed set (0.6 to 8 m/s, log scale). Reset (R). Slider: Speed. Help rows for drag, release, Space and R. A released flick follows through at twice its speed.
 
 ## Loop
 

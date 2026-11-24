@@ -327,7 +327,7 @@ export function createFire(renderer, camera, lamp) {
   function run(m, target) { quad.material = m; renderer.setRenderTarget(target); quad.render(renderer); }
 
   // Emitters: two vertices each, one per y slice.
-  const EMAX = 2400;
+  const EMAX = 2600;
   const eg = new THREE.BufferGeometry();
   const epos = new Float32Array(EMAX * 2 * 3), egive = new Float32Array(EMAX * 2 * 3);
   eg.setAttribute('position', new THREE.BufferAttribute(epos, 3).setUsage(THREE.DynamicDrawUsage));

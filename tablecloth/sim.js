@@ -227,7 +227,8 @@ function makeCloth() {
 }
 // Burning cloth shrinks and curls: each particle scales the rest length of its links.
 const SHRINK = new Float32Array(NP).fill(1);
-function links(P, W, C, CL, k, cut) {
+function links(P, W, C, CL, k, cut, fire) {
+  if (!fire) { linksFast(P, W, C, CL, k); return; }
   const ks = k * 0.25;
   for (let c = 0, n = CL.length; c < n; c++) {
     const ia = C[c * 2], ib = C[c * 2 + 1];
@@ -239,6 +240,22 @@ function links(P, W, C, CL, k, cut) {
     const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2];
     const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1e-9, r = CL[c] * Math.min(SHRINK[ia], SHRINK[ib]);
     // Cloth resists stretch hard and squash softly.
+    const s = (d - r) / (d * ws) * (d > r ? k : ks);
+    const sa = s * wa, sb = s * wb;
+    P[a] += dx * sa; P[a + 1] += dy * sa; P[a + 2] += dz * sa;
+    P[b] -= dx * sb; P[b + 1] -= dy * sb; P[b + 2] -= dz * sb;
+  }
+}
+// Without fire, no link is cut or shrunk: the plain loop is a third faster.
+function linksFast(P, W, C, CL, k) {
+  const ks = k * 0.25;
+  for (let c = 0, n = CL.length; c < n; c++) {
+    const ia = C[c * 2], ib = C[c * 2 + 1];
+    const wa = W[ia], wb = W[ib], ws = wa + wb;
+    if (ws === 0) continue;
+    const a = ia * 3, b = ib * 3;
+    const dx = P[b] - P[a], dy = P[b + 1] - P[a + 1], dz = P[b + 2] - P[a + 2];
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz) + 1e-9, r = CL[c];
     const s = (d - r) / (d * ws) * (d > r ? k : ks);
     const sa = s * wa, sb = s * wb;
     P[a] += dx * sa; P[a + 1] += dy * sa; P[a + 2] += dz * sa;
@@ -474,10 +491,12 @@ function clothStep(sim, h, damp = 0.9965, iters = ITERS) {
   const fly = cl.flying > 0;
   grid3(P);
   normals(P);
+  // Burn marks stay until the reset heals them.
+  const fire = !!(sim.fireT > 0 || sim.reset || cl.marked);
   for (let it = 0; it < iters; it++) {
-    links(P, W, cl.C, cl.CL, 1, cl.cut);
-    links(P, W, cl.D, cl.DL, 0.8, cl.cut);
-    if (it & 1) links(P, W, cl.B, cl.BL, 0.35, cl.cut);
+    links(P, W, cl.C, cl.CL, 1, cl.cut, fire);
+    links(P, W, cl.D, cl.DL, 0.8, cl.cut, fire);
+    if (it & 1) links(P, W, cl.B, cl.BL, 0.35, cl.cut, fire);
     if (hand.pins) tether(sim);
     // Collision runs on two passes of six; the last one sets the shape.
     if (it === 2 || it === iters - 1) collide(sim, fly);
@@ -592,7 +611,7 @@ function drop(sim) {
 }
 // Space: a clean yank at speed v, down and toward the viewer.
 export function autoYank(sim, v) {
-  if (sim.hand.pins || sim.reset || sim.cloth.onTop < NP * 0.3) return false;
+  if (sim.hand.pins || sim.reset || sim.cloth.onTop < NP * 0.2) return false;
   const P = sim.cloth.P;
   let x = 0, y = 0;
   for (let j = 0; j < NZ; j++) { const k = idx(NX - 1, j) * 3; x += P[k]; y += P[k + 1]; }
@@ -671,7 +690,7 @@ function onTopAt(P, k) { return P[k + 1] < TOP + 0.012 && P[k + 1] > TOP - 0.03 
 function gather(sim, b) {
   SF.best = 1; SF.sgn = 0;
   let F = b.sfc;
-  if (!F) F = b.sfc = { n: 0, at: -1, q: new Int32Array(256), c: new Float32Array(256 * 4), top: new Uint8Array(256) };
+  if (!F) F = b.sfc = { n: 0, at: -1, q: new Int32Array(512), c: new Float32Array(512 * 4), top: new Uint8Array(512) };
   SF.F = F;
   if (F.at === sim.tick) { SF.on = F.n > 0; return; }
   F.at = sim.tick; F.n = 0;
@@ -680,7 +699,7 @@ function gather(sim, b) {
   near(b.x, b.y, b.z, b.br + 0.04, p => {
     const i = (p / NZ) | 0, j = p - i * NZ;
     for (let qi = i - 1; qi <= i; qi++) for (let qj = j - 1; qj <= j; qj++) {
-      if (qi < 0 || qj < 0 || qi >= NX - 1 || qj >= NZ - 1 || F.n >= 256) continue;
+      if (qi < 0 || qj < 0 || qi >= NX - 1 || qj >= NZ - 1 || F.n >= 512) continue;
       const q = qi * (NZ - 1) + qj;
       if (STAMP[q] === stampN) continue;
       STAMP[q] = stampN;
@@ -1244,6 +1263,7 @@ function burn(sim, h) {
     }
   }
   sim.burning = n;
+  if (n) cl.marked = true;
   if (n) { sim.fireC[0] = sx / n; sim.fireC[1] = sy / n; sim.fireC[2] = sz / n; }
   // Smoke lingers after the last flame; the sim stays busy for it.
   sim.fireT = n ? 1e-3 : sim.fireT + h;
@@ -1417,7 +1437,7 @@ function resetTick(sim, dt) {
     cl.P.set(cl.rest); cl.Q.set(cl.rest); cl.W.fill(1); cl.awake = false; cl.onTop = NP;
     regrid(sim);
     sim.flame.out = 0; sim.flame.lean = 0; sim.flame.v = 0; sim.flame.down = 0; sim.flame.touch = 0; sim.flame.spat = false;
-    cl.fuel.fill(1); cl.cut.fill(0); cl.heat.fill(0); SHRINK.fill(1);
+    cl.fuel.fill(1); cl.cut.fill(0); cl.heat.fill(0); SHRINK.fill(1); cl.marked = false;
     sim.reset = null; sim.dirty = false; sim.quiet = 0;
     sim.events.push({ type: 'ready' });
   }
