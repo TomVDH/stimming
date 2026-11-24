@@ -7,7 +7,8 @@
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // The key falls as the star grows: the hypergiant hums lowest.
-const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 220, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
+// The Sun sits in A sharp (Tom, 2026-11-24), set by ear with its choir.
+const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
 
 // `opt(id)` reads a Dev row; a missing row means on, at level 1.
 export function makeSound(kit, opt = () => undefined) {
@@ -275,6 +276,8 @@ export function makeSound(kit, opt = () => undefined) {
   // The plain choir: one sawtooth wave per note, low passed at 3 kHz.
   // The slowed choir adds a wave an octave down, low passed at 1.8 kHz.
   // Each wave sits at exact pitch, so nothing beats (Tom: no wobble).
+  // Octave voices and their levels: middle, tenor and bass (Tom).
+  const SUN_OCTAVES = [[0, 1], [-1, 0.5], [-2, 0.6]];
   const SUN_LAYERS = [
     { lp: 3000, amp: 0.7, parts: [[1, 1]] },
     { lp: 1800, amp: 0.4, parts: [[1, 1.41], [0.5, 1]] },
@@ -288,49 +291,65 @@ export function makeSound(kit, opt = () => undefined) {
     wet.gain.value = 1.2;
     dry.connect(out);
     cv.connect(wet).connect(out);
+    // A slow level swell: 20 percent at 0.12 Hz (Tom).
+    const sw = ac.createGain();
+    sw.connect(dry);
+    sw.connect(cv);
+    const swl = ac.createGain();
+    swl.gain.value = 0.2;
+    os.push(osc(ac, 'sine', 0.12, t, 1e5));
+    os.at(-1).connect(swl).connect(sw.gain);
+    // A slow pitch drift: 3 cents at 0.2 Hz, shared by every wave (Tom).
+    const drift = ac.createGain();
+    drift.gain.value = 3;
+    os.push(osc(ac, 'sine', 0.2, t, 1e5));
+    os.at(-1).connect(drift);
     const at = st => base * 2 ** (st / 12);
     const v = { ion: [], pen: [], leads: [[], []], li: 0, base, mode: 1, step: 0, nextMode: t + 10 + Math.random() * 2, nextLead: t + 8 };
-    for (const L of SUN_LAYERS) {
-      const mix = ac.createGain();
-      const soft = filt(ac, 'lowpass', L.lp, 0.5);
-      mix.connect(soft);
-      // Level 0.35 of the tuning player, split over two layers, set by ear (Tom).
-      const bus = ac.createGain();
-      bus.gain.value = 0.00735;
-      for (const [f, q, a] of FORMANTS) {
-        const ga = ac.createGain();
-        ga.gain.value = a * 4;
-        soft.connect(filt(ac, 'bandpass', f, q)).connect(ga).connect(bus);
+    for (const [oct, lvl] of SUN_OCTAVES) {
+      const sh = 2 ** oct;
+      for (const L of SUN_LAYERS) {
+        const mix = ac.createGain();
+        const soft = filt(ac, 'lowpass', L.lp, 0.5);
+        mix.connect(soft);
+        // Level 0.35 of the tuning player, split over two layers, set by ear (Tom).
+        const bus = ac.createGain();
+        bus.gain.value = 0.00735 * lvl;
+        for (const [f, q, a] of FORMANTS) {
+          const ga = ac.createGain();
+          ga.gain.value = a * 4;
+          soft.connect(filt(ac, 'bandpass', f, q)).connect(ga).connect(bus);
+        }
+        bus.connect(sw);
+        // One note: its waves, and a gain that fades it.
+        const note = (f, a, pan, on = true) => {
+          const g = ac.createGain();
+          g.level = a * L.amp;
+          g.gain.value = on ? g.level : 0;
+          const p = ac.createStereoPanner();
+          p.pan.value = pan;
+          g.connect(p).connect(mix);
+          g.waves = L.parts.map(([k, amp]) => {
+            const o = ac.createOscillator();
+            o.type = 'sawtooth';
+            o.frequency.value = f * k;
+            drift.connect(o.detune);
+            const w = ac.createGain();
+            w.gain.value = amp;
+            o.start(t); o.stop(t + 1e5);
+            track(o).connect(w).connect(g);
+            os.push(o);
+            return [o, k * sh];
+          });
+          return g;
+        };
+        for (const [st, a, pan] of SHARED) note(at(st) * sh, a, pan);
+        v.ion.push(note(at(ION[0]) * sh, ION[1], ION[2], false));
+        v.pen.push(note(at(PEN[0]) * sh, PEN[1], PEN[2]));
+        // Two top voices take turns, so each step crossfades.
+        v.leads[0].push(note(base * sh, 0.45, 0));
+        v.leads[1].push(note(base * sh, 0.45, 0, false));
       }
-      bus.connect(dry);
-      bus.connect(cv);
-      // One note: its waves, and a gain that fades it.
-      const note = (f, a, pan, on = true) => {
-        const g = ac.createGain();
-        g.level = a * L.amp;
-        g.gain.value = on ? g.level : 0;
-        const p = ac.createStereoPanner();
-        p.pan.value = pan;
-        g.connect(p).connect(mix);
-        g.waves = L.parts.map(([k, amp]) => {
-          const o = ac.createOscillator();
-          o.type = 'sawtooth';
-          o.frequency.value = f * k;
-          const w = ac.createGain();
-          w.gain.value = amp;
-          o.start(t); o.stop(t + 1e5);
-          track(o).connect(w).connect(g);
-          os.push(o);
-          return [o, k];
-        });
-        return g;
-      };
-      for (const [st, a, pan] of SHARED) note(at(st), a, pan);
-      v.ion.push(note(at(ION[0]), ION[1], ION[2], false));
-      v.pen.push(note(at(PEN[0]), PEN[1], PEN[2]));
-      // Two top voices take turns, so each step crossfades.
-      v.leads[0].push(note(base, 0.45, 0));
-      v.leads[1].push(note(base, 0.45, 0, false));
     }
     return v;
   }
