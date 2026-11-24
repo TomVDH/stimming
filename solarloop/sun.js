@@ -55,12 +55,15 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+const FLARE = { ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
   neutron: {
     ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, lensing: 2.2,
+    // True physics (Tom, 2026-11-24): its gravity bends its own light; the striped wind spirals out.
+    // u: compactness, the Schwarzschild radius over the radius. rl: the light cylinder in R, not to scale.
+    ns: { u: 0.34, rl: 2.2, wind: 1 },
     row: 5, rsun: 1.72e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.7,
     hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
     disk: [0.6, 0.18, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],

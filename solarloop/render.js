@@ -322,6 +322,9 @@ uniform vec4 uWind;
 uniform mat3 uCamM;
 // A buried neutron star shown in cutaway through the disk.
 uniform float uCore;
+// A neutron star's true physics: on, compactness, the striped wind's light, the light cylinder in R.
+// uNsU, uNsV: the spin's in-plane axes in the view frame, with the spin phase and the magnetic tilt.
+uniform vec4 uNs, uNsU, uNsV;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
 uniform vec4 uRing, uRing2;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
@@ -351,6 +354,13 @@ void main() {
   if (r < R) {
     float mu = sqrt(max(1.0 - r * r / (R * R), 0.0));
     vec3 n = vec3(P / R, mu);
+    // A neutron star bends its own light: a ray leaving at angle a from the normal reaches the eye
+    // from a point psi round the star, with 1 - cos a = (1 - cos psi)(1 - u) (Beloborodov 2002).
+    // So the eye sees past the limb, about 121 degrees round: both hot caps at once.
+    if (uNs.x > 0.0) {
+      float cpsi = 1.0 - (1.0 - mu) / (1.0 - uNs.y);
+      n = vec3(P / max(r, 1e-4) * sqrt(max(1.0 - cpsi * cpsi, 0.0)), cpsi);
+    }
     vec3 q = uToSun * n;
     // Granules boil: bright cells, dark lanes; each cell lives about 7 s.
     // Noise bends the cells and blurs the lanes, so they never read as hexagons.
@@ -532,7 +542,8 @@ void main() {
       float l2 = length(b.xy);
       // The star hides the half of a cone that points away behind it.
       float behind = b.z < 0.0 && r < R ? 0.0 : 1.0;
-      if (l2 > 0.02) {
+      // With true physics the beams stay unseen, as radio beams are; only the pulse shows.
+      if (l2 > 0.02 && uNs.x <= 0.0) {
         vec2 bd = b.xy / l2;
         float along = dot(P, bd);
         if (along > 0.0) {
@@ -553,6 +564,29 @@ void main() {
       float face = pow(max(b.z, 0.0), 60.0);
       hot += uBeam.w * face * (6.0 * exp(-dot(P - b.xy * R, P - b.xy * R) / (2.0 * 140.0 * 140.0)) + 0.6 * exp(-max(r - R, 0.0) / 260.0));
     }
+  }
+  // The striped wind: past the light cylinder the field's current sheet winds into a spiral,
+  // a wavy skirt round the spin equator, tilted by the magnetic axis; it leaves at near light speed.
+  // The sheet lies where the field flips: tan(lat) = -tan(chi) cos(phi - spin phase + winding).
+  if (uNs.x > 0.0 && uNs.z > 0.0 && r > R) {
+    vec3 s = cross(uNsU.xyz, uNsV.xyz);
+    float rl = uNs.w, sw = 0.0;
+    float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+    for (int i = 0; i < 24; i++) {
+      float z = (-1.0 + (float(i) + j) / 12.0) * 7.0 * R;
+      vec3 x = vec3(P, z);
+      float r3 = length(x) / R;
+      // The star hides the sheet behind it.
+      if (r3 < 1.0 || (z < 0.0 && r < R)) continue;
+      vec3 xn = x / (r3 * R);
+      float lat = asin(clamp(dot(xn, s), -1.0, 1.0));
+      float phi = atan(dot(xn, uNsV.xyz), dot(xn, uNsU.xyz));
+      float wind = (r3 - rl) / rl;
+      float latS = atan(-tan(uNsV.w) * cos(phi - uNsU.w + wind));
+      float w = 0.14 + 0.02 * r3;
+      sw += exp(-pow((lat - latS) / w, 2.0)) * smoothstep(rl * 0.85, rl * 1.4, r3) * pow(rl / r3, 1.6) * (0.5 + vn(vec3(r3 * 2.0 - uTime * 0.8, phi * 3.0, 3.0)));
+    }
+    cool += uNs.z * uDisk.x * 1.6 * sw / 24.0 * 7.0;
   }
   // The wind nebula: a torus round the spin equator, and a jet from each spin pole.
   if (uSpin.w > 0.0 && r > R) {
@@ -1439,6 +1473,9 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uWind, v.band.wind);
     gl.uniformMatrix3fv(s.u.uCamM, false, v.camM);
     gl.uniform1f(s.u.uCore, v.band.core);
+    gl.uniform4fv(s.u.uNs, v.ns);
+    gl.uniform4fv(s.u.uNsU, v.nsU);
+    gl.uniform4fv(s.u.uNsV, v.nsV);
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
     gl.uniform4fv(s.u.uBin, v.bin);

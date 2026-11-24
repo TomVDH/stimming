@@ -714,7 +714,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
-  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9),
+  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
@@ -823,7 +823,16 @@ function makeFrame() {
   // The pulsar's magnetic axis, in the view frame.
   if (star.beam) f.beam.set([...toView(magAxis(st.spin)), star.beam]); else f.beam.fill(0);
   // The spin axis carries the wind nebula's torus and jets.
-  if (star.beam) f.spin.set([...toView(SPIN), star.beam]); else f.spin.fill(0);
+  // True physics: no torus or jets; the striped wind takes their place.
+  if (star.beam) f.spin.set([...toView(SPIN), star.ns ? 0 : star.beam]); else f.spin.fill(0);
+  // The spin's in-plane axes, as magAxis builds them, so the sheet's phase follows the caps.
+  if (star.ns) {
+    const u0 = [SPIN[1], -SPIN[0], 0], ul = Math.hypot(u0[0], u0[1]), u = [u0[0] / ul, u0[1] / ul, 0];
+    const v = [SPIN[1] * u[2] - SPIN[2] * u[1], SPIN[2] * u[0] - SPIN[0] * u[2], SPIN[0] * u[1] - SPIN[1] * u[0]];
+    f.ns.set([1, star.ns.u, star.ns.wind, star.ns.rl]);
+    f.nsU.set([...toView(u), (2 * Math.PI * st.spin / SPIN_PERIOD) % (2 * Math.PI)]);
+    f.nsV.set([...toView(v), Math.acos(SPIN[2])]);
+  } else { f.ns.fill(0); f.nsU.fill(0); f.nsV.fill(0); }
   // A young star's disk and jets turn with the star.
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
