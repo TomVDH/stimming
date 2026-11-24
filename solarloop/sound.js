@@ -242,8 +242,8 @@ export function makeSound(kit, opt = () => undefined) {
     tapsOf(ac).glow({ t, root: keyOf(band) / 2, K, p: preset(band), pan, room: roomOf(ac, band), chordRoot: ch ? ch.root : 1, notes: ch ? ch.tones : null });
   }
 
-  // A pulsar: a tuned ping on each beam flash, and a hum once the flashes run together.
-  // The pings walk the chord the choir sings now, one note per flash.
+  // A pulsar: a synth zap on each beam flash, and a hum once the flashes run together.
+  // The zaps walk the chord the choir sings now, one note per flash.
   let pingStep = 0, hum2 = null, spinRate = 0;
   // A voice starts shut; the ping and hum carry their own envelopes.
   const open = g => { g.gain.value = 1; return g; };
