@@ -21,7 +21,7 @@ Stack type: Shader (raw WebGL2 on shared/gl.js). The height grid lives on the CP
 - [x] Intro emblem, favicon, toys.json entry, Lab tile with GSAP hook
 - [x] QA Q1 to Q10, docs/toys/contour.md
 - [ ] Tom sets the Dutch name
-- [ ] Record the session cost
+- [x] Record the session cost: not readable from the session (the usage tool gives plan limits only); Tom records it
 
 ## Defaults chosen (Tom's open questions: 3D or flat, and the presentation)
 
