@@ -25,6 +25,7 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Peach | After the reference photo (Commons, Autumn red peaches): pale cream flesh, a red stain round the stone breaking into threads, torn-cell domes for the wet film; a bigger almond stone with furrows and pits; hollows now shade their inside (a BackSide normal fix, also for the rambutan) |
 | Rambutan | After the reference photo (Commons, Rambutan on white): glassy flesh at two depths, milky fibres along the ray, a soft wet film; seed coat, gap and shell; crimson skin, more and thinner spines with curled dark tips |
 | Mangosteen | After the reference photo (Commons, Mangosteens whole and opened): pillowed segments with lobed edges, a dark gap, a wine-red rind; skin darkened to near-black purple; olive cap |
+| Starfruit | After reference photos (Commons, carambola whole and star slices): deeper star, clear golden flesh at two depths, veins and walls, smaller seeds; warmer golden skin with green-brown ridge crests; less glow |
 | Blood orange | Tried vesicles as geometry: read as a petal mosaic (Tom: not realistic). Now one wet face: dark flesh, sac-scale round domes under a sharp reflection for crinkled glints, faint walls, narrow albedo, thick rind (reference: Commons, Silentcynic, CC BY 3.0) |
 
 ## Interaction (Tom, 2026-11-23)

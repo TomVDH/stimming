@@ -35,7 +35,7 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
   - [x] Peach (QA 28)
   - [x] Rambutan (QA 29)
   - [x] Mangosteen (QA 30)
-  - [ ] Starfruit
+  - [x] Starfruit (QA 31)
   - [ ] Fig
 - [x] Floor contact for every fruit and half; no seams on whole fruit
 - [x] Halves jiggle, squish and drip juice on their own
