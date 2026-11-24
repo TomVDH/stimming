@@ -50,6 +50,7 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // slowed: the second, slower choir layer. aDrift, chorus, swellA, swellAmt: the analog pad.
 // The tap: blastWave and glowWave are the sources; chord is the glow's notes.
 // glowStyle, arpGap, glowRise, glowHold, glowFade: the glow's shape. stack: old, unlimited taps.
+// blastMix, glowMix: a level per tap voice, set on the lab's tap bench.
 export const SUN = {
   wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12,
   dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, key: 0,
@@ -57,6 +58,7 @@ export const SUN = {
   aDrift: 0, chorus: 0, swellA: 3, swellAmt: 0,
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
   glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
+  blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1],
   fx: fx0(),
 };
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
@@ -718,6 +720,8 @@ function sciFi(ac, p, base, t, inp, { G, filt, lfo, curve, n: h, live }) {
 }
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
+// The blast's six voices: ratios over its root, and their names.
+export const BLAST_VOICES = [[0.5, 'Sub octave'], [1, 'Root'], [1.004, 'Root, 7 cents up'], [1.498, 'Fifth'], [2, 'Octave'], [2.996, 'Octave and fifth']];
 // Tap source levels against the saw blast and the triangle glow, set by ear.
 const BLAST_LVL = { sawtooth: 1, square: 0.6, triangle: 1.4, sine: 1.6 };
 const GLOW_LVL = { triangle: 1, sine: 0.85, sawtooth: 0.7, square: 0.6 };
@@ -749,16 +753,18 @@ export function blast(ac, { t, root, K, len = 6, p = SUN, out, track = n => n })
   const ws = ac.createWaveShaper();
   ws.curve = k.clip;
   sh.connect(ws).connect(lp).connect(env);
-  const oscs = [];
-  for (const m of [0.5, 1, 1.004, 1.498, 2, 2.996]) {
+  const oscs = [], vgs = [];
+  BLAST_VOICES.forEach(([m], i) => {
     const o = ac.createOscillator();
     o.type = p.blastWave;
     o.frequency.value = root * m * jit(0.002);
     o.start(t); o.stop(t + len + 1);
-    track(o).connect(sh);
-    oscs.push(o);
-  }
-  return { out: lv, lv, oscs, end: t + len + 1 };
+    const vg = ac.createGain();
+    vg.gain.value = (p.blastMix || SUN.blastMix)[i] ?? 1;
+    track(o).connect(vg).connect(sh);
+    oscs.push(o); vgs.push(vg);
+  });
+  return { out: lv, lv, oscs, vgs, end: t + len + 1, t0: t, len, K };
 }
 // The glow: four soft voices, each up to 6 cents off, so the chord shimmers like a chorus.
 // It swells over glowRise s from 1.5 s, holds glowHold s, then falls 40 dB over glowFade s.
@@ -792,8 +798,10 @@ export function glow(ac, { t, root, K, p = SUN, out, notes, track = n => n }) {
       into = gate;
     }
     o.start(t + 1.5); o.stop(end);
-    track(o).connect(into);
-    h.oscs.push({ o, m });
+    const vg = ac.createGain();
+    vg.gain.value = (p.glowMix || SUN.glowMix)[i] ?? 1;
+    track(o).connect(vg).connect(into);
+    h.oscs.push({ o, m, vg });
   });
   h.end = end;
   return h;
@@ -866,17 +874,21 @@ export function tapBus(ac, { out, hall, track = n => n }) {
       route(sh, pan * 0.5, 0.4, room, 0.8 * p.dist, p.stack);
       live.glow.push({ g: sh, h, end: h.end });
     },
+    // The newest blast and glow, for the lab's graph.
+    get last() { return { blast: live.blast.at(-1)?.h, glow: live.glow.at(-1)?.h }; },
     // Changes the taps that sound now: levels, sources, the glow's notes and shape.
     set(p, notes = null) {
       const at = ac.currentTime;
       for (const { h } of live.blast) {
         h.lv.gain.setTargetAtTime(p.blastLvl * BLAST_LVL[p.blastWave], at, 0.05);
         for (const o of h.oscs) if (o.type !== p.blastWave) o.type = p.blastWave;
+        h.vgs.forEach((vg, i) => vg.gain.setTargetAtTime((p.blastMix || SUN.blastMix)[i] ?? 1, at, 0.03));
       }
       for (const { h } of live.glow) {
         h.lv.gain.setTargetAtTime(p.glowLvl * GLOW_LVL[p.glowWave], at, 0.05);
         const ns = p.chord === 'current' ? notes : CHORDS[p.chord];
-        h.oscs.forEach(({ o }, i) => {
+        h.oscs.forEach(({ o, vg }, i) => {
+          vg.gain.setTargetAtTime((p.glowMix || SUN.glowMix)[i] ?? 1, at, 0.03);
           if (o.type !== p.glowWave) o.type = p.glowWave;
           if (ns && ns[i]) o.frequency.setTargetAtTime(h.root * ns[i], at, 0.08);
         });

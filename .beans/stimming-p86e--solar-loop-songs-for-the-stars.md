@@ -21,6 +21,8 @@ Each star gets its own song, shaped in the choir lab and played by the toy. Plan
 - [ ] Loudness re-match after Tom tunes the songs (not Betelgeuse)
 - [x] Offline tests: Sun unchanged, progressions, taps, zoom, organ
 - [x] Docs: Sound section
+- [x] Tap bench: a level per tap voice (saved), mute and solo, an envelope and filter graph, meters for choir, taps and total, a burst of 10, tap strength (Tom, 2026-11-24)
+- [ ] Tom mixes taps against the choir on the bench: on VY Canis Majoris a tap sits about 20 dB over the choir
 - [ ] Tom listens before any push
 
 ## Findings, 2026-11-24

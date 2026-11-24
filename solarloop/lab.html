@@ -98,6 +98,18 @@ table.cmp th, table.cmp td { padding: 4px 6px; border-bottom: 1px solid var(--li
 table.cmp th { color: var(--mute); font-weight: 400; }
 table.cmp td.diff { color: var(--accent); }
 .cmpwrap { overflow-x: auto; }
+/* The tap bench. */
+.bench { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
+.vrow { display: grid; grid-template-columns: minmax(0, 1fr) 46px minmax(60px, 1fr) 44px auto; gap: 6px; align-items: center; font-size: 12px; padding: 3px 4px; border-radius: 6px; }
+.vrow:hover { background: var(--hover); }
+.vrow b { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.vrow .nt { color: var(--dim); font-variant-numeric: tabular-nums; }
+.vrow button.on { border-color: var(--accent); background: var(--on); }
+.vrow.quiet { opacity: 0.4; }
+.meters { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--dim); margin: 6px 0; }
+.meters i { font-style: normal; color: var(--ink); font-variant-numeric: tabular-nums; }
+canvas.small { height: 170px; }
+@media (max-width: 860px) { .bench { grid-template-columns: 1fr; } }
 textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-monospace, monospace; color: var(--ink); background: var(--well); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 @media (max-width: 860px) {
   .page { grid-template-columns: 1fr; }
@@ -177,6 +189,27 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
     </div>
 
     <div class="card">
+      <h2>Tap bench</h2>
+      <p class="intro">Every voice of the tap on the selected star. A voice level saves in the preset. Mute and solo change only what you hear here. The graph shows the last tap; the meters show the level now.</p>
+      <div class="acts">
+        <button class="go" id="bTap" title="Plays a flare: the blast, then the glow.">Tap</button>
+        <button id="bLift" title="Plays a prominence lift: the blast only, longer.">Lift</button>
+        <button id="bBurst" title="Plays 10 taps, 2.5 s apart. The level must stay near one tap.">Burst of 10</button>
+        <label class="sw" title="The tap strength. The toy uses 1 for a tap, 0.7 under reduced motion.">Strength <input type="range" id="bK" min="0.3" max="1" step="0.05" value="1" style="width:110px"> <i id="o_bK" style="font-style:normal;color:var(--ink)">1.00</i></label>
+        <button id="bClear" title="Takes every mute and solo off.">Clear mute and solo</button>
+      </div>
+      <div class="bench">
+        <div><div class="grp" style="margin-top:4px">Blast voices <span class="mute">(the brass hit)</span></div><div id="bvB"></div></div>
+        <div><div class="grp" style="margin-top:4px">Glow voices <span class="mute" id="glowWhat">(the chord after)</span></div><div id="bvG"></div></div>
+      </div>
+      <div class="grp">Last tap: level and filter over time</div>
+      <canvas id="eg" class="small"></canvas>
+      <div class="grp">Level now</div>
+      <div class="meters"><span>Choir <i id="mC">–</i></span><span>Taps <i id="mT">–</i></span><span>Total <i id="mM">–</i></span><span>Last tap peak <i id="mP">–</i></span><span id="mBurst"></span></div>
+      <canvas id="mg" class="small"></canvas>
+    </div>
+
+    <div class="card">
       <h2>Zoom mix <span class="chip">All stars</span></h2>
       <p class="intro">Each zoom stop sets the choir level, the rumble level and which singers sound. Select a line, then drag its points. The bar shows the zoom now.</p>
       <div class="legend" id="zleg"></div>
@@ -207,7 +240,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
 </div>
 
 <script type="module">
-import { choir, tapBus, structural, keyed, chordLabel, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
 import { VERSIONS } from './legacy.js';
 import { ROOT, makeSound } from './sound.js';
 import { CHART } from './chart.js';
@@ -359,7 +392,7 @@ for (const s of SECS) {
   $('secs').append(el);
 }
 
-let ac, out, hallIn, taps, toy, cur = null, sel = null, rum = null, events = [], mode = '', lead = '', chordNow = null, near = 0, repT = 0;
+let ac, out, hallIn, taps, toy, choirBus, tapOut, an = {}, cur = null, sel = null, rum = null, events = [], mode = '', lead = '', chordNow = null, near = 0, repT = 0;
 // The toy's output chain: a 0.55 gain into a gentle compressor.
 function init() {
   if (ac) return;
@@ -369,6 +402,11 @@ function init() {
   out = ac.createGain();
   out.gain.value = 0.55 * +$('vol').value;
   out.connect(c).connect(ac.destination);
+  // Meters: the choir, the taps and the total, each through an analyser.
+  choirBus = ac.createGain(); choirBus.connect(out);
+  tapOut = ac.createGain(); tapOut.connect(out);
+  for (const [k, node] of [['C', choirBus], ['T', tapOut], ['M', c]]) { an[k] = ac.createAnalyser(); an[k].fftSize = 2048; node.connect(an[k]); }
+  setInterval(meter, 100);
   // The toy's wide hall: three long echoes, low passed.
   hallIn = ac.createGain();
   const lp = ac.createBiquadFilter();
@@ -380,7 +418,7 @@ function init() {
     const pn = ac.createStereoPanner(); pn.pan.value = p;
     lp.connect(dl).connect(gn).connect(pn).connect(out);
   }
-  taps = tapBus(ac, { out, hall: hallIn });
+  taps = tapBus(ac, { out: tapOut, hall: hallIn });
   // The toy's own sound for the Dimming.
   const noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
   noise.getChannelData(0).forEach((_, i, a) => { a[i] = Math.random() * 2 - 1; });
@@ -395,7 +433,7 @@ function build(id, quick) {
   const t = ac.currentTime + 0.03, g = ac.createGain(), hum = ac.createGain();
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(1, t + (quick ? 0.5 : 2));
-  g.connect(hum).connect(out);
+  g.connect(hum).connect(choirBus);
   events = [];
   const os = [], p = clone(P(id));
   const v = choir(ac, { t, base: rootOf(id) * 2, p, out: g, hall: hallIn, os, motion: motion(), live: true, onEvent: e => events.push(e) });
@@ -531,6 +569,7 @@ function show() {
   drawProg(p);
   listLabels();
   drawCompare();
+  benchShow();
 }
 // The step editor: one row per chord, with its degree, kind and length.
 function drawProg(p) {
@@ -569,7 +608,7 @@ function edit(fn, tapEdit = false) {
   tuned[sel] = p;
   show();
   if (!cur || cur.id !== sel) return;
-  if (tapEdit) { taps.set(p, cur.v.chordAt(ac.currentTime).tones); cur.p = clone(p); return; }
+  if (tapEdit) { taps.set(heard(p), cur.v.chordAt(ac.currentTime).tones); cur.p = clone(p); return; }
   if (structural(cur.p, p)) {
     $('busy').style.visibility = 'visible';
     clearTimeout(deb);
@@ -611,9 +650,12 @@ $('play').onclick = () => { if (!sel) pick('sun'); else if (cur) stop(); else st
 function fire(len, K, withGlow) {
   if (!sel) pick('sun');
   if (!cur) start(sel);
-  const t = ac.currentTime + 0.01, p = P(cur.id), room = cur.v.cv, pan = (Math.random() * 2 - 1) * 0.7, ch = cur.v.chordAt(t);
+  const t = ac.currentTime + 0.01, p = heard(P(cur.id)), room = cur.v.cv, pan = (Math.random() * 2 - 1) * 0.7, ch = cur.v.chordAt(t);
+  K *= +$('bK').value;
   taps.blast({ t, root: rootOf(cur.id) / 4, K: K * (withGlow ? 0.7 : 1), len, p, pan, room, chordRoot: ch.root });
   if (withGlow) taps.glow({ t, root: rootOf(cur.id) / 2, K, p, pan, room, chordRoot: ch.root, notes: ch.tones });
+  lastTap = { t, p, glow: withGlow, len, peak: -Infinity };
+  benchNotes();
 }
 $('tap').onclick = () => fire(6, 1, true);
 $('lift').onclick = () => fire(9, 1, false);
@@ -725,7 +767,7 @@ const CMP = [['Song', p => p.prog ? (progName(p) === 'custom' ? 'custom' : PROGR
   ['Octaves', p => p.oct.join(' / ')], ['Slowed choir', p => p.slowed ? 'on' : 'off'], ['Singing', p => p.voice], ['Vowel', p => p.vowel], ['Brightness', p => p.bright], ['Resonance', p => p.res], ['Filter sweep', p => p.fmot],
   ['Analog swell', p => p.swellAmt], ['Chorus', p => p.chorus], ['Voice drift', p => p.aDrift], ['Metal', p => p.metal], ['Distance', p => p.dist], ['Room', p => p.rev], ['Echo level', p => p.mix], ['Width', p => p.width],
   ['Melody speed', p => p.step], ['Swell', p => `${p.swD} at ${p.swR} Hz`], ['Level', p => p.gain], ['Effects', p => FX.filter(([k]) => p.fx[k].on).map(([k, n]) => `${n} ${p.fx[k].amt}`).join(', ') || 'none'],
-  ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off']];
+  ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off'], ['Blast voices', p => (p.blastMix || SUN.blastMix).join(' / ')], ['Glow voices', p => (p.glowMix || SUN.glowMix).join(' / ')]];
 function drawCompare() {
   if (!sel) return;
   const cols = [['Now', VOICES[sel]], ...(tuned[sel] ? [['Yours', tuned[sel]]] : []), ...Object.values(VERSIONS).map(v => [v.name, v.of(sel)])];
@@ -733,6 +775,136 @@ function drawCompare() {
     const now = String(f(cols[0][1]));
     return `<tr><th>${n}</th>${cols.map(([, p], i) => { const v = String(f(p)); return `<td class="${i && v !== now ? 'diff' : ''}">${v}</td>`; }).join('')}</tr>`;
   }).join('');
+}
+
+// The tap bench: a level per voice (saved), and mute and solo (heard only).
+const mute = { blastMix: Array(6).fill(false), glowMix: Array(5).fill(false) };
+const solo = { blastMix: Array(6).fill(false), glowMix: Array(5).fill(false) };
+let lastTap = null, burstT = 0;
+// The preset as heard: each voice level times its mute and solo.
+function heard(p) {
+  const q = clone(p);
+  for (const k of ['blastMix', 'glowMix']) {
+    const base = q[k] || SUN[k], anySolo = solo[k].some(Boolean);
+    q[k] = base.map((v, i) => (anySolo ? (solo[k][i] ? v : 0) : (mute[k][i] ? 0 : v)));
+  }
+  return q;
+}
+const fold = r => { while (r >= 2) r /= 2; while (r < 1) r *= 2; return r; };
+// The glow's notes now: the star's chord, or the chord the choir sings.
+function glowNotes(p) {
+  if (!cur) return [];
+  const ch = cur.v.chordAt(ac.currentTime), root = rootOf(cur.id) / 2 * fold(ch.root);
+  const ns = p.chord === 'current' ? ch.tones : CHORDS[p.chord] || CHORDS.major;
+  return ns.slice(0, 5).map(m => root * m);
+}
+function benchRows() {
+  for (const [box, k, n] of [['bvB', 'blastMix', 6], ['bvG', 'glowMix', 5]]) {
+    const el = $(box);
+    el.innerHTML = '';
+    for (let i = 0; i < n; i++) {
+      const r = document.createElement('div');
+      r.className = 'vrow'; r.dataset.k = k; r.dataset.i = i;
+      r.innerHTML = `<span>${k === 'blastMix' ? BLAST_VOICES[i][1] : 'Glow note ' + (i + 1)}</span><span class="nt"></span><input type="range" min="0" max="1.5" step="0.05"><b></b><span class="acts"><button class="sm" data-m title="Mutes this voice here only.">M</button><button class="sm" data-s title="Plays only the soloed voices here only.">S</button></span>`;
+      const inp = r.querySelector('input');
+      inp.addEventListener('input', () => edit(q => { q[k] = [...(q[k] || SUN[k])]; q[k][i] = +inp.value; }, true));
+      r.querySelector('[data-m]').onclick = () => { mute[k][i] = !mute[k][i]; benchApply(); };
+      r.querySelector('[data-s]').onclick = () => { solo[k][i] = !solo[k][i]; benchApply(); };
+      el.append(r);
+    }
+  }
+}
+function benchShow() {
+  if (!sel) return;
+  const p = P(sel);
+  for (const r of document.querySelectorAll('.vrow')) {
+    const k = r.dataset.k, i = +r.dataset.i, v = (p[k] || SUN[k])[i] ?? 1, h = heard(p)[k][i];
+    r.querySelector('input').value = v;
+    r.querySelector('b').textContent = v ? (20 * Math.log10(v)).toFixed(1) + ' dB' : 'off';
+    r.querySelector('[data-m]').classList.toggle('on', mute[k][i]);
+    r.querySelector('[data-s]').classList.toggle('on', solo[k][i]);
+    r.classList.toggle('quiet', !h);
+  }
+  benchNotes();
+}
+function benchNotes() {
+  if (!sel) return;
+  const p = P(sel), blastRoot = cur ? rootOf(cur.id) / 4 * fold(cur.v.chordAt(ac.currentTime).root) : rootOf(sel) / 4;
+  const gn = glowNotes(p);
+  document.querySelectorAll('#bvB .vrow').forEach((r, i) => { r.querySelector('.nt').textContent = note(blastRoot * BLAST_VOICES[i][0]); });
+  document.querySelectorAll('#bvG .vrow').forEach((r, i) => { r.querySelector('.nt').textContent = gn[i] ? note(gn[i]) : '–'; r.style.display = gn.length && !gn[i] ? 'none' : ''; });
+  $('glowWhat').textContent = p.chord === 'current' ? '(the chord the choir sings now)' : `(${p.chord} chord)`;
+}
+// Applies mute and solo to the taps that sound now.
+function benchApply() { benchShow(); if (cur) taps.set(heard(P(cur.id)), cur.v.chordAt(ac.currentTime).tones); }
+$('bClear').onclick = () => { for (const o of [mute, solo]) for (const k in o) o[k].fill(false); benchApply(); };
+$('bTap').onclick = () => fire(6, 1, true);
+$('bLift').onclick = () => fire(9, 1, false);
+$('bK').oninput = e => { $('o_bK').textContent = (+e.target.value).toFixed(2); };
+$('bBurst').onclick = () => {
+  clearTimeout(burstT);
+  let n = 0;
+  const go = () => { fire(6, 1, true); n++; $('mBurst').textContent = `Burst ${n} of 10`; if (n < 10) burstT = setTimeout(go, 2500); else setTimeout(() => { $('mBurst').textContent = ''; }, 3000); };
+  go();
+};
+benchRows();
+// The last tap's shape: blast level, glow level and the blast filter, over 35 s.
+function envAt(lt, x) {
+  const p = lt.p, K = +$('bK').value, len = lt.len;
+  const b = x < 0 ? 0 : x < 0.22 ? x / 0.22 : x < 1.1 ? 1 : Math.exp(-(x - 1.1) / (len / 4));
+  const bp = 0.2 * K * (lt.glow ? 0.7 : 1) * p.blastLvl;
+  const t0 = 1.5, rise = t0 + p.glowRise, hold = rise + p.glowHold;
+  const g = !lt.glow || x < t0 ? 0 : x < rise ? (x - t0) / p.glowRise : x < hold ? 1 : Math.exp(-(x - hold) / (p.glowFade / 4.6));
+  const gp = 0.05 * K * p.glowLvl;
+  const top = 260 + 700 * K * (lt.glow ? 0.7 : 1);
+  const f = x < 0.45 ? 110 * (top / 110) ** (x / 0.45) : x < len ? top * (140 / top) ** ((x - 0.45) / (len - 0.45)) : 140;
+  return { b: b * bp, g: g * gp, f };
+}
+function drawEnv() {
+  const cv = $('eg'), cx = cv.getContext('2d'), dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr; cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, w, h);
+  cx.font = '11px Gabarito, system-ui'; cx.fillStyle = 'oklch(0.6 0.02 260)';
+  const T = 35, X = s => 30 + s / T * (w - 60), Y = v => h - 22 - v * (h - 36);
+  for (let s = 0; s <= T; s += 5) { cx.fillText(s + ' s', X(s) - 6, h - 6); cx.strokeStyle = 'oklch(0.36 0.02 260 / 0.4)'; cx.beginPath(); cx.moveTo(X(s), 8); cx.lineTo(X(s), h - 22); cx.stroke(); }
+  if (!lastTap) { cx.fillText('Tap to see its shape.', 40, 24); return; }
+  const lt = { ...lastTap, p: P(cur?.id || sel) };
+  let mx = 1e-9;
+  for (let s = 0; s < T; s += 0.1) { const e = envAt(lt, s); mx = Math.max(mx, e.b, e.g); }
+  const line = (fn, col, dash) => { cx.strokeStyle = col; cx.setLineDash(dash || []); cx.lineWidth = 2; cx.beginPath(); for (let s = 0; s <= T; s += 0.05) { const y = fn(envAt(lt, s)); s ? cx.lineTo(X(s), y) : cx.moveTo(X(s), y); } cx.stroke(); cx.setLineDash([]); cx.lineWidth = 1; };
+  line(e => Y(e.b / mx), 'oklch(0.82 0.13 80)');
+  line(e => Y(e.g / mx), 'oklch(0.78 0.09 220)');
+  line(e => Y(Math.log(e.f / 100) / Math.log(12)), 'oklch(0.7 0.12 30)', [4, 4]);
+  // The arpeggio: a tick where each glow note enters.
+  if (lt.glow && lt.p.glowStyle === 'arp') for (let i = 0; i < 5; i++) { const s = 1.5 + i * lt.p.arpGap; cx.fillStyle = 'oklch(0.78 0.09 220)'; cx.fillRect(X(s) - 1, h - 26, 2, 6); }
+  const now = ac.currentTime - lastTap.t;
+  if (now < T) { cx.strokeStyle = 'oklch(0.95 0.01 260 / 0.8)'; cx.setLineDash([3, 3]); cx.beginPath(); cx.moveTo(X(now), 8); cx.lineTo(X(now), h - 22); cx.stroke(); cx.setLineDash([]); }
+  cx.fillStyle = 'oklch(0.82 0.13 80)'; cx.fillText('● Blast', w - 210, 16);
+  cx.fillStyle = 'oklch(0.78 0.09 220)'; cx.fillText('● Glow', w - 150, 16);
+  cx.fillStyle = 'oklch(0.7 0.12 30)'; cx.fillText('- - Blast filter', w - 95, 16);
+}
+// The meters: RMS in dB every 0.1 s, 30 s of history.
+const hist = { C: [], T: [], M: [] };
+function rmsOf(a) { const d = new Float32Array(a.fftSize); a.getFloatTimeDomainData(d); let s = 0; for (const x of d) s += x * x; return 10 * Math.log10(s / d.length + 1e-12); }
+function meter() {
+  for (const k of ['C', 'T', 'M']) { const v = rmsOf(an[k]); hist[k].push(v); if (hist[k].length > 300) hist[k].shift(); $('m' + k).textContent = v < -90 ? 'silent' : v.toFixed(1) + ' dB'; }
+  if (lastTap && ac.currentTime - lastTap.t < 8) { lastTap.peak = Math.max(lastTap.peak, hist.T.at(-1)); $('mP').textContent = lastTap.peak.toFixed(1) + ' dB'; }
+  drawMeter();
+  drawEnv();
+}
+function drawMeter() {
+  const cv = $('mg'), cx = cv.getContext('2d'), dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr; cx.setTransform(dpr, 0, 0, dpr, 0, 0); cx.clearRect(0, 0, w, h);
+  cx.font = '11px Gabarito, system-ui';
+  const Y = v => 8 + (1 - (Math.max(-60, Math.min(0, v)) + 60) / 60) * (h - 24);
+  for (const d of [0, -12, -24, -36, -48, -60]) { cx.fillStyle = 'oklch(0.6 0.02 260)'; cx.fillText(d + ' dB', 2, Y(d) + 4); cx.strokeStyle = 'oklch(0.36 0.02 260 / 0.4)'; cx.beginPath(); cx.moveTo(44, Y(d)); cx.lineTo(w, Y(d)); cx.stroke(); }
+  for (const [k, col] of [['M', 'oklch(0.95 0.01 260 / 0.6)'], ['C', 'oklch(0.78 0.09 220)'], ['T', 'oklch(0.82 0.13 80)']]) {
+    const a = hist[k]; cx.strokeStyle = col; cx.lineWidth = 2; cx.beginPath();
+    a.forEach((v, i) => { const x = 44 + (i + 300 - a.length) / 300 * (w - 48); i ? cx.lineTo(x, Y(v)) : cx.moveTo(x, Y(v)); });
+    cx.stroke(); cx.lineWidth = 1;
+  }
+  cx.fillStyle = 'oklch(0.78 0.09 220)'; cx.fillText('● Choir', w - 200, 14);
+  cx.fillStyle = 'oklch(0.82 0.13 80)'; cx.fillText('● Taps', w - 140, 14);
+  cx.fillStyle = 'oklch(0.95 0.01 260)'; cx.fillText('● Total', w - 84, 14);
 }
 
 // Loudness: an offline render through a rough ear weighting, after the fade-in.
