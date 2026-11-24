@@ -357,14 +357,10 @@ function pickAt(x, y) {
 }
 // A target counts as under the hand within this many CSS pixels.
 const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
+// A tap anywhere flares the nearest region or lifts the nearest prominence.
 function flareNear(x, y) {
-  const { t, prom, d } = pickAt(x, y);
-  if (d >= reach()) return ripple(x);
+  const { t, prom } = pickAt(x, y);
   if (prom) eruptAt(t); else flareAt(t);
-}
-// A tap on empty sky flares nothing; it plays a soft low note.
-function ripple(x) {
-  snd.hush(clamp(x / cssW * 2 - 1, -1, 1), st.star);
 }
 
 /* ---------- hover: the cursor reads the region under it ---------- */
@@ -400,7 +396,7 @@ function stepLit(dt) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
+  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
@@ -419,11 +415,10 @@ function makeFrame() {
     const boost = fl ? 1 + 1.2 * Math.exp(-fl.t / 6) : 1;
     f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost * (1 + LIT_GAIN * (rg.lit || 0))], k * 4);
   });
-  f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
+  f.fl.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
     const fv = flareView(fl, shown);
     f.fl.set([...toView(fv.c), 0], k * 4);
-    f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
     // The saturated core shows where the kernel is in view; behind the limb, the arcade top shines.
     let v = toView(fv.c.map(x => x * (R + fv.kernel[0])));
@@ -612,8 +607,7 @@ stage.addEventListener('pointerdown', e => {
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
   Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), t0: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
-  const hit = pickAt(x, y);
-  pressed = hit.d < reach() ? hit.t : null;
+  pressed = pickAt(x, y).t;
   poke();
 });
 stage.addEventListener('pointermove', e => {

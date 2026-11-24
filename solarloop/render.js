@@ -122,7 +122,7 @@ uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
-uniform vec4 uFl[2], uFlW[2], uFlB[2];
+uniform vec4 uFl[2], uFlB[2];
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -182,14 +182,6 @@ void main() {
       float dd = 2.0 - 2.0 * dot(n, uReg[k].xyz);
       float m = exp(-dd / 0.006) * uReg[k].w;
       hot += uDisk2.z * uDisk.x * m * (0.4 + 1.2 * net + 0.6 * gran);
-    }
-    for (int k = 0; k < 2; k++) {
-      if (uFlW[k].y <= 0.0) continue;
-      float a = acos(clamp(dot(n, uFl[k].xyz), -1.0, 1.0));
-      float front = exp(-pow((a - uFlW[k].x) / 0.016, 2.0)) * smoothstep(uFlW[k].x + 0.02, uFlW[k].x - 0.12, a);
-      hot += uFlW[k].y * front * (1.0 + gran) * uDisk.x * 0.5;
-      // Behind the wave the corona dims.
-      hot *= 1.0 - 0.3 * uFlW[k].y * smoothstep(uFlW[k].x, 0.0, a);
     }
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
@@ -813,7 +805,6 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
-    gl.uniform4fv(s.u.uFlW, v.flW);
     gl.uniform4fv(s.u.uFlB, v.flB);
     tri(gl, hdr, empty);
 

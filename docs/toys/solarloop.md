@@ -6,15 +6,15 @@ A star's edge at a vast scale, graded like film. The look takes its cue from two
 Seventeen stars (Tom, 2026-11-23): one for each class on the main sequence, O to M, two brown dwarfs, and the stages of a star's life, from a protostar to a pulsar. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No other bodies, apart from Mercury in transit on our sun (Tom, 2026-11-23).
 Three views, stepped with L. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; Mercury crosses our sun's disk.
 The film touch is light: fine grain, a soft colour split, a faint lens dirt, highlights that roll off to white.
-Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
+Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
 
 ## Play
 
 | Input | Does |
 |---|---|
-| Click or tap the stage | Flares the region under the tap, or lifts off the prominence under the tap. A tap on empty sky, far from both, flares nothing |
+| Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
 | Point (mouse) | The cursor reads the region under it: a pointer over a region or prominence, grab on the wide and full views, an arrow on the still long lens. The target under the pointer brightens 15 percent |
-| Press and hold | The target swells to 1.6 times its light over about a second; the flare goes on release. A drag cancels it |
+| Press and hold | The nearest target swells to 1.6 times its light over about a second; the flare goes on release. A drag cancels it |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
 | Star choice | A sheet in three groups: Main sequence (O to M), Brown dwarfs, Life stages. Keys 1 to 9 and 0 pick the main sequence and the brown dwarfs; the life stages are tap only. The new star comes in through a dip: the frame darkens to near black over 0.25 s, the star swaps, the light returns over 0.7 s |
 | Zoom (wheel, pinch, - and =) | Full view only: zooms out up to 16 times farther, and back. The input sets a target; the view glides to it on a heavy spring, in about 1.4 s, a few percent past, then settles (Tom, 2026-11-23) |
@@ -97,7 +97,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | `render.js` | Raw WebGL2: the disk and corona pass, instanced strands, bloom (`shared/glow.js`), light rays, the final pass, the colour ramps |
 | `sound.js` | Web Audio |
 
-- The disk pass: boiling granules (bent by noise, so they never read as hexagons), swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the wave front over the disk and the dimming behind it, the bubble's shell and cavity.
+- The disk pass: boiling granules (bent by noise, so they never read as hexagons), swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the bubble's shell and cavity. No wave runs over the disk (Tom, 2026-11-23).
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
 - Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light: a smooth glow. No screen-fixed spokes (Tom, 2026-11-23: they read as a static starburst); the corona and haze volumes carry the structure.
 - The haze volume shows over a star's disk only on dusty stars (Tom, 2026-11-23: it read as blobs on every star).

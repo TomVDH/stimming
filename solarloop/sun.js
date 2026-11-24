@@ -45,12 +45,12 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
 // yso: a young star's dust disk and jets: its axis in the star's frame, and weight.
 // day: the true rotation period in days; the toy runs it 10,000 times faster.
-const FLARE = { day: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+const FLARE = { day: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
   neutron: {
-    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, wave: 0.9, field: 1, beam: 1, lensing: 2.2,
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, lensing: 2.2,
     row: 5, rsun: 1.72e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.7,
     hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
     disk: [0.6, 0.18, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
@@ -73,7 +73,7 @@ export const STARS = {
   },
   // Proxima: a small red flare star, a seventh of the sun's width.
   proxima: {
-    ...FLARE, day: 83, ribbon: 2.4, sat: 1.4, bubble: 0.3, wave: 0.7,
+    ...FLARE, day: 83, ribbon: 2.4, sat: 1.4, bubble: 0.3,
     row: 1, rsun: 0.154, expo: 1, hotW: 1, coolW: 1.2, loop: 0.8, prom: 0.9, dust: 0, rays: 0.7,
     hal: [1, 0.3, 0.1], streak: [1, 0.5, 0.3],
     disk: [1.7, 0.8, 0.1, 0.45], disk2: [40, 1.2, 0.7, 0.15], tex: [120, 12, 0.2, 0.7],
@@ -81,7 +81,7 @@ export const STARS = {
   },
   // Zeta Ophiuchi: an O star, eight suns wide, hot violet blue.
   zetaoph: {
-    ...FLARE, day: 1.0, rain: 0.2, wave: 0.7, oblate: 0.15, grav: [0, 1, 0, 0.35],
+    ...FLARE, day: 1.0, rain: 0.2, oblate: 0.15, grav: [0, 1, 0, 0.35],
     row: 8, rsun: 8, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0.5, prom: 0.45, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.5, 0.05, 0.45], disk2: [100, 0.25, 0.3, 0.08], tex: [80, 9, 0.08, 0.38],
@@ -132,7 +132,7 @@ export const STARS = {
   },
   // Luhman 16: an L/T brown dwarf, Jupiter's width, magenta brown.
   luhman: {
-    ...FLARE, day: 0.22, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, wave: 0.3, clouds: [1, 6, 1.6, 1],
+    ...FLARE, day: 0.22, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, clouds: [1, 6, 1.6, 1],
     row: 13, rsun: 0.1, expo: 0.9, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.4,
     hal: [0.8, 0.25, 0.3], streak: [0.9, 0.4, 0.45],
     disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.7],
@@ -140,7 +140,7 @@ export const STARS = {
   },
   // WISE 0855: a Y brown dwarf, the coldest known; dark, with water ice clouds.
   wise: {
-    ...FLARE, day: 0.42, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, wave: 0.2, clouds: [1, 4, 1.2, 0.6],
+    ...FLARE, day: 0.42, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, clouds: [1, 4, 1.2, 0.6],
     row: 14, rsun: 0.1, expo: 0.85, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.25,
     hal: [0.5, 0.25, 0.3], streak: [0.6, 0.4, 0.45],
     disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.75],
@@ -181,7 +181,7 @@ export const STARS = {
   },
   // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
   vycma: {
-    ...FLARE, day: 20000, ribbon: 1, bubble: 0.12, wave: 0.3,
+    ...FLARE, day: 20000, ribbon: 1, bubble: 0.12,
     row: 4, rsun: 1420, expo: 0.95, hotW: 1, coolW: 1.1, loop: 0.18, prom: 0.55, dust: 1, rays: 0.75,
     hal: [0.9, 0.25, 0.1], streak: [1, 0.45, 0.28],
     disk: [1.9, 1.5, 0, 0.16], disk2: [140, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
@@ -548,7 +548,7 @@ export function stepFlares(sun, dt) {
 
 /**
  * Uniforms for the disk pass and the detector, per flare, in the sun frame.
- * wave: front angle (rad) and light. bubble: centre height, radius, light.
+ * bubble: centre height, radius, light.
  * kernel: the saturating core, at a point just above the surface.
  */
 export function flareView(fl, star) {
@@ -557,7 +557,6 @@ export function flareView(fl, star) {
   const hr = C.ropeH(t, h0);
   return {
     c: rg.c,
-    wave: [(30 + 210 * t) / R, B.wave * 0.5 * sstep(0.25, 0.9, t) * Math.exp(-t / 3.2) * fl.k],
     bubble: [0.75 * hr, 0.6 * hr + 14, B.bubble * sstep(0.2, 0.9, t) * Math.exp(-t / 4) * fl.k],
     kernel: [rg.span[1] * 0.25, C.kernel(t) * B.sat * fl.k],
   };
