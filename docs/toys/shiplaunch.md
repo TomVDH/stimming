@@ -30,7 +30,7 @@ Idea 222 (Slipway), grown to XXXL: Tom's pick of 2026-11-23. Beans `stimming-y9p
 - An 88 m short-sea coaster, green over a red-brown bottom, a white house aft, bunting from bow to mast to bridge.
 - The launch: the grease holds one to three seconds, she slides 12 m down 1 in 10 ways, tips off the edge outboard-down, hits, rolls back toward the yard and down to calm. Four wires to rust heaps on the berth pull her up; the heaps tear across the concrete.
 - The basin: 200 m wide and 6 m deep, closed at the west end, open east to the outer harbour. A 512 x 256 pipe-model sim at 1 m cells covers it, the pier and the quays. The hull's underside presses the water as a pressure head, so the wave comes from her drop. In open water it spreads: about 1.4 m beside her, about 0.1 m at the pier. Water on the pier deck makes the crowd step back.
-- Spray: dense spray and drops off her waterline and the pier's faces (after Ponlai's spray kinds); the foam pattern is Ponlai's, ported to GLSL. Mist, chain dust and grease smoke: a K3 fluid (Volcano's port) with Fire's smoke shading, backlit by the sun.
+- Spray: dense spray and drops off her waterline and the pier's faces (after Ponlai's spray kinds); the foam pattern is Ponlai's, ported to GLSL. Mist, chain dust and grease smoke: a K3 fluid (Volcano's port), lit by Fire's smoke light from `shared/smoke.js` (`smLight`, `smPhase`, `smConsts`), backlit by the sun.
 - The crowd: flat figure cards in profile, Frietkot's `walker()` shape (Tom: "perhaps we can use frietkot like silhouettes"). Against the low sun they are ink with a sunlit rim. They face the berth; after the hit some wave and point.
 
 ## Controls
@@ -65,7 +65,7 @@ Web Audio on the shared kit, muted by default: the rope, the trigger weight and 
 | `canal.js` | The basin's shallow-water sim, the draft pass, the pier readback, the mirror, the water surface |
 | `foam.js` | The foam pattern bake (Ponlai, MIT) |
 | `spray.js` | Spray and drops |
-| `mist.js` | The K3 fluid for mist and dust, its march and composite |
+| `mist.js` | The K3 fluid for mist and dust, its march (light from `shared/smoke.js`) and composite |
 | `props.js` | Wires and heaps, the crowd, the bunting |
 | `figures.js` | The figure shape, copied from `frietkot/figures.js` (`walker()` and its helpers) |
 | `sound.js` | Web Audio |

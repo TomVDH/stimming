@@ -1,6 +1,7 @@
 // Ship launch mist: spray mist and chain dust as a 3D fluid on the GPU, drawn as a lit volume.
 // Smoke follows Fire: the K3 fluid and Fire's smoke shading, as Volcano's plume.js ports them.
 import * as THREE from 'three';
+import { SMOKE, smConsts } from '../shared/smoke.js';
 
 /* ---------- K3: volume fluid (WebGL2 port, from volcano/plume.js) ---------- */
 // The method follows shared/fire.js: advect, buoyancy, turbulence,
@@ -196,24 +197,16 @@ uniform vec3 uCam, uFwd, uSun, uSunCol, uSky, uFog;
 uniform float uFogD, uNear, uFar, uT;
 in vec2 vUv;
 out vec4 o;
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
-// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
-const float ABSORB = 2.0, AMBIENT = 0.5, POWDER = 0.59, MULTI = 1.0;
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+${SMOKE}
+${smConsts()}
+// Fire's smoke light (shared/smoke.js) after three taps toward the sun.
 float dens(vec3 p) { vec4 s = S(tDye, (p - BMIN) / CELL); return s.r * 0.55 + s.g * 0.8; }
 float lightT(vec3 p, vec3 L) {
-  // Three taps toward the sun; the far tap stands for the rest of the way.
+  // The far tap stands for the rest of the way.
   float sum = dens(p + L * 1.5) * 1.5 + dens(p + L * 4.0) * 2.5 + dens(p + L * 9.0) * 5.0;
-  float tau = sum * ABSORB * 0.5;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT * 0.35, 0.0, 1.0);
+  // The mist halves tau and keeps a lower ambient floor.
+  return smLight(sum * smAbsorb * 0.5, smMulti, smPowder, smAmbient * 0.35);
 }
-/* ---------- end K3 lighting ---------- */
 void main() {
   vec4 w = uInvVP * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 ro = uCam, rd = normalize(w.xyz / w.w - ro);
@@ -247,7 +240,7 @@ void main() {
     float sig = (m * 0.55 + du * 0.8) * er;
     // Mist scatters forward hard; dust is browner and duller.
     float share = du / (m + du);
-    float ph = mix(hg(cs, 0.62) * 0.8 + hg(cs, -0.2) * 0.2, hg(cs, 0.35), share) * 12.566;
+    float ph = mix(smPhase(cs, 0.62) * 0.8 + smPhase(cs, -0.2) * 0.2, smPhase(cs, 0.35), share) * 12.566;
     vec3 alb = mix(vec3(0.92, 0.94, 0.97), vec3(0.62, 0.43, 0.28), share);
     vec3 Li = uSky * (0.35 + 0.4 * smoothstep(0.0, 20.0, p.y)) + uSunCol * lightT(p, uSun) * ph * 0.55;
     float al = 1.0 - exp(-sig * ds);
