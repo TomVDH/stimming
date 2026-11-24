@@ -45,12 +45,16 @@ let shown = st.star;
 let dip = null;
 // Down 0.4 s and up 1.1 s: a little longer, so the choir crossfade has room (Tom, 2026-11-24).
 const DIP_DOWN = 0.4, DIP_UP = 1.1;
-// The dip's light, from 1 down to a near black and back.
+// The dip's light, from 1 down to full black and back (Tom, 2026-11-24).
 const dipLight = () => {
   if (!dip) return 1;
   const k = dip.t < DIP_DOWN ? 1 - dip.t / DIP_DOWN : (dip.t - DIP_DOWN) / DIP_UP;
-  return 0.06 + 0.94 * ease(clamp(k));
+  return ease(clamp(k));
 };
+// The star card waits for a switch to end, then this long after the light returns (Tom, 2026-11-24).
+const CARD_AFTER_DIP = 1750;
+// The time before which the card waits, from performance.now().
+let cardAfter = 0;
 // Steps the dip; the star swaps at the dark point. True while it runs.
 function stepDip(dt) {
   if (shown !== st.star && !dip) {
@@ -63,7 +67,11 @@ function stepDip(dt) {
   if (shown !== st.star && dip.t > DIP_DOWN) dip.t = DIP_DOWN * (1 - (dip.t - DIP_DOWN) / DIP_UP);
   dip.t += dt;
   if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; applyView(); }
-  if (dip.t >= DIP_DOWN + DIP_UP) dip = null;
+  if (dip.t >= DIP_DOWN + DIP_UP) {
+    dip = null;
+    cardAfter = performance.now() + CARD_AFTER_DIP;
+    setTimeout(arrive, CARD_AFTER_DIP + 20);
+  }
   return true;
 }
 // The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
@@ -362,6 +370,10 @@ function pickStar(v) {
   st.star = v;
   egg = null;
   store.set('star', v);
+  // The old star's card leaves at once; the new one waits for the switch's light.
+  // Reduced motion swaps at once, so its card need not wait.
+  card.clear();
+  cardAfter = calm || !started ? 0 : Infinity;
   // A new star opens on the whole star.
   springTo(2);
   applyView();
@@ -423,7 +435,8 @@ const rail = makeRail({
 const card = makeCard({ stage });
 let cardStar = null;
 function arrive() {
-  if (!started || cam.to !== NOTCH || (cam.from > NOTCH - 0.05 && cardStar === st.star)) return;
+  if (!started || cam.to !== NOTCH || cam.moving || performance.now() < cardAfter) return;
+  if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
   cardStar = st.star;
   card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'));
 }
@@ -733,6 +746,8 @@ function makeFrame() {
   f.sc = Math.max(1, view.H / 900);
   // The detail ladder can drop the resolution mid-zoom; the grain follows CSS pixels.
   f.dpr = view.H / Math.max(1, cssH);
+  // The switch dip fades the whole frame, glare, stars and grain too.
+  f.dip = dipLight();
   // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
   f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
   // Mercury at true size, in transit on the long lens; nothing beside the limb.
@@ -789,7 +804,7 @@ function makeFrame() {
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
-  f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), f.lift]);
+  f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), f.lift]);
   f.fx4.set([Number(gv('fxTone', '0')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
   f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), f.glare]);
   eggFrame(f.egg, f.dim);

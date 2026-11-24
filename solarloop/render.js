@@ -1041,6 +1041,8 @@ uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 // Device pixels per CSS pixel: screen-fixed effects keep their size in CSS pixels.
 uniform float uDpr;
+// The star switch's fade: 1 is full light, 0 is black.
+uniform float uDip;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -1293,7 +1295,7 @@ void main() {
   float g01 = hash(gi + vec2(0.0, 1.0) + gf * 17.0), g11 = hash(gi + vec2(1.0, 1.0) + gf * 17.0);
   float gr = (mix(mix(g00, g10, gt.x), mix(g01, g11, gt.x), gt.y) - 0.5) * 2.0;
   c += gr * uFilm.x * 1.6 * uFx3.x * smoothstep(0.02, 0.15, l) * (0.35 + 2.6 * l * (1.0 - l));
-  o = vec4(clamp(c, 0.0, 1.0), 1.0);
+  o = vec4(clamp(c, 0.0, 1.0) * uDip, 1.0);
 }`;
 
 // opts.fluid: the fluid probe (?fluid) builds its programs and grid.
@@ -1487,6 +1489,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(f.u.uExpo, B.expo);
     gl.uniform1f(f.u.uSc, v.sc);
     gl.uniform1f(f.u.uDpr, v.dpr);
+    gl.uniform1f(f.u.uDip, v.dip ?? 1);
     gl.uniform1f(f.u.uRow, B.row);
     tri(gl, null, empty);
   }
