@@ -1,5 +1,5 @@
 #version 300 es
-// One quad per body: a star, a galaxy or a ghost ring.
+// One quad per body: a star, a galaxy, a ghost ring, a spectrum or a showpiece.
 layout(location = 0) in vec2 a_corner;
 // Centre in px from the top left, half size in px, kind.
 layout(location = 1) in vec4 a_pos;
@@ -17,7 +17,7 @@ flat out vec2 v_pos;
 void main() {
   v_off = a_corner * a_pos.z;
   vec2 p = a_pos.xy + v_off;
-  if (a_pos.w > 2.5) {
+  if (a_pos.w > 2.5 && a_pos.w < 3.5) {
     // A grating spectrum: a strip that starts z px right of the star.
     v_off = a_corner * vec2(a_shape.x * 0.5, a_shape.y * 3.0);
     p = a_pos.xy + vec2(a_shape.z + a_shape.x * 0.5, 0.0) + v_off;

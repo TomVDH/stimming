@@ -185,7 +185,8 @@ export class Renderer {
     const gl = this.gl;
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.light!.fb);
     gl.viewport(0, 0, this.w, this.h);
-    gl.clearColor(0, 0, 0, 1);
+    // Alpha holds hydrogen-alpha line light, so it starts at 0.
+    gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     if (count > 0) {
       gl.enable(gl.BLEND);

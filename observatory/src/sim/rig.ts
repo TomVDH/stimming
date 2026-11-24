@@ -52,6 +52,8 @@ export const rig = {
   panX: 0,
   panY: 0,
   overlay: { cross: true, stars: false, labels: false },
+  // Past 1:1, drizzle draws detail finer than a sensor pixel.
+  drizzle: true,
   /* mount */
   tracking: true,
   jog: { n: 0, e: 0 },

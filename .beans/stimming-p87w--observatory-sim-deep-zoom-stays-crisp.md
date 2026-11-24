@@ -11,3 +11,9 @@ blocking:
 ---
 
 Tom, 2026-11-23: zooming in far shows pixels. At high zoom the view draws stars, galaxies and other objects again at the screen's resolution, not as an upscaled render.
+
+## Checklist
+
+- [x] Drizzle, on by default: past 1:1 each screen pixel samples the light itself, so no pixel blocks show; [Drizzle] in the picture and the D key switch to raw pixels; its tip explains the idea (Hubble's technique)
+- [x] Showpieces give zoom something to resolve: procedural detail at the screen's resolution (stimming-6u1r)
+- [ ] Tom zooms in

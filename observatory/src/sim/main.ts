@@ -13,6 +13,7 @@ import {
 } from './optics.ts';
 import { Renderer, STRIDE } from './render.ts';
 import { BINS, Run, classFromTeff, cosmology, isFound, model } from './spectrum.ts';
+import { SHOWPIECES } from './showpieces.ts';
 import { FILTERS, TINTS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, guideRms, hfrAt, rig, stepRig, type Filter } from './rig.ts';
 import { IMG, SH, SW, Screen, TIP_COLS, af, fitV, log, logText, type Target } from './ui.ts';
 import { ADVICE, FILTER_SAYS, eyeTip, programTip, wrap, type Ctx, type EyeCtx } from './tips.ts';
@@ -421,6 +422,21 @@ function build(L: Layout): number {
     shown.push({ b, x: px * toCss, y: py * toCss });
     if (camera && snrOf(F, b.rgb, skyS) > 6) detected.push([px, py]);
   }
+  // Famous objects, as procedural images at their real size.
+  for (const sp of SHOWPIECES) {
+    const d = shellDir(sp.ra, sp.dec);
+    const z = d.x * fr.f.x + d.y * fr.f.y + d.z * fr.f.z;
+    if (z <= 0) continue;
+    const X = (d.x * fr.r.x + d.y * fr.r.y + d.z * fr.r.z) / z;
+    const Y = (d.x * fr.u.x + d.y * fr.u.y + d.z * fr.u.z) / z;
+    const px = L.cx + X * L.scale + jx, py = L.cy - Y * L.scale + jy;
+    const rad = (sp.size / 2) * 60 * ARCSEC * L.scale;
+    const half = rad * 1.25;
+    if (px + half < x0 || px - half > x1 || py + half < y0 || py - half > y1) continue;
+    // Light per screen pixel where the pattern reads 1: the surface brightness times the pixel's area.
+    const perPx = flux(sp.sb + ext) * light / (L.scale * ARCSEC) ** 2;
+    push([px, py, half, 4, sp.q, camera ? 0 : 1, sp.lobes, perPx, rad, sp.kind, sp.pa * RAD, sp.seed]);
+  }
   over.sort((a, c) => c.len - a.len);
   nBleed = Math.min(8, over.length);
   bleeds = over.slice(0, 8).flatMap((o) => [o.x, o.y, o.len, o.w]);
@@ -568,7 +584,8 @@ function cameraFrame(t: number, L: Layout, common: Record<string, number | numbe
       u_seed: random() * 100, u_filter: FILTERS[rig.filter], u_dark: darkRate(), u_hot: 300 * Math.pow(2, (rig.sensorTemp + 10) / 6),
       u_amp: 0.6 * Math.pow(2, (rig.sensorTemp + 10) / 6), u_k: k,
       u_origin: [L.cx - (SENSOR_W / 2) * k, L.cy - (SENSOR_H / 2) * k], u_sensor: [SENSOR_W, SENSOR_H],
-      u_bleeds: bleeds, u_nbleed: nBleed,
+      u_bleeds: bleeds, u_nbleed: nBleed, u_drizzle: rig.drizzle ? 1 : 0,
+      u_line: rig.filter === 'Hα' ? 0.3 : 0,
     });
   }
   // The stretch: sky level and noise per work pixel.
@@ -737,7 +754,11 @@ function refreshTargets(): void {
     .filter((v) => v.alt > 25)
     .slice(0, 3)
     .map((v) => ({ name: v.f.name, note: `alt ${Math.round(v.alt)}°`, dir: v.d }));
-  targets = [...stars, ...deep];
+  // Famous objects first: they are what a visitor wants to see.
+  const shows = SHOWPIECES.map((s) => ({ s, alt: up(shellDir(s.ra, s.dec)) }))
+    .filter((v) => v.alt > 25)
+    .map((v) => ({ name: v.s.name, note: `alt ${Math.round(v.alt)}°`, dir: shellDir(v.s.ra, v.s.dec) }));
+  targets = [...shows, ...stars, ...deep].slice(0, 6);
 }
 
 async function autofocus(): Promise<void> {
@@ -835,6 +856,11 @@ const actions = {
     rig.focus += dir * FOCUS_STEP;
     hfrNow = hfrAt(rig.focus, fwhm());
     log(`Focuser ${dir < 0 ? 'in' : 'out'} to ${Math.round(rig.focus).toLocaleString('en')}: stars ${hfrNow.toFixed(2)} px`);
+    restack = 'reset';
+  },
+  drizzle: (): void => {
+    rig.drizzle = !rig.drizzle;
+    log(rig.drizzle ? 'Drizzle on: detail finer than a pixel, rebuilt from many exposures' : 'Drizzle off: each camera pixel shows as a square');
     restack = 'reset';
   },
   tips: (): void => {
@@ -1015,6 +1041,7 @@ stage.addEventListener('keydown', (e) => {
     else if (e.key === ' ') actions.startStop();
     else if (e.key === 't' || e.key === 'T') actions.track();
     else if (e.key === 'h' || e.key === 'H') actions.tips();
+    else if (e.key === 'd' || e.key === 'D') actions.drizzle();
     else if (e.key === '[') actions.focusStep(-1);
     else if (e.key === ']') actions.focusStep(1);
     else if (e.key.startsWith('Arrow')) {

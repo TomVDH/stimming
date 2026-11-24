@@ -58,6 +58,34 @@ float psf(float r2, vec2 off, float a, float D) {
   return core;
 }
 
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x), mix(hash21(i + vec2(0.0, 1.0)), hash21(i + 1.0), f.x), f.y);
+}
+
+// Five octaves of value noise, 0 to about 1.
+float fbm(vec2 p) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    v += a * vnoise(p);
+    p = p * 2.03 + vec2(17.1, 9.4);
+    a *= 0.5;
+  }
+  return v / 0.97;
+}
+
+// The colours of a nebula's light, in linear RGB.
+// Hydrogen-alpha glows deep red; doubly ionised oxygen glows teal.
+const vec3 HA = vec3(1.0, 0.08, 0.14);
+const vec3 OIII = vec3(0.08, 1.0, 0.85);
+
 vec2 turn(vec2 p, float a) {
   float c = cos(a), s = sin(a);
   return vec2(c * p.x + s * p.y, -s * p.x + c * p.y);
@@ -110,7 +138,7 @@ void main() {
     }
     // Light fades out inside the quad, so no square edge shows.
     float fade = 1.0 - smoothstep(0.7, 1.0, sqrt(r2) / v_shape.y);
-    o = vec4(c * F * fade, 1.0);
+    o = vec4(c * F * fade, 0.0);
   } else if (v_kind < 1.5) {
     // Galaxy: x scale length in px, y axis ratio, z angle.
     // w is 1 for a spiral.
@@ -131,19 +159,80 @@ void main() {
       float re2 = 0.45 * re;
       lit = exp(-R / re2) / (2.0 * PI * q * re2 * re2);
     }
-    o = vec4(col * F * lit, 1.0);
+    o = vec4(col * F * lit, 0.0);
+  } else if (v_kind > 3.5) {
+    // A showpiece, in px: x radius, y kind, z angle, w seed.
+    // Colour slots: r the axis ratio, g 1 at the eyepiece, b 1 for two lobes.
+    float rad = v_shape.x, kind = v_shape.y, seed = v_shape.w;
+    float q = col.r, eye = col.g, lobes = col.b;
+    vec2 p = turn(v_off, v_shape.z) / rad;
+    p.y /= q;
+    float r = length(p), th = atan(p.y, p.x);
+    vec2 n = p * 3.0 + seed;
+    // ha, oiii: line light; cont: starlight and dust glow, with its colour.
+    float ha = 0.0, oiii = 0.0, cont = 0.0;
+    vec3 contCol = vec3(0.6, 0.7, 1.0);
+    if (kind < 0.5) {
+      // An emission nebula: warped gas, a bright heart, dark dust lanes.
+      vec2 w = n + 1.2 * vec2(fbm(n), fbm(n + 5.2));
+      float gas = pow(fbm(w * 1.3), 1.7) * 1.8;
+      float heart = exp(-r * 2.8) + 0.35 * exp(-r * 1.1);
+      float dust = smoothstep(0.42, 0.72, fbm(p * 5.0 + seed + 9.0)) * smoothstep(0.12, 0.5, r);
+      ha = heart * gas * (1.0 - 0.8 * dust);
+      oiii = 1.4 * exp(-r * 6.0) * gas * (1.0 - 0.8 * dust);
+      cont = 0.18 * heart * fbm(w * 2.0) * (1.0 - dust);
+    } else if (kind < 1.5) {
+      // A supernova remnant: red filaments over a blue-white glow.
+      float shell = smoothstep(1.0, 0.55, r);
+      float rid = 1.0 - abs(fbm(n * 1.6 + vec2(fbm(n), 0.0)) * 2.0 - 1.0);
+      ha = shell * pow(rid, 5.0) * 2.2;
+      oiii = 0.25 * ha;
+      cont = 0.45 * shell * exp(-r * 1.4);
+    } else if (kind < 2.5) {
+      // A planetary nebula: a shell of gas thrown off by a dying star.
+      float lobe = lobes > 0.5 ? 0.3 + 0.7 * pow(abs(cos(th)), 0.7) : 1.0;
+      float ring = exp(-pow((r / lobe - 0.72) / 0.2, 2.0));
+      float inner = smoothstep(0.8, 0.15, r / lobe);
+      float grain = 0.6 + 0.4 * fbm(n * 2.0);
+      ha = (ring * 1.4 + 0.08 * exp(-r * 2.0)) * grain;
+      oiii = (0.9 * inner + 0.4 * ring) * grain;
+      // The white dwarf at the centre.
+      cont = 0.6 * exp(-r * r / 0.0012);
+      contCol = vec3(0.85, 0.9, 1.0);
+    } else {
+      // A spiral galaxy: a yellow bulge, blue arms, dust lanes, pink star-forming knots.
+      float lr = log(max(r, 0.02));
+      float phase = 2.0 * th - 4.4 * lr + 1.6 * fbm(n);
+      float arms = pow(0.5 + 0.5 * cos(phase), 3.0);
+      float disk = exp(-r / 0.3);
+      float bulge = exp(-r / 0.07);
+      float dust = pow(0.5 + 0.5 * cos(phase - 0.7), 10.0) * smoothstep(0.06, 0.22, r);
+      float knots = smoothstep(0.82, 0.95, vnoise(p * 38.0 + seed)) * arms * disk;
+      cont = (bulge * 2.2 + disk * (0.3 + 1.4 * arms)) * (1.0 - 0.65 * dust);
+      contCol = mix(vec3(0.62, 0.72, 1.0), vec3(1.0, 0.86, 0.62), smoothstep(0.25, 0.04, r));
+      ha = knots * 2.5;
+    }
+    // Every showpiece fades out before its quad's edge.
+    float edge = smoothstep(1.25, 0.95, r);
+    ha *= edge; oiii *= edge; cont *= edge;
+    // F is the light per pixel where the pattern reads 1.
+    float norm = F;
+    vec3 rgb = (HA * ha + OIII * oiii + contCol * cont) * norm;
+    // At an eyepiece the dark-adapted eye sees faint light without colour, greenish.
+    if (eye > 0.5) rgb = vec3(0.55, 0.75, 0.7) * dot(rgb, vec3(0.2, 0.7, 0.1));
+    o = vec4(rgb, ha * norm);
   } else if (v_kind > 2.5) {
     // Grating spectrum: x length, y width, w the temperature row.
     float t = v_off.x / v_shape.x + 0.5;
     float I = texture(u_atlas, vec2(t, v_shape.w)).r;
     float s = v_shape.y;
     float across = exp(-0.5 * v_off.y * v_off.y / (s * s)) / (2.5066 * s);
-    o = vec4(wavelengthRGB(380.0 + 380.0 * t) * I * F * across * 2.2 / v_shape.x, 1.0);
+    o = vec4(wavelengthRGB(380.0 + 380.0 * t) * I * F * across * 2.2 / v_shape.x, 0.0);
   } else {
     // Ghost ring, in px: x radius, y ring width.
     float d = sqrt(r2), rad = v_shape.x, w = v_shape.y;
     float ring = exp(-pow((d - rad) / w, 2.0)) + 0.12 * smoothstep(rad, 0.0, d);
     float norm = 2.0 * PI * rad * w * 1.7725 + 0.12 * PI * rad * rad / 3.0;
-    o = vec4(col * F * ring / norm, 1.0);
+    o = vec4(col * F * ring / norm, 0.0);
   }
 }

@@ -66,6 +66,11 @@ const PROGRAM: Record<string, (c: Ctx) => Tip> = {
     text: 'Makes the picture bigger on the screen. It is a magnifying glass on what the camera already took: it cannot add detail the camera did not catch.',
     try: 'Scroll over the picture, or press + and -.',
   }),
+  drizzle: (c) => ({
+    title: 'Drizzle',
+    text: 'A camera pixel is a little square, so zooming far in shows blocks. But the telescope never sits perfectly still: each exposure lands a fraction of a pixel off. Software called drizzle uses those tiny shifts to rebuild detail finer than one pixel. The Hubble Space Telescope team invented it.',
+    try: 'Zoom in past 1:1, then click to switch drizzle off and on, or press D.',
+  }),
   starsOverlay: () => ({
     title: 'Find the stars',
     text: 'Draws a box round every star the software finds on its own. The computer measures these stars to judge focus and to keep the telescope steady.',

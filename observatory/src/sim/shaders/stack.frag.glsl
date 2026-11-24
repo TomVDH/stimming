@@ -16,6 +16,9 @@ uniform float u_full;
 uniform float u_seed;
 // The filter's weights on R, G and B light.
 uniform vec3 u_filter;
+// The filter's weight on hydrogen-alpha line light, kept in the alpha channel.
+// Only the Hα filter reads it; the broad filters see that light in red.
+uniform float u_line;
 // Dark current, a hot pixel and the amp glow, in e- per s.
 uniform float u_dark;
 uniform float u_hot;
@@ -29,6 +32,8 @@ uniform vec2 u_sensor;
 // Bleeds from overfull stars: screen x and y, half length and width in sensor pixels.
 uniform vec4 u_bleeds[8];
 uniform float u_nbleed;
+// 1 when drizzle rebuilds detail finer than a sensor pixel past 1:1.
+uniform float u_drizzle;
 out vec4 o;
 // Cosmic rays: hits per second over the whole sensor, at the summit.
 const float RAYS = 0.25;
@@ -58,8 +63,9 @@ float flatField(vec2 p) {
 // The sky's electrons in one sensor pixel at a screen place.
 float skyAt(vec2 at, float area) {
   ivec2 ia = clamp(ivec2(int(at.x), int(u_res.y - at.y)), ivec2(0), ivec2(u_res) - 1);
-  vec3 light = texelFetch(u_tex, ia, 0).rgb + u_bg + milkyWay(dirAt(at));
-  return dot(light, u_filter) * u_exp * u_egain / area;
+  vec4 t = texelFetch(u_tex, ia, 0);
+  vec3 light = t.rgb + u_bg + milkyWay(dirAt(at));
+  return (dot(light, u_filter) + t.a * u_line) * u_exp * u_egain / area;
 }
 
 // A full well's overflow runs along its column, as a CCD bleeds.
@@ -103,7 +109,9 @@ void main() {
   vec2 cell = floor((px - u_origin) / u_k);
   bool big = u_k >= 1.0;
   // Past 1:1, a sensor pixel is a block: sample its centre.
-  vec2 at = big ? (cell + 0.5) * u_k + u_origin : px;
+  // Drizzle samples each screen pixel instead, so no blocks show.
+  bool blocks = big && u_drizzle < 0.5;
+  vec2 at = blocks ? (cell + 0.5) * u_k + u_origin : px;
   // Sensor pixels in this screen pixel; past 1:1 it is a fraction.
   float area = 1.0 / (u_k * u_k);
   // The sensor place of this screen pixel.
@@ -122,7 +130,7 @@ void main() {
     float es = e + u_dark * u_exp + glow + col + row;
     float h = hash2(cell * 1.7 + 0.5);
     if (h > 0.9994) es += u_hot * u_exp * (h - 0.9994) / 0.0006;
-    es += normal(cell, u_seed) * sqrt(max(es, 0.0) + u_read * u_read) * u_noise;
+    es += normal(blocks ? cell : floor(px), u_seed) * sqrt(max(es, 0.0) + u_read * u_read) * u_noise;
     es = mix(es + ray, u_full, bleed(at, 1.0));
     e = clamp(es, 0.0, u_full) * area;
   } else {

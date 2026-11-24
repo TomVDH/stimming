@@ -40,7 +40,7 @@ export type Actions = {
   fit(): void; one(): void; zoom(f: number): void;
   goto(i: number): void; startStop(): void; exposure(dir: number): void; filter(f: Filter): void; reset(): void;
   autofocus(): void; guide(): void; night(): void; stars(): void; slewSelected(): void;
-  track(): void; cooler(dir: number): void; tips(): void; focusStep(dir: number): void;
+  track(): void; cooler(dir: number): void; tips(): void; focusStep(dir: number): void; drizzle(): void;
 };
 // The help window's text width in cells.
 export const TIP_COLS = 44;
@@ -259,6 +259,8 @@ export class Screen {
     g.fillRect(x0 + 12, y0 + h - 14, Math.round(v.bar.px), 2);
     g.restore();
     this.put(1, 30, ` ${v.bar.label} `, V.white);
+    // Drizzle sits bottom right inside the picture.
+    this.key(69, 30, rig.drizzle ? '[Drizzle: on ]' : '[Drizzle: off]', a.drizzle, rig.drizzle, V.white, 'drizzle');
     this.put(77, 2, 'N ↑', V.white);
     this.put(77, 3, 'E ←', V.white);
     if (v.banner && (v.still || Math.floor(v.time * 2) % 2 === 0)) {
