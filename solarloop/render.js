@@ -877,7 +877,9 @@ void main() {
     fl += (gc * 0.8 * exp(-dl / (rp * 1.6 + 14.0 * uSc)) + gw * 0.5 * exp(-dl / (rp * 6.0 + 70.0 * uSc))) * uCam.w;
     // The orb spans about twice the disk.
     float fall = uRes.y / (rp * 2.2 + 10.0 * uSc);
-    fl += lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w), 0.42 + 0.2 * uCam.w);
+    // The streak reaches farther as the disk grows on screen; it still ends inside the frame.
+    float grow = min(0.35, rp / uRes.y * 0.9);
+    fl += lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w) * (1.0 + 2.0 * grow), 0.42 + 0.2 * uCam.w + grow);
   }
   // Screen blend: the flare washes the frame; light past white stays as it is.
   c += min(fl, vec3(1.0)) * max(1.0 - c, 0.0);

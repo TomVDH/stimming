@@ -123,6 +123,8 @@ const weight = name => {
 const pullBack = z => 2 ** (Math.max(0, z - 2) * 1.25);
 // How far out the view is: 0 on the full star, 1 at x32.
 const farAt = z => ease(clamp((z - 2) / 4));
+// Real light: 0 up close, where the star is masked; full by x16.
+const realAt = z => ease(clamp((z - 1.2) / 4));
 // Far out the drag no longer turns the star; the mouse sways the lens instead.
 const canTurn = () => cam.mode !== 'long' && farAt(cam.z) < 0.5;
 // A pull-back as words: x5.7, x32.
@@ -138,11 +140,12 @@ function fitView(w, h, top = 0, bottom = 0) {
   // The limb stands upright about a third of the way in from the left.
   const xb = (narrow ? 0.3 : 0.34) * w;
   fit.wide = { cx: R + hw - xb * 2 * hw / w, cy: -(bottom - top) * hh / h, hw };
-  // The long lens: a close crop of the same limb, 20 degrees south.
-  // The star fills most of the frame; its limb runs down the right side at a slant.
+  // The long lens: the old quarter cut, mirrored onto the west side (Tom, 2026-11-24).
+  // The star fills the frame; its limb arcs from the foot's middle to the right side's middle.
   const hwL = narrow ? 150 : asp < 1.2 ? 210 : 280;
   const hhL = hwL / asp;
-  const psi = Math.PI / 2 + 0.35;
+  // On a tall phone the corner cut is too steep; a fixed angle keeps the arc low.
+  const psi = Math.PI - (narrow ? 0.6 : Math.atan2(hhL, hwL));
   const nx = Math.sin(psi), ny = Math.cos(psi);
   // The limb stands a quarter of the frame in from its edge, along psi.
   const d = 0.5 * (hwL * Math.abs(nx) + hhL * Math.abs(ny));
@@ -463,6 +466,7 @@ function flareAt(rg) {
 }
 // Space flares each region in view in turn.
 function flareNext() {
+  if (!canTap()) return;
   const seen = sun.regions.filter(rg => {
     if (!near(rg.c)) return false;
     const [x, y] = toCss(regionPoint(rg).v);
@@ -488,8 +492,11 @@ function eruptAt(p) {
 // The target under a stage point: a region or a prominence, and its distance.
 // Only the near side answers the hand: the visible disk and its rim (Tom, 2026-11-23).
 const near = u => toView(u)[2] >= 0;
+// Taps answer only from the full star inward; far out the star is too small (Tom, 2026-11-24).
+const canTap = () => cam.z <= NOTCH + 0.05;
 function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
+  if (!canTap()) return { t: best, prom, d: bd };
   for (const rg of sun.regions) {
     if (!near(rg.c)) continue;
     const [px, py] = toCss(regionPoint(rg).v);
@@ -511,6 +518,7 @@ const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
 // A tap anywhere flares the nearest region or lifts the nearest prominence.
 function flareNear(x, y) {
   const { t, prom } = pickAt(x, y);
+  if (!t) return;
   if (prom) eruptAt(t); else flareAt(t);
 }
 
@@ -690,15 +698,14 @@ function makeFrame() {
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
-  // Past the full star the view pulls back; far runs 0 to 1 by x32.
-  const far = farAt(cam.z);
+  // Past the full star the view pulls back; the eye's light values trail the zoom.
+  const far = eye.far;
   f.far = far;
   f.cam.set([st.yaw, st.pitch, star.lensing, far]);
   f.sway.set([sway.x, sway.y]);
   // Real light (Tom, 2026-11-24): up close the star is masked so the corona shows.
   // Pulled back, the exposure rises and the disk outshines what lies round it.
-  // It is full by x16.
-  const real = ease(clamp((cam.z - 1.2) / 4));
+  const real = eye.real;
   const lift = 2 ** (2.2 * real * fxv('fxReal'));
   // Off-disk light keeps a quarter of its look against the lifted disk; far off it fades.
   f.off = (1 - 0.75 * real) / lift * (1 - 0.8 * far);
@@ -769,6 +776,7 @@ function frame(now) {
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
     const swaying = stepSway(dt);
+    const adapting = stepEye(dt);
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
     if (FLUID) {
@@ -794,7 +802,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || swaying || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || swaying || adapting || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
@@ -871,6 +879,22 @@ stage.addEventListener('pointermove', e => {
   if (farAt(cam.z) > 0) poke();
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
+
+/* ---------- the eye: light adapts late to the zoom ---------- */
+// Zooming in from far, the glare and flare overpower for a moment, then the exposure settles (Tom, 2026-11-24).
+const eye = { real: 0, far: 0, vr: 0, vf: 0 };
+// Each value's time constant: it lingers bright on the way in and adapts faster on the way out.
+const EYE_IN = 0.6, EYE_OUT = 0.2;
+// Steps the eye; true while it adapts.
+function stepEye(dt) {
+  const real = realAt(cam.z), far = farAt(cam.z);
+  if (calm || !started) { Object.assign(eye, { real, far, vr: 0, vf: 0 }); return false; }
+  [eye.real, eye.vr] = follow(eye.real, real, eye.vr, real < eye.real ? EYE_IN : EYE_OUT, dt);
+  [eye.far, eye.vf] = follow(eye.far, far, eye.vf, far < eye.far ? EYE_IN : EYE_OUT, dt);
+  const still = Math.abs(real - eye.real) + Math.abs(far - eye.far) + Math.abs(eye.vr) + Math.abs(eye.vf) < 1e-4;
+  if (still) Object.assign(eye, { real, far, vr: 0, vf: 0 });
+  return !still;
+}
 
 /* ---------- sway: far out the mouse gently nudges the lens ---------- */
 // A slow, critically damped follow: no overshoot, about 2 s to settle (Tom, 2026-11-24).

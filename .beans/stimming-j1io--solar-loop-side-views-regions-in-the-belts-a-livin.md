@@ -3,8 +3,9 @@
 title: 'Solar loop: side views, regions in the belts, a living surface, sunspots'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-24T21:26:44Z
-updated_at: 2026-11-24T21:26:44Z
+updated_at: 2026-11-24T21:45:26Z
 parent: stimming-e35i
 ---
 
@@ -18,3 +19,9 @@ Tom, 2026-11-24: "animate or undulate them passively"; "solar activity around a 
 - [x] Pull-back to x32 over four zoom units
 - [x] Check in the pane: no errors, camera path, spots on the Sun
 - [ ] Tom looks at it live
+
+## Second pass (Tom, 2026-11-24)
+
+- [x] Long lens: the old quarter cut, mirrored onto the west side
+- [x] Taps and Space flare only from the full star inward
+- [x] The eye adapts late: a zoom in from far overpowers, then settles; the far flare grows with the disk
