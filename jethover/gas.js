@@ -420,12 +420,12 @@ export function createFire({
       const R = K.w.add(s.mul(0.1));
       const core = float(1.0).sub(smoothstep(R.mul(0.35), R, r)).mul(smoothstep(-0.4, 0.1, sRaw)).mul(float(1.0).sub(smoothstep(L.sub(0.6), L.add(0.2), sRaw)));
       newVel.assign(mix(newVel, A.mul(K.x), core.mul(relax)));
-      // Jet hover: past its reach the jet breaks up; its push dies below.
+      // Jet hover: past its reach the jet breaks up; its push fades below, so the soot keeps rolling.
       const past = smoothstep(L.sub(0.3), L.add(0.5), sRaw).mul(float(1.0).sub(smoothstep(R.mul(1.5), R.mul(4.0), r)));
-      newVel.mulAssign(float(1.0).sub(past.mul(u.dt).mul(60.0)).max(0.0));
+      newVel.mulAssign(float(1.0).sub(past.mul(u.dt).mul(20.0)).max(0.0));
       // The broken jet spills outward, so its soot peels off sideways.
       const outDir = vec3(w.x, 0.0, w.z).sub(vec3(A.x, 0.0, A.z).mul(sRaw));
-      newVel.addAssign(outDir.div(outDir.length().add(0.2)).mul(K.x.mul(0.35)).mul(past).mul(u.dt).mul(30.0));
+      newVel.addAssign(outDir.div(outDir.length().add(0.2)).mul(K.x.mul(0.35)).mul(past).mul(u.dt).mul(8.0));
       const land = P.add(A.mul(L));
       // A jet that ends in free air makes no sheet on the floor.
       const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
