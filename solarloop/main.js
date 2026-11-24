@@ -274,6 +274,11 @@ function setRot() {
   const B = STARS[shown];
   const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
   M = S ? mul(TP, S) : TP;
+  // A binary's orbit tilts toward the eye, so its disc shows its face; the eclipses stay partial.
+  if (B.bin?.tilt) {
+    const c = Math.cos(B.bin.tilt), s = Math.sin(B.bin.tilt);
+    M = mul(TP, S ? mul([[1, 0, 0], [0, c, -s], [0, s, c]], S) : [[1, 0, 0], [0, c, -s], [0, s, c]]);
+  }
 }
 // A turn by angle a about the axis u (Rodrigues).
 function axisTurn(u, a) {

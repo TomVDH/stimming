@@ -879,27 +879,23 @@ float gn1(vec3 p) {
 }
 // Two octaves, the second turned, so no grid lines up.
 float gn(vec3 p) { return 0.65 * gn1(p) + 0.35 * gn1(p.zxy * 2.07 + 5.3); }
-float gas(vec3 p) {
+// The disc's own frame: height h over the plane, radius s, and the angle phi from the donor.
+// phi starts on the line to the donor, so the tidal arms hold still in the pair's frame.
+vec3 discAt(vec3 p) {
   vec3 q = p - uBin.xyz, n = uBinN.xyz;
   float h = dot(q, n);
   vec3 pl = q - h * n;
-  float s = length(pl), rd = uBinD.x;
-  // Flared: thicker toward the rim.
-  float H = uBinD.y * 0.55 * (0.25 + 0.75 * pow(min(s / rd, 1.0), 1.3));
-  // Denser inward; the rim frays out softly, so its ends never read square.
-  float disc = smoothstep(rd * 1.1, rd * 0.45, s) * smoothstep(0.04, 0.2, s) * exp(-h * h / (2.0 * H * H));
-  // Gas turns at the Kepler rate in streaks that shear and reset unseen.
-  vec3 e1 = normalize(cross(n, vec3(0.0, 0.0, 1.0)) + vec3(1e-4, 0.0, 0.0));
-  float phi = atan(dot(pl, cross(n, e1)), dot(pl, e1));
-  float x = uTime * 0.35 * pow(max(s, 0.2), -1.5) / 1.5708;
-  float fa = fract(x), fb = fract(x + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
-  float pa = phi - 1.5708 * fa + 2.3 * floor(x), pb = phi - 1.5708 * fb + 2.3 * floor(x + 0.5) + 1.7;
-  float ta = gn(vec3(cos(pa) * 3.0, sin(pa) * 3.0, s * 5.0 + h * 2.0));
-  float tb = gn(vec3(cos(pb) * 3.0, sin(pb) * 3.0, s * 5.0 + h * 2.0 + 21.0));
-  float tur = mix(tb, ta, wa);
-  // Wisps lift off the faces: a second noise frays the height.
-  disc *= (0.15 + 2.0 * tur * tur) * (0.7 + 0.6 * gn(vec3(s * 9.0, h * 14.0, phi * 2.0)));
-  // The stream: a tube along the path gravity traced, clumps flowing down it.
+  vec3 d0 = -uBin.xyz - dot(-uBin.xyz, n) * n;
+  vec3 e1 = normalize(d0 + vec3(1e-4, 0.0, 0.0));
+  return vec3(h, length(pl), atan(dot(pl, cross(n, e1)), dot(pl, e1)));
+}
+// Two tidal spiral arms, raised by the donor's pull, winding in toward the hidden star.
+float arms(float s, float phi) {
+  return pow(0.5 + 0.5 * cos(2.0 * (phi + 2.2 * log(max(s, 0.05) / uBinD.x))), 2.0);
+}
+// The band between the stars: a tube along the path gravity traced, broadest at the donor's neck.
+// Clumps flow down it toward the disc.
+float stream(vec3 p) {
   float st = 0.0;
   for (int i = 0; i < 11; i++) {
     vec3 a = uPath[i].xyz, ab = uPath[i + 1].xyz - a;
@@ -908,13 +904,34 @@ float gas(vec3 p) {
     vec3 dd = p - a - ab * t;
     st = max(st, exp(-dot(dd, dd) / (w * w)));
   }
-  st *= 0.55 + 0.9 * gn(p * 6.0 - vec3(uTime * 0.6, 0.0, 0.0));
-  return disc + 1.3 * st;
+  return st * (0.6 + 0.8 * gn(p * 6.0 - vec3(uTime * 0.6, 0.0, 0.0)));
 }
-// The gas's own heat: only the hot spot where the stream strikes.
+float gas(vec3 p) {
+  vec3 g = discAt(p);
+  float h = g.x, s = g.y, phi = g.z, rd = uBinD.x;
+  // Thin inside, flaring toward the rim, as an accretion disc does.
+  float H = uBinD.y * 0.16 * (0.35 + 0.65 * pow(min(s / rd, 1.0), 1.2));
+  float disc = smoothstep(rd * 1.05, rd * 0.5, s) * smoothstep(0.04, 0.2, s) * exp(-h * h / (2.0 * H * H));
+  // Gas turns at the Kepler rate in streaks that shear and reset unseen.
+  float x = uTime * 0.35 * pow(max(s, 0.2), -1.5) / 1.5708;
+  float fa = fract(x), fb = fract(x + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
+  float pa = phi - 1.5708 * fa + 2.3 * floor(x), pb = phi - 1.5708 * fb + 2.3 * floor(x + 0.5) + 1.7;
+  float ta = gn(vec3(cos(pa) * 3.0, sin(pa) * 3.0, s * 5.0 + h * 2.0));
+  float tb = gn(vec3(cos(pb) * 3.0, sin(pb) * 3.0, s * 5.0 + h * 2.0 + 21.0));
+  float tur = mix(tb, ta, wa);
+  disc *= (0.2 + 1.6 * tur * tur) * (0.45 + 1.1 * arms(s, phi));
+  // A raised rim where the stream piles in: thicker and denser near the edge.
+  float rim = exp(-pow((s - 0.86 * rd) / (0.1 * rd), 2.0)) * exp(-h * h / (2.0 * pow(H * 1.3, 2.0))) * (0.5 + tur);
+  return disc + 0.35 * rim + 1.3 * stream(p);
+}
+// The gas's own heat: the inner disc burns hotter, brightest along the arms;
+// the band glows along its length; the hot spot where it strikes the rim.
 float gasHeat(vec3 p) {
+  vec3 g = discAt(p);
   vec3 e = p - uPath[11].xyz;
-  return 1.5 * exp(-dot(e, e) / 0.05);
+  float inner = exp(-g.y / (0.28 * uBinD.x)) * (0.5 + arms(g.y, g.z));
+  // The hot spot spreads along the rim: a brightening, not a glob.
+  return 0.9 * inner + 0.7 * stream(p) + 0.45 * exp(-dot(e, e) / 0.18);
 }
 
 /* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
@@ -941,7 +958,7 @@ void main() {
   // The corona reaches far, so the march does too when it shows.
   // A binary's gas reaches past its partner, so the march does too, in more steps.
   bool bin = uGas.x > 0.0;
-  float reach = bin ? 6.2 * R : uCorona > 0.0 ? 3.4 * R : 2.2 * R;
+  float reach = bin ? 7.6 * R : uCorona > 0.0 ? 3.4 * R : 2.2 * R;
   float z1 = r < R ? sqrt(R * R - r * r) : -reach;
   float z0 = reach;
   int N = bin ? 48 : 32;

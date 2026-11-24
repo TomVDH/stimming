@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T21:51:18Z
-updated_at: 2026-11-24T23:00:00Z
+updated_at: 2026-11-24T23:17:52Z
 parent: stimming-e35i
 ---
 
@@ -15,3 +15,7 @@ Tom, 2026-11-24: "interacting binary". Two stars so close that one pours gas ont
 - [x] Look: two stars, the stream, the disc, the orbit; how the long lens and the wide view frame a pair
 - [x] Facts for the star card, sourced (Harmanec and Scholz 1993; Mennickent and Djurasevic 2013)
 - [ ] Tom looks at it live
+
+## Open (Tom, 2026-11-24)
+
+- [x] The disc does not read as accretion: it is flat and tapered. Make it read as a swirling accretion disc (a little more tilt to show the swirl, brighter inward, a raised rim).

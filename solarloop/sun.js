@@ -53,7 +53,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
 // core: a buried neutron star shown in cutaway through the disk.
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
-// bin: a binary partner in a thick disc: separation, disc radius and thickness in R; stream, jet and disc light.
+// bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
 const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
@@ -203,8 +203,8 @@ export const STARS = {
   // Beta Lyrae: a blue-white giant pours gas onto a heavier partner hidden in a thick disc.
   // The donor turns once per orbit, 12.94 days; its partner circles it about four radii out.
   betalyr: {
-    ...FLARE, day: 12.94, rain: 0.3, reach: 2.6,
-    bin: { a: 3.85, rd: 1.8, th: 0.6, q: 0.226, jet: 0.6, light: 1, heat: 1 },
+    ...FLARE, day: 12.94, rain: 0.3, reach: 3.1,
+    bin: { a: 5, rd: 1.8, th: 0.6, q: 0.226, tilt: 0.42, jet: 0.6, light: 1, heat: 1 },
     row: 23, rsun: 15, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.3, dust: 0, rays: 1,
     hal: [0.6, 0.72, 1], streak: [0.6, 0.76, 1],
     disk: [1.5, 0.5, 0.06, 0.4], disk2: [90, 0.25, 0.3, 0.07], tex: [70, 8, 0.08, 0.42],
@@ -292,11 +292,22 @@ export function streamPath(bin) {
     pts.push([s[0], s[1]]);
   }
   // The donor's frame: the donor at the centre, the partner on +x, the spin about +y.
-  const toR = ([x, y]) => [(x - xd) * bin.a, 0, -y * bin.a];
-  const out = [[1, 0, 0, 0.12]];
-  for (let i = 0; i < 11; i++) {
-    const p = toR(pts[Math.round(i / 10 * (pts.length - 1))]);
-    out.push([...p, 0.14 + 0.16 * i / 10]);
+  // Even steps along the path: the parcel starts slowly, so time steps would bunch at L1.
+  const R3 = [[1, 0], ...pts.map(q => [(q[0] - xd) * bin.a, -q[1] * bin.a])];
+  const cum = [0];
+  for (let i = 1; i < R3.length; i++) cum.push(cum[i - 1] + Math.hypot(R3[i][0] - R3[i - 1][0], R3[i][1] - R3[i - 1][1]));
+  const at = u => {
+    const L = u * cum[cum.length - 1];
+    let k = 1;
+    while (k < cum.length - 1 && cum[k] < L) k++;
+    const f = (L - cum[k - 1]) / Math.max(cum[k] - cum[k - 1], 1e-9);
+    return [R3[k - 1][0] + (R3[k][0] - R3[k - 1][0]) * f, 0, R3[k - 1][1] + (R3[k][1] - R3[k - 1][1]) * f];
+  };
+  const out = [];
+  for (let i = 0; i < 12; i++) {
+    const p = at(i / 11);
+    // A broad neck at the donor, narrowing, then spreading as it meets the disc.
+    out.push([...p, 0.32 - 0.15 * Math.sin(Math.PI * i / 11) + 0.06 * i / 11]);
   }
   paths.set(bin, out);
   return out;
