@@ -1,6 +1,7 @@
 // Solar loop: what the star card says about each star.
 // Sources: SIMBAD-cited Wikipedia values, the ATNF Pulsar Catalogue, Joyce et al. 2020.
 // Black holes: GRAVITY Collaboration 2022 (Sagittarius A*); Miller-Jones et al. 2021 (Cygnus X-1).
+// 3C 273: GRAVITY Collaboration 2018 (its mass); Hipparcos measured it as a star.
 // "about" marks an estimate or a value that sources dispute; null leaves the line out.
 // name: the card's name where it differs from the tray's short one.
 // latin: the formal name; it is left out where it equals the common name.
@@ -26,6 +27,7 @@ export const FACTS = {
   siriusb: { latin: 'Alpha Canis Majoris B', cat: 'WD 0642−166', turn: null, mag: 8.44, wide: '0.008 of the sun', dist: '8.6 light years', age: 'about 228 million years' },
   cygx1: { latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years' },
   sgra: { latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null },
+  qso: { latin: null, cat: 'HIP 60936', mass: 'about 260 million suns', turn: null, mag: 12.9, wide: 'its horizon, about 1,100 suns', dist: 'about 2.4 billion light years', age: null },
   neutron: { name: 'The Vela pulsar', latin: 'PSR B0833−45', cat: 'PSR J0835−4510', turn: '0.089 seconds', mag: 23.6, wide: '24 km', dist: 'about 940 light years', age: 'about 11,000 years' },
 };
 

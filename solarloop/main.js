@@ -349,7 +349,7 @@ const PICKS = [
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
-  ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'],
+  ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'], ['qso', '3C 273', 'oklch(0.86 0.06 260)'],
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
 // The bar's label: the star with its swatch.
@@ -682,6 +682,7 @@ function makeFrame() {
   f.hole.set(hole ? [1, hole.tilt, hole.light, hole.heat] : [0, 0, 0, 0]);
   f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
   f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
+  f.jet = star.jet;
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;

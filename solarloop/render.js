@@ -76,6 +76,9 @@ const LUTS = [
   // Cygnus X-1: X-ray hot, lilac steel; the approaching side ice blue.
   [['000000', 0], ['06050c', 0.1], ['1a1836', 0.26], ['40467e', 0.44], ['7a88c8', 0.62], ['b8c4f2', 0.78], ['e8eeff', 0.9], ['ffffff', 1]],
   [['000000', 0], ['04080e', 0.12], ['10263c', 0.3], ['2c6a96', 0.5], ['70b4e0', 0.68], ['c4e8ff', 0.84], ['ffffff', 1]],
+  // 3C 273: the big blue bump, pale blue to white; the jet and the near side violet white.
+  [['000000', 0], ['05070c', 0.1], ['16203a', 0.26], ['3c5a8c', 0.44], ['7ea0d4', 0.62], ['c0d6f6', 0.78], ['eef4ff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['08060e', 0.12], ['221a40', 0.3], ['56489a', 0.5], ['9c90dc', 0.68], ['dcd6fa', 0.84], ['ffffff', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -198,6 +201,27 @@ vec2 holeStars(vec2 s, float fw) {
   }
   return acc;
 }
+// A quasar's jet along the hole's spin axis: the near jet and the counter-jet.
+// b2: the screen point in Schwarzschild radii. The cone opens about 5 degrees.
+// Knots sit at even steps of log distance, so each zoom shows some; they travel out.
+vec2 holeJet(vec2 b2) {
+  vec3 a = vFrame(vec3(0.0, 1.0, 0.0));
+  float l2 = max(length(a.xy), 0.05);
+  vec2 ax = a.xy / l2;
+  float along = dot(b2, ax), across = abs(b2.x * ax.y - b2.y * ax.x);
+  // The true distance along the axis; the projection shortens it by l2.
+  float d = abs(along) / l2;
+  float w = 0.35 + 0.08 * d;
+  float core = exp(-pow(across / (w * 0.35), 2.0)), sheath = exp(-pow(across / w, 2.0));
+  float ld = log(max(d, 1e-3));
+  float knots = 0.35 + 2.2 * pow(0.5 + 0.5 * sin(ld * 7.0 - uTime * 0.35), 10.0);
+  float grain = 0.7 + 0.6 * fbm(vec3(ld * 6.0 - uTime * 0.3, across / w * 2.0, 3.0));
+  // It leaves the hole a few radii out and fades slowly, so it reaches past any frame.
+  float L = uJet * (1.4 * core + 0.4 * sheath) * knots * grain * smoothstep(2.0, 6.0, d) * pow(1.0 + d / 8.0, -0.7);
+  // Beaming: the jet toward the eye shines; the counter-jet is all but gone.
+  bool near = along * a.z * sign(dot(a.xy, ax)) >= 0.0;
+  return near ? vec2(L, 0.0) : vec2(0.0, L * 0.03);
+}
 // hot, cool, starlight, the stars' warmth.
 vec4 holeTrace(vec2 P) {
   vec2 b2 = P * BCRIT / R;
@@ -254,6 +278,12 @@ vec4 holeTrace(vec2 P) {
   // The far plane: the lens equation, then a stereographic map for rays bent far round.
   vec2 s = b2 + SKYD * 2.0 * dir.xy / max(1.0 - dir.z, 1e-3);
   vec2 st = holeStars(s, length(fwidth(s))) * uHoleSky.y * tr * (1.0 - gone);
+  if (uJet > 0.0) {
+    vec2 j = holeJet(b2);
+    // The jet toward the eye stands in front; the counter-jet hides behind the hole.
+    hot += j.x * 0.35 + j.y * 0.35 * tr * (1.0 - gone);
+    cool += j.x + j.y * tr * (1.0 - gone);
+  }
   return vec4(hot, cool, st.x, st.y / max(st.x, 1e-6));
 }
 `;
@@ -278,6 +308,8 @@ uniform vec4 uEgg[4], uDim[2];
 uniform vec4 uHole;
 // One pixel in Schwarzschild radii, and the lensed stars' gain.
 uniform vec2 uHoleSky;
+// A quasar's jet: its light.
+uniform float uJet;
 // A uniform zero keeps D3D from unrolling the trace.
 uniform int uZero;
 in vec2 vUv;
@@ -1164,6 +1196,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uDim, v.dim);
     gl.uniform4fv(s.u.uHole, v.hole);
     gl.uniform2fv(s.u.uHoleSky, v.holeSky);
+    gl.uniform1f(s.u.uJet, v.jet);
     gl.uniform1i(s.u.uZero, 0);
     tri(gl, hdr, empty);
 

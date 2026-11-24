@@ -49,8 +49,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // day: the true rotation period in days; the toy runs it 10,000 times faster.
 // spots: sunspot strength; only stars with a convecting surface have them.
 // hole: a black hole's disc tilt toward the eye, disc light, disc heat, lensed star gain.
-// reach: how much farther the full view stands back.
-const FLARE = { hole: null, reach: 1, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+// reach: how much farther the full view stands back. jet: a quasar's jet light.
+const FLARE = { hole: null, reach: 1, jet: 0, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -210,6 +210,16 @@ export const STARS = {
     hal: [1, 0.45, 0.15], streak: [1, 0.7, 0.4],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 82.41,
+  },
+  // 3C 273: the first quasar found, a hole of 260 million suns feeding hard.
+  // A blue-white disc and a one-sided jet with knots that travel out.
+  qso: {
+    ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
+    hole: { tilt: 0.2, light: 0.85, heat: 1.5, stars: 0.8 }, reach: 3, jet: 1.3,
+    row: 19, rsun: 1100, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [0.6, 0.7, 1], streak: [0.7, 0.8, 1],
+    disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    wide: 'none', long: 'none', root: 73.42,
   },
 };
 // Every star weights its loops by one temperature response.

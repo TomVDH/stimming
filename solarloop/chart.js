@@ -25,6 +25,7 @@ export const CHART = {
   neutron: { t: 700000, cls: 'neutron star' },
   cygx1: { t: null, cls: 'stellar black hole' },
   sgra: { t: null, cls: 'supermassive black hole' },
+  qso: { t: null, cls: 'quasar' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.
@@ -35,6 +36,7 @@ const fmtR = (rsun, value) => {
   // A black hole's width is its event horizon's.
   if (value === 'cygx1') return 'horizon 125 km wide';
   if (value === 'sgra') return 'horizon 18 suns wide';
+  if (value === 'qso') return 'horizon 1 100 suns wide';
   if (rsun >= 10) return `${Math.round(rsun).toLocaleString('en').replace(/,/g, ' ')} suns wide`;
   if (rsun > 1) return `${+rsun.toFixed(1)} suns wide`;
   if (rsun === 1) return '1 sun wide';
