@@ -102,10 +102,13 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
   const U = {
     res: uniform(new THREE.Vector2(1, 1)), amp: uniform(1), bend: uniform(45), time: uniform(0),
     vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3), occ: uniform(0.6),
+    heatBlur: uniform(1.5), gasBlur: uniform(1.0),
     key: uniform(new THREE.Color(0.8, 0.9, 1.06)), pull: uniform(0.3),
   };
-  const heat = heatPass.getTextureNode();
-  const blurred = gaussianBlur(volPass, 0.6, 1);
+  // The heat sum is blurred before its slope is taken.
+  // The march dithers each pixel; a raw slope bends the frame pixel by pixel.
+  const heat = gaussianBlur(heatPass, U.heatBlur, 4).getTextureNode();
+  const blurred = gaussianBlur(volPass, U.gasBlur, 3);
   // The hot gas bends the frame along the gradient of its summed shimmer.
   const bentUV = Fn(() => {
     // The gradient taps widen with the zoom, so the bend stays smooth.

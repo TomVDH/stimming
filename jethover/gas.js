@@ -226,6 +226,8 @@ export function createFire({
     glowAge: uniform(2.0),
     // Jet hover: how much smoke above shades the sky light; 0 gives flat light.
     skyShadow: uniform(0.0),
+    // Jet hover: shimmer cell size in metres and its rise speed.
+    shimSize: uniform(0.5), shimSpeed: uniform(3.2),
     // Jet hover: scale of the summed heat that bends the frame.
     heatGain: uniform(100.0),
     // Jet hover: what each jet core feeds per unit of heat: heat, smoke.
@@ -717,7 +719,7 @@ export function createFire({
       const uvw = toUVW(positionRay);
       const dye = dyeTexNode.sample(uvw.clamp(0.0, 1.0)).level(0);
       const T = dye.g.min(2.5);
-      const cellNoise = mx_noise_float(positionRay.mul(vec3(2.6, 1.6, 2.6)).add(vec3(0.0, u.time.mul(-3.2), 0.0)));
+      const cellNoise = mx_noise_float(positionRay.mul(vec3(1.3, 0.8, 1.3).div(u.shimSize)).add(vec3(0.0, u.time.mul(u.shimSpeed).negate(), 0.0)));
       const edge = min(uvw, vec3(1).sub(uvw));
       // Thin haze in the box does not count; only real billows dim the scene.
       const smoke = dye.r.mul(smoothstep(0.25, 1.2, dye.r)).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));

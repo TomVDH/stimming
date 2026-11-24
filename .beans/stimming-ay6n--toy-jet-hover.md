@@ -51,6 +51,7 @@ Batch 3 MVP: one hero moment, the hover, at high fidelity. Plan: docs/plans/jeth
 - [x] Exhaust: a fine second copy of Fire's gas pumps out of the nozzles through Fire's emitter; the pad glow capped so smoke stops glowing white (Tom, 2026-11-23: "needs to pump OUT of the jet engines", "the smoke glows white")
 - [x] Photo-real backdrop in place of the drawn ranges: the Cadiz Wilderness plate, public domain, graded per time of day (Tom, 2026-11-23: "photo real backdrop here", "Photo plate")
 - [x] Smoke billowing down, visible and blended (Tom, 2026-11-23): denser exhaust smoke with strong swirl, shaded from above, dims the scene behind it; billows soft at half size
+- [x] Dev sheet (?dev) for heat haze, gas and look; the heat sum is blurred before the bend, so the shimmer refracts smoothly instead of pixel by pixel (Tom, 2026-11-23: "open up dev mode", "very pixelated vs smooth and refracted")
 - [ ] Craft model fidelity (Tom, 2026-11-22: "low fi blockout"); not started
 - [ ] Blockout, signed off by Tom
 - [ ] Tom's sign-off

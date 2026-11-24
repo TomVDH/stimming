@@ -56,8 +56,38 @@ function toggleLens() {
   touch();
 }
 
+/* ---------- dev tuning (?dev) ---------- */
+// Each row scales one value; 1 keeps today's look. The values persist.
+const tune = {
+  bendK: 2, capK: 1.5, heatBlur: 1.5, shimSize: 0.5, shimSpeed: 1, heatK: 1,
+  gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
+  expo: 1, bloom: 1, grain: 1,
+};
+const slider = (id, group, label, min, max, step) => ({
+  type: 'slider', id, group, label, min, max, step, value: tune[id], persist: true,
+  onInput: v => { tune[id] = v; applyTune(); touch(); },
+});
+const DEV_ROWS = [
+  slider('bendK', 'Heat haze', 'Bend strength', 0, 4, 0.05),
+  slider('capK', 'Heat haze', 'Bend limit', 0.25, 6, 0.05),
+  slider('heatBlur', 'Heat haze', 'Smoothing', 0, 4, 0.05),
+  slider('shimSize', 'Heat haze', 'Shimmer cell size (m)', 0.1, 2, 0.05),
+  slider('shimSpeed', 'Heat haze', 'Shimmer speed', 0, 3, 0.05),
+  slider('heatK', 'Heat haze', 'Heat to shimmer', 0, 3, 0.05),
+  slider('gasBlur', 'Gas', 'Smoothing', 0, 3, 0.05),
+  slider('gasK', 'Gas', 'Brightness', 0, 2, 0.05),
+  slider('occK', 'Gas', 'Smoke dimming', 0, 3, 0.05),
+  slider('exSmoke', 'Gas', 'Exhaust smoke', 0, 3, 0.05),
+  slider('exHeat', 'Gas', 'Exhaust heat', 0, 3, 0.05),
+  slider('speedK', 'Gas', 'Gas speed', 0.2, 2, 0.05),
+  slider('expo', 'Look', 'Exposure', 0.5, 1.6, 0.01),
+  slider('bloom', 'Look', 'Bloom', 0, 2, 0.05),
+  slider('grain', 'Look', 'Grain', 0, 2, 0.05),
+];
+
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
+  dev: DEV_ROWS,
   choice: { label: 'Time of day', value: time0, options: [
     { value: 'dawn', label: 'Dawn', key: '1' },
     { value: 'day', label: 'Day', key: '2' },
@@ -81,6 +111,8 @@ const ui = initPage({ id: ID, bar: {
     ['L', 'Switch between the wide shot and a tight lens on the plumes'],
   ],
 } });
+// Stored Dev values replace the defaults.
+for (const r of DEV_ROWS) { const v = ui.setting?.(r.id)?.value; if (Number.isFinite(v)) tune[r.id] = v; }
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 1500 });
 const snd = jetSound(kit);
@@ -202,8 +234,8 @@ function frame3() {
   camera.fov = vfov;
   // The heat bend grows with the zoom; so does its cap.
   const zoom = wide / vfov;
-  post.U.bend.value = 45 * Math.sqrt(zoom);
-  post.U.cap.value = 3 * zoom ** 0.75;
+  post.U.bend.value = 45 * Math.sqrt(zoom) * tune.bendK;
+  post.U.cap.value = 3 * zoom ** 0.75 * tune.capK;
   post.U.tap.value = 3 * zoom;
   // The gas fills the tight frame, so it marches fewer steps there.
   // A change of pass size rebuilds the post chain; the size stays fixed.
@@ -282,21 +314,38 @@ function step(dt) {
   // The gas steps on a fixed clock, two steps a frame at most.
   simAcc = Math.min(simAcc + tdt, SIM_DT * 2);
   while (simAcc >= SIM_DT) {
-    gasClock = (gasClock + SIM_DT * GAS_K) % 1000;
+    const gk = GAS_K * tune.speedK;
+    gasClock = (gasClock + SIM_DT * gk) % 1000;
     gas.u.time.value = gasClock;
-    gas.step(SIM_DT * GAS_K);
+    gas.step(SIM_DT * gk);
     gasF.u.time.value = gasClock;
-    gasF.step(SIM_DT * GAS_K);
+    gasF.step(SIM_DT * gk);
     simAcc -= SIM_DT;
   }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
   return busy;
 }
 
+// Hands the Dev values to the post chain and both gas sims.
+function applyTune() {
+  if (!ready) return;
+  const U = post.U;
+  U.heatBlur.value = tune.heatBlur; U.gasBlur.value = tune.gasBlur;
+  U.vol.value = 0.32 * tune.gasK; U.occ.value = 0.6 * tune.occK;
+  post.glow.strength.value = 0.55 * tune.bloom;
+  for (const g of [gas, gasF]) {
+    g.u.heatGain.value = 5 * tune.heatK;
+    g.u.shimSize.value = tune.shimSize; g.u.shimSpeed.value = 3.2 * tune.shimSpeed;
+  }
+  gasF.u.emitDensity.value = 2000 * tune.exSmoke; gasF.u.emitTemperature.value = 330 * tune.exHeat;
+  frame3();
+  applyTime();
+}
+
 // Hands the hour to the sky, exposure, grade, gas light and plumes.
 function applyTime() {
   const k = S.tod(clockT.hour);
-  renderer.toneMappingExposure = k.expo;
+  renderer.toneMappingExposure = k.expo * tune.expo;
   post.U.key.value.setRGB(...k.key);
   post.U.pull.value = k.pull;
   gas.u.ambient.value.setRGB(...k.smoke);
@@ -377,7 +426,7 @@ function render() {
   );
   post.U.time.value = clock;
   post.U.seed.value = frozen ? 0 : frameNo % 97;
-  post.U.grain.value = frozen ? 0 : 1;
+  post.U.grain.value = frozen ? 0 : tune.grain;
   // With the renderer's loop stopped, each frame ticks the node clock by hand.
   renderer._animation.nodes.nodeFrame.update();
   post.pipe.render();
@@ -471,13 +520,13 @@ onReducedChange(on => { frozen = on; wake(); });
 sound.onChange(on => { if (on) touch(); });
 new ResizeObserver(() => resize()).observe(stage);
 // ?qa hands the state to a test script.
-if (new URLSearchParams(location.search).has('qa')) globalThis.__jet = { eng, craft, plumes: () => P, gas: () => gas, gasF: () => gasF, post: () => post, renderer: () => renderer, D, get frames() { return frameNo; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__jet = { eng, craft, tune, applyTune: () => applyTune(), plumes: () => P, gas: () => gas, gasF: () => gasF, post: () => post, renderer: () => renderer, D, get frames() { return frameNo; } };
 
 mark('build');
 try {
   await setup();
   ready = true;
-  applyTime();
+  applyTune();
   resize(true);
   // The gas runs for five seconds, so the first frame is a picture.
   for (let i = 0; i < Math.round(300 / GAS_K); i++) step(1 / 60);
