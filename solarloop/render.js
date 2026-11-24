@@ -670,9 +670,9 @@ void main() {
     float vis = uBin.z > 0.0 ? 1.0 : step(R, r);
     float jet = exp(-pow(u / (0.05 + 0.05 * jy), 2.0)) * smoothstep(uBinD.y, uBinD.y + 0.5, jy) * exp(-jy / 2.5);
     cool += uBinD.z * uDisk.x * 0.7 * jet * vis * (0.5 + fbm(vec3(jy * 2.0 - uTime * 0.5, u * 5.0, 1.0)));
-    // The hidden star: a bright sphere at the disc's heart; the gas in front dims it.
+    // The hidden star shows only as a soft glow through the gas: no hard disc of its own.
     float dd = length(dq);
-    cool += vis * uDisk.x * (3.0 * smoothstep(0.36, 0.3, dd) + 0.6 * exp(-dd * dd / 0.25));
+    cool += vis * uDisk.x * 0.5 * exp(-dd * dd / 0.3);
   }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
@@ -870,8 +870,15 @@ float corona(vec3 p) {
   return pow(R / r, 2.2) * (sheet * lumps * (0.5 + 0.7 * rays) + 0.1 * rays + 0.3 * polar);
 }
 // A binary's gas, in donor radii: the partner's flared disc and the stream that feeds it.
-// One noise cell is a quarter radius.
-float gn(vec3 p) { return nz(p * 0.0625); }
+// One noise cell is a quarter radius. Plain trilinear blending shows its cells as boxes,
+// so the lookup snaps to texel centres and blends them on a smooth curve.
+float gn1(vec3 p) {
+  vec3 x = p * 4.0, i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return texture(uNoise, (i + f + 0.5) / ${NOISE_N.toFixed(1)}).r;
+}
+// Two octaves, the second turned, so no grid lines up.
+float gn(vec3 p) { return 0.65 * gn1(p) + 0.35 * gn1(p.zxy * 2.07 + 5.3); }
 float gas(vec3 p) {
   vec3 q = p - uBin.xyz, n = uBinN.xyz;
   float h = dot(q, n);
@@ -966,7 +973,8 @@ void main() {
         vec3 kc = tc / max(dc, 1e-3);
         float tauC = (gas(pr + kc * min(0.2, dc * 0.4)) * min(0.2, dc * 0.4) + gas(pr + kc * dc * 0.7) * dc * 0.5) * ABSORB;
         float inner = exp(-tauC) + 0.35 * exp(-tauC * 0.3);
-        accG += T * al * (uGas.w * inner / (dc * dc + 0.08) * hg(-kc.z, 0.3) * 12.56637 + uGas.z * gasHeat(pr));
+        // A soft falloff, so the heart glows without burning to a flat white.
+        accG += T * al * (uGas.w * inner / (dc * dc + 0.35) * hg(-kc.z, 0.3) * 12.56637 + uGas.z * gasHeat(pr));
         T *= 1.0 - al;
         if (T < 0.02) break;
       }
