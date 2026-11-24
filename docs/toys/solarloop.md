@@ -4,7 +4,7 @@ Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
 A star's edge at a vast scale, graded like film. The look takes its cue from two kinds of film: the sun as a furnace, all gold and white light, and the slow, hazy, monumental frame of large-scale science fiction.
 Seventeen stars (Tom, 2026-11-23): one for each class on the main sequence, O to M, two brown dwarfs, and the stages of a star's life, from a protostar to a pulsar. The disk is a dome across the foot of the frame: boiling granules (or, on the red supergiants, a handful of giant cells), slow swirls, dark filaments. Above the limb, loops of plasma arc on field lines and drain back. Three giant prominences stand over everything: a hedgerow, a forest of fine threads, a twisted arch, and a tall curtain. No other bodies, apart from Mercury in transit on our sun (Tom, 2026-11-23).
-Three views, stepped with L. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; Mercury crosses our sun's disk.
+Three views, stops on one zoom (Tom, 2026-11-23): the wheel, a pinch or - and = glide through them, and L jumps to the next. The long lens, the default, fills the frame with the star; its bottom left limb cuts off the bottom left corner, where prominences and loops stand in open space; the camera holds still. The wide view is the dome. The full view shows the whole star. The star is active all round its limb. A raymarched volume of haze and dust, lit by the star with Fire's smoke shading, wraps every star; Mercury crosses our sun's disk.
 The film touch is light: fine grain, a soft colour split, a faint lens dirt, highlights that roll off to white.
 Tap a region and it flares: two ribbons flash, the core burns white with an anamorphic streak and lens ghosts, a twisted rope lifts off as a bulb and leaves the frame, a bubble swells and a wave runs over the disk. A new arcade snaps in, cools and rains back. Tap a prominence and it erupts: it lifts and swells into space over about 15 s, then forms again.
 
@@ -14,11 +14,12 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 |---|---|
 | Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
-| Star (the bar button shows the star) | Opens the star chart, a Hertzsprung-Russell sheet: spectral class across (O to Y, hot on the left), brightness up. Each star is a swatch in its own colour, sized by its radius on a log scale; a ring marks the current one. The pulsar stands in a gutter past a break: it has no class. Quiet words name the main sequence, the giants, the white dwarfs and the brown dwarfs. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Arrows move to the nearest star that way, [ and ] step through the list, Enter picks, Escape closes. On a phone, or a short stage, only the current star and the one in hand show their names |
+| Star (the bar button shows the star) | Opens the star chart, a Hertzsprung-Russell sheet: spectral class across (O to Y, hot on the left), brightness up. Each star is a swatch in its own colour, sized by its radius on a log scale; a ring marks the current one. The pulsar stands in a gutter past a break: it has no class. Quiet words name the main sequence, the giants, the white dwarfs and the brown dwarfs. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Arrows move to the nearest star that way, [ and ] step through the list, Enter picks, Escape or S closes. On a phone, or a short stage, only the current star and the one in hand show their names |
 | Keys 1 to 0 | Pick the main sequence (O to M) and the two brown dwarfs |
 | [ and ] | Step to the previous or the next star, through all seventeen |
-| Zoom (wheel, pinch, - and =) | Full view only: zooms out up to 16 times farther, and back |
-| Lens (L) | Steps through the long lens (the default), the wide view and the full star, zooming over two seconds. The button shows the view, and the zoom on the full star (`Full ×2.0`) |
+| Zoom (wheel, pinch, - and =) | One zoom through every view: the long lens, the wide view, the full star, then out to 16 times farther. The three views are stops on it; the motion slows near each stop, and a pause within 0.15 of a stop settles on it. The zoom rail shows over the bar while the zoom moves: every stop, a mark where the view stands, and the name of where it goes. Tap a stop to glide there. The zoom is stored |
+| Lens (L) | Jumps to the next stop: long lens (the default), wide view, full star, then back to the long lens, over two seconds. The button shows the view, and the zoom past the full star (`Full ×2.0`) |
+| S | Opens the star chart; S or Escape closes it |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
 
@@ -93,6 +94,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 |---|---|
 | `index.html` | The page shell |
 | `main.js` | State, the telescope view, the turn, picking, Bar v3 spec, frame loop |
+| `rail.js`, `rail.css` | The zoom rail over the bar |
 | `chart.js`, `chart.css` | The star chart: a sheet the toy owns, in the Bar v3 sheet look. The Star action opens it; the bar labels follow the Bar v2 chips |
 | `sun.js` | The regions, the loop life cycle, the flare timeline, the stars and the scale bodies; it writes one strand per thread |
 | `render.js` | Raw WebGL2: the disk and corona pass, instanced strands, bloom (`shared/glow.js`), light rays, the final pass, the colour ramps |
@@ -153,7 +155,7 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 | Q4 | Drifting: 32 rAF a second. Asleep 63 s after the last input: 0 rAF in 2 s |
 | Q5 | Hidden tab: 0 rAF in 2 s |
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
-| Q7 | Star, Flare, Lens, Activity slider (4 controls); How to play has 6 rows. Star chart (2026-11-23): 1280 x 800, 375 x 812, 812 x 375, clean console |
-| Q8 | 1 to 9 and 0, [ and ], L (three views), - and =, and Space each do their job; while the chart is open, the toy's keys wait |
+| Q7 | Star, Flare, Lens, Activity slider (4 controls); How to play has 7 rows. Star chart (2026-11-23): 1280 x 800, 375 x 812, 812 x 375, clean console |
+| Q8 | 1 to 9 and 0, [ and ], S, L (three stops), - and =, the wheel, and Space each do their job; while the chart is open, the toy's keys wait |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |

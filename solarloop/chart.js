@@ -139,7 +139,7 @@ export function makeChart(o) {
       const c = o.cover();
       el.style.setProperty('--foot', `${c.bottom}px`);
       el.style.setProperty('--head', `${c.top}px`);
-      el.querySelector('.sl-hint').textContent = touch() ? 'tap a star' : '← → ↑ ↓ · [ ] · esc';
+      el.querySelector('.sl-hint').textContent = touch() ? 'tap a star' : '← → ↑ ↓ · [ ] · s';
       sync();
       el.hidden = false;
       glass.dataset.on = '';
@@ -181,7 +181,7 @@ export function makeChart(o) {
     if (el.hidden) return;
     const at = btns.find(x => x.b === document.activeElement)?.b || btns.find(x => x.s.value === o.get()).b;
     const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    if (e.key === 'Escape') { e.preventDefault(); open(false); }
+    if (e.key === 'Escape' || e.key === 's' || e.key === 'S') { e.preventDefault(); open(false); }
     else if (dir) { e.preventDefault(); near(at, ...dir)?.focus(); }
     else if (e.key === '[' || e.key === ']') {
       e.preventDefault();
