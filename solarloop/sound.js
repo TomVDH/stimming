@@ -1,6 +1,6 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
-// A flare: a crack, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
+// A flare: the brass blast, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
 // Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
@@ -338,16 +338,7 @@ export function makeSound(kit) {
     const t = ac.currentTime + 0.005;
     const K = clamp(k, 0.3, 1);
     braam(ac, t, pan, band, K * 0.7, 6);
-    // The crack: a burst of bright noise on a falling thump.
-    const c = voice(ac, pan);
-    env(c, t, 0.32 * K * jit(0.15), 0.003, 0.32 * jit(0.2));
-    noise(ac, t, 0.5, jit(0.1)).connect(filt(ac, 'highpass', 900 * jit(0.15), 0.8)).connect(c);
-    send(ac, c, 0.5);
-    const th = voice(ac, pan * 0.5);
-    env(th, t, 0.5 * K, 0.006, 0.9);
-    const o = osc(ac, 'sine', 82 * jit(0.08), t, 1.1);
-    o.frequency.exponentialRampToValueAtTime(31, t + 0.8);
-    o.connect(th);
+    // No crack on the tap (Tom): the brass blast carries the hit.
     // The rush: noise swept upward as the rope lifts away.
     const r = voice(ac, pan * 0.7);
     r.gain.setValueAtTime(0, t + 0.1);

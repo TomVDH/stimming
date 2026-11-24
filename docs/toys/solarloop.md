@@ -137,7 +137,7 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 - A flare or an eruption lands on a low brass blast: stacked saws through a soft clip, a filter that opens and closes.
 - An eruption: a long rush swept upward over 13 s, and a tone that bends up a fifth.
 
-- The flare: a crack of bright noise on a falling thump; a rush of noise swept upward as the rope lifts; a low roar under the eruption.
+- The flare: no crack on the tap (Tom, 2026-11-23: he keeps the brass blast); a rush of noise swept upward as the rope lifts; a low roar under the eruption.
 - Each arcade loop that snaps in: a glassy note, one step up a minor pentatonic scale. The star sets the key.
 - The glow: a slow chord while the arcade shines.
 - The rain: soft drips, each a falling note, from 12 s.
