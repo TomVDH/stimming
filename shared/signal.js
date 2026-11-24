@@ -278,8 +278,13 @@ export function mountSignal(id, spec, ui) {
   const rowPart = row => {
     const handle = ui.setting(row.id);
     if (!handle) return null;
-    if (row.type === 'slider') return rangePart(row.label, row, handle, 'sg-row');
+    if (row.type === 'slider') {
+      const sl = rangePart(row.label, row, handle, 'sg-row');
+      if (row.hint) sl.title = row.hint;
+      return sl;
+    }
     const el = box('sg-row', text('span', '', row.label));
+    if (row.hint) el.title = row.hint;
     // A row that the toy switches off shows so and takes no input.
     syncers.push(() => { el.toggleAttribute('data-disabled', !!handle.disabled); el.inert = !!handle.disabled; });
     if (row.type === 'toggle') el.append(segPart([{ value: false, label: 'Off' }, { value: true, label: 'On' }], () => handle.value, v => handle.set(v, true)));
@@ -300,7 +305,8 @@ export function mountSignal(id, spec, ui) {
     const handle = ui.setting(row.id);
     if (!handle) return null;
     const el = box('sg-dev-row', text('span', 'sg-dev-lb', row.label));
-    el.title = row.label;
+    // The tooltip says what the row does when the toy gives a hint; else it repeats the label.
+    el.title = row.hint ? `${row.label}: ${row.hint}` : row.label;
     syncers.push(() => { el.toggleAttribute('data-disabled', !!handle.disabled); el.inert = !!handle.disabled; });
     if (row.type === 'slider') {
       const { min = 0, max = 1, step = 0.01 } = row;
