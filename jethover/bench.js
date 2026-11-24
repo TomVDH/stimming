@@ -1,7 +1,12 @@
 // Jet hover exhaust bench: one jet over a lined board.
 // Layer 1: a round hot core and a feathered cone, marched as a volume.
 // Layer 2: the heat inside the column bends the board behind it.
+// Layer 3: soot from Fire's fluid, formed at the tail of the cone.
 import * as THREE from 'three/webgpu';
+import * as TSL from 'three/tsl';
+import { snoise, snoiseVec3 } from 'three/addons/tsl/math/curlNoise.js';
+import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js';
+import { createFire } from './gas.js';
 import {
   Fn, vec2, vec3, vec4, float, uniform, uv, pass, positionWorld, cameraPosition, normalize, Loop,
   smoothstep, exp, max, min, abs, fract, mix, sin, mx_noise_float, interleavedGradientNoise, screenCoordinate, screenUV, renderOutput,
@@ -11,7 +16,8 @@ import { devPanel } from './devpanel.js';
 
 /* ---------- controls ---------- */
 const tune = { thr: 0.5, shape: 'column', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines',
-  bend: 1, fluteW: 3.5, flute: 1, flicker: 1, showHeat: false };
+  bend: 1, fluteW: 3.5, flute: 1, flicker: 1, showHeat: false,
+  soot: true, sAmount: 1, sDark: 1, sLife: 1, sSpeed: 1, sLit: 1 };
 // Shape presets: length and spread; Custom takes the sliders.
 const SHAPES = { stubby: [1.8, 0.12], column: [5, 0.04] };
 // Motion presets: noise size (per metre), speed and strength.
@@ -40,6 +46,12 @@ const ROWS = [
   slider('fluteW', 'Heat', 'Flute count', 1, 8, 0.5),
   slider('flicker', 'Heat', 'Flicker', 0, 3, 0.05),
   { type: 'toggle', id: 'showHeat', group: 'Heat', label: 'Show heat', value: false, onToggle: v => { tune.showHeat = v; apply(); } },
+  { type: 'toggle', id: 'soot', group: 'Soot', label: 'Soot', value: true, onToggle: v => { tune.soot = v; apply(); } },
+  slider('sAmount', 'Soot', 'Amount', 0, 3, 0.05),
+  slider('sDark', 'Soot', 'Darkness', 0, 3, 0.05),
+  slider('sLife', 'Soot', 'Lifetime', 0.2, 4, 0.05),
+  slider('sSpeed', 'Soot', 'Speed', 0.2, 2, 0.05),
+  slider('sLit', 'Soot', 'Light', 0, 3, 0.05),
   { type: 'choice', id: 'board', group: 'Board', label: 'Backdrop', value: 'lines', options: [
     { value: 'lines', label: 'Lines' }, { value: 'dark', label: 'Dark' }, { value: 'sky', label: 'Sky' },
   ], onPick: v => { tune.board = v; apply(); } },
@@ -63,6 +75,7 @@ const U = {
   feather: uniform(0.5), bright: uniform(1), dia: uniform(1), turb: uniform(1), speed: uniform(1), freq: uniform(3.5),
   board: uniform(0),
   bend: uniform(1), flute: uniform(1), fluteW: uniform(1), flicker: uniform(1), showHeat: uniform(0),
+  soot: uniform(1), sLit: uniform(1), sSpeed: uniform(1),
   res: uniform(new THREE.Vector2(1, 1)),
   // The nozzle sits here and points straight down.
   noz: uniform(new THREE.Vector3(0, 6, 0)),
@@ -192,6 +205,70 @@ const heatBox = new THREE.Mesh(cone.geometry, heatMat);
 heatBox.frustumCulled = false;
 heatScene.add(heatBox);
 
+/* ---------- layer 3: soot from Fire's fluid ---------- */
+// One copy of Fire's gas round the jet: 12 x 11 x 6 m, 0.15 m cells.
+// The drag keeps the nozzle 4 m from the box sides.
+const gas = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, grid: [80, 72, 40], size: [12, 11, 6], center: [0, 5.5, 0], pressure: 10, emitMax: 240 });
+const gu = gas.u;
+// Fire's emitter: a disc just under the nozzle carries heat for the flame.
+const pts = [];
+for (let k = 0; k < 240; k++) {
+  const a = k * 2.39996, rr = 0.34 * Math.sqrt((k + 0.5) / 240);
+  pts.push(Math.cos(a) * rr, -0.15 - (k % 4) * 0.08, Math.sin(a) * rr);
+}
+gas.setEmitters(pts);
+gu.emitTemperature.value = 330; gu.emitDensity.value = 120; gu.emitGain.value = 1;
+gu.feed.value.set(0.05, 0);
+gu.buoyancy.value = 0.6; gu.weight.value = 0.05;
+gu.turbulence.value = 4.0; gu.turbFrequency.value = 10.0; gu.vorticity.value = 8.0;
+gu.velDamping.value = 0.25; gu.cooling.value = 1.3;
+gu.skyShadow.value = 1.2;
+gu.tMax.value = 3;
+gu.intensity.value = 0.8; gu.glowSpread.value = 4.8; gu.glowGain.value = 1.0; gu.glowAge.value = 3.0;
+gu.startColor.value.setRGB(1.0, 0.86, 0.62); gu.midColor.value.setRGB(1.0, 0.42, 0.1); gu.endColor.value.setRGB(0.22, 0.05, 0.05);
+gu.smokeTint.value.setRGB(0.22, 0.2, 0.19);
+gu.ambient.value.setRGB(0.05, 0.05, 0.06);
+gu.shadowAbsorption.value = 2.2; gu.shadowAmbient.value = 0.15; gu.asymmetry.value = 0.35;
+// Layer 2 makes the heat bend; the gas gives only the smoke sum.
+gu.heatGain.value = 0;
+// All the soot darkens what lies behind it, as Fire's shadow pass does.
+gu.occMin.value = 0.02; gu.occFloor.value = 1;
+// Only the main jet drives the gas; the other two slots stay off.
+for (let j = 1; j < 3; j++) { gu.jetP[j].value.set(0, -100, 0); gu.jetK[j].value.set(0, 0, 0, 0.4); }
+const vol = gas.volume({ steps: 56, lift: 0 });
+const volScene = new THREE.Scene();
+volScene.add(vol.mesh);
+const sootLamp = new THREE.PointLight(0xff7a30, 6, 30, 2);
+volScene.add(sootLamp);
+heatScene.add(vol.heatMesh);
+// The volume model runs only with a light in the scene.
+heatScene.add(new THREE.PointLight(0x000000, 0, 1, 2));
+await gas.compile();
+const emitM = new THREE.Matrix4();
+const GAS_DT = 1 / 60;
+let gasAcc = 0, gasClock = 0;
+function stepSoot(dt) {
+  const n = U.noz.value, L = U.len.value, thr = U.thr.value;
+  // The jet drives the gas down to the end of the cone, or to the floor.
+  gu.jetP[0].value.copy(n);
+  gu.jetA[0].value.set(0, -1, 0, Math.min(L, n.y));
+  gu.jetK[0].value.set(16 * (0.35 + 0.75 * thr), 6 + 26 * thr, 0, U.r0.value);
+  gu.sourcePosition.value.copy(n);
+  gu.emitMatrix.value.copy(emitM.makeTranslation(n.x, n.y, n.z));
+  gu.emitGain.value = 0.5 + 0.6 * thr;
+  gu.lightPos.value.set(n.x, n.y - L * 0.5, n.z + 0.5);
+  sootLamp.position.copy(gu.lightPos.value);
+  sootLamp.intensity = 3 + 12 * thr;
+  // The gas steps on a fixed clock, two steps a frame at most.
+  gasAcc = Math.min(gasAcc + dt * 0.55 * U.sSpeed.value, 2 * GAS_DT);
+  while (gasAcc >= GAS_DT) {
+    gasAcc -= GAS_DT;
+    gasClock = (gasClock + GAS_DT) % 1000;
+    gu.time.value = gasClock;
+    gas.step(GAS_DT);
+  }
+}
+
 // The box holds the whole cone.
 function placeCone() {
   const n = U.noz.value, L = U.len.value;
@@ -210,6 +287,11 @@ const EASED = ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb',
 function apply() {
   for (const k of ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed', 'bend', 'flute', 'fluteW', 'flicker']) goal[k] = tune[k];
   U.showHeat.value = tune.showHeat ? 1 : 0;
+  // Soot: a feed at the tail of the cone, its darkening, its fade.
+  U.soot.value = tune.soot ? 1 : 0; U.sLit.value = tune.sLit; U.sSpeed.value = tune.sSpeed;
+  gu.tailSoot.value = tune.soot ? 1500 * tune.sAmount : 0;
+  gu.dissipation.value = 0.3 / tune.sLife;
+  gu.occGain.value = 6 * tune.sDark;
   const sh = SHAPES[tune.shape];
   if (sh) { goal.len = sh[0]; goal.spread = sh[1]; }
   const [fq, sp, tb] = MOTIONS[tune.motion] || MOTIONS.fast;
@@ -233,6 +315,7 @@ function ease(dt) {
   // The flow clock runs faster with more throttle.
   U.flowT.value += dt * U.speed.value * (U.thr.value * 6 + 3);
   placeCone();
+  stepSoot(dt);
 }
 
 /* ---------- post: bloom, tone ---------- */
@@ -249,13 +332,24 @@ const bentUV = Fn(() => {
   off.mulAssign(min(1.0, float(10.0).div(off.length().add(1e-4))));
   return screenUV.add(off.div(U.res));
 })();
-const col = sp.getTextureNode().sample(bentUV);
+const vp = pass(volScene, camera);
+vp.setResolutionScale(0.5);
+const volCol = gaussianBlur(vp, 1.0, 3).getTextureNode().sample(bentUV).rgb.mul(0.32).mul(U.sLit).mul(U.soot);
+// Five taps soften the volume's dither in the smoke sum.
+const smoke = Fn(() => {
+  const d = vec2(2.5).div(U.res);
+  return heat.sample(screenUV).b.mul(0.4)
+    .add(heat.sample(screenUV.add(vec2(d.x, 0))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(d.x, 0))).b.mul(0.15))
+    .add(heat.sample(screenUV.add(vec2(0, d.y))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(0, d.y))).b.mul(0.15));
+})();
+const behind = exp(smoke.mul(0.6).mul(U.soot).negate());
+const col = vec4(sp.getTextureNode().sample(bentUV).rgb.mul(behind).add(volCol), 1);
 const view = vec3(heat.sample(screenUV).r.mul(1.5).mul(U.showHeat), 0, 0);
 pipe.outputNode = renderOutput(col.add(bloom(col, 0.5, 0.5, 0.8)).add(view));
 pipe.outputColorTransform = false;
 
 /* ---------- drag: the jet follows the pointer ---------- */
-// The nozzle moves in the plane z = 0, from 1 m to 11 m up.
+// The nozzle moves in the plane z = 0: 4 m each side, 1 m to 10 m up.
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), hit = new THREE.Vector3();
 const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 let dragging = false;
@@ -263,7 +357,7 @@ function moveTo(e) {
   ndc.set((e.clientX / innerWidth) * 2 - 1, 1 - (e.clientY / innerHeight) * 2);
   ray.setFromCamera(ndc, camera);
   if (!ray.ray.intersectPlane(plane, hit)) return;
-  U.noz.value.set(Math.max(-12, Math.min(12, hit.x)), Math.max(1, Math.min(11, hit.y)), 0);
+  U.noz.value.set(Math.max(-4, Math.min(4, hit.x)), Math.max(1, Math.min(10, hit.y)), 0);
   placeCone();
 }
 const cv = renderer.domElement;
