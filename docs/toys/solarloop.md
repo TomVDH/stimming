@@ -129,7 +129,9 @@ Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trim
 
 Muted by default. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
 
-- Awake: a deep hum, a low chord whose filter breathes about every 20 s. The star sets the key: the larger the star, the lower.
+- Awake, the star's voice in two layers (Tom, 2026-11-23). The star sets the key: the larger the star, the lower.
+  - The rumble: deep and gentle, a bellow heard under water. Slowed noise through a low pass and a groaning band pass, swelling on three slow breaths out of step, over a sub tone two octaves down.
+  - The drone: an angelic, melodic hum. Soft detuned saws through "ah" formants, a choir on root, fifth, octave and tenth, with a shared slow vibrato. Its top voice sings a major pentatonic line, one note every 7 to 11 s, gliding between them.
 - A pulsar ticks: a dry click on a short thump each time a beam sweeps past the eye.
 - A flare or an eruption lands on a low brass blast: stacked saws through a soft clip, a filter that opens and closes.
 - An eruption: a long rush swept upward over 13 s, and a tone that bends up a fifth.
