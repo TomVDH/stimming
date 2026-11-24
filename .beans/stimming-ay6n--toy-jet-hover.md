@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-24T04:06:07Z
+updated_at: 2026-11-24T04:11:30Z
 parent: stimming-oh7b
 ---
 
@@ -67,3 +67,5 @@ Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 bloc
 - [ ] Exhaust pass, docs/plans/jethover.md: guide flow, soot, dry ground, no background haze (Tom, 2026-11-23; first try rejected)
 
 - [x] Heat distortion from a 2D heat sim in the nozzle plane, after Schlieren candle (Tom, 2026-11-23: "heat distortion (kind of like the chemical candle toy)"): jethover/heat2d.js
+
+- [x] Dev: Fluid and Soot rows, Show layer view (heat red, soot green); soot in the 2D plane glows hot and turns black as it cools (Tom, 2026-11-23: "can we get some controls for the fluid smoke etc?")

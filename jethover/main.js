@@ -67,6 +67,8 @@ const tune = {
   bendK: 2, capK: 1.5, heatBlur: 1.5, heatK: 1,
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
+  fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
+  sAmount: 1, sLife: 1, sDark: 1, sGlow: 1, sootOn: true, view: 'off',
 };
 const slider = (id, group, label, min, max, step) => ({
   type: 'slider', id, group, label, min, max, step, value: tune[id], persist: true,
@@ -83,6 +85,20 @@ const DEV_ROWS = [
   slider('exSmoke', 'Gas', 'Exhaust smoke', 0, 3, 0.05),
   slider('exHeat', 'Gas', 'Exhaust heat', 0, 3, 0.05),
   slider('speedK', 'Gas', 'Gas speed', 0.2, 2, 0.05),
+  slider('fSwirl', 'Fluid', 'Swirl', 0, 3, 0.05),
+  slider('fLift', 'Fluid', 'Lift', 0, 3, 0.05),
+  slider('fCool', 'Fluid', 'Cooling', 0, 3, 0.05),
+  slider('fDrag', 'Fluid', 'Drag', 0, 5, 0.05),
+  slider('fJet', 'Fluid', 'Jet speed', 0.2, 2, 0.05),
+  slider('fHeat', 'Fluid', 'Jet heat', 0, 2, 0.05),
+  { type: 'toggle', id: 'sootOn', group: 'Soot', label: 'Soot', value: true, persist: true, onToggle: v => { tune.sootOn = v; applyTune(); touch(); } },
+  slider('sAmount', 'Soot', 'Amount', 0, 3, 0.05),
+  slider('sLife', 'Soot', 'Lifetime', 0.2, 4, 0.05),
+  slider('sDark', 'Soot', 'Darkness', 0, 3, 0.05),
+  slider('sGlow', 'Soot', 'Hot glow', 0, 3, 0.05),
+  { type: 'choice', id: 'view', group: 'View', label: 'Show layer', value: 'off', persist: true, options: [
+    { value: 'off', label: 'Off' }, { value: 'heat', label: 'Heat' }, { value: 'soot', label: 'Soot' }, { value: 'both', label: 'Both' },
+  ], onPick: v => { tune.view = v; applyTune(); touch(); } },
   slider('expo', 'Look', 'Exposure', 0.5, 1.6, 0.01),
   slider('bloom', 'Look', 'Bloom', 0, 2, 0.05),
   slider('grain', 'Look', 'Grain', 0, 2, 0.05),
@@ -115,7 +131,7 @@ const ui = initPage({ id: ID, bar: {
   ],
 } });
 // Stored Dev values replace the defaults.
-for (const r of DEV_ROWS) { const v = ui.setting?.(r.id)?.value; if (Number.isFinite(v)) tune[r.id] = v; }
+for (const r of DEV_ROWS) { const v = ui.setting?.(r.id)?.value; if (Number.isFinite(v) || typeof v === 'boolean' || typeof v === 'string') tune[r.id] = v; }
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 1500 });
 const snd = jetSound(kit);
@@ -348,6 +364,12 @@ function applyTune() {
     // The 2D heat plane makes the shimmer; the volumes no longer do.
     g.u.heatGain.value = 0;
   }
+  const h2 = heat2.u;
+  h2.curlK.value = 6 * tune.fSwirl; h2.lift.value = 14 * tune.fLift; h2.cool.value = 0.5 * tune.fCool; h2.damp.value = 0.15 * tune.fDrag;
+  h2.sootFeed.value = 3 * tune.sAmount; h2.sootFade.value = 0.4 / tune.sLife;
+  U.soot.value = tune.sootOn ? 1 : 0; U.sootDark.value = 1.6 * tune.sDark; U.sootGlow.value = 1.2 * tune.sGlow;
+  U.viewHeat.value = tune.view === 'heat' || tune.view === 'both' ? 1 : 0;
+  U.viewSoot.value = tune.view === 'soot' || tune.view === 'both' ? 1 : 0;
   gasF.u.emitDensity.value = 2000 * tune.exSmoke; gasF.u.emitTemperature.value = 330 * tune.exHeat;
   frame3();
   applyTime();
@@ -397,7 +419,7 @@ function pose() {
     gasF.u.jetA[i].value.copy(u.jetA[i].value);
     gasF.u.jetK[i].value.copy(u.jetK[i].value).setZ(0);
     // The 2D heat plane takes the two hot jets.
-    if (i < 2) heat2.setJet(i, j.n, axis, len, u.jetK[i].value.x, (0.55 + 0.45 * thr) * flick);
+    if (i < 2) heat2.setJet(i, j.n, axis, len, u.jetK[i].value.x * tune.fJet, (0.55 + 0.45 * thr) * flick * tune.fHeat);
     // The apron: a hot pool under each nozzle; the fan's pool is cold.
     const hot = i === 2 ? 0 : (0.25 + 1.5 * thr * thr) * clamp(1.4 - j.n.y / 10, 0.3, 1);
     S.U.hot[i].value.set(j.c.x, 0, j.c.z, hot);

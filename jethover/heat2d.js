@@ -1,4 +1,5 @@
 // Jet hover: the hot air as a 2D sim in the nozzle plane, after Schlieren candle.
+// The heat grid holds heat in x and soot in y.
 // The velocity grid is coarse; the heat grid is four times finer.
 // MacCormack transport keeps the heat filaments sharp.
 // The slope of the heat bends the frame.
@@ -38,6 +39,10 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     damp: uniform(0.15),
     // The air loses heat, per second.
     cool: uniform(0.5),
+    // Soot each jet core puts out, per second.
+    sootFeed: uniform(3.0),
+    // How fast soot thins, per second.
+    sootFade: uniform(0.4),
   };
 
   function tex2D(w, hh, name) {
@@ -160,13 +165,13 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     const c = cellOf(TX, TY), p = uvOf(c, TX, TY);
     const v = S(V, p).xy;
     const m = S(V, p.sub(v.mul(u.dt).mul(0.5).div(SZ))).xy;
-    textureStore(hatT, c, vec4(S(src, p.sub(m.mul(u.dt).div(SZ))).x, 0, 0, 1)).toWriteOnly();
+    textureStore(hatT, c, vec4(S(src, p.sub(m.mul(u.dt).div(SZ))).xy, 0, 1)).toWriteOnly();
   })().compute(TX * TY);
   const backPass = (V) => Fn(() => {
     const c = cellOf(TX, TY), p = uvOf(c, TX, TY);
     const v = S(V, p).xy;
     const m = S(V, p.add(v.mul(u.dt).mul(0.5).div(SZ))).xy;
-    textureStore(backT, c, vec4(S(hatT, p.add(m.mul(u.dt).div(SZ))).x, 0, 0, 1)).toWriteOnly();
+    textureStore(backT, c, vec4(S(hatT, p.add(m.mul(u.dt).div(SZ))).xy, 0, 1)).toWriteOnly();
   })().compute(TX * TY);
   const heatPass = (V, src, dst) => Fn(() => {
     const c = cellOf(TX, TY), p = uvOf(c, TX, TY);
@@ -176,9 +181,9 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     const q = p.sub(m.mul(u.dt).div(SZ)).mul(vec2(TX, TY)).sub(0.5);
     const i0 = floor(q).add(0.5).div(vec2(TX, TY));
     const ex = vec2(1 / TX, 0), ey = vec2(0, 1 / TY);
-    const a = S(src, i0).x, b = S(src, i0.add(ex)).x, cc = S(src, i0.add(ey)).x, d = S(src, i0.add(ex).add(ey)).x;
-    const T = S(hatT, p).x.add(S(src, p).x.sub(S(backT, p).x).mul(0.5)).clamp(min(min(a, b), min(cc, d)), max(max(a, b), max(cc, d))).toVar();
-    T.mulAssign(exp(u.cool.negate().mul(u.dt)));
+    const a = S(src, i0).xy, b = S(src, i0.add(ex)).xy, cc = S(src, i0.add(ey)).xy, d = S(src, i0.add(ex).add(ey)).xy;
+    const T = S(hatT, p).xy.add(S(src, p).xy.sub(S(backT, p).xy).mul(0.5)).clamp(min(min(a, b), min(cc, d)), max(max(a, b), max(cc, d))).toVar();
+    T.mulAssign(exp(vec2(u.cool, u.sootFade).negate().mul(u.dt)));
     // The top and side edges let the heat out.
     const edge = min(min(p.x, float(1).sub(p.x)), float(1).sub(p.y));
     T.mulAssign(smoothstep(0.0, 0.05, edge));
@@ -186,9 +191,11 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     const wp = world(p);
     for (let j = 0; j < 2; j++) {
       const k = core(wp, j, 0.8);
-      T.assign(mix(T, max(T, u.jetK[j].w), k.mul(u.dt).mul(40.0).clamp(0, 1)));
+      T.x.assign(mix(T.x, max(T.x, u.jetK[j].w), k.mul(u.dt).mul(40.0).clamp(0, 1)));
+      T.y.addAssign(k.mul(u.sootFeed).mul(u.jetK[j].w).mul(u.dt));
     }
-    textureStore(dst, c, vec4(T, 0, 0, 1)).toWriteOnly();
+    T.y.assign(T.y.min(4.0));
+    textureStore(dst, c, vec4(T, 0, 1)).toWriteOnly();
   })().compute(TX * TY);
 
   // One step reads vel[0] and heat[0] and leaves the result there again.
@@ -213,9 +220,9 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
   })().compute(TX * TY);
   passes.push(copyV, copyT);
 
-  // The plane that shows the heat to the bend pass.
+  // The plane shows heat in red and soot in green to the post chain.
   const mat = new THREE.MeshBasicNodeMaterial({ fog: false, depthWrite: false, depthTest: false });
-  mat.colorNode = Fn(() => vec4(texture(heat[0], uv()).x, 0, 0, 1))();
+  mat.colorNode = Fn(() => vec4(texture(heat[0], uv()).xy, 0, 1))();
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat);
   mesh.position.set(origin[0] + W / 2, origin[1] + H / 2, z);
   mesh.frustumCulled = false;

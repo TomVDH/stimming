@@ -105,6 +105,10 @@ export function makePost({ renderer, scene, camera, volScene, heatScene, planeSc
     res: uniform(new THREE.Vector2(1, 1)), amp: uniform(1), bend: uniform(45), time: uniform(0),
     vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3), occ: uniform(0.6),
     heatBlur: uniform(1.5), gasBlur: uniform(1.0), bendT: uniform(12),
+    // Soot from the 2D plane: on, darkness, hot glow.
+    soot: uniform(1), sootDark: uniform(1.6), sootGlow: uniform(1.2),
+    // Dev views: heat in red, soot in green.
+    viewHeat: uniform(0), viewSoot: uniform(0),
     key: uniform(new THREE.Color(0.8, 0.9, 1.06)), pull: uniform(0.3),
   };
   // The heat sum is blurred before its slope is taken.
@@ -137,7 +141,13 @@ export function makePost({ renderer, scene, camera, volScene, heatScene, planeSc
       .add(heat.sample(screenUV.add(vec2(0.0, d.y))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(0.0, d.y))).b.mul(0.15));
   })();
   const behind = exp(sumAt.mul(U.occ).negate());
-  const lit = vec4(sceneCol.rgb.mul(behind).add(gasCol.rgb), 1.0);
+  // Soot glows while hot and turns black as it cools.
+  const pl = plane.sample(screenUV);
+  const cool = float(1.0).sub(smoothstep(0.15, 0.6, pl.r));
+  const absorb = exp(pl.g.mul(U.sootDark).mul(cool.mul(0.7).add(0.3)).mul(U.soot).negate());
+  const sootGlow = vec3(1.0, 0.45, 0.12).mul(pl.g.mul(pl.r).mul(pl.r).mul(U.sootGlow).mul(U.soot));
+  const view = vec3(pl.r.mul(3.0).mul(U.viewHeat), pl.g.mul(1.5).mul(U.viewSoot), 0.0);
+  const lit = vec4(sceneCol.rgb.mul(behind).mul(absorb).add(gasCol.rgb).add(sootGlow).add(view), 1.0);
   const glow = bloom(lit, 0.55, 0.6, 0.85);
   const tone = renderOutput(lit.add(glow));
   // The Villeneuve grade: colour falls toward one cool key; highs go to cream.
