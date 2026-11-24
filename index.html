@@ -2296,6 +2296,30 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
         btn.setAttribute('aria-pressed', on);
         document.querySelector('main').prepend(btn);
 
+        // The Lab keeps Slate first and Bench last, in both views (Tom, 2026-11-23).
+        // Slate holds the toys on the way to the main shelf; Bench holds iteration pieces.
+        let pinned = null;
+        async function pin() {
+          if (!lab || pinned) return;
+          const [toys] = await load();
+          await parsed();
+          const home = shelf();
+          if (!home) return;
+          pinned = true;
+          for (const [key, name] of [['slate', 'Slate'], ['bench', 'Bench']]) {
+            const tiles = [...home.children].filter(li => toys[li.querySelector('a.toy')?.id]?.[key]);
+            if (!tiles.length) continue;
+            const sec = Object.assign(document.createElement('section'), { className: 'sec ' + key });
+            const ul = Object.assign(document.createElement('ul'), { className: 'shelf' });
+            const hd = Object.assign(document.createElement('h2'), { className: 'sec-hd' });
+            hd.innerHTML = '<span class="at"><span></span></span>';
+            hd.querySelector('.at > span').textContent = name;
+            sec.setAttribute('aria-label', name);
+            ul.append(...tiles);
+            sec.append(hd, ul);
+            key === 'slate' ? home.before(sec) : home.after(sec);
+          }
+        }
         async function group() {
           const [toys, series, { shotIcon }] = await load();
           await parsed();
@@ -2332,7 +2356,7 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           if (!home || !flat) return;
           home.append(...flat);
           home.hidden = false;
-          home.parentElement.querySelectorAll(':scope > .sec').forEach(sec => sec.remove());
+          home.parentElement.querySelectorAll(':scope > .sec:not(.slate, .bench)').forEach(sec => sec.remove());
           flat = null;
         }
         // Where the browser can, each toy glides to its new place.
@@ -2347,9 +2371,9 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
           // A second click may cut the glide short; the swap itself still runs.
           document.startViewTransition(swap).ready.catch(() => {});
         });
-        if (!on) return;
+        if (!on && !lab) return;
         root.dataset.sections = 'wait';
-        group().catch(() => { /* The shelf stays flat. */ }).finally(() => { delete root.dataset.sections; });
+        pin().then(() => on && group()).catch(() => { /* The shelf stays flat. */ }).finally(() => { delete root.dataset.sections; });
       })();
       // Hover or focus on a series tile lights its siblings and draws their links.
       function constellation(shelf, series) {

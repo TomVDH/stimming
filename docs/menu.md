@@ -23,6 +23,7 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 
 ### Deal
 - The Clock deals twelve toys from a shuffled line. No toy comes back before every other toy had a turn.
+- The last three hands are kept in `stimming.seen`, across loads. A new line puts their toys last.
 - Re-roll (key R) shows after 5 s, inside the clock: low in the middle, under the motto, over the six o'clock toy. It scales with the clock. It sends the old dozen back into blur in the comet's order, then runs the comet.
 - The Clock has no link to `?all` or `?lab`. Both are flags.
 
@@ -116,6 +117,7 @@ Rules for drawing icons: `icons/AGENTS.md`.
 - One series per toy. Where a place and a theme both fit, the place wins.
 - The Series switch (in `?all`) groups the shelf under dividers or lays it flat. The main shelf opens flat; the Lab opens in sections. The choice is kept in `stimming.series`. No JS or a failed fetch leaves the flat shelf.
 - Divider: a wavy line in the series colour, the icon and the name in its gap. No counters.
+- The Lab has two more sections, in both views: Slate first, Bench last. `"slate": true` in `toys.json` puts a toy in Slate, for promotion later. `"bench": true` puts an iteration piece in Bench. An empty section does not show.
 - Series icon: a shot in a hexagon ring, in the series colour. `shared/series/shots.js` holds every shot and `shotIcon()`.
   - A shot is a small Dutch-angle picture, its subject whole and centred, on a sky in the series hue. It draws the idea of the series, never one of its toys.
   - No gold border, sparks, depth, tilt, wobble, sheen or birds. Every series wears the same thin ring.

@@ -61,6 +61,12 @@ function start() {
   // so no toy comes back before the rest had a turn.
   let line = [], busy = false;
   const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  // The last three hands are kept across loads (Tom, 2026-11-23).
+  // A new line puts the toys from those hands last.
+  const SEEN = 'stimming.seen', id = li => li.querySelector('a.toy').id;
+  let seen = [];
+  try { seen = JSON.parse(localStorage.getItem(SEEN)) || []; } catch (e) {}
+  const fresh = a => [...a.filter(li => !seen.includes(id(li))), ...a.filter(li => seen.includes(id(li)))];
   const dozen = () => [...shelf.children].slice(0, HOURS);
   // A held toy waits in the menu's own grainy blur; it comes in when the hold ends.
   // The hold is ours: the menu's reveal can mark a toy `is-in` at any time, so it cannot hold it.
@@ -75,9 +81,11 @@ function start() {
   function deal() {
     const hand = [];
     while (hand.length < HOURS) {
-      if (!line.length) line = shuffle(pool.filter(li => !hand.includes(li)));
+      if (!line.length) line = fresh(shuffle(pool.filter(li => !hand.includes(li))));
       hand.push(line.shift());
     }
+    seen = [...seen, ...hand.map(id)].slice(-HOURS * 3);
+    try { localStorage.setItem(SEEN, JSON.stringify(seen)); } catch (e) {}
     pool.forEach(li => li.setAttribute('data-out', ''));
     hand.forEach((li, i) => {
       li.removeAttribute('data-out');
