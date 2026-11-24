@@ -260,7 +260,8 @@ export function makeSound(kit) {
   const layers = { hum: true, rumble: true, lvl: 1 };
   // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
   // The rumble grows as the view closes in on the star (Tom).
-  const rumbleAt = near => Math.pow(10, clamp(6 * near, -9, 6) / 20);
+  // The long lens sits 1.5 dB above the old fixed level (Tom).
+  const rumbleAt = near => Math.pow(10, clamp(6 * near - 4.5, -14, 1.5) / 20);
   function mixLayers(hum, rumble, near = 0) {
     const lvl = rumble ? rumbleAt(near) : 0;
     if (layers.hum === hum && Math.abs(layers.lvl - lvl) < 0.01) return;
