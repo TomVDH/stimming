@@ -14,9 +14,11 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 |---|---|
 | Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
-| Star choice | A sheet in three groups: Main sequence (O to M), Brown dwarfs, Life stages. Keys 1 to 9 and 0 pick the main sequence and the brown dwarfs; the life stages are tap only |
+| Star (the bar button shows the star) | Opens the star chart, a Hertzsprung-Russell sheet: spectral class across (O to Y, hot on the left), brightness up. Each star is a swatch in its own colour, sized by its radius on a log scale; a ring marks the current one. The pulsar stands in a gutter past a break: it has no class. Quiet words name the main sequence, the giants, the white dwarfs and the brown dwarfs. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Arrows move to the nearest star that way, [ and ] step through the list, Enter picks, Escape closes. On a phone, or a short stage, only the current star and the one in hand show their names |
+| Keys 1 to 0 | Pick the main sequence (O to M) and the two brown dwarfs |
+| [ and ] | Step to the previous or the next star, through all seventeen |
 | Zoom (wheel, pinch, - and =) | Full view only: zooms out up to 16 times farther, and back |
-| Lens (L) | Steps through the long lens (the default), the wide view and the full star, zooming over two seconds |
+| Lens (L) | Steps through the long lens (the default), the wide view and the full star, zooming over two seconds. The button shows the view, and the zoom on the full star (`Full ×2.0`) |
 | Activity slider | How many loops live, how bright, how fast they cycle |
 | Flare (Space) | Flares each region in turn, the ones in view first |
 
@@ -91,6 +93,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 |---|---|
 | `index.html` | The page shell |
 | `main.js` | State, the telescope view, the turn, picking, Bar v3 spec, frame loop |
+| `chart.js`, `chart.css` | The star chart: a sheet the toy owns, in the Bar v3 sheet look. The Star action opens it; the bar labels follow the Bar v2 chips |
 | `sun.js` | The regions, the loop life cycle, the flare timeline, the stars and the scale bodies; it writes one strand per thread |
 | `render.js` | Raw WebGL2: the disk and corona pass, instanced strands, bloom (`shared/glow.js`), light rays, the final pass, the colour ramps |
 | `sound.js` | Web Audio |
@@ -154,7 +157,7 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 | Q4 | Drifting: 32 rAF a second. Asleep 63 s after the last input: 0 rAF in 2 s |
 | Q5 | Hidden tab: 0 rAF in 2 s |
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
-| Q7 | Star choice, Flare, Lens, Activity slider (4 controls); How to play has 3 rows |
-| Q8 | 1 to 9 and 0, L (three views) and Space each do their job |
+| Q7 | Star, Flare, Lens, Activity slider (4 controls); How to play has 6 rows. Star chart (2026-11-23): 1280 x 800, 375 x 812, 812 x 375, clean console |
+| Q8 | 1 to 9 and 0, [ and ], L (three views), - and =, and Space each do their job; while the chart is open, the toy's keys wait |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |
