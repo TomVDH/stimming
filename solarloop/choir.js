@@ -44,7 +44,8 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // vowel scales the formants: below 1 is "oo", above 1 is "ee".
 // metal: ring modulation mix. det: unison detune in cents.
 // res: synth filter Q. fmot: synth filter sweep depth.
-// dist: distance, 0 near, 1 far. gain: loudness trim against the Sun.
+// dist: distance, 0 near, 1 far. gain: Tom's loudness trim for the star, 1 is 0 dB.
+// norm: the measured factor that makes the star as loud as the Sun (NORM below).
 // key: semitones up or down from the star's home key.
 // harmony, prog, voicing, melody, move, echo: the song. leadOct: the melody's octave.
 // slowed: the second, slower choir layer. aDrift, chorus, swellA, swellAmt: the analog pad.
@@ -53,7 +54,7 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // blastMix, glowMix: a level per tap voice, set on the lab's tap bench.
 export const SUN = {
   wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12,
-  dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, key: 0,
+  dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, norm: 1, key: 0,
   harmony: 'cross', prog: null, voicing: 'sun', melody: 'step', move: 'fade', echo: 'reverb', slowed: true,
   aDrift: 0, chorus: 0, swellA: 3, swellAmt: 0,
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
@@ -69,47 +70,77 @@ const ANALOG = { wave: 'analog', voice: 0, det: 12, res: 3, aDrift: 6, chorus: 0
 // Glows on songs play the current chord as an arpeggio.
 const ARP = { glowStyle: 'arp', chord: 'current' };
 // First presets (2026-11-24): giants and odd stars are synths, far and cold.
-// Gains match each star's loudness to the Sun, measured offline.
+// Each star's level: NORM matches it to the Sun; gain is Tom's trim on top.
 export const VOICES = {
   sun: SUN,
-  zetaoph: P({ ...song('lydian'), ...ARP, det: 12, res: 5, fmot: 0.45, voice: 0.35, vowel: 1.3, metal: 0.3, bright: 1.4, step: 9, dist: 0.5, rev: 10, mix: 1.3, width: 1.5, oct: [1, 0.6, 0.6], swR: 0.07, swD: 0.12, fx: { sweep: 0.45, screech: 0.2 }, gain: 0.66 }),
-  regulus: P({ ...song('sus'), ...ARP, wave: 'square', voice: 0.75, vowel: 1.2, metal: 0.1, bright: 1.3, step: 6, dist: 0.1, width: 1.4, swR: 0.18, gain: 0.72 }),
-  vega: P({ ...song('lydian'), ...ARP, wave: 'triangle', voice: 0.55, vowel: 1.25, metal: 0.3, bright: 1.25, step: 7, dist: 0.15, width: 1.3, oct: [1, 0.5, 0.4], swD: 0.15, gain: 0.75 }),
-  sirius: P({ ...song('sus'), ...ARP, wave: 'organ', voice: 0.6, vowel: 1.2, metal: 0.08, bright: 1.25, step: 7, dist: 0.05, width: 1.2, oct: [1, 0.5, 0.5], swD: 0.15, gain: 0.45 }),
-  procyon: P({ ...song('sus'), ...ARP, voice: 0.85, vowel: 1.1, bright: 1.1, step: 7.5, oct: [1, 0.5, 0.55], gain: 0.77 }),
-  epseri: P({ ...song('rise'), ...ARP, voice: 0.9, vowel: 0.9, metal: 0.05, bright: 0.9, rev: 6.5, swR: 0.15, swD: 0.25, oct: [1, 0.5, 0.5], gain: 0.95 }),
-  proxima: P({ ...song('rise'), ...ARP, wave: 'square', voice: 0.8, vowel: 0.8, bright: 0.75, step: 9, rev: 6, dist: 0.2, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.25, gain: 0.61 }),
-  luhman: P({ ...song('ice'), ...ARP, wave: 'pulse', det: 6, res: 4, fmot: 0.35, voice: 0.4, vowel: 0.7, metal: 0.2, bright: 0.6, step: 11, dist: 0.65, rev: 11, mix: 1.5, width: 1.6, oct: [0.8, 0.5, 0.5], swR: 0.05, swD: 0.1, fx: { dark: 0.45, sweep: 0.35 }, gain: 0.21 }),
-  wise: P({ ...song('ice'), ...ARP, glowWave: 'sine', wave: 'fm', res: 3, fmot: 0.3, voice: 0.3, vowel: 0.6, metal: 0.25, bright: 0.5, step: 13, dist: 0.85, rev: 13, mix: 1.7, width: 1.8, oct: [0.7, 0.5, 0.6], swR: 0.04, swD: 0.08, fx: { dark: 0.6, echo: 0.5, sweep: 0.3 }, gain: 0.15 }),
-  ttauri: P({ ...song('sus'), ...ARP, wave: 'pulse', det: 9, res: 3, fmot: 0.4, voice: 0.45, vowel: 0.9, metal: 0.12, bright: 0.85, step: 9, dist: 0.55, rev: 10, mix: 1.4, width: 1.7, swR: 0.2, swD: 0.3, fx: { sweep: 0.3, echo: 0.35 }, gain: 0.3 }),
-  arcturus: P({ ...song('ominous'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 7, fmot: 0.25, vowel: 0.85, bright: 0.8, step: 10, rev: 10, width: 1.3, oct: [1, 0.6, 0.8], swR: 0.08, gain: 0.86 }),
-  rigel: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 8, res: 5, fmot: 0.3, vowel: 1.3, metal: 0.18, bright: 1.3, step: 10, dist: 0.3, rev: 10, mix: 1.2, width: 1.6, oct: [1, 0.6, 0.8], swR: 0.08, gain: 0.43 }),
+  zetaoph: P({ ...song('lydian'), ...ARP, det: 12, res: 5, fmot: 0.45, voice: 0.35, vowel: 1.3, metal: 0.3, bright: 1.4, step: 9, dist: 0.5, rev: 10, mix: 1.3, width: 1.5, oct: [1, 0.6, 0.6], swR: 0.07, swD: 0.12, fx: { sweep: 0.45, screech: 0.2 }, gain: 1 }),
+  regulus: P({ ...song('sus'), ...ARP, wave: 'square', voice: 0.75, vowel: 1.2, metal: 0.1, bright: 1.3, step: 6, dist: 0.1, width: 1.4, swR: 0.18, gain: 1 }),
+  vega: P({ ...song('lydian'), ...ARP, wave: 'triangle', voice: 0.55, vowel: 1.25, metal: 0.3, bright: 1.25, step: 7, dist: 0.15, width: 1.3, oct: [1, 0.5, 0.4], swD: 0.15, gain: 1 }),
+  sirius: P({ ...song('sus'), ...ARP, wave: 'organ', voice: 0.6, vowel: 1.2, metal: 0.08, bright: 1.25, step: 7, dist: 0.05, width: 1.2, oct: [1, 0.5, 0.5], swD: 0.15, gain: 1 }),
+  procyon: P({ ...song('sus'), ...ARP, voice: 0.85, vowel: 1.1, bright: 1.1, step: 7.5, oct: [1, 0.5, 0.55], gain: 1 }),
+  epseri: P({ ...song('rise'), ...ARP, voice: 0.9, vowel: 0.9, metal: 0.05, bright: 0.9, rev: 6.5, swR: 0.15, swD: 0.25, oct: [1, 0.5, 0.5], gain: 1 }),
+  proxima: P({ ...song('rise'), ...ARP, wave: 'square', voice: 0.8, vowel: 0.8, bright: 0.75, step: 9, rev: 6, dist: 0.2, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.25, gain: 1 }),
+  luhman: P({ ...song('ice'), ...ARP, wave: 'pulse', det: 6, res: 4, fmot: 0.35, voice: 0.4, vowel: 0.7, metal: 0.2, bright: 0.6, step: 11, dist: 0.65, rev: 11, mix: 1.5, width: 1.6, oct: [0.8, 0.5, 0.5], swR: 0.05, swD: 0.1, fx: { dark: 0.45, sweep: 0.35 }, gain: 1 }),
+  wise: P({ ...song('ice'), ...ARP, glowWave: 'sine', wave: 'fm', res: 3, fmot: 0.3, voice: 0.3, vowel: 0.6, metal: 0.25, bright: 0.5, step: 13, dist: 0.85, rev: 13, mix: 1.7, width: 1.8, oct: [0.7, 0.5, 0.6], swR: 0.04, swD: 0.08, fx: { dark: 0.6, echo: 0.5, sweep: 0.3 }, gain: 1 }),
+  ttauri: P({ ...song('sus'), ...ARP, wave: 'pulse', det: 9, res: 3, fmot: 0.4, voice: 0.45, vowel: 0.9, metal: 0.12, bright: 0.85, step: 9, dist: 0.55, rev: 10, mix: 1.4, width: 1.7, swR: 0.2, swD: 0.3, fx: { sweep: 0.3, echo: 0.35 }, gain: 1 }),
+  arcturus: P({ ...song('ominous'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 7, fmot: 0.25, vowel: 0.85, bright: 0.8, step: 10, rev: 10, width: 1.3, oct: [1, 0.6, 0.8], swR: 0.08, gain: 1 }),
+  rigel: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 8, res: 5, fmot: 0.3, vowel: 1.3, metal: 0.18, bright: 1.3, step: 10, dist: 0.3, rev: 10, mix: 1.2, width: 1.6, oct: [1, 0.6, 0.8], swR: 0.08, gain: 1 }),
   // Betelgeuse: Tom's standard choir, set by ear in the lab (2026-11-24).
   betelgeuse: P({ harmony: 3, glowWave: 'sawtooth', chord: 'minor', det: 10, res: 5.5, fmot: 0.35, voice: 0.5, vowel: 0.75, metal: 0.2, bright: 0.7, step: 12, dist: 0.35, rev: 11, mix: 1.2, width: 1.6, oct: [0.9, 0.7, 1], swR: 0.05, swD: 0.3, fx: { dark: 0.25 }, gain: 1 }),
-  vycma: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 14, res: 6, fmot: 0.5, vowel: 0.65, metal: 0.15, bright: 0.6, step: 14, dist: 0.7, rev: 12, mix: 1.5, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.04, swD: 0.25, fx: { dark: 0.4, echo: 0.4 }, gain: 0.27 }),
-  siriusb: P({ ...song('overtones'), ...ARP, glowWave: 'sine', wave: 'fm', res: 5, fmot: 0.3, voice: 0.2, vowel: 1.3, metal: 0.55, bright: 1.3, step: 9, dist: 0.6, rev: 10, mix: 1.5, width: 1.5, oct: [1, 0.4, 0.15], swR: 0.1, swD: 0.1, fx: { machine: 0.4, echo: 0.4 }, gain: 0.45 }),
+  vycma: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 14, res: 6, fmot: 0.5, vowel: 0.65, metal: 0.15, bright: 0.6, step: 14, dist: 0.7, rev: 12, mix: 1.5, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.04, swD: 0.25, fx: { dark: 0.4, echo: 0.4 }, gain: 1 }),
+  siriusb: P({ ...song('overtones'), ...ARP, glowWave: 'sine', wave: 'fm', res: 5, fmot: 0.3, voice: 0.2, vowel: 1.3, metal: 0.55, bright: 1.3, step: 9, dist: 0.6, rev: 10, mix: 1.5, width: 1.5, oct: [1, 0.4, 0.15], swR: 0.1, swD: 0.1, fx: { machine: 0.4, echo: 0.4 }, gain: 1 }),
   // WR 124: a Wolf-Rayet star, very hot, in a fast wind and a big pink shell of shed gas (M1-67).
   // A bright, airy, very wide choir: a slow phaser for the wind, long echoes for the shell.
-  wr124: P({ ...song('lydian'), ...ARP, voice: 0.7, vowel: 1.35, metal: 0.1, bright: 1.45, step: 9, dist: 0.45, rev: 12, mix: 1.5, width: 2, oct: [1, 0.6, 0.5], swR: 0.09, swD: 0.22, fx: { sweep: 0.5, echo: 0.3 }, gain: 0.34 }),
+  wr124: P({ ...song('lydian'), ...ARP, voice: 0.7, vowel: 1.35, metal: 0.1, bright: 1.45, step: 9, dist: 0.45, rev: 12, mix: 1.5, width: 2, oct: [1, 0.6, 0.5], swR: 0.09, swD: 0.22, fx: { sweep: 0.5, echo: 0.3 }, gain: 1 }),
   // Beta Lyrae: a blue-white giant pours gas onto a partner hidden in a disc; they eclipse each 112 s.
   // Two chords trade places for the pair; notes and melody glide like the stream; the choir dims once per orbit.
-  betalyr: P({ ...song('lydian'), ...ARP, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 0.48 }),
+  betalyr: P({ ...song('lydian'), ...ARP, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 1 }),
   // V1400 Centauri: a young orange K star deep in eclipse behind J1407b's giant rings.
   // A warm choir, dimmed; a phaser and a quicker swell for ringlets that sweep past; a little icy metal.
-  j1407: P({ ...song('rise'), ...ARP, voice: 0.8, vowel: 0.85, metal: 0.15, bright: 0.75, step: 9, dist: 0.4, rev: 11, mix: 1.4, width: 1.8, oct: [1, 0.6, 0.6], swR: 0.15, swD: 0.3, fx: { sweep: 0.5, echo: 0.35 }, gain: 0.43 }),
+  j1407: P({ ...song('rise'), ...ARP, voice: 0.8, vowel: 0.85, metal: 0.15, bright: 0.75, step: 9, dist: 0.4, rev: 11, mix: 1.4, width: 1.8, oct: [1, 0.6, 0.6], swR: 0.15, swD: 0.3, fx: { sweep: 0.5, echo: 0.35 }, gain: 1 }),
   // The Thorne–Żytkow object: a red supergiant with a neutron star in its core (1977 prediction).
   // It starts from the quasar's sound (Tom's reference): darker and heavier for the giant,
   // a metal ring for the core, and a slow swell for its faint pulse.
-  tzo: P({ ...song('ominous'), ...ARP, ...ANALOG, wave: 'pulse', det: 12, res: 5, fmot: 0.45, aDrift: 8, metal: 0.3, bright: 0.75, step: 13, dist: 0.6, rev: 13, mix: 1.7, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.08, swD: 0.3, glowWave: 'sawtooth', fx: { radio: 0.25, machine: 0.3, dark: 0.3, echo: 0.35 }, gain: 0.11 }),
+  tzo: P({ ...song('ominous'), ...ARP, ...ANALOG, wave: 'pulse', det: 12, res: 5, fmot: 0.45, aDrift: 8, metal: 0.3, bright: 0.75, step: 13, dist: 0.6, rev: 13, mix: 1.7, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.08, swD: 0.3, glowWave: 'sawtooth', fx: { radio: 0.25, machine: 0.3, dark: 0.3, echo: 0.35 }, gain: 1 }),
   // The holes and the quasar: far, cold and slow (2026-11-24). Taps never fire on them.
   // Cygnus X-1: a black hole fed by a blue supergiant; X-ray hot. Glassy FM overtones.
-  cygx1: P({ ...song('overtones'), ...ARP, wave: 'fm', voice: 0.1, det: 8, res: 6, fmot: 0.4, metal: 0.35, bright: 1.1, step: 10, dist: 0.75, rev: 13, mix: 1.7, width: 1.8, oct: [0.9, 0.7, 0.8], swR: 0.05, swD: 0.12, glowWave: 'sine', fx: { sweep: 0.35, dark: 0.3, echo: 0.35 }, gain: 0.27 }),
+  cygx1: P({ ...song('overtones'), ...ARP, wave: 'fm', voice: 0.1, det: 8, res: 6, fmot: 0.4, metal: 0.35, bright: 1.1, step: 10, dist: 0.75, rev: 13, mix: 1.7, width: 1.8, oct: [0.9, 0.7, 0.8], swR: 0.05, swD: 0.12, glowWave: 'sine', fx: { sweep: 0.35, dark: 0.3, echo: 0.35 }, gain: 1 }),
   // Sagittarius A*: the hole at the centre of our galaxy. The deepest, slowest pad.
-  sgra: P({ ...song('phrygian'), ...ARP, ...ANALOG, det: 14, res: 5, fmot: 0.5, bright: 0.5, step: 16, dist: 0.85, rev: 14, mix: 1.8, width: 1.9, oct: [0.6, 0.8, 1.1], swR: 0.03, swD: 0.2, glowWave: 'sawtooth', fx: { dark: 0.5, echo: 0.45 }, gain: 0.16 }),
+  sgra: P({ ...song('phrygian'), ...ARP, ...ANALOG, det: 14, res: 5, fmot: 0.5, bright: 0.5, step: 16, dist: 0.85, rev: 14, mix: 1.8, width: 1.9, oct: [0.6, 0.8, 1.1], swR: 0.03, swD: 0.2, glowWave: 'sawtooth', fx: { dark: 0.5, echo: 0.45 }, gain: 1 }),
   // 3C 273: the first quasar, radio-loud and billions of light years away. A far transmission.
-  qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 0.08 }),
-  neutron: P({ ...song('overtones'), ...ARP, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 0.07 }),
+  qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 1 }),
+  neutron: P({ ...song('overtones'), ...ARP, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 1 }),
 };
+// Normalization: each star's level against the Sun, measured offline.
+// K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render (2026-11-24).
+// The lab's Normalize every star measures them again and writes this table out.
+export const NORM = {
+  sun: 1,
+  zetaoph: 0.76,
+  regulus: 0.75,
+  vega: 0.81,
+  sirius: 0.51,
+  procyon: 0.94,
+  epseri: 1.05,
+  proxima: 0.49,
+  luhman: 0.21,
+  wise: 0.18,
+  ttauri: 0.28,
+  j1407: 0.41,
+  arcturus: 0.82,
+  betalyr: 0.45,
+  rigel: 0.68,
+  betelgeuse: 0.55,
+  vycma: 0.27,
+  wr124: 0.31,
+  siriusb: 0.5,
+  neutron: 0.07,
+  tzo: 0.12,
+  cygx1: 0.26,
+  sgra: 0.16,
+  qso: 0.08,
+};
+for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 
 // The zoom mix, one for all stars: a level and layer gains at each zoom stop.
@@ -494,7 +525,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
     const at = ac.currentTime;
     const set = (prm, x) => first ? (prm.value = x) : prm.setTargetAtTime(x, at, 0.05);
     const d = p.dist, rc = 1 / (1 + 0.09 * (p.res - 0.5));
-    set(g.gain, (1 + 0.35 * d) * p.gain);
+    set(g.gain, (1 + 0.35 * d) * (p.norm ?? 1) * p.gain);
     if (n.air) set(n.air.frequency, d > 0 ? Math.max(2500, 14000 * (1 - 0.78 * d)) : 20000);
     // The hall carries the dry choir at full level, as the old organ did.
     set(n.dry.gain, (echo === 'hall' ? 1 : 0.5) * (1 - 0.8 * d));

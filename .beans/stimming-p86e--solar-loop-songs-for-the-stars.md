@@ -18,7 +18,7 @@ Each star gets its own song, shaped in the choir lab and played by the toy. Plan
 - [x] Toy: chord taps, zoom mix and layers
 - [x] Lab: song section, step editor, analog, tap, zoom graph, versions and compare, repeat tap
 - [x] Starting songs per star
-- [ ] Loudness re-match after Tom tunes the songs (not Betelgeuse)
+- [x] Loudness normalized across every body (Tom, 2026-11-24): NORM per star, K-weighted at 44.1 kHz with a fixed seed; Tom's per-star level is a trim on top, 0 dB for all. In the toy at 44.1 kHz the Sun, Betelgeuse, the neutron star and 3C 273 sit within 0.9 dB
 - [x] Offline tests: Sun unchanged, progressions, taps, zoom, organ
 - [x] Docs: Sound section
 - [x] Tap bench: a level per tap voice (saved), mute and solo, an envelope and filter graph, meters for choir, taps and total, a burst of 10, tap strength (Tom, 2026-11-24)

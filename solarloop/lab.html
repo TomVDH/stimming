@@ -240,7 +240,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
 </div>
 
 <script type="module">
-import { choir, tapBus, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, chordOf, scaleOf, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, NORM, seeded, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, chordOf, scaleOf, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
 import { VERSIONS } from './legacy.js';
 import { ROOT, makeSound, nearOf } from './sound.js';
 import { CHART } from './chart.js';
@@ -315,8 +315,9 @@ const SECS = [
     { k: 'glowFade', label: 'Glow fade', help: 'Time to fade away.', tap: 1, min: 2, max: 40, step: 1, ends: ['short', 'long'], show: sec },
     { k: 'stack', label: 'Stack taps', help: 'On: every tap adds up, with no limit, as before 24 November.', tap: 1, check: 1 },
   ] },
-  { title: 'Level', intro: 'Each star must be as loud as the Sun. Match sets the level for you.', rows: [
-    { k: 'gain', label: 'Level', help: 'Level of this star.', min: 0.03, max: 12, step: 0.01, ends: ['quieter', 'louder'], show: db, button: ['match', 'Match the Sun'] },
+  { title: 'Level', intro: 'Two parts. Normalization makes every star as loud as the Sun, measured. Your level sits on top: 0 dB keeps the star level with all the others.', rows: [
+    { k: 'norm', label: 'Normalization', help: 'Measured against the Sun. Measure again after a big change of sound.', normRow: 1 },
+    { k: 'gain', label: 'Your level', help: 'Your setting for this star, on top of normalization.', min: 0.25, max: 4, step: 0.01, ends: ['-12 dB', '+12 dB'], show: db },
   ] },
   { title: 'Effects', intro: 'Adds colour to strange and far stars. The Sun has none.', fold: 1, rows: [
     { k: 'metal', label: 'Metal', help: 'Adds a ringing, metallic copy.', min: 0, max: 1, step: 0.05, ends: ['off', 'full'], show: v => v ? pct(v) : 'off' },
@@ -326,8 +327,11 @@ const SECS = [
   ] },
 ];
 
-const tuned = {};
-const P = id => $('orig').checked ? VOICES[id] : tuned[id] || ($('chr').checked ? VOICES[id] : { ...SUN });
+const tuned = {}, normLab = {};
+// A fresh normalization from the lab wins over NORM in choir.js.
+const withNorm = (id, p) => normLab[id] && !tuned[id] ? { ...p, norm: normLab[id] } : p;
+const P0 = id => $('orig').checked ? VOICES[id] : tuned[id] || ($('chr').checked ? VOICES[id] : { ...SUN });
+const P = id => withNorm(id, P0(id));
 const base = id => $('chr').checked ? VOICES[id] : { ...SUN };
 const rootOf = id => keyed(ROOT[id], P(id));
 const motion = () => ({ drift: $('drift').checked, swell: $('swell').checked });
@@ -382,6 +386,7 @@ for (const s of SECS) {
     const chips = r.restart ? '<span class="chip" title="A change restarts the choir.">↻</span>' : '';
     let c;
     if (r.editor) { c = '<div class="prog" id="prog"></div><div class="acts" style="margin:4px 8px"><button class="sm" id="addCh">Add chord</button></div>'; row.style.gridTemplateColumns = '1fr'; }
+    else if (r.normRow) c = `<span class="acts"><button id="match" title="Measures this star against the Sun and sets its normalization.">Measure this star again</button><button id="normAll" title="Measures every star against the Sun, about 2 minutes, and writes the NORM table for choir.js.">Normalize every star</button></span>`;
     else if (r.scale) c = `<select>${HARMONIES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select><small class="mute" id="scaleNotes" style="display:block;margin-top:4px;font-size:12px"></small>`;
     else if (r.song) c = `<select>${Object.entries(PROGRESSIONS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}<option value="custom" disabled>Custom</option></select><small class="mute" id="progDesc" style="display:block;margin-top:4px;font-size:12px"></small>`;
     else if (r.options) c = `<select>${r.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>`;
@@ -559,6 +564,12 @@ function show() {
       $('progDesc').textContent = nm === 'custom' ? 'Your own chords.' : nm === 'sun' && p.harmony !== 'cross' ? `No chord list: one chord, held in ${harmName(p.harmony)}.` : pr.desc + sets;
       continue;
     }
+    if (r.normRow) {
+      const nv = p.norm ?? 1, fresh = normLab[sel];
+      v.textContent = (nv === 1 ? '0 dB' : db(nv)) + (fresh ? ' (new)' : '');
+      v.classList.toggle('mod', JSON.stringify(nv) !== JSON.stringify(base(sel).norm ?? 1));
+      continue;
+    }
     if (r.scale) {
       input.value = String(p.harmony);
       $('scaleNotes').textContent = scaleText(p);
@@ -660,6 +671,7 @@ function edit(fn, tapEdit = false) {
 }
 for (const { r, input, on, v } of Object.values(rows)) {
   if (r.editor) continue;
+  if (r.normRow) continue;
   if (r.scale) { input.addEventListener('change', () => edit(q => { q.harmony = harmV(input.value); })); continue; }
   if (r.song) {
     input.addEventListener('change', () => edit(q => {
@@ -808,7 +820,7 @@ const CMP = [['Song', p => p.prog ? (progName(p) === 'custom' ? 'custom' : PROGR
   ['Melody', p => p.melody], ['Voicing', p => p.voicing], ['Echo', p => p.echo], ['Instrument', p => WAVES[p.wave].split(' (')[0]], ['Singers per note', p => p.det > 0 ? `3, ${p.det} cents` : '1'],
   ['Octaves', p => p.oct.join(' / ')], ['Slowed choir', p => p.slowed ? 'on' : 'off'], ['Singing', p => p.voice], ['Vowel', p => p.vowel], ['Brightness', p => p.bright], ['Resonance', p => p.res], ['Filter sweep', p => p.fmot],
   ['Analog swell', p => p.swellAmt], ['Chorus', p => p.chorus], ['Voice drift', p => p.aDrift], ['Metal', p => p.metal], ['Distance', p => p.dist], ['Room', p => p.rev], ['Echo level', p => p.mix], ['Width', p => p.width],
-  ['Melody speed', p => p.step], ['Swell', p => `${p.swD} at ${p.swR} Hz`], ['Level', p => p.gain], ['Effects', p => FX.filter(([k]) => p.fx[k].on).map(([k, n]) => `${n} ${p.fx[k].amt}`).join(', ') || 'none'],
+  ['Melody speed', p => p.step], ['Swell', p => `${p.swD} at ${p.swR} Hz`], ['Level', p => `norm ${(p.norm ?? 1) === 1 ? '0 dB' : db(p.norm ?? 1)}, yours ${db(p.gain)}`], ['Effects', p => FX.filter(([k]) => p.fx[k].on).map(([k, n]) => `${n} ${p.fx[k].amt}`).join(', ') || 'none'],
   ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off'], ['Blast voices', p => (p.blastMix || SUN.blastMix).join(' / ')], ['Glow voices', p => (p.glowMix || SUN.glowMix).join(' / ')]];
 function drawCompare() {
   if (!sel) return;
@@ -949,13 +961,15 @@ function drawMeter() {
   cx.fillStyle = 'oklch(0.95 0.01 260)'; cx.fillText('● Total', w - 84, 14);
 }
 
-// Loudness: an offline render through a rough ear weighting, after the fade-in.
+// Loudness: an offline render, K-weighted, after the fade-in.
 async function loudness(id, p) {
   const sr = 44100, dur = 18, c = new OfflineAudioContext(2, sr * dur, sr);
-  const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 60; hp.Q.value = 0.5;
-  const hs = c.createBiquadFilter(); hs.type = 'highshelf'; hs.frequency.value = 1500; hs.gain.value = 4;
+  // K-weighting, as in ITU-R BS.1770: a 38 Hz high pass and a +4 dB shelf from 1.68 kHz.
+  const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 38; hp.Q.value = 0.5;
+  const hs = c.createBiquadFilter(); hs.type = 'highshelf'; hs.frequency.value = 1681; hs.gain.value = 4;
   hp.connect(hs).connect(c.destination);
-  choir(c, { t: 0, base: keyed(ROOT[id], p) * 2, p: { ...p, gain: 1 }, out: hp, hall: hp }).sing(dur);
+  // A fixed seed plays the same notes each time, so a measurement repeats.
+  choir(c, { t: 0, base: keyed(ROOT[id], p) * 2, p: { ...p, gain: 1, norm: 1 }, out: hp, hall: hp, motion: { drift: true, swell: false }, rand: seeded(7) }).sing(dur);
   const b = await c.startRendering();
   let s = 0, n = 0;
   for (let ch = 0; ch < 2; ch++) { const d = b.getChannelData(ch); for (let i = sr * 5; i < d.length; i++) { s += d[i] * d[i]; n++; } }
@@ -965,8 +979,23 @@ $('match').onclick = async () => {
   if (!sel) return;
   $('match').textContent = 'Measuring…';
   const [sun, me] = await Promise.all([loudness('sun', VOICES.sun), loudness(sel, P(sel))]);
-  $('match').textContent = 'Match the Sun';
-  edit(p => { p.gain = Math.round(100 * sun / me) / 100; });
+  $('match').textContent = 'Measure this star again';
+  edit(p => { p.norm = Math.round(100 * sun / me) / 100; });
+};
+// Normalize every star: one measurement each, then the NORM table for choir.js.
+$('normAll').onclick = async () => {
+  const b = $('normAll'), ids = Object.keys(NAMES).filter(id => VOICES[id]);
+  const sun = await loudness('sun', VOICES.sun);
+  for (const [i, id] of ids.entries()) {
+    b.textContent = `Measuring ${i + 1} of ${ids.length}…`;
+    normLab[id] = id === 'sun' ? 1 : Math.round(100 * sun / await loudness(id, P(id))) / 100;
+    if (tuned[id]) tuned[id].norm = normLab[id];
+  }
+  b.textContent = 'Normalize every star';
+  $('out').value = '// Measured in the choir lab, ' + new Date().toISOString().slice(0, 10) + '.\nexport const NORM = {\n' + ids.map(id => `  ${id}: ${normLab[id]},`).join('\n') + '\n};';
+  navigator.clipboard?.writeText($('out').value).catch(() => {});
+  show();
+  if (cur) start(cur.id, true);
 };
 
 // Save.
@@ -981,12 +1010,15 @@ $('copy').onclick = () => {
   if (!ids.length) { $('out').value = 'No star has changes.'; return; }
   $('out').value = ids.map(id => {
     const p = tuned[id], o = {};
-    for (const k of Object.keys(SUN)) if (k !== 'fx' && k !== 'oct' && JSON.stringify(p[k]) !== JSON.stringify(SUN[k])) o[k] = typeof p[k] === 'number' ? r2(p[k]) : p[k];
+    // Normalization lives in NORM, not in the preset line.
+    for (const k of Object.keys(SUN)) if (k !== 'fx' && k !== 'oct' && k !== 'norm' && JSON.stringify(p[k]) !== JSON.stringify(SUN[k])) o[k] = typeof p[k] === 'number' ? r2(p[k]) : p[k];
     if (p.oct.some((v, i) => v !== SUN.oct[i])) o.oct = p.oct.map(r2);
     const f = Object.fromEntries(FX.filter(([k]) => p.fx[k].on).map(([k]) => [k, r2(p.fx[k].amt)]));
     if (Object.keys(f).length) o.fx = f;
     return `  ${id}: P(${lit(o)}),`;
   }).join('\n');
+  const nl = ids.filter(id => tuned[id].norm !== undefined && tuned[id].norm !== (NORM[id] ?? 1)).map(id => `  ${id}: ${r2(tuned[id].norm)},`);
+  if (nl.length) $('out').value += '\n// NORM changes:\n' + nl.join('\n');
   navigator.clipboard?.writeText($('out').value).catch(() => {});
 };
 listLabels();
