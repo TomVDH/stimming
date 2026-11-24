@@ -22,7 +22,8 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [ ] Pulsar: a new sound for the beam sweep and the Vela voice egg; Tom picks it
 - [x] Wooshes: all cut (ede9215e). Rule: add no sound layer Tom has not asked for by name.
 - [ ] The hit: Tom heard an "attack sound" on a flare. Check what is left of the hit with Tom.
-- [ ] Eggs audio (branch claude/solarloop-eggs-3a554c, bean stimming-239r): telegraph() crackles (Tom may not want them), dim() chord, tick(at, lvl) on the audio clock for the Vela buzz.
+- [x] Telegraph cut: the Carrington egg's clicks and sparks, its Dev row and the lab button (Tom, 2026-11-24)
+- [ ] Eggs audio (branch claude/solarloop-eggs-3a554c, bean stimming-239r): telegraph() is gone; dim() chord, tick(at, lvl) on the audio clock for the Vela buzz.
 - [x] Remove hush() once the micro branch's caller removal reaches feature/stimming-on77 and is merged here
 - [x] Dev Sound rows: hum, rumble and interaction levels; on/off for tap blast, tap glow, lift, pulsar tick, telegraph, Dimming (Tom)
 - [x] Sun choir redo: choir plus slowed choir, Ionian and pentatonic crossfade, no wobble, 7 s reverb (Tom picked it by ear)

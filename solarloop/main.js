@@ -10,7 +10,7 @@ import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
 mark('libs');
 
@@ -116,6 +116,10 @@ const weight = name => {
 };
 // How far the full view pulls back at z.
 const pullBack = z => 2 ** (Math.max(0, z - 2) * 1.25);
+// How far out the view is: 0 on the full star, 1 at x32.
+const farAt = z => ease(clamp((z - 2) / 4));
+// Far out the drag no longer turns the star; the mouse sways the lens instead.
+const canTurn = () => cam.mode !== 'long' && farAt(cam.z) < 0.5;
 // A pull-back as words: x5.7, x32.
 const pullText = z => { const k = pullBack(z); return `×${k < 9.95 ? k.toFixed(1) : Math.round(k)}`; };
 function fitView(w, h, top = 0, bottom = 0) {
@@ -353,7 +357,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
-    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndTelegraph', 'Egg: telegraph'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
+    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -496,9 +500,9 @@ function flareNear(x, y) {
 let hoverAt = null, cursor = '';
 function readHover() {
   let c = 'default';
-  if (pointer.drag && cam.mode !== 'long') c = 'grabbing';
+  if (pointer.drag && canTurn()) c = 'grabbing';
   else if (hoverAt && pointer.id === null && pickAt(hoverAt[0], hoverAt[1]).d < reach()) c = 'pointer';
-  else if (cam.mode !== 'long') c = 'grab';
+  else if (canTurn()) c = 'grab';
   if (c !== cursor) { cursor = c; stage.style.cursor = c; }
   const t = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]).t : null;
   if (t !== aimed) { aimed = t; poke(); }
@@ -569,8 +573,6 @@ function stepEgg(dt, holding) {
       const fl = startFlare(sun, egg.rg, st.time, calm ? 1.1 : 1.6);
       snd.flare(clamp(toCss(toView(egg.rg.c.map(x => x * R)))[0] / cssW * 2 - 1, -1, 1), st.star, 1);
     }
-    // The storm reaches the earth: its telegraph lines spark.
-    if (egg.t >= CARR_STORM && !egg.storm) { egg.storm = true; snd.telegraph(); }
     if (egg.t >= CARR_END) egg = null;
   } else if (egg.kind === 'dimming') {
     if (egg.t >= 0 && !egg.fired) { egg.fired = true; snd.dim(st.star); }
@@ -593,7 +595,7 @@ function eggFrame(out, dim) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
+  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
@@ -673,9 +675,10 @@ function makeFrame() {
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   // Past the full star the view pulls back; far runs 0 to 1 by x32.
-  const far = ease(clamp((cam.z - 2) / 4));
+  const far = farAt(cam.z);
   f.far = far;
   f.cam.set([st.yaw, st.pitch, star.lensing, far]);
+  f.sway.set([sway.x, sway.y]);
   // Real light (Tom, 2026-11-24): up close the star is masked so the corona shows.
   // Pulled back, the exposure rises and the disk outshines what lies round it.
   // It is full by x16.
@@ -749,6 +752,7 @@ function frame(now) {
     st.time += dt * drifting;
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
+    const swaying = stepSway(dt);
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
     if (FLUID) {
@@ -774,7 +778,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || swaying || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
@@ -827,8 +831,8 @@ stage.addEventListener('pointermove', e => {
   if (!pointer.drag) return;
   // The surface follows the hand, like a ball rolled under it.
   const k = 0.75 / Math.max(320, cssH);
-  // The long lens holds still: the camera never moves there.
-  if (cam.mode === 'long') return;
+  // The long lens holds still; far out the mouse sways the lens instead.
+  if (!canTurn()) return;
   st.pitch = clamp(pointer.p0 + (y - pointer.y0) * k, -0.32, 0.32);
   st.yaw = clamp(pointer.w0 + (x - pointer.x0) * k, -0.32, 0.32);
   setRot();
@@ -848,8 +852,26 @@ stage.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse') return;
   hoverAt = e.target === canvas || e.target === stage ? local(e) : null;
   readHover();
+  if (farAt(cam.z) > 0) poke();
 });
-stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); });
+stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
+
+/* ---------- sway: far out the mouse wobbles the lens ---------- */
+// A light spring follows the mouse, a little past and back.
+const sway = { x: 0, y: 0, vx: 0, vy: 0 };
+const SWAY_W = 6, SWAY_DAMP = 0.45;
+// Steps the spring; true while it moves.
+function stepSway(dt) {
+  const on = calm ? 0 : farAt(cam.z);
+  const tx = hoverAt && on ? (hoverAt[0] / cssW * 2 - 1) * on : 0;
+  const ty = hoverAt && on ? (1 - hoverAt[1] / cssH * 2) * on : 0;
+  sway.vx += (SWAY_W * SWAY_W * (tx - sway.x) - 2 * SWAY_DAMP * SWAY_W * sway.vx) * dt;
+  sway.vy += (SWAY_W * SWAY_W * (ty - sway.y) - 2 * SWAY_DAMP * SWAY_W * sway.vy) * dt;
+  sway.x += sway.vx * dt; sway.y += sway.vy * dt;
+  const still = Math.abs(tx - sway.x) + Math.abs(ty - sway.y) + Math.abs(sway.vx) + Math.abs(sway.vy) < 1e-3;
+  if (still) { sway.x = tx; sway.y = ty; sway.vx = sway.vy = 0; }
+  return !still;
+}
 // Zoom through every view: the wheel, a two-finger pinch, the - and = keys.
 stage.addEventListener('wheel', e => {
   e.preventDefault();

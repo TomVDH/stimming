@@ -21,7 +21,7 @@ Hidden, delightful things a curious player finds in Solar loop, grounded in real
 
 ## Summary of Changes
 
-Three eggs in `solarloop/eggs.js`, wired in `main.js`, `render.js` (uEgg and uDim in the disk pass) and `sound.js` (telegraph, dim). A 3 s still press plays them: the Carrington flare on the sun, the Great Dimming on Betelgeuse, Vela's true voice on the pulsar. Each also plays rarely on its own.
+Three eggs in `solarloop/eggs.js`, wired in `main.js`, `render.js` (uEgg and uDim in the disk pass) and `sound.js` (dim; the telegraph is cut, Tom 2026-11-24). A 3 s still press plays them: the Carrington flare on the sun, the Great Dimming on Betelgeuse, Vela's true voice on the pulsar. Each also plays rarely on its own.
 
 QA: each egg starts on its star; an early release runs out and does not flare; reduced motion caps the pulsar at 4 times and still plays Carrington; a forced rare egg plays, and the loop then sleeps (0 rAF, 0 timers). The console stays clean throughout.
 
