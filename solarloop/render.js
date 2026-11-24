@@ -122,7 +122,7 @@ uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
-uniform vec4 uFl[2], uFlW[2], uFlB[2];
+uniform vec4 uFl[2], uFlB[2];
 uniform vec4 uEgg[4], uDim[2];
 in vec2 vUv;
 out vec4 o;
@@ -198,14 +198,6 @@ void main() {
       float dd = 2.0 - 2.0 * dot(n, uReg[k].xyz);
       float m = exp(-dd / 0.006) * uReg[k].w;
       hot += uDisk2.z * uDisk.x * m * (0.4 + 1.2 * net + 0.6 * gran);
-    }
-    for (int k = 0; k < 2; k++) {
-      if (uFlW[k].y <= 0.0) continue;
-      float a = acos(clamp(dot(n, uFl[k].xyz), -1.0, 1.0));
-      float front = exp(-pow((a - uFlW[k].x) / 0.016, 2.0)) * smoothstep(uFlW[k].x + 0.02, uFlW[k].x - 0.12, a);
-      hot += uFlW[k].y * front * (1.0 + gran) * uDisk.x * 0.5;
-      // Behind the wave the corona dims.
-      hot *= 1.0 - 0.3 * uFlW[k].y * smoothstep(uFlW[k].x, 0.0, a);
     }
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
@@ -637,7 +629,6 @@ function noiseVolume(n) {
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
-uniform vec4 uRip;
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
@@ -656,13 +647,6 @@ float kern(vec2 fc) {
     if (S <= 0.0) continue;
     vec2 d = (fc - uSat[k].xy) / uSc;
     s += S * (6.0 * exp(-dot(d, d) / 90.0) + 1.2 * exp(-dot(d, d) / 2400.0));
-  }
-  // A tap on empty sky: a faint ring of light spreads through the haze.
-  if (uRip.w > 0.0) {
-    vec2 e = fc - uRip.xy;
-    float w = 0.09 * uRip.z + 4.0 * uSc;
-    float x = (length(e) - uRip.z) / w;
-    s += uRip.w * exp(-x * x) * (0.55 + 0.9 * vn(vec3(e / uSc * 0.012, uRip.z * 0.004)));
   }
   return s;
 }
@@ -862,7 +846,6 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
-    gl.uniform4fv(s.u.uFlW, v.flW);
     gl.uniform4fv(s.u.uFlB, v.flB);
     gl.uniform4fv(s.u.uEgg, v.egg);
     gl.uniform4fv(s.u.uDim, v.dim);
@@ -930,7 +913,6 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, f, 'uVol', 4, volA);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
-    gl.uniform4fv(f.u.uRip, v.rip);
     gl.uniform4fv(f.u.uView, v.view);
     gl.uniform4f(f.u.uMix, B.rays, B.hotW, B.coolW, v.shimmer);
     gl.uniform4fv(f.u.uBodyA, v.bodyA);

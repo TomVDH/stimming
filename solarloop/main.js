@@ -225,7 +225,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; }, get egg() { return egg; }, get shown() { return [shown, dip?.t ?? -1]; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [zoom, zoomTo]; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -405,20 +405,11 @@ function pickAt(x, y) {
 }
 // A target counts as under the hand within this many CSS pixels.
 const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
+// A tap anywhere flares the nearest region or lifts the nearest prominence.
 function flareNear(x, y) {
-  const { t, prom, d } = pickAt(x, y);
-  if (d >= reach()) return ripple(x, y);
+  const { t, prom } = pickAt(x, y);
   if (prom) eruptAt(t); else flareAt(t);
 }
-// A tap on empty sky: a faint ring spreads from it, with a soft low note.
-let rip = null;
-function ripple(x, y) {
-  rip = { x, y, t: 0 };
-  snd.hush(clamp(x / cssW * 2 - 1, -1, 1), st.star);
-  poke();
-}
-// The ring's life in seconds.
-const RIP_LIFE = 1.8;
 
 /* ---------- hover: the cursor reads the region under it ---------- */
 // The mouse over the stage, or null; touch and pen never hover.
@@ -523,9 +514,9 @@ function eggFrame(out, dim) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
+  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
-  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), rip: new Float32Array(4), shimmer: 0, lens: 0,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
@@ -543,11 +534,10 @@ function makeFrame() {
     const boost = fl ? 1 + 1.2 * Math.exp(-fl.t / 6) : 1;
     f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost * (1 + LIT_GAIN * (rg.lit || 0))], k * 4);
   });
-  f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
+  f.fl.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
     const fv = flareView(fl, shown);
     f.fl.set([...toView(fv.c), 0], k * 4);
-    f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
     // The saturated core shows where the kernel is in view; behind the limb, the arcade top shines.
     let v = toView(fv.c.map(x => x * (R + fv.kernel[0])));
@@ -613,13 +603,6 @@ function makeFrame() {
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
   eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
-  if (rip) {
-    // The ring slows as it spreads; reduced motion keeps it small and still.
-    const R0 = 0.22 * Math.min(view.W, view.H);
-    const rad = calm ? 0.35 * R0 : R0 * (1 - Math.exp(-rip.t / 0.55));
-    const k = (1 - rip.t / RIP_LIFE) ** 2;
-    f.rip.set([rip.x / cssW * view.W, (1 - rip.y / cssH) * view.H, rad, 0.5 * k * (calm ? 0.7 : 1)]);
-  } else f.rip.fill(0);
   f.lens = weight('long');
   f.full = weight('full');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
@@ -689,7 +672,6 @@ function frame(now) {
     const glowing = stepLit(dt);
     const easing = stepZoom(dt);
     const dipping = stepDip(dt);
-    if (rip && (rip.t += dt) >= RIP_LIFE) rip = null;
     // A still press past the cue starts the star's egg under it.
     const holding = pointer.id !== null && !pointer.drag;
     if (holding && !egg && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE && startEgg(pointer.x0, pointer.y0)) pointer.egg = true;
@@ -701,7 +683,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || easing || dipping || glowing || !!rip || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || easing || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     if (STARS[shown].beam && (drifting > 0 || egg?.kind === 'voice')) pulse();
     again = lively || drifting > 0;
@@ -766,8 +748,7 @@ stage.addEventListener('pointerdown', e => {
   const [x, y] = local(e);
   const now = performance.now();
   Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: now, t0: now, drag: false, egg: false, p0: st.pitch, w0: st.yaw });
-  const hit = pickAt(x, y);
-  pressed = hit.d < reach() ? hit.t : null;
+  pressed = pickAt(x, y).t;
   poke();
 });
 stage.addEventListener('pointermove', e => {
