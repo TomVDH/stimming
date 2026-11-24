@@ -46,6 +46,11 @@ const PROGRAM: Record<string, (c: Ctx) => Tip> = {
     text: `This is what the camera has collected. One short exposure is grainy, so the software keeps adding new ones on top. The stars stay put while the random grain averages out: that is called stacking. ${c.subs} exposures so far, about ${f1(Math.sqrt(Math.max(1, c.subs)))} times smoother than one.`,
     try: 'Click a star or galaxy to study its light. Double-click to move the telescope there. Scroll to zoom.',
   }),
+  imageFlaws: () => ({
+    title: 'Flaws in the picture',
+    text: 'Every real camera adds its own marks. White dots that never move are hot pixels. A short bright streak in one exposure is a cosmic ray, a particle from space hitting the chip. A bright line up and down from a very bright star is a bleed: the pixels overflowed and the charge spilled along the column. The faint dark rings are shadows of dust on the filter, and the corners are darker because less light reaches them.',
+    try: 'Zoom in on a bright star and look for its bleed line.',
+  }),
   fit: () => ({
     title: 'Fit',
     text: 'Shows the whole picture the camera takes: a patch of sky almost as wide as the full Moon.',

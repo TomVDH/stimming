@@ -270,6 +270,10 @@ export class Screen {
   private logBox(): void {
     this.box(0, 33, 83, 40, 'LOG');
     this.tip(0, 33, 84, 'log', 8);
+    // The picture's flaws, explained on a hover or a click.
+    const flawHot = this.over(74, 33, 8);
+    this.put(74, 33, '[Flaws?]', flawHot ? V.black : V.yellow, flawHot ? V.bcyan : V.black);
+    this.tip(74, 33, 8, 'imageFlaws');
     lines.slice(-6).forEach((l, i) => {
       const fg = l.cls === 'w' ? V.yellow : l.cls === 'ok' ? V.green : l.cls === 'tip' ? V.bcyan : V.grey;
       this.put(2, 34 + i, l.t, V.dark);

@@ -121,6 +121,9 @@ let seeingZ = 2.2;
 // Seeing: tip-tilt in px and a slow breath of the disc.
 let jx = 0, jy = 0, breath = 0;
 let targets: (Target & { dir: Vec3 })[] = [];
+// Bleeds for the sensor: x, y, half length and width, four floats each.
+let bleeds = new Array<number>(32).fill(0);
+let nBleed = 0;
 // The monitor's glass on the canvas, in device px.
 let glass: [number, number, number, number] = [0, 0, 1, 1];
 // Tips: on or off, the region under the pointer, and since when.
@@ -354,6 +357,10 @@ function build(L: Layout): number {
   shown = [];
   detected = [];
   const spectra: { px: number; py: number; F: number; T: number }[] = [];
+  // Stars that overfill their pixels, for the sensor's bleeds.
+  const over: { x: number; y: number; len: number; w: number }[] = [];
+  // The seeing disc as a Gaussian, in sensor pixels.
+  const sigma = (seeing / PIXEL_ARCSEC) / 2.355 + defocusArcsec() / PIXEL_ARCSEC * 0.4;
   const push = (vals: number[]): void => {
     if (n * STRIDE + STRIDE > data.length) {
       const next = new Float32Array(data.length * 2);
@@ -383,6 +390,18 @@ function build(L: Layout): number {
       const half = Math.min(600, Math.max(3, reach(alpha, F, floor), spike * 4, blur + 3 * alpha));
       if (px + half < x0 || px - half > x1 || py + half < y0 || py - half > y1) continue;
       push([px, py, half, 0, r, g, bl, F, alpha, half, spike, 0]);
+      if (camera) {
+        // Electrons from this star in one exposure, through the filter.
+        const tot = F * (r * w[0] + g * w[1] + bl * w[2]) * rig.exposure * EGAIN;
+        const peak = tot / (2 * Math.PI * sigma * sigma);
+        if (peak > FULL) {
+          // Inside rSat every pixel is full; the rest of the charge spills.
+          const r2 = 2 * sigma * sigma * Math.log(peak / FULL);
+          const spare = tot * (1 - FULL / peak) - FULL * Math.PI * r2;
+          const wide = Math.min(6, 1 + 0.08 * Math.sqrt(r2));
+          if (spare > 0) over.push({ x: px, y: py, len: Math.min(SENSOR_H, Math.sqrt(r2) + spare / (2 * FULL * wide)), w: wide });
+        }
+      }
       // Bright stars throw a faint ghost ring, mirrored through the optical axis.
       if (F > 400) {
         const gx = L.cx - (px - L.cx) * 0.6, gy = L.cy - (py - L.cy) * 0.6;
@@ -402,6 +421,10 @@ function build(L: Layout): number {
     shown.push({ b, x: px * toCss, y: py * toCss });
     if (camera && snrOf(F, b.rgb, skyS) > 6) detected.push([px, py]);
   }
+  over.sort((a, c) => c.len - a.len);
+  nBleed = Math.min(8, over.length);
+  bleeds = over.slice(0, 8).flatMap((o) => [o.x, o.y, o.len, o.w]);
+  while (bleeds.length < 32) bleeds.push(0);
   // The brightest stars' spectra: the grating spreads each one to its right.
   spectra.sort((a, b) => b.F - a.F);
   const len = L.radius * 0.5, gap = L.radius * 0.12;
@@ -545,6 +568,7 @@ function cameraFrame(t: number, L: Layout, common: Record<string, number | numbe
       u_seed: random() * 100, u_filter: FILTERS[rig.filter], u_dark: darkRate(), u_hot: 300 * Math.pow(2, (rig.sensorTemp + 10) / 6),
       u_amp: 0.6 * Math.pow(2, (rig.sensorTemp + 10) / 6), u_k: k,
       u_origin: [L.cx - (SENSOR_W / 2) * k, L.cy - (SENSOR_H / 2) * k], u_sensor: [SENSOR_W, SENSOR_H],
+      u_bleeds: bleeds, u_nbleed: nBleed,
     });
   }
   // The stretch: sky level and noise per work pixel.
