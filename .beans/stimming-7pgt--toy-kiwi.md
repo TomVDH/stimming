@@ -26,7 +26,7 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
 - [x] Pomegranate, blood orange, peach
 - [x] Realism pass 1: studio reflections, wet cut faces, specks, pores; bead chord sign fixed
 - [x] Dragon fruit, rambutan, mangosteen, passion fruit, starfruit, fig
-- [ ] Raspberry-grade procedural pass, one fruit at a time (Tom's order)
+- [x] Raspberry-grade procedural pass, one fruit at a time (Tom's order); all ten in QA 33, about 8 ms a frame each
   - [x] Pomegranate (QA 16)
   - [x] Kiwi (QA 17)
   - [x] Passion fruit (QA 18)
