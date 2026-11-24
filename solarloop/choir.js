@@ -1,19 +1,42 @@
 // Solar loop choir: one voice for every star, shaped by a preset.
 // The Sun's preset is the voice Tom set by ear (2026-11-24).
 // The choir lab (lab.html) tunes presets live; the toy plays them.
+// A preset can carry a song: a chord progression in the star's own harmony.
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const R = st => 2 ** (st / 12);
 
 // Sci-fi filters, in chain order.
 export const FX = [['machine', 'Machine'], ['sweep', 'Sweep'], ['screech', 'Screech'], ['dark', 'Dark'], ['radio', 'Transmission'], ['echo', 'Deep echo']];
-export const WAVES = { sawtooth: 'Saw (choir)', organ: 'Organ', square: 'Square (reed)', triangle: 'Triangle (flute)', pulse: 'Pulse (analog synth)', fm: 'FM (glass synth)' };
+export const WAVES = { sawtooth: 'Saw (choir)', analog: 'Analog pad (raw saw)', organ: 'Organ', organAh: 'Organ choir (before 24 November)', square: 'Square (reed)', triangle: 'Triangle (flute)', pulse: 'Pulse (analog synth)', fm: 'FM (glass synth)' };
 export const MODES = ['Ionian', 'pentatonic', 'harmonic minor', 'harmonic series'];
+export const HARMONIES = [['cross', 'Ionian and pentatonic, alternating'], ['1', 'Pentatonic: 5 notes, open'], ['0', 'Ionian: major scale, bright'], ['2', 'Harmonic minor: raised 7th, dark'], ['3', 'Harmonic series: overtones, not tempered']];
 export const TAP_WAVES = { sawtooth: 'Saw (brass)', square: 'Square (hollow)', triangle: 'Triangle (soft)', sine: 'Sine (pure)' };
 // The glow chord as ratios: major, minor, or overtones with the 7th.
+// 'current' plays the chord the choir sings at the tap.
 export const CHORDS = { major: [1, 1.4983, 2, 2.9966], minor: [1, 1.1892, 1.4983, 2], overtone: [1, 1.5, 1.75, 2.25] };
-// Default motion: all movement on; the chord crossfades Ionian and pentatonic.
-export const MOTION = { drift: true, swell: true, melody: true, scale: 'cross' };
+export const VOICINGS = { sun: 'Sun: root, fifth below, ninth, third', organ: 'Organ: bass, root, fifth, octave, tenth', open: 'Open: wide, two octaves', close: 'Close: inside one octave' };
+export const MELODIES = { step: 'Step: one note fades into the next', glide: 'Glide: the voice slides to the next note', arp: 'Arpeggio: walks up and down the chord', off: 'Off: no melody' };
+export const ECHOES = { reverb: 'Reverb: the star\'s own room', hall: 'Hall: three long echoes', both: 'Reverb and hall' };
+export const MOVES = { fade: 'Fade: changed notes dip and return', glide: 'Glide: changed notes slide' };
+export const KINDS = { triad: 'Triad', major: 'Major', minor: 'Minor', sus2: 'Sus 2', sus4: 'Sus 4', add9: 'Add 9', seventh: '7th', power: 'Power: root and fifth', cluster: 'Cluster' };
+// The lab may switch drift and swell off for all stars.
+export const MOTION = { drift: true, swell: true };
+
+// A progression: chords on scale degrees (0 is home), each held `len` s.
+// `shift` moves a chord's root by semitones, for chords outside the scale.
+export const PROGRESSIONS = {
+  sun: { name: 'Sun blend', desc: 'One chord. The scale changes between Ionian and pentatonic.', harmony: 'cross', chords: null },
+  hold: { name: 'Hold', desc: 'One chord. It does not change.', chords: [{ deg: 0, kind: 'triad', len: 16 }] },
+  rise: { name: 'Slow rise', desc: 'Home, then the fourth. Calm and open.', harmony: 0, chords: [{ deg: 0, kind: 'add9', len: 12 }, { deg: 3, kind: 'add9', len: 12 }] },
+  sus: { name: 'Suspended drift', desc: 'Chords with no third. They float and do not resolve.', harmony: 0, chords: [{ deg: 0, kind: 'sus2', len: 10 }, { deg: 3, kind: 'sus2', len: 10 }, { deg: 4, kind: 'sus4', len: 10 }, { deg: 0, kind: 'sus2', len: 10 }] },
+  lydian: { name: 'Lydian float', desc: 'Home, then a major chord one step up. Bright, it lifts.', harmony: 0, chords: [{ deg: 0, kind: 'major', len: 10 }, { deg: 1, kind: 'major', len: 10 }] },
+  ice: { name: 'Ice', desc: 'A minor chord with a ninth, then the sixth. Cold and still.', harmony: 2, chords: [{ deg: 0, kind: 'add9', len: 12 }, { deg: 5, kind: 'add9', len: 12 }] },
+  ominous: { name: 'Ominous minor', desc: 'Minor, sixth, fourth, then a tense fifth. It does not settle.', harmony: 2, chords: [{ deg: 0, kind: 'triad', len: 10 }, { deg: 5, kind: 'triad', len: 10 }, { deg: 3, kind: 'triad', len: 10 }, { deg: 4, kind: 'triad', len: 10 }] },
+  descent: { name: 'Dark descent', desc: 'Four chords that step down to the fifth. Heavy.', harmony: 2, chords: [{ deg: 0, kind: 'minor', len: 9 }, { deg: 6, kind: 'major', len: 9, shift: -1 }, { deg: 5, kind: 'major', len: 9 }, { deg: 4, kind: 'major', len: 9 }] },
+  phrygian: { name: 'Phrygian shadow', desc: 'Minor home, then a major chord a half step up. Dark and foreign.', harmony: 2, chords: [{ deg: 0, kind: 'minor', len: 12 }, { deg: 1, kind: 'major', len: 12, shift: -1 }] },
+  overtones: { name: 'Overtones', desc: 'Chords from the natural overtones of one note, with the flat 7th.', harmony: 3, chords: [{ deg: 0, kind: 'seventh', len: 14 }, { deg: 4, kind: 'triad', len: 14 }] },
+};
 
 const fx0 = () => Object.fromEntries(FX.map(([k]) => [k, { on: false, amt: 0.5 }]));
 const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: o[k] }; return f; };
@@ -23,37 +46,76 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // res: synth filter Q. fmot: synth filter sweep depth.
 // dist: distance, 0 near, 1 far. gain: loudness trim against the Sun.
 // key: semitones up or down from the star's home key.
-// The tap: blastWave and glowWave are the sources, chord the glow's notes.
-export const SUN = { wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12, dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1, key: 0, fx: fx0() };
+// harmony, prog, voicing, melody, move, echo: the song. leadOct: the melody's octave.
+// slowed: the second, slower choir layer. aDrift, chorus, swellA, swellAmt: the analog pad.
+// The tap: blastWave and glowWave are the sources; chord is the glow's notes.
+// glowStyle, arpGap, glowRise, glowHold, glowFade: the glow's shape. stack: old, unlimited taps.
+export const SUN = {
+  wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12,
+  dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, key: 0,
+  harmony: 'cross', prog: null, voicing: 'sun', melody: 'step', move: 'fade', echo: 'reverb', slowed: true,
+  aDrift: 0, chorus: 0, swellA: 3, swellAmt: 0,
+  blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
+  glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
+  fx: fx0(),
+};
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
+// A song from the library, with its harmony.
+const song = id => ({ prog: PROGRESSIONS[id].chords, harmony: PROGRESSIONS[id].harmony ?? 0 });
+// The analog pad: raw detuned saws, a filter swell on each chord, chorus and drift.
+const ANALOG = { wave: 'analog', voice: 0, det: 12, res: 3, aDrift: 6, chorus: 0.5, swellA: 3, swellAmt: 0.7 };
+// Glows on songs play the current chord as an arpeggio.
+const ARP = { glowStyle: 'arp', chord: 'current' };
 // First presets (2026-11-24): giants and odd stars are synths, far and cold.
 // Gains match each star's loudness to the Sun, measured offline.
 export const VOICES = {
   sun: SUN,
-  zetaoph: P({ chord: 'overtone', det: 12, res: 5, fmot: 0.45, voice: 0.35, vowel: 1.3, metal: 0.3, bright: 1.4, step: 9, dist: 0.5, rev: 10, mix: 1.3, width: 1.5, oct: [1, 0.6, 0.6], swR: 0.07, swD: 0.12, fx: { sweep: 0.45, screech: 0.2 }, gain: 0.66 }),
-  regulus: P({ wave: 'square', voice: 0.75, vowel: 1.2, metal: 0.1, bright: 1.3, step: 6, dist: 0.1, width: 1.4, swR: 0.18, gain: 0.72 }),
-  vega: P({ wave: 'triangle', voice: 0.55, vowel: 1.25, metal: 0.3, bright: 1.25, step: 7, dist: 0.15, width: 1.3, oct: [1, 0.5, 0.4], swD: 0.15, gain: 0.75 }),
-  sirius: P({ wave: 'organ', voice: 0.6, vowel: 1.2, metal: 0.08, bright: 1.25, step: 7, dist: 0.05, width: 1.2, oct: [1, 0.5, 0.5], swD: 0.15, gain: 0.45 }),
-  procyon: P({ voice: 0.85, vowel: 1.1, bright: 1.1, step: 7.5, oct: [1, 0.5, 0.55], gain: 0.77 }),
-  epseri: P({ voice: 0.9, vowel: 0.9, metal: 0.05, bright: 0.9, rev: 6.5, swR: 0.15, swD: 0.25, oct: [1, 0.5, 0.5], gain: 0.95 }),
-  proxima: P({ wave: 'square', voice: 0.8, vowel: 0.8, bright: 0.75, step: 9, rev: 6, dist: 0.2, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.25, gain: 0.61 }),
-  luhman: P({ chord: 'minor', wave: 'pulse', det: 6, res: 4, fmot: 0.35, voice: 0.4, vowel: 0.7, metal: 0.2, bright: 0.6, step: 11, dist: 0.65, rev: 11, mix: 1.5, width: 1.6, oct: [0.8, 0.5, 0.5], swR: 0.05, swD: 0.1, fx: { dark: 0.45, sweep: 0.35 }, gain: 0.21 }),
-  wise: P({ glowWave: 'sine', chord: 'minor', wave: 'fm', res: 3, fmot: 0.3, voice: 0.3, vowel: 0.6, metal: 0.25, bright: 0.5, step: 13, dist: 0.85, rev: 13, mix: 1.7, width: 1.8, oct: [0.7, 0.5, 0.6], swR: 0.04, swD: 0.08, fx: { dark: 0.6, echo: 0.5, sweep: 0.3 }, gain: 0.15 }),
-  ttauri: P({ wave: 'pulse', det: 9, res: 3, fmot: 0.4, voice: 0.45, vowel: 0.9, metal: 0.12, bright: 0.85, step: 9, dist: 0.55, rev: 10, mix: 1.4, width: 1.7, swR: 0.2, swD: 0.3, fx: { sweep: 0.3, echo: 0.35 }, gain: 0.3 }),
-  arcturus: P({ glowWave: 'sawtooth', det: 7, res: 3, fmot: 0.25, voice: 0.55, vowel: 0.85, bright: 0.8, step: 10, rev: 10, width: 1.3, oct: [1, 0.6, 0.8], swR: 0.08, gain: 0.86 }),
-  rigel: P({ glowWave: 'sawtooth', wave: 'pulse', det: 8, res: 5, fmot: 0.3, voice: 0.4, vowel: 1.3, metal: 0.18, bright: 1.3, step: 10, dist: 0.3, rev: 10, mix: 1.2, width: 1.6, oct: [1, 0.6, 0.8], swR: 0.08, gain: 0.43 }),
+  zetaoph: P({ ...song('lydian'), ...ARP, det: 12, res: 5, fmot: 0.45, voice: 0.35, vowel: 1.3, metal: 0.3, bright: 1.4, step: 9, dist: 0.5, rev: 10, mix: 1.3, width: 1.5, oct: [1, 0.6, 0.6], swR: 0.07, swD: 0.12, fx: { sweep: 0.45, screech: 0.2 }, gain: 0.66 }),
+  regulus: P({ ...song('sus'), ...ARP, wave: 'square', voice: 0.75, vowel: 1.2, metal: 0.1, bright: 1.3, step: 6, dist: 0.1, width: 1.4, swR: 0.18, gain: 0.72 }),
+  vega: P({ ...song('lydian'), ...ARP, wave: 'triangle', voice: 0.55, vowel: 1.25, metal: 0.3, bright: 1.25, step: 7, dist: 0.15, width: 1.3, oct: [1, 0.5, 0.4], swD: 0.15, gain: 0.75 }),
+  sirius: P({ ...song('sus'), ...ARP, wave: 'organ', voice: 0.6, vowel: 1.2, metal: 0.08, bright: 1.25, step: 7, dist: 0.05, width: 1.2, oct: [1, 0.5, 0.5], swD: 0.15, gain: 0.45 }),
+  procyon: P({ ...song('sus'), ...ARP, voice: 0.85, vowel: 1.1, bright: 1.1, step: 7.5, oct: [1, 0.5, 0.55], gain: 0.77 }),
+  epseri: P({ ...song('rise'), ...ARP, voice: 0.9, vowel: 0.9, metal: 0.05, bright: 0.9, rev: 6.5, swR: 0.15, swD: 0.25, oct: [1, 0.5, 0.5], gain: 0.95 }),
+  proxima: P({ ...song('rise'), ...ARP, wave: 'square', voice: 0.8, vowel: 0.8, bright: 0.75, step: 9, rev: 6, dist: 0.2, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.25, gain: 0.61 }),
+  luhman: P({ ...song('ice'), ...ARP, wave: 'pulse', det: 6, res: 4, fmot: 0.35, voice: 0.4, vowel: 0.7, metal: 0.2, bright: 0.6, step: 11, dist: 0.65, rev: 11, mix: 1.5, width: 1.6, oct: [0.8, 0.5, 0.5], swR: 0.05, swD: 0.1, fx: { dark: 0.45, sweep: 0.35 }, gain: 0.21 }),
+  wise: P({ ...song('ice'), ...ARP, glowWave: 'sine', wave: 'fm', res: 3, fmot: 0.3, voice: 0.3, vowel: 0.6, metal: 0.25, bright: 0.5, step: 13, dist: 0.85, rev: 13, mix: 1.7, width: 1.8, oct: [0.7, 0.5, 0.6], swR: 0.04, swD: 0.08, fx: { dark: 0.6, echo: 0.5, sweep: 0.3 }, gain: 0.15 }),
+  ttauri: P({ ...song('sus'), ...ARP, wave: 'pulse', det: 9, res: 3, fmot: 0.4, voice: 0.45, vowel: 0.9, metal: 0.12, bright: 0.85, step: 9, dist: 0.55, rev: 10, mix: 1.4, width: 1.7, swR: 0.2, swD: 0.3, fx: { sweep: 0.3, echo: 0.35 }, gain: 0.3 }),
+  arcturus: P({ ...song('ominous'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 7, fmot: 0.25, vowel: 0.85, bright: 0.8, step: 10, rev: 10, width: 1.3, oct: [1, 0.6, 0.8], swR: 0.08, gain: 0.86 }),
+  rigel: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 8, res: 5, fmot: 0.3, vowel: 1.3, metal: 0.18, bright: 1.3, step: 10, dist: 0.3, rev: 10, mix: 1.2, width: 1.6, oct: [1, 0.6, 0.8], swR: 0.08, gain: 0.43 }),
   // Betelgeuse: Tom's standard choir, set by ear in the lab (2026-11-24).
-  betelgeuse: P({ glowWave: 'sawtooth', chord: 'minor', det: 10, res: 5.5, fmot: 0.35, voice: 0.5, vowel: 0.75, metal: 0.2, bright: 0.7, step: 12, dist: 0.35, rev: 11, mix: 1.2, width: 1.6, oct: [0.9, 0.7, 1], swR: 0.05, swD: 0.3, fx: { dark: 0.25 }, gain: 1 }),
-  vycma: P({ glowWave: 'sawtooth', chord: 'minor', det: 14, res: 6, fmot: 0.5, voice: 0.35, vowel: 0.65, metal: 0.15, bright: 0.6, step: 14, dist: 0.7, rev: 12, mix: 1.5, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.04, swD: 0.25, fx: { dark: 0.4, echo: 0.4 }, gain: 0.27 }),
-  siriusb: P({ glowWave: 'sine', chord: 'overtone', wave: 'fm', res: 5, fmot: 0.3, voice: 0.2, vowel: 1.3, metal: 0.55, bright: 1.3, step: 9, dist: 0.6, rev: 10, mix: 1.5, width: 1.5, oct: [1, 0.4, 0.15], swR: 0.1, swD: 0.1, fx: { machine: 0.4, echo: 0.4 }, gain: 0.45 }),
-  neutron: P({ blastWave: 'square', glowWave: 'sine', chord: 'overtone', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 0.07 }),
+  betelgeuse: P({ harmony: 3, glowWave: 'sawtooth', chord: 'minor', det: 10, res: 5.5, fmot: 0.35, voice: 0.5, vowel: 0.75, metal: 0.2, bright: 0.7, step: 12, dist: 0.35, rev: 11, mix: 1.2, width: 1.6, oct: [0.9, 0.7, 1], swR: 0.05, swD: 0.3, fx: { dark: 0.25 }, gain: 1 }),
+  vycma: P({ ...song('descent'), ...ARP, ...ANALOG, glowWave: 'sawtooth', det: 14, res: 6, fmot: 0.5, vowel: 0.65, metal: 0.15, bright: 0.6, step: 14, dist: 0.7, rev: 12, mix: 1.5, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.04, swD: 0.25, fx: { dark: 0.4, echo: 0.4 }, gain: 0.27 }),
+  siriusb: P({ ...song('overtones'), ...ARP, glowWave: 'sine', wave: 'fm', res: 5, fmot: 0.3, voice: 0.2, vowel: 1.3, metal: 0.55, bright: 1.3, step: 9, dist: 0.6, rev: 10, mix: 1.5, width: 1.5, oct: [1, 0.4, 0.15], swR: 0.1, swD: 0.1, fx: { machine: 0.4, echo: 0.4 }, gain: 0.45 }),
+  neutron: P({ ...song('overtones'), ...ARP, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 0.07 }),
 };
 export const preset = band => VOICES[band] || SUN;
 
+// The zoom mix, one for all stars: a level and layer gains at each zoom stop.
+// near: 1 on the long lens, 0 on the full star, below 0 zoomed out (x4 at -0.7, x16 at -1.4).
+// choir and rumble are in dB; low, mid, high, melody and fx are gains.
+export const ZOOM = [
+  { stop: 'far', near: -1.4, choir: -9, rumble: -9, low: 1, mid: 0, high: 0, melody: 0, fx: 1 },
+  { stop: 'out', near: -0.7, choir: -3, rumble: 0, low: 1, mid: 1, high: 0.3, melody: 0.3, fx: 1 },
+  { stop: 'full', near: 0, choir: 0, rumble: 0, low: 1, mid: 1, high: 1, melody: 1, fx: 1 },
+  { stop: 'wide', near: 0.69, choir: 0, rumble: 1, low: 1, mid: 1, high: 1, melody: 1.25, fx: 1 },
+  { stop: 'long', near: 1, choir: 0, rumble: 2.3, low: 1, mid: 1, high: 1, melody: 1, fx: 1.3 },
+];
+export const ZOOM_KEYS = ['choir', 'rumble', 'low', 'mid', 'high', 'melody', 'fx'];
+// The mix at a nearness, interpolated between stops.
+export function zoomAt(near, keys = ZOOM) {
+  const x = clamp(near, keys[0].near, keys[keys.length - 1].near);
+  let i = 1;
+  while (i < keys.length - 1 && x > keys[i].near) i++;
+  const a = keys[i - 1], b = keys[i], k = (x - a.near) / (b.near - a.near || 1);
+  return Object.fromEntries(ZOOM_KEYS.map(z => [z, a[z] + (b[z] - a[z]) * k]));
+}
+
 // Level per wave against the saw, measured through the formants.
-const WG = { sawtooth: 1, square: 0.62, triangle: 1, organ: 0.95, pulse: 1.9, fm: 0.68 };
+const WG = { sawtooth: 1, analog: 1, square: 0.62, triangle: 1, organ: 0.95, organAh: 1, pulse: 1.9, fm: 0.68 };
 // Organ drawbars by harmonic: 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1'.
 const BARS = { 1: 1, 2: 0.7, 3: 0.42, 4: 0.5, 5: 0.12, 6: 0.22, 8: 0.18 };
+// "Ah" formants of the old organ choir: centre in Hz, width, weight.
+const AH = [[700, 130, 1], [1150, 160, 0.6], [2600, 260, 0.28], [3300, 300, 0.12]];
 // Sawtooth waves pass a low pass, then four "ooh" and "ah" band passes.
 const FORMANTS = [[400, 4, 1], [750, 6, 0.8], [1150, 7, 0.45], [2700, 9, 0.15]];
 // Semitones above the base: root, fifth, ninth and major third.
@@ -67,6 +129,35 @@ const HELD = {
   2: { chord: [[R(-12), 1, -0.4], [R(-5), 0.8, 0.4], [R(2), 0.6, -0.2], [R(3), 0.55, 0.2], [R(-1), 0.6, 0], [R(8), 0.4, 0]], line: [0, 2, 3, 5, 7, 8, 11, 12].map(R) },
   3: { chord: [[0.5, 1, -0.4], [0.75, 0.8, 0.4], [1.25, 0.55, -0.2], [1.5, 0.5, 0.2], [1.75, 0.45, 0], [2.75, 0.2, 0]], line: [1, 1.125, 1.25, 1.375, 1.5, 1.625, 1.75, 1.875, 2] },
 };
+// Scales as ratios inside one octave.
+const SCALES = { 0: [0, 2, 4, 5, 7, 9, 11].map(R), 1: [0, 2, 4, 7, 9].map(R), 2: [0, 2, 3, 5, 7, 8, 11].map(R), 3: [1, 9 / 8, 5 / 4, 11 / 8, 3 / 2, 13 / 8, 7 / 4, 15 / 8] };
+// Chords stack thirds; pentatonic and the blend build chords on Ionian.
+const chordScale = h => SCALES[h === 'cross' || h === 1 ? 0 : h];
+const melodyScale = h => SCALES[h === 'cross' ? 0 : h];
+const stepOf = (sc, i) => sc[((i % sc.length) + sc.length) % sc.length] * 2 ** Math.floor(i / sc.length);
+// One chord: its root as a ratio over the base, and its roles over the root.
+export function chordOf(c, harmony) {
+  const sc = chordScale(harmony), d = c.deg, r0 = stepOf(sc, d), at = k => stepOf(sc, d + k) / r0;
+  const root = r0 * R(c.shift || 0), N = at(1), T = at(2), F = at(4), Q = at(3), S = at(6);
+  const roles = {
+    triad: [T, F, null], major: [R(4), R(7), null], minor: [R(3), R(7), null], sus2: [N, F, null], sus4: [Q, F, null],
+    add9: [T, F, 2 * N], seventh: [T, F, S], power: [null, F, null], cluster: [N, T, Q],
+  }[c.kind] || [T, F, null];
+  const [third, fifth, ext] = roles;
+  return { root, N, third, fifth, ext, tones: [1, third, fifth, ext].filter(Boolean) };
+}
+// A chord's notes for a voicing: [ratio over the base, level, pan].
+function voiced(ch, voicing) {
+  const { root: r, N, third, fifth, ext } = ch;
+  const out = {
+    sun: [[r / 2, 1, -0.4], [r * fifth / 2, 0.8, 0.4], [r * N, 0.6, -0.2], third && [r * third, 0.55, 0.2], ext && [r * ext, 0.45, 0]],
+    organ: [[r / 8, 0.55, 0], [r / 4, 1, -0.2], [r * fifth / 4, 0.7, 0.2], [r / 2, 0.6, -0.1], third && [r * third / 2, 0.4, 0.1]],
+    open: [[r / 4, 1, -0.3], [r * fifth / 2, 0.8, 0.3], third && [r * third, 0.6, -0.15], [ext ? r * ext : r, 0.45, 0.15]],
+    close: [[r / 2, 1, -0.3], third && [r * third / 2, 0.8, 0.3], [r * fifth / 2, 0.7, -0.1], ext && [r * ext / 2, 0.5, 0.1]],
+  }[voicing] || [];
+  return out.filter(Boolean);
+}
+const SLOTS = 5;
 // Octave voices and their levels: middle, tenor and bass (Tom).
 // The plain choir, then the slowed choir with a wave an octave down.
 const LAYERS = [{ lp: 3000, amp: 0.7, parts: [[1, 1]] }, { lp: 1800, amp: 0.4, parts: [[1, 1.41], [0.5, 1]] }];
@@ -84,13 +175,27 @@ function kitOf(ac) {
   const curve = new Float32Array(1024);
   for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; curve[i] = Math.tanh(2.5 * x) / Math.tanh(2.5); }
   // An 18 percent pulse: thin and nasal.
-  k = { organ: wave(60, h => BARS[h] || 0), pulse: wave(80, n => 2 / (n * Math.PI) * Math.sin(n * Math.PI * 0.18)), curve, irs: new Map() };
+  k = { wave, organ: wave(60, h => BARS[h] || 0), pulse: wave(80, n => 2 / (n * Math.PI) * Math.sin(n * Math.PI * 0.18)), curve, irs: new Map(), ah: new Map() };
   kits.set(ac, k);
   return k;
 }
+// The old organ choir's wave: drawbars plus an "ah" shape, made per note.
+// Harmonics reach 11 kHz; a tail falls 6 dB an octave above the vowel.
+function organAh(ac, f) {
+  const k = kitOf(ac), key = Math.round(f);
+  if (k.ah.has(key)) return k.ah.get(key);
+  const N = clamp(Math.floor(11000 / f), 8, 200);
+  const w = k.wave(N, h => {
+    let vow = 0;
+    for (const [c, wd, a] of AH) vow += a * Math.exp(-(((h * f - c) / wd) ** 2));
+    return 0.62 * (BARS[h] || 0) + 0.38 * vow / Math.pow(h, 0.35) + 0.2 / h;
+  });
+  k.ah.set(key, w);
+  return w;
+}
 // A reverb: decaying noise that darkens as it fades.
 // The Sun's 7 s reverb has a 1.8 s decay; others scale with length.
-function irOf(ac, rev) {
+function irOf(ac, rev, rand = Math.random) {
   const k = kitOf(ac);
   if (k.irs.has(rev)) return k.irs.get(rev);
   const sr = ac.sampleRate, n = Math.floor(sr * (rev + 0.5)), b = ac.createBuffer(2, n, sr), tau = 1.8 * rev / 7;
@@ -98,13 +203,18 @@ function irOf(ac, rev) {
     const d = b.getChannelData(ch);
     let y = 0;
     for (let i = 0; i < n; i++) {
-      const t = i / sr, x = (Math.random() * 2 - 1) * Math.exp(-t / tau) * Math.min(1, t / 0.04);
+      const t = i / sr, x = (rand() * 2 - 1) * Math.exp(-t / tau) * Math.min(1, t / 0.04);
       y += (x - y) * (0.5 - 0.38 * Math.min(1, t / rev));
       d[i] = y;
     }
   }
   k.irs.set(rev, b);
   return b;
+}
+// A seeded random source, for tests that render the same notes twice.
+export function seeded(seed = 1) {
+  let s = seed >>> 0 || 1;
+  return () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; return (s >>> 0) / 4294967296; };
 }
 
 // The space rumble: a constant, dense, deep surround drone.
@@ -162,18 +272,21 @@ export async function renderBed(ac, root) {
 
 // The choir for one star.
 // o.base: the top voice's home note in Hz, two octaves over the hum's root.
-// o.out: the node it plays into. o.os: an array that collects every source.
-// o.track: registers a source with the caller. o.onEvent: scale and melody steps.
+// o.out: the node it plays into. o.hall: the toy's echo hall, for the hall echo.
+// o.os: an array that collects every source. o.track: registers a source with the caller.
+// o.onEvent: scale, chord and melody steps. o.rand: a random source.
 // o.live: builds every optional stage, so v.set changes them without a rebuild.
-// Returns the voice: v.cv takes a send into its reverb; v.sing(until) queues moves.
-export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n => n, onEvent = () => {}, live = false }) {
-  p = { ...p, oct: [...p.oct] };
+// Returns the voice: v.cv takes a send into its echo; v.sing(until) queues moves.
+export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = [], track = n => n, onEvent = () => {}, live = false, rand = Math.random }) {
+  p = { ...SUN, ...p, oct: [...p.oct] };
   const k = kitOf(ac);
   const G = v => { const g = ac.createGain(); g.gain.value = v; return g; };
   const filt = (type, f, q) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
   const src = (o, at) => { o.start(at); os.push(o); return track(o); };
   const lfo = (rate, depth, param) => { const o = ac.createOscillator(); o.frequency.value = rate; const g = G(depth); src(o, t).connect(g).connect(param); return { o, g }; };
-  const n = { pans: [], layers: [], unison: [] };
+  const n = { pans: [], layers: [], unison: [], leadG: [] };
+  const layer = { low: 1, mid: 1, high: 1, melody: 1, fx: 1 };
+  const echo = p.echo, useCv = echo !== 'hall';
 
   // Output: the distance lifts the level so a far star stays as loud.
   const g = G(1);
@@ -191,15 +304,28 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
     mg.connect(tail);
     tail = sp;
   }
-  // Distance moves sound from the dry path to a later reverb.
+  // Distance moves sound from the dry path to a later echo.
   n.dry = G(0.5);
   n.dry.connect(tail);
-  const cv = ac.createConvolver();
-  cv.buffer = irOf(ac, p.rev);
-  n.wet = G(1.2);
-  cv.connect(n.wet).connect(tail);
-  let wetIn = cv;
-  if (live || p.dist > 0) { n.pre = ac.createDelay(1); n.pre.delayTime.value = 0; n.pre.connect(cv); wetIn = n.pre; }
+  // The echo: the star's reverb, the toy's hall, or both.
+  let cv, wetIn;
+  if (useCv) {
+    cv = ac.createConvolver();
+    cv.buffer = irOf(ac, p.rev, rand);
+    n.wet = G(1.2);
+    cv.connect(n.wet).connect(tail);
+    wetIn = cv;
+  } else {
+    cv = G(1);
+    wetIn = cv;
+  }
+  if (echo !== 'reverb' && hall) {
+    n.hallS = G(0.8);
+    n.hallS.connect(hall);
+    // With the hall alone, the echo input feeds the hall.
+    if (!useCv) cv.connect(n.hallS);
+  }
+  if (live || p.dist > 0) { n.pre = ac.createDelay(1); n.pre.delayTime.value = 0; n.pre.connect(wetIn); wetIn = n.pre; }
 
   // The level swell, the metal and the sci-fi filters sit between the choir and the room.
   const sw = ac.createGain();
@@ -214,36 +340,53 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
     n.mWet = G(0);
     sw.connect(vca).connect(filt('lowpass', 6000, 0.5)).connect(n.mWet).connect(fxIn);
   }
-  const fxOut = sciFi(ac, p, base, t, fxIn, { G, filt, lfo, curve: k.curve });
+  let fxOut = sciFi(ac, p, base, t, fxIn, { G, filt, lfo, curve: k.curve, n, live });
+  // The zoom's fx layer mixes the filters against the plain choir.
+  if (fxOut !== fxIn) {
+    const mixd = G(1);
+    n.fxDry = G(0); n.fxWet = G(1);
+    fxIn.connect(n.fxDry).connect(mixd);
+    fxOut.connect(n.fxWet).connect(mixd);
+    fxOut = mixd;
+  }
   fxOut.connect(wetIn);
   fxOut.connect(n.dry);
+  if (n.hallS && useCv) fxOut.connect(n.hallS);
   if (motion.swell) n.swell = lfo(p.swR, p.swD, sw.gain);
   // One shared pitch drift: 3 cents at 0.2 Hz (Tom).
   const drift = G(motion.drift ? 3 : 0);
   { const o = ac.createOscillator(); o.frequency.value = 0.2; src(o, t).connect(drift); }
+  // The analog pad: each unison voice drifts on its own slow wave.
+  // Each of the three waves feeds the detune of one unison voice.
+  if (live || p.aDrift > 0) n.aDrift = [0.07, 0.11, 0.13].map(r => lfo(r, 0, G(0).gain));
   // The synth filter sweeps once every 20 s.
   let sweep = null;
   if (live || p.fmot > 0) { sweep = ac.createOscillator(); sweep.frequency.value = 0.05; src(sweep, t); }
 
-  const mode0 = motion.scale === 'cross' ? 1 : motion.scale, held = HELD[mode0];
-  const v = { cv, g, ion: [], pen: [], leads: [[], []], li: 0, mode: mode0, step: 0, until: t, line: held ? held.line : null };
+  const prog = p.prog && p.prog.length ? p.prog : null;
+  const harmony = p.harmony;
+  const mode0 = harmony === 'cross' ? 1 : harmony, held = prog ? null : HELD[mode0];
+  const v = { cv, g, ion: [], pen: [], leads: [[], []], slots: [], li: 0, mode: mode0, step: 0, until: t, line: held ? held.line : null, tl: [] };
   const kk = () => p.step / 8;
-  let nextMode = motion.scale === 'cross' ? t + (10 + Math.random() * 2) * kk() : Infinity;
-  let nextLead = motion.melody ? t + p.step : Infinity;
+  let nextMode = !prog && harmony === 'cross' ? t + (10 + rand() * 2) * kk() : Infinity;
+  let nextLead = p.melody === 'off' ? Infinity : t + (p.melody === 'arp' ? arpGap() : p.step);
+  function arpGap() { return Math.max(0.35, p.step / 6); }
 
   // Voices per note: one, or three a few cents apart.
   const spread = p.det > 0 ? [-1, 0, 1] : [0], ug = p.det > 0 ? 1 / Math.sqrt(3) : 1;
   function osc(f, amp, dest) {
     const sets = [];
-    for (const u of spread) {
+    spread.forEach((u, ui) => {
       const o = ac.createOscillator();
       if (p.wave === 'organ') o.setPeriodicWave(k.organ);
+      else if (p.wave === 'organAh') o.setPeriodicWave(organAh(ac, f));
       else if (p.wave === 'pulse') o.setPeriodicWave(k.pulse);
-      else o.type = p.wave === 'fm' ? 'sine' : p.wave;
+      else o.type = p.wave === 'fm' ? 'sine' : p.wave === 'analog' ? 'sawtooth' : p.wave;
       o.frequency.value = f;
       o.detune.value = u * p.det;
       if (u) n.unison.push({ o, u });
       drift.connect(o.detune);
+      if (n.aDrift) n.aDrift[ui % 3].g.connect(o.detune);
       // FM: a modulator a fifth up, index 2.2, gives the glassy synth.
       let m = null, mg = null;
       if (p.wave === 'fm') {
@@ -254,17 +397,20 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
         src(m, t).connect(mg).connect(o.frequency);
       }
       src(o, t).connect(G(amp * ug)).connect(dest);
-      sets.push((nf, at) => {
-        o.frequency.setValueAtTime(nf, at);
+      sets.push((nf, at, slide) => {
+        if (slide) o.frequency.setTargetAtTime(nf, at, slide); else o.frequency.setValueAtTime(nf, at);
         if (m) { m.frequency.setValueAtTime(nf * 1.5, at); mg.gain.setValueAtTime(nf * 1.5 * 2.2, at); }
       });
-    }
-    return (nf, at) => { for (const s of sets) s(nf, at); };
+    });
+    return (nf, at, slide) => { for (const s of sets) s(nf, at, slide); };
   }
+  const first = prog ? chordOf(prog[0], harmony) : null;
+  const firstV = first ? voiced(first, p.voicing) : null;
+  const layers = p.slowed ? LAYERS : [LAYERS[0]];
   for (let oi = 0; oi < 3; oi++) {
     if (!live && p.oct[oi] <= 0) continue;
     const sh = 2 ** -oi;
-    for (const L of LAYERS) {
+    for (const L of layers) {
       const mix = ac.createGain(), soft = filt('lowpass', 1000, 0.5);
       mix.connect(soft);
       const lay = { L, oi, soft, forms: [] };
@@ -279,30 +425,45 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
       if (live || p.voice < 1) { lay.direct = G(0); soft.connect(lay.direct).connect(lay.bus); }
       lay.bus.connect(sw);
       n.layers.push(lay);
-      const note = (f, a, pan, on = true) => {
+      // The melody has its own gain, for the zoom's melody layer.
+      const leadG = G(1);
+      leadG.connect(mix);
+      n.leadG.push(leadG);
+      const note = (f, a, pan, on = true, dest = mix) => {
         const ng = ac.createGain();
         ng.level = a * L.amp;
         ng.gain.value = on ? ng.level : 0;
         const pn = ac.createStereoPanner();
         n.pans.push({ pn, pan });
-        ng.connect(pn).connect(mix);
-        ng.waves = L.parts.map(([m, amp]) => { const set = osc(f * m, amp, ng); return (fl, at) => set(fl * m * sh, at); });
+        ng.connect(pn).connect(dest);
+        ng.waves = L.parts.map(([m, amp]) => { const set = osc(f * m, amp, ng); return (fl, at, slide) => set(fl * m * sh, at, slide); });
+        ng.sh = sh; ng.amp = L.amp;
         return ng;
       };
-      if (held) for (const [r, a, pan] of held.chord) note(base * r * sh, a, pan);
+      if (prog) {
+        // A song: five note slots that take each chord's notes in turn.
+        const row = [];
+        for (let i = 0; i < SLOTS; i++) {
+          const nv = firstV[i];
+          const ng = note(base * (nv ? nv[0] : 1) * sh, nv ? nv[1] : 0, nv ? nv[2] : 0, !!nv);
+          row.push(ng);
+        }
+        v.slots.push(row);
+      } else if (held) for (const [r, a, pan] of held.chord) note(base * r * sh, a, pan);
       else {
         for (const [st, a, pan] of SHARED) note(base * R(st) * sh, a, pan);
         v.ion.push(note(base * R(ION[0]) * sh, ION[1], ION[2], mode0 === 0));
         v.pen.push(note(base * R(PEN[0]) * sh, PEN[1], PEN[2], mode0 === 1));
       }
       // Two top voices take turns, so each step crossfades.
-      v.leads[0].push(note(base * sh, 0.45, 0));
-      v.leads[1].push(note(base * sh, 0.45, 0, false));
+      const lo = 2 ** (p.leadOct || 0);
+      v.leads[0].push(note(base * lo * sh, 0.45, 0, p.melody !== 'off', leadG));
+      v.leads[1].push(note(base * lo * sh, 0.45, 0, false, leadG));
     }
   }
   // Notes sounding at once: chord notes and one lead, per octave and layer.
-  const chordN = held ? held.chord.length : SHARED.length + 1;
-  v.voices = () => (chordN + 1) * LAYERS.reduce((s, L) => s + L.parts.length, 0) * p.oct.filter(x => x > 0).length * spread.length;
+  const chordN = () => prog ? voiced(chordOf(prog[0], harmony), p.voicing).length : held ? held.chord.length : SHARED.length + 1;
+  v.voices = () => (chordN() + (p.melody === 'off' ? 0 : 1)) * layers.reduce((s, L) => s + L.parts.length, 0) * p.oct.filter(x => x > 0).length * spread.length;
 
   // Sets every level and filter from the preset; smooth unless first.
   function apply(first) {
@@ -311,22 +472,30 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
     const d = p.dist, rc = 1 / (1 + 0.09 * (p.res - 0.5));
     set(g.gain, (1 + 0.35 * d) * p.gain);
     if (n.air) set(n.air.frequency, d > 0 ? Math.max(2500, 14000 * (1 - 0.78 * d)) : 20000);
-    set(n.dry.gain, 0.5 * (1 - 0.8 * d));
+    // The hall carries the dry choir at full level, as the old organ did.
+    set(n.dry.gain, (echo === 'hall' ? 1 : 0.5) * (1 - 0.8 * d));
     if (n.pre) set(n.pre.delayTime, 0.13 * d);
-    set(n.wet.gain, 1.2 * p.mix);
+    if (n.wet) set(n.wet.gain, 1.2 * p.mix);
+    if (n.hallS) set(n.hallS.gain, 0.8 * p.mix);
     if (n.side) set(n.side.gain, 0.5 * p.width);
     for (const { pn, pan } of n.pans) set(pn.pan, clamp(pan * p.width, -1, 1));
     set(n.mDry.gain, 1 - 0.7 * p.metal);
     if (n.mWet) set(n.mWet.gain, p.metal);
+    if (n.fxWet) { set(n.fxWet.gain, layer.fx); set(n.fxDry.gain, Math.max(0, 1 - layer.fx)); }
+    if (n.chorus) set(n.chorus.gain, p.chorus);
     if (n.swell) { set(n.swell.o.frequency, p.swR); set(n.swell.g.gain, p.swD); }
+    if (n.aDrift) for (const d2 of n.aDrift) set(d2.g.gain, p.aDrift);
     for (const { o, u } of n.unison) set(o.detune, u * p.det);
+    for (const lg of n.leadG) set(lg.gain, layer.melody);
     for (const lay of n.layers) {
       const cut = clamp(lay.L.lp * p.bright, 500, 11000);
+      lay.cut = cut;
       set(lay.soft.frequency, cut);
       set(lay.soft.Q, p.res);
       if (lay.sweepG) set(lay.sweepG.gain, cut * 0.6 * p.fmot);
       // Level 0.35 of the tuning player, split over two layers, set by ear (Tom).
-      set(lay.bus.gain, 0.00735 * p.oct[lay.oi] * WG[p.wave] * rc);
+      const zl = [layer.high, layer.mid, layer.low][lay.oi];
+      set(lay.bus.gain, 0.00735 * p.oct[lay.oi] * WG[p.wave] * rc * zl);
       for (const fm of lay.forms) { set(fm.bp.frequency, Math.min(fm.f * p.vowel, 18000)); set(fm.ga.gain, fm.a * 4 * p.voice); }
       if (lay.direct) set(lay.direct.gain, 1.4 * (1 - p.voice));
     }
@@ -334,31 +503,105 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
   apply(true);
   // Changes the live settings; a structural change needs a new choir.
   v.set = np => { Object.assign(p, np, { oct: [...np.oct] }); apply(false); };
-  onEvent({ t, mode: MODES[mode0], lead: base });
+  // Sets the zoom layers: low, mid, high, melody and fx gains.
+  v.setLayers = z => { Object.assign(layer, z); apply(false); };
+  // A filter swell: the low pass dips, then opens over swellA s.
+  const swell = at => {
+    if (!(p.swellAmt > 0)) return;
+    for (const lay of n.layers) {
+      lay.soft.frequency.setValueAtTime(lay.cut * (1 - 0.85 * p.swellAmt), at);
+      lay.soft.frequency.setTargetAtTime(lay.cut, at, p.swellA / 3);
+    }
+  };
+
+  // The chord that sounds at a time: its root over the base and its tones.
+  if (prog) v.tl.push({ t, ...first, label: chordLabel(prog[0], harmony), len: prog[0].len });
+  else {
+    const tones = held ? (mode0 === 3 ? [1, 1.25, 1.5, 1.75] : [1, R(3), R(7), R(14)]) : [1, R(4), R(7), R(14)];
+    v.tl.push({ t, root: 1, tones, label: MODES[mode0], len: Infinity });
+  }
+  v.chordAt = at => { let c = v.tl[0]; for (const e of v.tl) if (e.t <= at) c = e; return c; };
+  onEvent({ t, mode: prog ? MODES[harmony === 'cross' ? 0 : harmony] : MODES[mode0], lead: base, chord: v.tl[0].label, len: v.tl[0].len });
+  swell(t);
 
   const fade = (gn, at, a, b, len) => { gn.gain.setValueAtTime(a, at); gn.gain.linearRampToValueAtTime(b, at + len); };
-  // Queues the scale crossfades and top voice steps up to `until` on the audio clock.
-  // Every 10 to 12 s the chord crossfades to the other scale over 4 s.
-  // Every step the top voice crossfades over 2 s to the next note.
-  // A slower star stretches both.
+  // The song: chord changes, each held for its length, round and round.
+  let ci = 0, nextChord = prog ? t + prog[0].len : Infinity;
+  let slotState = prog ? Array.from({ length: SLOTS }, (_, i) => firstV[i] ? { r: firstV[i][0], a: firstV[i][1] } : { r: 1, a: 0 }) : null;
+  function changeChord(at) {
+    ci = (ci + 1) % prog.length;
+    const c = prog[ci], ch = chordOf(c, harmony), nv = voiced(ch, p.voicing);
+    const xf = clamp(c.len / 3, 1, 4);
+    for (let i = 0; i < SLOTS; i++) {
+      const want = nv[i] ? { r: nv[i][0], a: nv[i][1] } : { r: slotState[i].r, a: 0 };
+      const was = slotState[i];
+      // A note the next chord keeps holds still.
+      if (Math.abs(want.r / was.r - 1) < 0.001 && Math.abs(want.a - was.a) < 0.001) continue;
+      const st = at + i * 0.12;
+      for (const row of v.slots) {
+        const ng = row[i], lvA = was.a * ng.amp, lvB = want.a * ng.amp;
+        if (p.move === 'glide' && was.a > 0 && want.a > 0) {
+          for (const set of ng.waves) set(base * want.r, st, xf / 3);
+          fade(ng, st, lvA, lvB, xf);
+        } else {
+          // The note dips, changes pitch in silence, and returns.
+          fade(ng, st, lvA, 0, xf / 2);
+          for (const set of ng.waves) set(base * want.r, st + xf / 2);
+          fade(ng, st + xf / 2, 0, lvB, xf / 2);
+        }
+      }
+      slotState[i] = want;
+    }
+    v.tl.push({ t: at, ...ch, label: chordLabel(c, harmony), len: c.len });
+    if (v.tl.length > 32) v.tl.splice(0, v.tl.length - 32);
+    swell(at);
+    onEvent({ t: at, chord: chordLabel(c, harmony), len: c.len });
+    return at + c.len;
+  }
+  // The melody's notes: the chord's tones near the base, plus scale steps between them.
+  function line(at) {
+    if (!prog) return v.line || LINES[v.mode];
+    const c = v.chordAt(at), sc = melodyScale(harmony), out = new Set();
+    for (const tn of c.tones) { let r = c.root * tn; while (r < 1) r *= 2; while (r >= 2) r /= 2; out.add(+r.toFixed(5)); }
+    if (p.melody !== 'arp') for (const s of sc) if (rand() < 0.35) out.add(+s.toFixed(5));
+    return [...out].sort((a, b) => a - b);
+  }
+  // Queues the chord changes, scale crossfades and melody steps up to `until` on the audio clock.
+  // Every 10 to 12 s the blend crossfades to the other scale over 4 s.
+  // Every step the top voice moves to the next note; a slower star stretches both.
   v.sing = until => {
-    while (Math.min(nextMode, nextLead) < until) {
-      if (nextMode <= nextLead) {
+    while (Math.min(nextMode, nextLead, nextChord) < until) {
+      if (nextChord <= nextMode && nextChord <= nextLead) {
+        nextChord = changeChord(nextChord);
+      } else if (nextMode <= nextLead) {
         v.mode = 1 - v.mode;
         const ion = v.mode === 0, len = Math.max(1.5, 4 * kk());
         for (const gn of v.ion) fade(gn, nextMode, ion ? 0 : gn.level, ion ? gn.level : 0, len);
         for (const gn of v.pen) fade(gn, nextMode, ion ? gn.level : 0, ion ? 0 : gn.level, len);
+        swell(nextMode);
         onEvent({ t: nextMode, mode: MODES[v.mode] });
-        nextMode += (10 + Math.random() * 2) * kk();
+        nextMode += (10 + rand() * 2) * kk();
       } else {
-        const line = v.line || LINES[v.mode];
-        v.step = (v.step + (Math.random() < 0.7 ? 1 : line.length - 1)) % line.length;
-        const f = base * line[v.step], at = nextLead, len = Math.max(0.8, 2 * kk());
-        for (const gn of v.leads[v.li]) fade(gn, at, gn.level, 0, len);
-        v.li ^= 1;
-        for (const gn of v.leads[v.li]) { for (const set of gn.waves) set(f, at); fade(gn, at, 0, gn.level, len); }
+        const at = nextLead, ln = line(at);
+        if (p.melody === 'arp') {
+          // The arpeggio walks up the chord, then down.
+          v.dir = v.dir || 1;
+          if (v.step + v.dir >= ln.length || v.step + v.dir < 0) v.dir = -v.dir;
+          v.step = clamp(v.step + v.dir, 0, ln.length - 1);
+        } else v.step = (v.step + (rand() < 0.7 ? 1 : ln.length - 1)) % ln.length;
+        const f = base * ln[v.step] * 2 ** (p.leadOct || 0);
+        if (p.melody === 'glide') {
+          // The old organ's top voice: one voice that slides, time constant 1.4 s.
+          for (const gn of v.leads[0]) for (const set of gn.waves) set(f, at, 1.4);
+          nextLead += p.step * (0.78 + 0.44 * rand());
+        } else {
+          const len = p.melody === 'arp' ? Math.min(0.3, arpGap() * 0.5) : Math.max(0.8, 2 * kk());
+          for (const gn of v.leads[v.li]) fade(gn, at, gn.level, 0, len);
+          v.li ^= 1;
+          for (const gn of v.leads[v.li]) { for (const set of gn.waves) set(f, at); fade(gn, at, 0, gn.level, len); }
+          nextLead += p.melody === 'arp' ? arpGap() : p.step;
+        }
         onEvent({ t: at, lead: f });
-        nextLead += p.step;
       }
     }
     v.until = until;
@@ -366,9 +609,25 @@ export function choir(ac, { t, base, p, out, motion = MOTION, os = [], track = n
   };
   return v;
 }
+// A chord's name: its scale degree in Roman numerals, then its kind.
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
+export function chordLabel(c, harmony) {
+  const ch = chordOf(c, harmony);
+  const minor = ch.third && Math.log2(ch.third) * 12 < 3.5;
+  const deg = ROMAN[c.deg] || String(c.deg + 1);
+  const name = (c.shift ? (c.shift < 0 ? '♭' : '♯') : '') + (minor ? deg.toLowerCase() : deg);
+  // The case shows major or minor, so those kinds need no word.
+  return ['triad', 'major', 'minor'].includes(c.kind) ? name : `${name} ${KINDS[c.kind].split(':')[0].toLowerCase()}`;
+}
+// The degrees a progression can use in a harmony, with their names.
+export function degrees(harmony) {
+  const sc = chordScale(harmony);
+  return sc.map((_, d) => ({ deg: d, label: chordLabel({ deg: d, kind: 'triad' }, harmony) }));
+}
 // Settings that need a new choir when they change.
 export function structural(a, b) {
-  if (['wave', 'rev', 'key'].some(x => a[x] !== b[x])) return true;
+  if (['wave', 'rev', 'key', 'harmony', 'voicing', 'melody', 'echo', 'slowed', 'move', 'leadOct'].some(x => a[x] !== b[x])) return true;
+  if (JSON.stringify(a.prog) !== JSON.stringify(b.prog)) return true;
   if ((a.det > 0) !== (b.det > 0)) return true;
   return FX.some(([x]) => a.fx[x].on !== b.fx[x].on || (a.fx[x].on && a.fx[x].amt !== b.fx[x].amt));
 }
@@ -376,11 +635,25 @@ export function structural(a, b) {
 export const keyed = (root, p) => root * 2 ** ((p.key || 0) / 12);
 
 // The sci-fi filters, each on its own switch, in a fixed order.
-function sciFi(ac, p, base, t, inp, { G, filt, lfo, curve }) {
+// The analog pad's chorus comes first: two delays that sway apart.
+function sciFi(ac, p, base, t, inp, { G, filt, lfo, curve, n: h, live }) {
   const F = p.fx;
   let n = inp;
   // A parallel stage: dry and processed, mixed.
   const par = (a, proc, dryAmt = 1 - a) => { const o = G(1); n.connect(G(dryAmt)).connect(o); proc(n).connect(G(a)).connect(o); n = o; };
+  if (live || p.chorus > 0) {
+    const o = G(1), mg = ac.createChannelMerger(2);
+    n.connect(o);
+    h.chorus = G(0);
+    for (const [ch, d0, rate] of [[0, 0.014, 0.31], [1, 0.019, 0.43]]) {
+      const dl = ac.createDelay(0.05);
+      dl.delayTime.value = d0;
+      lfo(rate, 0.0025, dl.delayTime);
+      n.connect(dl).connect(mg, 0, ch);
+    }
+    mg.connect(h.chorus).connect(o);
+    n = o;
+  }
   if (F.machine.on) {
     // A comb tuned an octave under the base: a pipe or robot ring.
     const a = F.machine.amt;
@@ -448,18 +721,20 @@ const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 // Tap source levels against the saw blast and the triangle glow, set by ear.
 const BLAST_LVL = { sawtooth: 1, square: 0.6, triangle: 1.4, sine: 1.6 };
 const GLOW_LVL = { triangle: 1, sine: 0.85, sawtooth: 0.7, square: 0.6 };
-// The brass blast: six voices an octave and a fifth apart, through a soft clip.
-// Its filter opens in 0.45 s and closes over `len`.
+// The brass blast: six sawtooth voices an octave and a fifth apart, through a soft clip.
+// A resonant low pass opens in 0.45 s and closes over `len`: the brass "braam".
 // The 1.004 voice beats slowly against the root, so the blast sounds like many.
-// o.root: the star's key two octaves down. o.K: the tap strength, 0.3 to 1.
-// Returns the blast's gain; the caller pans it and sends it on.
+// o.root: the chord's root two octaves down. o.K: the tap strength, 0.3 to 1.
+// Returns a handle: its output gain, its level gain and its oscillators.
 export function blast(ac, { t, root, K, len = 6, p = SUN, out, track = n => n }) {
   const k = kitOf(ac);
-  const g = ac.createGain();
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.2 * K * p.blastLvl * BLAST_LVL[p.blastWave], t + 0.22);
-  g.gain.setTargetAtTime(0.0001, t + 1.1, len / 4);
-  g.connect(out);
+  const env = ac.createGain();
+  env.gain.setValueAtTime(0, t);
+  env.gain.linearRampToValueAtTime(0.2 * K, t + 0.22);
+  env.gain.setTargetAtTime(0.0001, t + 1.1, len / 4);
+  const lv = ac.createGain();
+  lv.gain.value = p.blastLvl * BLAST_LVL[p.blastWave];
+  env.connect(lv).connect(out);
   const lp = ac.createBiquadFilter();
   lp.type = 'lowpass'; lp.Q.value = 3;
   lp.frequency.setValueAtTime(110, t);
@@ -473,92 +748,140 @@ export function blast(ac, { t, root, K, len = 6, p = SUN, out, track = n => n })
   }
   const ws = ac.createWaveShaper();
   ws.curve = k.clip;
-  sh.connect(ws).connect(lp).connect(g);
+  sh.connect(ws).connect(lp).connect(env);
+  const oscs = [];
   for (const m of [0.5, 1, 1.004, 1.498, 2, 2.996]) {
     const o = ac.createOscillator();
     o.type = p.blastWave;
     o.frequency.value = root * m * jit(0.002);
     o.start(t); o.stop(t + len + 1);
     track(o).connect(sh);
+    oscs.push(o);
   }
-  return g;
+  return { out: lv, lv, oscs, end: t + len + 1 };
 }
-// The glow: four soft voices that swell for 4.5 s, then fade away smoothly.
-// Each voice sits up to 6 cents off, so the chord shimmers like a chorus.
-// o.root: the star's key one octave down.
-// Returns the glow's gain; the caller pans it and sends it on.
-export function glow(ac, { t, root, K, p = SUN, out, track = n => n }) {
-  const lvl = 0.05 * K * p.glowLvl * GLOW_LVL[p.glowWave];
-  const pad = ac.createGain();
-  pad.gain.setValueAtTime(0, t + 1.5);
-  pad.gain.linearRampToValueAtTime(lvl, t + 6);
-  // The fade falls 40 dB by about 32 s.
-  pad.gain.setTargetAtTime(0, t + 8, 5);
-  pad.connect(out);
+// The glow: four soft voices, each up to 6 cents off, so the chord shimmers like a chorus.
+// It swells over glowRise s from 1.5 s, holds glowHold s, then falls 40 dB over glowFade s.
+// As an arpeggio, the notes enter one by one, arpGap s apart.
+// o.root: the chord's root one octave down. o.notes: ratios over the root.
+// Returns a handle: its output gain, level, envelope, oscillators and timing.
+export function glow(ac, { t, root, K, p = SUN, out, notes, track = n => n }) {
+  const ns = (p.chord === 'current' && notes) ? notes : CHORDS[p.chord] || CHORDS.major;
+  const env = ac.createGain(), lv = ac.createGain();
+  lv.gain.value = p.glowLvl * GLOW_LVL[p.glowWave];
+  env.connect(lv).connect(out);
+  const h = { out: lv, lv, env, K, t0: t + 1.5, oscs: [], root };
+  shapeGlow(h, p, t + 1.5);
   const plp = ac.createBiquadFilter();
   plp.type = 'lowpass'; plp.frequency.value = 900; plp.Q.value = 0.5;
-  plp.connect(pad);
-  for (const m of CHORDS[p.chord]) {
+  plp.connect(env);
+  const end = t + 1.5 + p.glowRise + p.glowHold + p.glowFade + 1;
+  ns.slice(0, 5).forEach((m, i) => {
     const o = ac.createOscillator();
     o.type = p.glowWave;
     o.frequency.value = root * m * jit(0.004);
     o.detune.value = (Math.random() - 0.5) * 12;
-    o.start(t + 1.5); o.stop(t + 34.5);
-    track(o).connect(plp);
+    let into = plp;
+    if (p.glowStyle === 'arp') {
+      // Each arpeggio note opens its own gate in turn.
+      const gate = ac.createGain(), at = t + 1.5 + i * p.arpGap;
+      gate.gain.setValueAtTime(0, t);
+      gate.gain.setValueAtTime(0, at);
+      gate.gain.linearRampToValueAtTime(1, at + 0.08);
+      gate.connect(plp);
+      into = gate;
+    }
+    o.start(t + 1.5); o.stop(end);
+    track(o).connect(into);
+    h.oscs.push({ o, m });
+  });
+  h.end = end;
+  return h;
+}
+// Schedules a glow's envelope from `from`, or from now on a live change.
+function shapeGlow(h, p, from) {
+  const g = h.env.gain, peak = 0.05 * h.K, rise = h.t0 + p.glowRise, hold = rise + p.glowHold;
+  if (from <= h.t0) {
+    g.setValueAtTime(0, h.t0);
+    g.linearRampToValueAtTime(peak, rise);
+  } else {
+    if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(from); else { g.cancelScheduledValues(from); g.setValueAtTime(g.value, from); }
+    if (from < rise) g.linearRampToValueAtTime(peak, rise);
   }
-  return pad;
+  g.setTargetAtTime(0, Math.max(from, hold), p.glowFade / 4.6);
 }
 
 // The tap bus: every blast and glow passes here, so taps never pile up.
 // One glow sounds at a time: a new tap fades the last one over 2.5 s.
 // One blast sounds at a time: a new one fades the last over 0.5 s.
 // A soft limiter holds a burst of taps near one tap's level.
+// With stack on, taps pile up with no limit, as before 24 November.
 // o.out: the dry path. o.hall: the echo hall send. o.track: registers sources.
 export function tapBus(ac, { out, hall, track = n => n }) {
   const lim = ac.createDynamicsCompressor();
   lim.threshold.value = -30; lim.knee.value = 12; lim.ratio.value = 4;
   lim.attack.value = 0.03; lim.release.value = 0.8;
-  const bus = ac.createGain();
+  const bus = ac.createGain(), raw = ac.createGain();
   bus.connect(lim).connect(out);
+  raw.connect(out);
   const live = { blast: [], glow: [] };
+  const prune = (list, t) => { for (let i = list.length - 1; i >= 0; i--) if (list[i].end < t) list.splice(i, 1); };
   // Fades out the oldest sounds until there is room for one more.
   function steal(list, max, t, len) {
-    for (let i = list.length - 1; i >= 0; i--) if (list[i].end < t) list.splice(i, 1);
+    prune(list, t);
     while (list.length >= max) {
+      // A shell holds 1 until stolen; the fade must start at t, so it gets an anchor there.
       const { g } = list.shift();
-      if (g.gain.cancelAndHoldAtTime) g.gain.cancelAndHoldAtTime(t);
-      else { g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); }
+      g.gain.setValueAtTime(1, t);
       g.gain.linearRampToValueAtTime(0, t + len);
     }
   }
-  // One tap sound: its envelope, then a panner, the hall and the star's room.
-  function route(g, pan, hallAmt, room, roomAmt) {
+  // One tap sound: a shell, a panner, the hall and the star's room.
+  function route(g, pan, hallAmt, room, roomAmt, stack) {
     const pn = ac.createStereoPanner();
     pn.pan.value = clamp(pan, -1, 1);
-    g.connect(pn).connect(bus);
-    const h = ac.createGain();
-    h.gain.value = hallAmt;
-    g.connect(h).connect(hall);
+    g.connect(pn).connect(stack ? raw : bus);
+    const hg = ac.createGain();
+    hg.gain.value = hallAmt;
+    g.connect(hg).connect(hall);
     if (room && roomAmt > 0) { const r = ac.createGain(); r.gain.value = roomAmt; g.connect(r).connect(room); }
   }
   // A shell keeps each envelope apart from the steal fade.
   const shell = () => { const g = ac.createGain(); g.gain.value = 1; return g; };
+  const fold = r => { while (r >= 2) r /= 2; while (r < 1) r *= 2; return r; };
   return {
-    // A blast: root is the star's key two octaves down.
-    blast({ t, root, K, len = 6, p = SUN, pan = 0, room = null }) {
-      steal(live.blast, 1, t, 0.5);
+    // A blast: root is the star's key two octaves down; chordRoot moves it to the chord.
+    blast({ t, root, K, len = 6, p = SUN, pan = 0, room = null, chordRoot = 1 }) {
+      if (!p.stack) steal(live.blast, 1, t, 0.5); else prune(live.blast, t);
       const sh = shell();
-      blast(ac, { t, root, K, len, p, out: sh, track });
-      route(sh, pan * 0.3, 0.7, room, 0.5 * p.dist);
-      live.blast.push({ g: sh, end: t + len + 1 });
+      const h = blast(ac, { t, root: root * fold(chordRoot), K, len, p, out: sh, track });
+      route(sh, pan * 0.3, 0.7, room, 0.5 * p.dist, p.stack);
+      live.blast.push({ g: sh, h, end: h.end });
     },
-    // A glow: root is the star's key one octave down.
-    glow({ t, root, K, p = SUN, pan = 0, room = null }) {
-      steal(live.glow, 1, t, 2.5);
+    // A glow: root is the star's key one octave down; notes are the chord's tones.
+    glow({ t, root, K, p = SUN, pan = 0, room = null, chordRoot = 1, notes = null }) {
+      if (!p.stack) steal(live.glow, 1, t, 2.5); else prune(live.glow, t);
       const sh = shell();
-      glow(ac, { t, root, K, p, out: sh, track });
-      route(sh, pan * 0.5, 0.4, room, 0.8 * p.dist);
-      live.glow.push({ g: sh, end: t + 34.5 });
+      const h = glow(ac, { t, root: root * fold(chordRoot), K, p, out: sh, notes, track });
+      route(sh, pan * 0.5, 0.4, room, 0.8 * p.dist, p.stack);
+      live.glow.push({ g: sh, h, end: h.end });
+    },
+    // Changes the taps that sound now: levels, sources, the glow's notes and shape.
+    set(p, notes = null) {
+      const at = ac.currentTime;
+      for (const { h } of live.blast) {
+        h.lv.gain.setTargetAtTime(p.blastLvl * BLAST_LVL[p.blastWave], at, 0.05);
+        for (const o of h.oscs) if (o.type !== p.blastWave) o.type = p.blastWave;
+      }
+      for (const { h } of live.glow) {
+        h.lv.gain.setTargetAtTime(p.glowLvl * GLOW_LVL[p.glowWave], at, 0.05);
+        const ns = p.chord === 'current' ? notes : CHORDS[p.chord];
+        h.oscs.forEach(({ o }, i) => {
+          if (o.type !== p.glowWave) o.type = p.glowWave;
+          if (ns && ns[i]) o.frequency.setTargetAtTime(h.root * ns[i], at, 0.08);
+        });
+        shapeGlow(h, p, at);
+      }
     },
   };
 }

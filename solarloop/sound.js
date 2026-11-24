@@ -1,5 +1,5 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
-import { choir, tapBus, preset, keyed, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, preset, keyed, zoomAt, renderBed, LOOP } from './choir.js';
 // Space is silent, so the sound is a sonification: each part has a visible cause.
 // A flare: the deep synth, then a slow glow chord. A lifting prominence: the synth only. A drag is silent.
 // Awake: a voice over a constant deep surround rumble.
@@ -10,19 +10,6 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // The key falls as the star grows: the hypergiant hums lowest.
 // The Sun sits in A sharp (Tom, 2026-11-24), set by ear with its choir.
 export const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
-
-// `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
-// The rumble grows as the view closes in on the star (Tom).
-// Level in dB by closeness, against the old fixed level (Tom).
-// Long lens +2.3, wide view +1, full star 0; it fades only far out.
-const RUMBLE = [[-1.4, -9], [-0.7, 0], [0, 0], [0.69, 1], [1, 2.3]];
-export function rumbleAt(near) {
-  const P = RUMBLE, x = clamp(near, P[0][0], P[P.length - 1][0]);
-  let i = 1;
-  while (i < P.length - 1 && x > P[i][0]) i++;
-  const [x0, y0] = P[i - 1], [x1, y1] = P[i];
-  return Math.pow(10, (y0 + (y1 - y0) * (x - x0) / (x1 - x0)) / 20);
-}
 
 // `opt(id)` reads a Dev row; a missing row means on, at level 1.
 export function makeSound(kit, opt = () => undefined) {
@@ -121,8 +108,11 @@ export function makeSound(kit, opt = () => undefined) {
   }
   // A far star sends its taps into its choir's reverb too.
   const roomOf = (ac, band) => drone && drone.ac === ac && drone.band === band ? drone.voice.cv : null;
+  // Taps play in the chord the choir sings now.
+  const chordOf = (ac, band, t) => drone && drone.ac === ac && drone.band === band ? drone.voice.chordAt(t) : null;
   function braam(ac, t, pan, band, K, len = 6) {
-    tapsOf(ac).blast({ t, root: keyOf(band) / 4, K, len, p: preset(band), pan, room: roomOf(ac, band) });
+    const ch = chordOf(ac, band, t);
+    tapsOf(ac).blast({ t, root: keyOf(band) / 4, K, len, p: preset(band), pan, room: roomOf(ac, band), chordRoot: ch ? ch.root : 1 });
   }
 
   // The star's voice while the toy is awake, in two layers.
@@ -133,16 +123,21 @@ export function makeSound(kit, opt = () => undefined) {
   let bed = null;
   let drone = null;
   // Which layers sound: the Dev toggles set them.
-  const layers = { hum: true, rumble: true, h: 1, lvl: 1 };
+  const layers = { hum: true, rumble: true, h: 1, lvl: 1, near: 0, z: zoomAt(0) };
+  // The zoom mix (choir.js ZOOM): choir and rumble levels and the layer gains by nearness.
+  // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
+  const dB = x => 10 ** (x / 20);
   function mixLayers(hum, rumble, near = 0) {
-    const h = hum ? lvl('sndHumLvl') : 0;
-    const r = rumble ? rumbleAt(near) * lvl('sndRumbleLvl') : 0;
-    if (Math.abs(layers.h - h) < 0.01 && Math.abs(layers.lvl - r) < 0.01) return;
-    layers.hum = hum; layers.rumble = rumble; layers.h = h; layers.lvl = r;
+    const z = zoomAt(near);
+    const h = hum ? lvl('sndHumLvl') * dB(z.choir) : 0;
+    const r = rumble ? dB(z.rumble) * lvl('sndRumbleLvl') : 0;
+    if (Math.abs(layers.h - h) < 0.01 && Math.abs(layers.lvl - r) < 0.01 && Math.abs(layers.near - near) < 0.01) return;
+    Object.assign(layers, { hum, rumble, h, lvl: r, near, z });
     if (!drone) return;
     const t = drone.ac.currentTime;
     drone.humOn.gain.setTargetAtTime(h, t, 0.4);
     drone.rumOn.gain.setTargetAtTime(r, t, 0.4);
+    drone.voice.setLayers(z);
   }
 
   function hum(band) {
@@ -172,7 +167,8 @@ export function makeSound(kit, opt = () => undefined) {
     gc.gain.setValueAtTime(0, t);
     gc.gain.linearRampToValueAtTime(1, t + 4);
     humOn.connect(gc).connect(kit.out);
-    const voice = choir(ac, { t, base: root * 4, p: preset(band), out: humOn, os, track });
+    const voice = choir(ac, { t, base: root * 4, p: preset(band), out: humOn, hall: hallOf(ac), os, track });
+    voice.setLayers(layers.z);
     voice.sing(t + 240);
 
     // The space rumble: a seamless rendered loop, added once it is ready.
@@ -216,7 +212,8 @@ export function makeSound(kit, opt = () => undefined) {
     if (on('sndBlast')) braam(ac, t, pan, band, K * 0.7, 6);
     if (!on('sndGlow')) return;
     // The glow: a slow chord while the arcade shines.
-    tapsOf(ac).glow({ t, root: keyOf(band) / 2, K, p: preset(band), pan, room: roomOf(ac, band) });
+    const ch = chordOf(ac, band, t);
+    tapsOf(ac).glow({ t, root: keyOf(band) / 2, K, p: preset(band), pan, room: roomOf(ac, band), chordRoot: ch ? ch.root : 1, notes: ch ? ch.tones : null });
   }
 
   // The Carrington storm reaches the earth: a far telegraph sounder clacks, its line sparks.
