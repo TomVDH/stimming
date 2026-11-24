@@ -316,7 +316,7 @@ function apply() {
   U.soot.value = tune.soot ? 1 : 0; U.sLit.value = tune.sLit; U.sSpeed.value = tune.sSpeed;
   // Soot forms low in the jet column; none at the nozzle, none dumped at one spot.
   gu.tailSoot.value = 0; gu.sideSoot.value = 0;
-  gu.coreSoot.value = tune.soot ? 1100 * tune.sAmount : 0;
+  gu.coreSoot.value = tune.soot ? 420 * tune.sAmount : 0;
   // The clouds fade in about 0.9 s, so they never fill the box.
   gu.dissipation.value = 1.1 / tune.sLife;
   gu.occGain.value = 7 * tune.sDark;
@@ -369,7 +369,10 @@ const smoke = Fn(() => {
     .add(heat.sample(screenUV.add(vec2(d.x, 0))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(d.x, 0))).b.mul(0.15))
     .add(heat.sample(screenUV.add(vec2(0, d.y))).b.mul(0.15)).add(heat.sample(screenUV.sub(vec2(0, d.y))).b.mul(0.15));
 })();
-const behind = exp(smoke.mul(0.6).mul(U.soot).negate());
+// A moving noise masks the soot into patches that run down with the flow.
+// The darkening covers the bright cone too, so soot sits over the flame.
+const mask = smoothstep(0.25, 0.7, mx_noise_float(vec3(screenUV.x.mul(U.res.x.div(U.res.y)).mul(9.0), screenUV.y.mul(7.0).add(U.flowT.mul(0.06)), U.time.mul(0.25))).mul(0.5).add(0.5));
+const behind = exp(smoke.mul(0.6).mul(U.soot).mul(mask.mul(2.2).add(0.3)).negate());
 const col = vec4(sp.getTextureNode().sample(bentUV).rgb.mul(behind).add(volCol), 1);
 const view = vec3(heat.sample(screenUV).r.mul(6.0).mul(U.showHeat), 0, 0);
 pipe.outputNode = renderOutput(col.add(bloom(col, 0.5, 0.5, 0.8)).add(view));
