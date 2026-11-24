@@ -234,6 +234,8 @@ export function createFire({
     feed: uniform(new THREE.Vector2(1, 0.04)),
     // Jet hover: the hottest the gas gets.
     tMax: uniform(12.0),
+    // Jet hover: smoke under occMin does not darken the scene; occGain scales the rest.
+    occMin: uniform(0.25), occGain: uniform(1.0),
   };
 
   /* ---------- storage 3D textures ---------- */
@@ -726,7 +728,7 @@ export function createFire({
       const cellNoise = mx_noise_float(positionRay.mul(vec3(1.3, 0.8, 1.3).div(u.shimSize)).add(vec3(0.0, u.time.mul(u.shimSpeed).negate(), 0.0)));
       const edge = min(uvw, vec3(1).sub(uvw));
       // Thin haze in the box does not count; only real billows dim the scene.
-      const smoke = dye.r.mul(smoothstep(0.25, 1.2, dye.r)).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));
+      const smoke = dye.r.mul(smoothstep(u.occMin, u.occMin.mul(3.8).add(0.25), dye.r)).mul(u.occGain).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));
       return vec3(T.mul(cellNoise).mul(u.heatGain), T.mul(u.heatGain), smoke).mul(seen(positionRay));
     });
     const heatMesh = new THREE.Mesh(new THREE.BoxGeometry(SX, SY, SZ), heatMaterial);

@@ -372,6 +372,8 @@ function applyTune() {
   gasF.u.smokeTint.value.setRGB(0.9 + (0.05 - 0.9) * sd, 0.86 + (0.045 - 0.86) * sd, 0.8 + (0.04 - 0.8) * sd);
   gasF.u.dissipation.value = 0.7 / tune.sLife;
   gasF.u.glowGain.value = tune.sGlow;
+  // Thick soot darkens what lies behind it, as Fire's shadow pass does.
+  gasF.u.occMin.value = 0.02; gasF.u.occGain.value = 6 * tune.sDark;
   gasF.u.emitDensity.value = 2000 * tune.exSmoke; gasF.u.emitTemperature.value = 330 * tune.exHeat;
   frame3();
   applyTime();
