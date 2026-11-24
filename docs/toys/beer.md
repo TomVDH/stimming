@@ -1,6 +1,6 @@
 # Beer pour (`beer`)
 
-Lab toy, series Belgium. Dutch name draft: Schuimkraag. Bean `stimming-fvs3` (feature); the refinement pass is `stimming-tptn`. Plan: `docs/plans/beer.md`.
+Lab toy, series Belgium. Dutch name draft: Schuimkraag. Bean `stimming-fvs3` (feature); the refinement pass is `stimming-tptn`, the depth and table pass `stimming-kq75`. Plan: `docs/plans/beer.md`.
 
 A macro shot of one glass on a dark bar, backlit by a warm lamp. The bottle stands out of focus at the right. Hold to pour: the bottle lifts, tips and pours a beaded jet; the head climbs, swells and settles. The cold beer fogs the glass, beads grow on it and run. Each sip leaves a lacing ring.
 
@@ -25,11 +25,12 @@ three.js 0.170, WebGL2, custom shaders. Three layers: the room behind (blurred),
 
 | Part | Source | Method |
 |---|---|---|
-| Beer | `index.html`, `BEER_FS` | A lathe of the inner wall. Each pixel refracts in, marches to the wall, refracts out and reads the blurred room. Beer-Lambert along the true path; haze scatters the lamp forward. |
+| Beer | `index.html`, `BEER_FS` | A lathe of the inner wall. Each pixel refracts in, marches to the wall, refracts out and reads the blurred room. Beer-Lambert along the true path, with a depth gain for pale beers; haze scatters the lamp forward. Soft caustic streaks run through the body, and the sides fall to a deeper gold where the bowl bends the view off the backlight. |
 | Head | `FOAM_FS` | Bubbles pressed on the glass: round grey faces with bright rims and a key glint, finer below. The lamp light through the head uses Fire's smoke shading, copied as a marked `K3 lighting` section from `cloudbottle/scene.js`. |
 | Fizz | `FIZZ_VS`, `FIZZ_FS` | Instanced sprites placed from time alone: nucleation trains (height grows as age cubed), wall bubbles, the surge, pops and spray. Each bubble is a gas lens: a dark rim, a bright core, a key glint. |
 | Stream | `updateStream()` | A tube swept along the jet's parabola each frame, with three's physical transmission material. Capillary ripples run down it and grow into beads as it falls. |
 | Wet glass | `shared/glassrain.js`, `shared/wetglass.js` | The shared wet pane, wrapped round the outer wall in arc and height. Cold beer chills the wall below its level: fog first, then beads, then runs that slip down and wipe tracks (about 40 s). |
+| Table | `TABLE_FS` | Dark slate lit by the lamp behind and by a soft pool from the key softbox. Both cast the glass's shadow; the key's falls back and right, in frame. In it the beer focuses a bright amber line, narrowest about 2R past the axis; the head throws a dim shadow. |
 | Lacing | `LACE` in `index.html` | A sip records the foam line. The glass draws a net of bubble walls there, with scallops and drips below; the films burst with age. Up to six rings. |
 | Finish | `shared/output.js`, `shared/grade.js`, `shared/flare.js` | Bloom (three's UnrealBloomPass), a lens flare from the lamp (`flBuoy`, a soft orb and a thin streak), vignette, `ouAces`, an S-curve and grain from `gdHash`. |
 | Fill model | `index.html` | Beer and foam volumes in the tipped glass (circular segments per slice); weir flow from the tipped bottle; foam per pour from the drop, the fizz and the beer's power; drainage by the beer's half-life. |
@@ -42,14 +43,14 @@ three.js 0.170, WebGL2, custom shaders. Three layers: the room behind (blurred),
 
 | Check | Result (2026-11-23, Edge headless, D3D11, RTX 3070, 1280 x 800, dpr 1) |
 |---|---|
-| Frame interval while pouring | median 7.7 ms, p90 15 ms |
+| Frame interval while pouring | median 7.7 ms, p90 15 ms; 7.8 ms after the depth and table pass |
 | Drifting (settling head) | 30 fps |
 | Asleep (60 s after input) | 0 frames |
 | Console | clean at load and in play |
 
 ## QA captures
 
-`docs/qa/beer/`: r00 before the pass; r01 mid-pour; r02 the full head; r03 wet glass and lacing after a sip; r04 375 x 812; r05 812 x 375; r06 reduced motion; r07 Kwak in its stand.
+`docs/qa/beer/`: r00 before the pass; r01 mid-pour; r02 the full head; r03 wet glass and lacing after a sip; r04 375 x 812; r05 812 x 375; r06 reduced motion; r07 Kwak in its stand. Depth and table pass: r08 beer depth before and after; r09 the full glass with the table caustic; r10 after a sip; r11 375 x 812; r12 812 x 375; r13 reduced motion; r14 Kwak.
 
 ## Open
 

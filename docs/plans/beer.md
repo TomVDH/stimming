@@ -191,3 +191,20 @@ Tom, 2026-11-23: "Keep the names". All four rows stay as they are.
 
 - `shared/wetglass.js`: `wgPane` takes a fixed light direction for the bead glint. A curved glass would want the light per pixel; a `L` argument would help.
 - The `K3 lighting` copy is the tenth; `shared/volume.js` (shared-kit.md, item 1) would end it.
+
+## Depth and table pass (2026-11-23)
+
+Status: done · Bean: `stimming-kq75` (task, under `stimming-fvs3`)
+
+Tom, 2026-11-23: "Table and beer depth".
+
+| Part | Change |
+|---|---|
+| Beer depth | A depth gain on the view path for pale beers (1.15 at EBC 8, 1 from EBC 30). Sharper caustic streaks in the body. The sides darken toward amber where the bowl bends the view off the backlight. |
+| Surge | The fine-bubble haze after a pour clears with a 4.5 s time constant (was 9 s), so the depth shows sooner. |
+| Wet glass | The first fog is thinner (0.2, was 0.42), so the beer reads through it. |
+| Table | The key softbox lights a soft warm pool. Its shadow of the glass falls back and right, in frame, with a bright amber caustic line from the beer and a dim shadow from the head. |
+
+- [x] Checked at 1280 x 800, 375 x 812, 812 x 375, reduced motion and Kwak; console clean; pour median 7.8 ms.
+- [x] Tom's look at r08 to r14: "Yes, push it".
+

@@ -329,35 +329,53 @@ varying vec3 vW;
 void main() { vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`;
 const TABLE_FS = NOISE + ROOM + PROF + `
 uniform vec3 uSigma;
-uniform float uLevel, uFill;
+uniform float uLevel, uTop, uFill;
 varying vec3 vW;
+// The glass's shadow from a light along L (glass frame), with the beer's caustic.
+// A water cylinder focuses light about 2R past its axis, so the line narrows there.
+vec3 glassTint(vec3 p, vec3 L, float soft0) {
+  float s = dot(-p.xz, L.xz) / max(dot(L.xz, L.xz), 1e-4);
+  if (s <= 0.0) return vec3(1.0);
+  vec3 q = p + L * s;
+  if (q.y > uGH + 0.3 || q.y < 0.0) return vec3(1.0);
+  float hd = length(q.xz), D = s * length(L);
+  vec4 Pr = gp(q.y);
+  // A soft light: the shadow's edge widens with distance.
+  float soft = soft0 + 0.05 * D;
+  float inside = smoothstep(Pr.x + soft, Pr.x - soft, hd);
+  float R = max(Pr.y, 0.5), f = 2.0 * R;
+  // A dim amber shadow, and a bright line where the beer focuses the light.
+  float wl = 0.1 * R + 0.12 * abs(D - f) + 0.3 * soft;
+  float core = smoothstep(wl, wl * 0.3, hd) * min(R / (wl * 3.0), 3.0);
+  vec3 Tb = exp(-uSigma * 1.4 * R);
+  vec3 beer = Tb * (0.22 + 2.2 * core);
+  vec3 t2 = vec3(q.y < uGYb ? 0.4 : 0.82);
+  if (uFill > 0.0 && q.y > uGYb && q.y < uLevel) t2 = beer;
+  // The head blocks most light; a little creams through.
+  else if (uFill > 0.0 && q.y >= uLevel && q.y < uTop) t2 = vec3(0.22, 0.2, 0.17);
+  return mix(vec3(1.0), t2, inside);
+}
 void main() {
   vec3 pw = toW(vW);
   vec3 Lw = vec3(LAMP.x * 0.5, 30.0, -40.0) - pw;
   float dist = length(Lw);
   float irr = max(Lw.y / dist, 0.0) * 1300.0 / (dist * dist);
-  // The shadow is found in the glass frame.
+  // Shadows are found in the glass frame.
   vec3 p = vW;
-  vec3 L = transpose(mat3(uG2W)) * Lw;
+  mat3 W2Gm = transpose(mat3(uG2W));
+  vec3 L = W2Gm * Lw;
   vec3 l = L / dist;
-  // The glass's shadow falls toward the viewer; light through the beer focuses in it.
-  float s = dot(-p.xz, L.xz) / max(dot(L.xz, L.xz), 1e-4);
-  vec3 tint = vec3(1.0);
-  if (s > 0.0 && s < 1.0) {
-    vec3 q = p + L * s;
-    float hd = length(q.xz);
-    vec4 Pr = gp(q.y);
-    float inside = smoothstep(Pr.x + 0.15, Pr.x - 0.2, hd);
-    float D = length(p.xz), R = max(Pr.y, 0.5), f = 2.0 * R;
-    float w = R * abs(1.0 - D / f) + 0.08 * R;
-    vec3 Tb = exp(-uSigma * 1.4 * R);
-    vec3 beer = mix(vec3(0.05), Tb * min(R / w, 7.0) * 0.8, smoothstep(w, w * 0.6, hd));
-    vec3 t2 = q.y < uLevel && q.y > uGYb && uFill > 0.0 ? beer : vec3(q.y < uGYb ? 0.4 : 0.82);
-    tint = mix(vec3(1.0), t2, inside);
-  }
+  vec3 tint = glassTint(p, L, 0.15);
   vec3 v = normalize(cameraPosition - p), h = normalize(l + v);
   vec3 c = vec3(0.05, 0.043, 0.038) * uLamp * irr * tint;
   c += uLamp * pow(max(h.y, 0.0), 160.0) * irr * 0.5 * tint;
+  // The key softbox, front left, lights a soft pool on the table.
+  // Its shadow of the glass falls back and right, with the beer's amber line in it.
+  vec3 kd = normalize(KEY_DIR);
+  vec2 kc = pw.xz - vec2(5.0, -7.0);
+  float pool = exp(-dot(kc, kc) / 420.0) * smoothstep(-30.0, -4.0, -length(pw.xz) * 0.6 - 2.0);
+  vec3 kt = glassTint(p, W2Gm * kd * 40.0, 0.25);
+  c += vec3(1.0, 0.9, 0.76) * 0.13 * kd.y * pool * kt;
   c *= 1.0 - 0.65 * exp(-pow(max(length(p.xz) - gp(0.1).x, 0.0) / 0.7, 2.0));
   // Far back the table meets the room: the lamp's glow carries on, so the horizon stays soft.
   c = mix(c, lampAt(vec2(p.x, 0.0)) + vec3(0.004, 0.003, 0.0028), smoothstep(-40.0, -69.0, p.z));
@@ -438,7 +456,7 @@ const BEER_FS = NOISE + ROOM + PROF + `
 uniform sampler2D uBehind;
 uniform mat4 projectionMatrix;
 uniform vec3 uSigma, uKey;
-uniform float uLevel, uHaze, uSurge;
+uniform float uLevel, uHaze, uSurge, uDepthK;
 varying vec3 vW, vN;
 bool inBeer(vec3 p) { return p.y > uGYb && p.y < LEV(p.xz) && length(p.xz) < gp(p.y).y; }
 void main() {
@@ -465,16 +483,18 @@ void main() {
   // Rays the glass bends away from it read dark, so the edges deepen.
   vec3 Ld = normalize(vec3(LAMP.x * 0.4, LAMP.y + 4.0, BACK_Z) - toW(X));
   float k = max(dot(dirW(normalize(d2)), Ld), 0.0);
-  float panel = pow(k, 3.0) * 0.45 + pow(k, 14.0) * 0.9 + pow(k, 60.0) * 1.1;
+  float panel = pow(k, 8.0) * 0.22 + pow(k, 24.0) * 1.2 + pow(k, 80.0) * 1.4;
   // The panel is brighter at its top; the beer is brightest high and darkens toward the floor.
   float lift = smoothstep(uGYb, LEV(X.xz) + 1.0, X.y);
-  vec3 light = behind + uLamp * panel * (0.55 + 0.6 * lift);
+  vec3 light = behind + uLamp * panel * (0.4 + 0.8 * lift);
   // The curved beer gathers light into soft moving streaks: a caustic shimmer.
   // A cylinder bends light into near-vertical bands.
   float sh = noise(vec2(atan(X.x, X.z) * 4.0 + uTime * 0.1, X.y * 0.18 - uTime * 0.04)) * noise(vec2(atan(X.x, X.z) * 7.0 - uTime * 0.07, X.y * 0.3));
-  light *= 0.9 + 0.28 * sh;
+  // Sharpened: bright streaks and darker gaps give the body depth.
+  light *= 0.78 + 0.85 * smoothstep(0.12, 0.45, sh);
   // Beer-Lambert along the true path gives the gold its depth.
-  vec3 T = exp(-uSigma * t);
+  // Pale beers take a depth gain: thin edges stay straw, the thick middle runs gold.
+  vec3 T = exp(-uSigma * t * uDepthK);
   vec3 col = light * T;
   // Haze and the surge scatter a little light forward, tinted by the beer.
   float ext = (uHaze * 0.5 + uSurge * 0.12) * t;
@@ -485,6 +505,9 @@ void main() {
   col += uLamp * exp(-uSigma * (0.5 + 0.7 * t)) * ss * (0.8 + 0.4 * lift);
   // Just under the head the beer is full of fine bubbles: a bright, creamy band.
   col += uLamp * exp(-uSigma * 1.2) * 0.35 * smoothstep(LEV(vW.xz) - 0.7, LEV(vW.xz) - 0.02, vW.y);
+  // Toward the sides the bowl bends the view off the backlight: deeper, darker gold.
+  float sideK = vW.y < LEV(vW.xz) - 0.05 ? smoothstep(0.1, 0.92, c) : 1.0;
+  col *= mix(vec3(0.6, 0.52, 0.4), vec3(1.0), sideK);
   col = col * (1.0 - F) + studio(vW, reflect(-v, n)) * F;
   gl_FragColor = vec4(safe(col), 1.0);
 }`;
@@ -684,7 +707,7 @@ void main() {
       float rr = aB.z * (gp(y).y - 0.15);
       c = vec3(sin(ang) * rr, y, cos(ang) * rr);
       R = 0.005 + 0.009 * aB.y;
-      alpha = 0.7 * uSurge * smoothstep(0.0, 0.15, f) * smoothstep(1.0, 0.8, f) * step(h1(seed * 9.1), uSurge * 1.2);
+      alpha = 0.45 * uSurge * smoothstep(0.0, 0.15, f) * smoothstep(1.0, 0.8, f) * step(h1(seed * 9.1), uSurge * 1.2);
     } else {
       // A burst at the top: a sparkle, then droplets thrown up.
       float rate = 0.6 + 1.2 * uFizz;
@@ -852,7 +875,7 @@ void main() {
   if (wet > 0.003) {
     // Fog forms first; beads grow; then runs slip down and wipe tracks.
     float beads = smoothstep(0.1, 0.6, uWetT), runs = smoothstep(0.45, 1.0, uWetT);
-    wg = wgPane(pw, 0.5, vec2(0.0, -1.0), uFlow, wet * beads, 0.0, 0.55 + 0.45 * beads, wet * (0.42 - 0.12 * runs), 0.25 * beads, -1.0);
+    wg = wgPane(pw, 0.5, vec2(0.0, -1.0), uFlow, wet * beads, 0.0, 0.55 + 0.45 * beads, wet * (0.2 - 0.08 * runs), 0.25 * beads, -1.0);
     if (runs < 0.01) wg.clear = 0.0;
     // A drop displaces the view by about four of its radii.
     off -= wg.off * 100.0 * uCmUv * vec2(uRes.y / uRes.x, 1.0);
@@ -1311,7 +1334,7 @@ function build() {
 
   // Middle: the room as seen, the beer, the fizz and the head.
   mid.add(fullQuad(showTex(rtBehind.texture), -10));
-  beerMesh = new THREE.Mesh(bodyGeometry(), new THREE.ShaderMaterial({ vertexShader: BEER_VS, fragmentShader: BEER_FS, depthWrite: false, uniforms: { ...U, uBehind: { value: rtBehind.texture } } }));
+  beerMesh = new THREE.Mesh(bodyGeometry(), new THREE.ShaderMaterial({ vertexShader: BEER_VS, fragmentShader: BEER_FS, depthWrite: false, uniforms: { ...U, uBehind: { value: rtBehind.texture }, uDepthK: { value: 1 } } }));
   beerMesh.frustumCulled = false;
   beerMesh.renderOrder = 1;
   fizzMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.ShaderMaterial({
@@ -1639,6 +1662,8 @@ function setBeer(id) {
   U.uGH.value = glass.h;
   U.uGYb.value = glass.ybot;
   U.uSigma.value.set(...look.sigma);
+  // Pale beers read flat by eye; their view path takes a depth gain.
+  beerMesh.material.uniforms.uDepthK.value = lerp(1.15, 1.0, smooth(8, 30, beer.ebc ?? 8));
   // Malt colour brings body: a little scatter keeps amber beer from reading as tinted glass.
   U.uHaze.value = Math.max(beer.haze, 0.16 * smooth(12, 40, beer.ebc ?? 8));
   glassMesh.geometry.dispose();
@@ -1832,7 +1857,8 @@ function foamStep(dt) {
   const thickH = fill.top - fill.level;
   const moundT = (bot.q > 1 ? 1 : 0) * (1 - smooth(0.6, 2.2, thickH));
   fx.mound += (moundT - fx.mound) * ease(dt, moundT > fx.mound ? 0.3 : 1.5);
-  fx.surge *= Math.exp(-dt / 9);
+  // The surge clears in a few seconds, so the beer's depth shows soon after a pour.
+  fx.surge *= Math.exp(-dt / 4.5);
   fx.wall *= Math.exp(-dt / 150);
   fx.wallT += dt;
   fx.chill = Math.max(fx.chill - dt * fx.chill / 150, 0.12);
