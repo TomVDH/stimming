@@ -179,20 +179,24 @@ export function makeSound(kit) {
   const BARS = { 1: 1, 2: 0.7, 3: 0.42, 4: 0.5, 5: 0.12, 6: 0.22, 8: 0.18 };
   // "Ah" formants: centre in Hz, width, weight.
   const AH = [[700, 130, 1], [1150, 160, 0.6], [2600, 260, 0.28], [3300, 300, 0.12]];
+  const TAIL = 0.2;
   // One wave per note: organ partials plus a choir's vowel shape over the harmonics.
   const waves = new Map();
   function waveFor(ac, f) {
     const key = Math.round(f);
     const hit = waves.get(key);
     if (hit && hit.ac === ac) return hit.w;
-    const N = 40;
+    // Harmonics reach 11 kHz, so the top is open and crisp.
+    const N = clamp(Math.floor(11000 / f), 8, 200);
     const re = new Float32Array(N + 1), im = new Float32Array(N + 1);
     for (let h = 1; h <= N; h++) {
       const hz = h * f;
       let vow = 0;
       for (const [c, w, a] of AH) vow += a * Math.exp(-(((hz - c) / w) ** 2));
       const organ = BARS[h] || 0;
-      im[h] = 0.62 * organ + 0.38 * vow / Math.pow(h, 0.35);
+      // A tail that falls 6 dB an octave fills the air above the vowel.
+      const tail = TAIL / h;
+      im[h] = 0.62 * organ + 0.38 * vow / Math.pow(h, 0.35) + tail;
     }
     const w = ac.createPeriodicWave(re, im);
     waves.set(key, { ac, w });
