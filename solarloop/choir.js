@@ -92,6 +92,9 @@ export const VOICES = {
   // WR 124: a Wolf-Rayet star, very hot, in a fast wind and a big pink shell of shed gas (M1-67).
   // A bright, airy, very wide choir: a slow phaser for the wind, long echoes for the shell.
   wr124: P({ ...song('lydian'), ...ARP, voice: 0.7, vowel: 1.35, metal: 0.1, bright: 1.45, step: 9, dist: 0.45, rev: 12, mix: 1.5, width: 2, oct: [1, 0.6, 0.5], swR: 0.09, swD: 0.22, fx: { sweep: 0.5, echo: 0.3 }, gain: 1 }),
+  // S5-HVS1: an A star that Sagittarius A* threw out of the galaxy at 1,755 km/s, with a long pale wake.
+  // A bright, glassy voice that lifts away; changed notes glide, the melody is quick, a long echo trails.
+  s5hvs1: P({ ...song('rise'), ...ARP, wave: 'triangle', move: 'glide', voice: 0.5, vowel: 1.3, metal: 0.2, bright: 1.4, step: 5, dist: 0.6, rev: 12, mix: 1.5, width: 1.9, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.12, glowWave: 'sine', fx: { sweep: 0.25, echo: 0.55 }, gain: 1 }),
   // Beta Lyrae: a blue-white giant pours gas onto a partner hidden in a disc; they eclipse each 112 s.
   // Two chords trade places for the pair; notes and melody glide like the stream; the choir dims once per orbit.
   betalyr: P({ ...song('lydian'), ...ARP, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 1 }),
@@ -139,6 +142,7 @@ export const NORM = {
   cygx1: 0.26,
   sgra: 0.16,
   qso: 0.08,
+  s5hvs1: 0.2,
 };
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
