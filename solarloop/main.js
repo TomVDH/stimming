@@ -168,7 +168,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -316,9 +316,19 @@ function pickAt(x, y) {
 // A target counts as under the hand within this many CSS pixels.
 const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
 function flareNear(x, y) {
-  const { t, prom } = pickAt(x, y);
+  const { t, prom, d } = pickAt(x, y);
+  if (d >= reach()) return ripple(x, y);
   if (prom) eruptAt(t); else flareAt(t);
 }
+// A tap on empty sky: a faint ring spreads from it, with a soft low note.
+let rip = null;
+function ripple(x, y) {
+  rip = { x, y, t: 0 };
+  snd.hush(clamp(x / cssW * 2 - 1, -1, 1), st.star);
+  poke();
+}
+// The ring's life in seconds.
+const RIP_LIFE = 1.8;
 
 /* ---------- hover: the cursor reads the region under it ---------- */
 // The mouse over the stage, or null; touch and pen never hover.
@@ -355,7 +365,7 @@ const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
-  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), rip: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
 };
@@ -441,6 +451,13 @@ function makeFrame() {
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
+  if (rip) {
+    // The ring slows as it spreads; reduced motion keeps it small and still.
+    const R0 = 0.22 * Math.min(view.W, view.H);
+    const rad = calm ? 0.35 * R0 : R0 * (1 - Math.exp(-rip.t / 0.55));
+    const k = (1 - rip.t / RIP_LIFE) ** 2;
+    f.rip.set([rip.x / cssW * view.W, (1 - rip.y / cssH) * view.H, rad, 0.5 * k * (calm ? 0.7 : 1)]);
+  } else f.rip.fill(0);
   f.lens = weight('long');
   f.full = weight('full');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
@@ -507,10 +524,11 @@ function frame(now) {
     // The star turns under a still mouse.
     if (hoverAt) readHover();
     const glowing = stepLit(dt);
+    if (rip && (rip.t += dt) >= RIP_LIFE) rip = null;
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || glowing || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
@@ -563,7 +581,8 @@ stage.addEventListener('pointerdown', e => {
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
   Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), t0: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
-  pressed = pickAt(x, y).t;
+  const hit = pickAt(x, y);
+  pressed = hit.d < reach() ? hit.t : null;
   poke();
 });
 stage.addEventListener('pointermove', e => {

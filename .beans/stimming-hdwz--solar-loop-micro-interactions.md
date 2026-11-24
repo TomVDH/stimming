@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T05:37:15Z
-updated_at: 2026-11-24T05:47:31Z
+updated_at: 2026-11-24T05:49:46Z
 parent: stimming-oh7b
 ---
 
@@ -15,7 +15,7 @@ Small responses to the hand that make Solar loop feel alive. Tom picks which to 
 - [x] Cursor reads region
 - [x] Hover glow (Tom: softer, 15 percent)
 - [x] Press charge
-- [ ] Empty-sky tap
+- [x] Empty-sky tap
 - [ ] Zoom ease
 - [ ] Star switch dip
 - [ ] Doc: Play and Frame loop sections true
