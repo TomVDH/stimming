@@ -127,7 +127,7 @@ export function makeCrowd() {
   const P = PIER, pt = P.top;
   // The pier head: a row at the very edge, and along the east side toward the berth.
   for (let i = 0; i < 12; i++) add(P.x0 + 0.5 + (i + r() * 0.6) * (P.x1 - P.x0 - 1) / 12, P.z0 + 0.5 + r() * 0.9, false, 0, 1, pt);
-  for (let i = 0; i < 8; i++) add(P.x1 - 0.5 - r() * 0.9, P.z0 + 2 + i * 1.1 + r() * 0.5, false, -1, 0, pt);
+  for (let i = 0; i < 6; i++) add(P.x1 - 0.5 - r() * 0.9, P.z0 + 2 + i * 0.9 + r() * 0.4, false, -1, 0, pt);
   // The north quay, far across the basin.
   for (let i = 0; i < 40; i++) add(-90 + r() * 200, CANAL.zQuay + 0.8 + r() * 2, false);
   // The yard's own crowd, on the banks beside the berth.
@@ -160,7 +160,8 @@ export function makeCrowd() {
       if (!p.yard) {
         // Water at their feet or a step toward the edge.
         const wet = Math.max(wetAt(p.x0 + p.rx * p.back, p.z0 + p.rz * p.back), wetAt(p.x0 - p.rx * 1.2, p.z0 - p.rz * 1.2));
-        const goal = wet > 0.02 ? Math.min(5, 1.5 + wet * 30) : Math.max(0, p.back - dt * 0.4);
+        // They step back 3.5 m at most, so no one walks into the lens.
+        const goal = wet > 0.02 ? Math.min(3.5, 1.5 + wet * 30) : Math.max(0, p.back - dt * 0.4);
         p.back += (goal - p.back) * Math.min(1, dt * 2.5);
         p.x = p.x0 + p.rx * p.back;
         p.z = p.z0 + p.rz * p.back;

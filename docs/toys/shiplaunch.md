@@ -18,14 +18,15 @@ Idea 222 (Slipway), grown to XXXL: Tom's pick of 2026-11-23. Beans `stimming-y9p
 
 ## Rules
 
-- One fixed shot, one hull, one launch, scaled by the Drop. No modes.
+- One camera move, one hull, one launch, scaled by the Drop. No modes.
 - Metres and seconds. The hull's motion is a solved cross-section (sway, heave, roll); the wave is a shallow-water sim the hull drives. At the hit an impact ridge, scaled by the Drop and her impact speed, joins the sim; the sim carries the rest.
 - Sound from the hull comes late by its distance at 343 m/s.
-- The loop runs at full rate from the cut until she rolls under 0.3 degrees, the spray and mist are gone and the basin is calm, 75 s after the hit at most. Bunting and chop drift at 30 fps until the toy sleeps.
+- The loop runs at full rate from the cut until the camera's pull back ends (43 s after the hit) and she rolls under 0.3 degrees, the spray and mist are gone and the basin is calm, 75 s after the hit at most. Bunting and chop drift at 30 fps until the toy sleeps.
 
 ## Direction
 
-- 3D, three.js 0.170, at true scale. A yard on a port basin in flat land, low winter sun behind the yard, seen from the head of a stone pier among the crowd, broadside on, about 55 m off her side (Tom: "Would like more faraway POV"; he picked a port basin over a canal). The sweep (planned) adds the far views.
+- 3D, three.js 0.170, at true scale. A yard on a port basin in flat land, low winter sun behind the yard, (Tom: "Would like more faraway POV"; he picked a port basin over a canal.)
+- The sweep (Tom: "not the sweeping quality we're looking for"): one camera move in three shots. Waiting: high and wide over the north quay, 40 m up, about 230 m out, still. On the cut it cranes down along a curve as she slides and lands on the pier head, in the crowd, broadside, about 55 m off her side, at the hit. It pushes in on the spray sheet, sinks 1.3 m as the wall breaks over the pier, rises, and from 18 s pulls back to a wide shot toward the harbour mouth, still by 43 s. A tall stage has its own lens per shot. Reduced motion: hard cuts between the three still shots.
 - References: the Westerbroek and Hoogezand side launches (Wikimedia Commons, `Category:Sideways_launching`), the LST and LCS side launches, two Polygoon newsreels. No real yard, ship or place name.
 - An 88 m short-sea coaster, green over a red-brown bottom, a white house aft, bunting from bow to mast to bridge.
 - The launch: the grease holds one to three seconds, she slides 12 m down 1 in 10 ways, tips off the edge outboard-down, hits, rolls back toward the yard and down to calm. Four wires to rust heaps on the berth pull her up; the heaps tear across the concrete.
@@ -47,7 +48,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 |---|---|
 | Click the stage | Cuts the rope, while she waits |
 | Space | Cuts the rope; after the launch, back to the yard |
-| Drag | Turns the head up to 15 degrees; it eases back |
+| Drag | Turns the head up to 15 degrees on top of the move; it eases back |
 | R | Puts her back on the ways |
 
 ## Sound

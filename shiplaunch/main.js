@@ -224,18 +224,71 @@ function placeHull() {
   hull.updateMatrixWorld(true);
 }
 
-// The shot: the pier head, among the crowd, three-quarter on the hull.
-// The eye stands at the pier's west edge, 11 m back from the head.
-const EYE = new THREE.Vector3(PIER.x0 + 3, PIER.top + 2.5, PIER.z0 + 11);
-const AIM = new THREE.Vector3(10, 4, START_Z + 8);
-// The lens keeps the hull's width: a tall stage widens the vertical view.
-const LENS = { wide: 62, tall: 78 };
-if (globalThis.__launch) globalThis.__cam = { EYE, AIM, LENS, frame: () => frame3() };
+/* ---------- the sweep ---------- */
+// Three shots and the moves between them. hfov is the wide-stage lens; tall, the phone's.
+const V = (x, y, z) => new THREE.Vector3(x, y, z);
+const SHOT = {
+  // Waiting: high over the north quay, the whole basin against the low sun.
+  wide: { eye: V(-70, 40, 205), aim: V(0, 0, -22), hfov: 46, tall: 34 },
+  // The hit and the wave: the pier head, in the crowd, broadside on.
+  pier: { eye: V(PIER.x0 + 3, PIER.top + 2.5, PIER.z0 + 13), aim: V(10, 4, START_Z + 8), hfov: 62, tall: 70 },
+  // After: up and back toward the harbour mouth.
+  after: { eye: V(70, 24, 150), aim: V(-5, 2, -18), hfov: 52, tall: 40 },
+};
+// The crane move down from the wide shot to the pier, and the pull back out.
+const DOWN = { eye: new THREE.CatmullRomCurve3([SHOT.wide.eye, V(-48, 22, 130), V(-24, 8, 78), SHOT.pier.eye]),
+  aim: new THREE.CatmullRomCurve3([SHOT.wide.aim, V(2, 1, -24), V(6, 3, -28), SHOT.pier.aim]) };
+const BACK = { eye: new THREE.CatmullRomCurve3([SHOT.pier.eye, V(-2, 7, 80), V(40, 16, 128), SHOT.after.eye]),
+  aim: new THREE.CatmullRomCurve3([SHOT.pier.aim, V(6, 3, -26), V(0, 2, -20), SHOT.after.aim]) };
+// Beats after the hit, in seconds: the push-in, the crouch as the wall breaks, the pull back.
+const BEAT = { push: 4, crouch0: 6.5, crouch1: 9, rise0: 14, rise1: 17, back0: 18, back1: 43 };
+if (globalThis.__launch) globalThis.__cam = { SHOT, BEAT };
+const ease = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+const span = (t, a, b) => ease((t - a) / (b - a));
+let cutAt = -1, cu = 0, hfov = SHOT.wide.hfov, tallH = SHOT.wide.tall;
+const eyeV = new THREE.Vector3(), aimV = new THREE.Vector3();
+/** Where the camera stands now; dt eases the move down. */
+function sweep(dt) {
+  if (cutAt < 0) { eyeV.copy(SHOT.wide.eye); aimV.copy(SHOT.wide.aim); hfov = SHOT.wide.hfov; tallH = SHOT.wide.tall; return; }
+  if (hitAt < 0) {
+    // The move down follows her down the ways and lands as she hits.
+    const slide = Math.max(0, (L.gz - START_Z) / (CANAL.zYard + 4 - START_Z));
+    const goal = Math.min(0.92, Math.max((simT - cutAt) / 14, slide * 0.92));
+    cu += (goal - cu) * Math.min(1, dt * 1.5);
+  } else cu += (1 - cu) * Math.min(1, dt * 1.2);
+  if (frozen) { cu = hitAt < 0 ? 0 : 1; }
+  const th = hitAt < 0 ? 0 : simT - hitAt;
+  if (frozen) {
+    // Reduced motion: hard cuts between the three still shots.
+    const s = hitAt < 0 ? SHOT.wide : th < BEAT.back0 ? SHOT.pier : SHOT.after;
+    eyeV.copy(s.eye); aimV.copy(s.aim); hfov = s.hfov; tallH = s.tall;
+    return;
+  }
+  const u = ease(cu);
+  DOWN.eye.getPoint(u, eyeV); DOWN.aim.getPoint(u, aimV);
+  hfov = SHOT.wide.hfov + (SHOT.pier.hfov - SHOT.wide.hfov) * u;
+  tallH = SHOT.wide.tall + (SHOT.pier.tall - SHOT.wide.tall) * u;
+  if (hitAt < 0) return;
+  // A slow push in on the spray sheet.
+  eyeV.lerp(aimV, 0.05 * span(th, 0, BEAT.push));
+  // The crouch: the wall stands over the lens as it breaks.
+  eyeV.y -= 1.3 * (span(th, BEAT.crouch0, BEAT.crouch1) - span(th, BEAT.rise0, BEAT.rise1));
+  const b = span(th, BEAT.back0, BEAT.back1);
+  if (b > 0) {
+    BACK.eye.getPoint(b, tmpV); eyeV.lerp(tmpV, Math.min(1, b * 4));
+    BACK.aim.getPoint(b, tmpV); aimV.lerp(tmpV, Math.min(1, b * 4));
+    hfov += (SHOT.after.hfov - hfov) * b;
+    tallH += (SHOT.after.tall - tallH) * b;
+  }
+}
+// The camera moves from the cut until the pull back ends.
+const sweeping = () => !frozen && cutAt >= 0 && (hitAt < 0 || simT - hitAt < BEAT.back1);
+// The lens keeps the subject's width: a tall stage widens the vertical view.
 function frame3() {
   const asp = cssW / cssH;
-  const hfov = asp < 1 ? LENS.tall : LENS.wide;
-  const v = 2 * Math.atan(Math.tan((hfov * Math.PI) / 360) / asp) * 180 / Math.PI;
-  camera.fov = Math.max(40, Math.min(90, v));
+  const h = asp < 1 ? tallH : hfov;
+  const v = 2 * Math.atan(Math.tan((h * Math.PI) / 360) / asp) * 180 / Math.PI;
+  camera.fov = Math.max(30, Math.min(90, v));
   camera.aspect = asp;
   camera.updateProjectionMatrix();
 }
@@ -266,7 +319,7 @@ function resize(force = false) {
 
 /* ---------- actions ---------- */
 function launch() {
-  if (L.phase === 'held') { release(L); setLabel('Again'); }
+  if (L.phase === 'held') { release(L); cutAt = simT; cu = 0; setLabel('Again'); }
   else flashCut();
   touch();
 }
@@ -290,6 +343,8 @@ function again() {
   canal?.reset(drop);
   draftOn = false;
   hitAt = -1;
+  cutAt = -1;
+  cu = 0;
   SP.n = 0;
   hullU.uWet.value = 0;
   mist?.clear();
@@ -360,8 +415,10 @@ function step(dt) {
 let frameDt = 0;
 function render() {
   yaw += (yawGoal - yaw) * 0.12;
-  camera.position.copy(EYE);
-  camera.lookAt(AIM);
+  sweep(frameDt);
+  frame3();
+  camera.position.copy(eyeV);
+  camera.lookAt(aimV);
   camera.rotateY(yaw);
   canal.WU.uCam.value.copy(camera.position);
   canal.WU.uFocal.value = cssH / 2 / Math.tan((camera.fov * Math.PI) / 360);
@@ -484,7 +541,7 @@ function frame(now) {
     frameDt = dt;
     render();
     D.frame(dt);
-    lively = live || dragging || Math.abs(yawGoal - yaw) > 1e-4;
+    lively = live || sweeping() || dragging || Math.abs(yawGoal - yaw) > 1e-4;
     // The water's chop and the bunting drift at 30 fps until the toy sleeps.
     const drifting = amb > 0;
     again2 = lively || drifting;
