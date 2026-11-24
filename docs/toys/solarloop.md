@@ -16,14 +16,14 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 | Point (mouse) | The cursor reads the region under it: a pointer over a region or prominence, grab on the wide and full views, an arrow on the still long lens. The target under the pointer brightens 15 percent |
 | Press and hold | The nearest target swells to 1.6 times its light over about a second; the flare goes on release. A drag cancels it |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
-| Star (the bar button shows the star) | Opens the star tray, a size ladder (Tom, 2026-11-24): all seventeen stars on one line, smallest to largest, from the pulsar to VY CMa. Each star is a swatch in its own colour, sized by its radius on a log scale, standing on the line; its name stands on its side below it. A ring marks the current one. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Left and right (or [ and ]) step along the ladder, Home and End go to its ends, Enter picks, Escape or S closes |
+| Star (the bar button shows the star) | The bar holds only this button (Tom, 2026-11-24). Left and Right step the star while it has focus. A tap opens the star tray, a size ladder (Tom, 2026-11-24): all seventeen stars on one line, smallest to largest, from the pulsar to VY CMa. Each star is a swatch in its own colour, sized by its radius on a log scale, standing on the line; its name stands on its side below it. A ring marks the current one. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Left and right (or [ and ]) step along the ladder, Home and End go to its ends, Enter picks, Escape or S closes |
 | Keys 1 to 0 | Pick the main sequence (O to M) and the two brown dwarfs |
 | [ and ] | Step to the previous or the next star, through all seventeen |
-| Zoom (wheel, pinch, - and =) | One zoom through every view: the long lens, the wide view, the full star, then out to 16 times farther. The three views are stops on it. The wheel, a pinch and the keys ride a heavy spring: about 1.4 s to the target, a few percent past, then it settles (Tom, 2026-11-23). The motion slows near each stop, and a pause within 0.15 of a stop settles on it. The zoom rail shows over the bar while the zoom moves: every stop, a mark where the view stands, and the name of where it goes. Tap a stop to glide there. The zoom is stored |
-| Lens (L) | Jumps to the next stop in Tom's order: long lens (where every visit opens), full star, wide view, then back to the long lens, over two seconds. Picking a new star glides to the full star. The button shows the view, and the zoom past the full star (`Full ×2.0`) |
+| Zoom (wheel, pinch, - and =) | One zoom through every view: the long lens, the wide view, the full star, then out to 16 times farther. The three views are stops on it. Every zoom input (the wheel, a pinch, the keys, L, the rail, a star pick) sets one target, and the view follows it through two critically damped followers in series: a soft start, no overshoot, about 1.8 s to settle one stop (Tom, 2026-11-24). The camera runs on a monotone cubic through the stops (log width and the centre over the width), so it never slows at a stop: no detents. Dev Zoom weight scales the time. The zoom rail shows over the bar while the zoom moves: every stop, a mark where the view stands, and the name of where it goes. Tap a stop to glide there. The zoom is stored |
+| L | Glides to the next stop in Tom's order: long lens (where every visit opens), full star, wide view, then back to the long lens. Picking a new star glides to the full star. A key only; the rail names the view |
 | S | Opens the star chart; S or Escape closes it |
-| Activity slider | How many loops live, how bright, how fast they cycle |
-| Flare (Space) | Flares each region in turn, the ones in view first |
+| Activity (Settings) | How many loops live, how bright, how fast they cycle |
+| Space | Flares each region in turn, the ones in view first. A key only |
 
 - The first frame is a picture: every loop at its own stage of life.
 - The view is orthographic. The wide view is 1040 star units across on a wide stage (760 at mid widths, 520 on a phone), so the limb reads as a dome; the limb's top stands about a quarter of the way up the free stage.
@@ -133,6 +133,7 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 | Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Flare streak and ghosts, Lens dirt, Highlight roll-off, Vignette, Grain |
 | Volume | Haze density, Haze light, Corona (full view), Corona bend |
 | Grade | Tone map: Film (the house curve), ACES (Narkowicz fit) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Lens flare: Anamorphic (the house streak and three ghosts; four streaks on a far star), Ghost chain (seven hexagonal aperture ghosts in shifting hues on the line through the frame's centre, a halo ring and a veiling glare), Iris starburst (six diffraction spikes from a six-blade aperture and a thin rainbow ring); each applies to flare cores and to the far star's glare (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
+| Zoom | Zoom weight: the followers' time, 1 is about 1.8 s a stop |
 | Sound | Hum (the star's choir) and Space rumble: each on or off |
 
 ## Fluid probe (`?fluid`, spike `stimming-8gez`)
@@ -141,7 +142,7 @@ Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trim
 
 ## Frame loop
 
-- Lively while a flare, an eruption or an egg runs, a press is held, the lens zooms, the zoom spring settles, a drag turns the star, a target's hover or press light eases or a star switch dips.
+- Lively while a flare, an eruption or an egg runs, a press is held, the zoom moves, a drag turns the star, a target's hover or press light eases or a star switch dips.
 - Drifting at 30 fps: the loops' life cycle.
 - Asleep 60 s after the last input: the drift eases to a stop over 2 s and the loop stops.
 - Hidden tab: the loop and both clocks stop.
@@ -173,7 +174,7 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 | Q4 | Drifting: 32 rAF a second. Asleep 63 s after the last input: 0 rAF in 2 s |
 | Q5 | Hidden tab: 0 rAF in 2 s |
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
-| Q7 | Star, Flare, Lens, Activity slider (4 controls); How to play has 7 rows. Star tray as a size ladder (2026-11-24): 1280 x 800 and 375 x 812 in the in-app pane, clean console |
+| Q7 | The bar holds only Star (2026-11-24); Activity in Settings; How to play has 7 rows. Star tray as a size ladder (2026-11-24): 1280 x 800 and 375 x 812 in the in-app pane, clean console |
 | Q8 | 1 to 9 and 0, [ and ], S, L (three stops), - and =, the wheel, and Space each do their job; while the chart is open, the toy's keys wait |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |

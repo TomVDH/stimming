@@ -96,11 +96,12 @@ const Z_MAX = 4;
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
 // Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
 const z0 = 0;
-// cam glides z from one value to the next; t runs from 0 to 1 over dur seconds.
+// The zoom rides two critically damped followers: aim follows to, z follows aim.
+// Every input sets to; the camera never overshoots and never jolts.
 const cam = {
-  z: z0, from: z0, to: z0, t: 1, dur: 0,
-  // The wheel's spring: on while it runs, and its speed.
-  spring: false, v: 0,
+  z: z0, aim: z0, to: z0,
+  // The followers' speeds, and true while they move.
+  v: 0, va: 0, moving: false,
   // The nearest stop names the framing.
   get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
 };
@@ -142,74 +143,84 @@ function fitView(w, h, top = 0, bottom = 0) {
   fit.full = { cx: 0, cy: -(bottom - top) * hhF / h, hw: hwF };
   applyView();
 }
-// Mixes the two framings round z; the width moves on a log scale, as a zoom does.
-// The ease holds the view near each stop, so the stops feel like detents.
+// The stops as frame numbers: log width, then the centre over the width.
+// Past the full star only the width grows, so the centre holds.
+function stops() {
+  return [0, 1, 2, 3, 4].map(i => {
+    const f = fit[VIEWS[Math.min(2, i)]], hw = f.hw * pullBack(i);
+    return [Math.log(hw), f.cx / f.hw, f.cy / f.hw];
+  });
+}
+// A monotone cubic (Fritsch and Carlson): smooth through every stop, never past one.
+// The camera keeps its speed through a stop, so no stop is a detent.
+function pchip(ys, z) {
+  const n = ys.length - 1, i = Math.min(n - 1, Math.floor(z)), t = z - i;
+  const d = ys.slice(1).map((y, k) => y - ys[k]);
+  const m = k => {
+    if (k === 0) return d[0];
+    if (k === n) return d[n - 1];
+    const a = d[k - 1], b = d[k];
+    return a * b <= 0 ? 0 : 2 * a * b / (a + b);
+  };
+  const t2 = t * t, t3 = t2 * t;
+  return (2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t) * m(i) + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * m(i + 1);
+}
+// Places the view at cam.z on the curve through the stops.
 function applyView() {
-  const z = cam.z, i = Math.min(1, Math.floor(z));
-  const a = fit[VIEWS[i]], b = fit[VIEWS[i + 1]], k = z >= 2 ? 1 : ease(z - i), s = pullBack(z);
-  view.cx = (a.cx + (b.cx - a.cx) * k) * s;
-  view.cy = (a.cy + (b.cy - a.cy) * k) * s;
-  view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k) * s;
+  const P = stops(), z = clamp(cam.z, 0, Z_MAX);
+  view.hw = Math.exp(pchip(P.map(p => p[0]), z));
+  view.cx = pchip(P.map(p => p[1]), z) * view.hw;
+  view.cy = pchip(P.map(p => p[2]), z) * view.hw;
   view.hh = view.hw / view.asp;
   // An oblate star: the view stretches its equator across the screen.
   const ob = 1 + STARS[shown].oblate;
   view.cx /= ob; view.hw /= ob;
   setRot();
 }
-// Glides the zoom to z over dur seconds, from wherever the view now stands.
-function glideTo(z, dur) {
-  z = clamp(z, 0, Z_MAX);
-  cam.from = cam.z; cam.to = z; cam.t = 0;
-  cam.spring = false; cam.v = 0;
-  cam.dur = !started || calm ? 0 : dur;
-  if (!cam.dur) { cam.z = z; cam.t = 1; }
-  store.set('lensZ', z.toFixed(3));
-  applyView();
-  setLabel(labels.lens, lensLabel());
-  readHover();
-  rail?.show(cam.z, cam.to);
-  poke();
-}
 // L jumps to the next stop in Tom's order: long lens, full star, wide dome, then back.
 function toggleLens() {
-  glideTo(cam.to < 0.5 ? 2 : cam.to > 1.5 ? 1 : 0, 2);
+  springTo(cam.to < 0.5 ? 2 : cam.to > 1.5 ? 1 : 0);
 }
 // The wheel, a pinch and the - and = keys move the zoom by dz.
-// Close to a stop, a pause settles the zoom on it.
-let settle = 0;
 function zoomBy(dz) {
   if (chart?.isOpen) return;
   springTo(cam.to + dz);
-  clearTimeout(settle);
-  settle = setTimeout(() => {
-    const s = Math.round(cam.to);
-    if (s <= 2 && Math.abs(cam.to - s) > 0.001 && Math.abs(cam.to - s) < 0.15) springTo(s);
-  }, 350);
 }
-// The wheel's zoom follows its target on a heavy spring (Tom, 2026-11-23).
+// Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
   z = clamp(z, 0, Z_MAX);
-  // Reduced motion and the first frame jump straight to the target.
-  if (!started || calm) { glideTo(z, 0); return; }
-  if (cam.t < 1) cam.t = 1;
-  cam.to = z; cam.spring = true;
+  cam.to = z;
   store.set('lensZ', z.toFixed(3));
-  setLabel(labels.lens, lensLabel());
+  // Reduced motion and the first frame jump straight to the target.
+  if (!started || calm) {
+    cam.z = cam.aim = z; cam.v = cam.va = 0; cam.moving = false;
+    applyView();
+    readHover();
+  } else cam.moving = true;
   rail?.show(cam.z, cam.to);
   poke();
 }
-// The spring reaches its target in about 1.4 s, a few percent past.
-function stepSpring(dt) {
-  const x = cam.z, X = cam.to;
-  if (Math.abs(X - x) < 1e-4 && Math.abs(cam.v) < 1e-3) cam.spring = false;
-  if (cam.spring) {
-    const w = 2.4, damp = 0.72;
-    cam.v += (w * w * (X - x) - 2 * damp * w * cam.v) * dt;
-    cam.z = clamp(x + cam.v * dt, 0, Z_MAX);
-  } else { cam.z = X; cam.v = 0; }
+// One critically damped step toward x (the SmoothDamp integral); T is its time constant.
+function follow(x, X, v, T, dt) {
+  const w = 2 / T, k = w * dt, e = 1 / (1 + k + 0.48 * k * k + 0.235 * k * k * k);
+  const c = x - X, tmp = (v + w * c) * dt;
+  return [X + (c + tmp) * e, (v - w * tmp) * e];
+}
+// The zoom's weight: each follower's time constant; one stop settles in 1.8 s.
+const ZOOM_T = 0.35;
+// Steps both followers; true while the zoom moves.
+function stepZoom(dt) {
+  if (!cam.moving) return false;
+  const T = ZOOM_T * gv('zoomWeight', 1);
+  [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
+  [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
+  cam.z = clamp(cam.z, 0, Z_MAX);
+  if (Math.abs(cam.to - cam.z) < 2e-4 && Math.abs(cam.v) < 2e-3 && Math.abs(cam.va) < 2e-3) {
+    cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false;
+  }
   applyView();
   rail.show(cam.z, cam.to);
-  return cam.spring;
+  return true;
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -243,7 +254,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -299,38 +310,35 @@ const PICKS = [
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'],
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
-// The bar's labels: the star with its swatch, and the view with its zoom.
+// The bar's label: the star with its swatch.
 const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
 const zoomText = z => {
   const name = VIEWS[Math.min(2, Math.round(z))], k = pullBack(z);
   return z > 2.02 ? `full ×${k < 9.95 ? k.toFixed(1) : Math.round(k)}` : name;
 };
-const lensLabel = () => `Lens · ${zoomText(cam.to)}`;
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
   st.star = v;
   egg = null;
   store.set('star', v);
   // A new star opens on the whole star.
-  glideTo(2, 2);
+  springTo(2);
   applyView();
   setLabel(labels.star, starLabel());
   chart?.sync();
   poke();
 }
 const ui = initPage({ id: ID, bar: {
-  actions: [
-    { verb: 'star', label: starLabel(), onPress: () => chart?.toggle() },
-    { verb: 'flare', key: 'Space', onPress: () => flareNext() },
-    { verb: 'lens', label: lensLabel(), key: 'L', onPress: () => toggleLens() },
-  ],
-  slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
+  // The bar holds only the star (Tom, 2026-11-24); Space and L stay as keys.
+  actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }],
+  settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
   quality: true,
   // Tuning for the people who build the toy; the Dev button shows with ?dev.
   dev: [
     ...FX.map(([id, group, label, min, max, value]) => ({ type: 'slider', id, group, label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
+    { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', min: 0.3, max: 3, step: 0.05, value: 1, persist: true },
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
@@ -349,7 +357,7 @@ const ui = initPage({ id: ID, bar: {
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
 const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
-const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), lens: chipLabel(lensLabel()) };
+const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name) };
 function setLabel(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
 const chart = makeChart({
   frame: stage.closest('.stim-frame') || stage.parentElement,
@@ -366,17 +374,22 @@ const rail = makeRail({
   max: Z_MAX,
   text: zoomText,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
-  onPick: z => glideTo(z, Math.max(0.6, Math.abs(z - cam.z) * 0.7)),
+  onPick: z => springTo(z),
 });
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented || chart.isOpen) return;
   if (e.target.closest?.('input, textarea, select, .s2-sheet, .sg-sheet')) return;
   const i = DIGITS.indexOf(e.key);
+  // Left and Right step the star while its chip has focus.
+  const onChip = labels.star && e.target === labels.star.closest('button');
+  const step = e.key === ']' || (onChip && e.key === 'ArrowRight') ? 1 : e.key === '[' || (onChip && e.key === 'ArrowLeft') ? -1 : 0;
   if (i >= 0) pickStar(PICKS[i].value);
   else if (e.key === 's' || e.key === 'S') chart.open(true);
-  else if (e.key === '[' || e.key === ']') {
+  else if (e.key === ' ') flareNext();
+  else if (e.key === 'l' || e.key === 'L') toggleLens();
+  else if (step) {
     const at = PICKS.findIndex(x => x.value === st.star);
-    pickStar(PICKS[(at + (e.key === ']' ? 1 : -1) + PICKS.length) % PICKS.length].value);
+    pickStar(PICKS[(at + step + PICKS.length) % PICKS.length].value);
   } else return;
   e.preventDefault();
 });
@@ -710,16 +723,7 @@ function frame(now) {
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
-    // The zoom glides: a lens step over two seconds, the wheel in a quarter second.
-    let zooming = cam.t < 1;
-    if (cam.spring) zooming = stepSpring(dt);
-    else if (zooming) {
-      cam.t = Math.min(1, cam.t + dt / cam.dur);
-      const k = cam.dur >= 1 ? ease(cam.t) : 1 - (1 - cam.t) ** 3;
-      cam.z = cam.from + (cam.to - cam.from) * k;
-      applyView();
-      rail.show(cam.z, cam.to);
-    }
+    const zooming = stepZoom(dt);
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
     if (FLUID) {
