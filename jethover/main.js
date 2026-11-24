@@ -63,7 +63,7 @@ function toggleLens() {
 /* ---------- dev tuning (?dev) ---------- */
 // Each row scales one value; 1 keeps today's look. The values persist.
 const tune = {
-  bendK: 2, capK: 1.5, heatBlur: 0.5, heatK: 1, hSpeed: 1, shim: 1, shimSize: 1, flute: 1, fluteW: 1, ripple: 1,
+  bendK: 2, capK: 1.5, heatBlur: 0.5, heatK: 1, hSpeed: 1, shim: 1, shimSize: 1, flute: 1, fluteW: 1,
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
   reach: 3, feather: 0.5, fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
@@ -83,7 +83,6 @@ const DEV_ROWS = [
   slider('shimSize', 'Heat haze', 'Flicker size', 0.2, 4, 0.05),
   slider('flute', 'Heat haze', 'Flutes', 0, 4, 0.05),
   slider('fluteW', 'Heat haze', 'Flute width', 0.3, 4, 0.05),
-  slider('ripple', 'Heat haze', 'Ripples', 0, 4, 0.05),
   slider('gasBlur', 'Gas', 'Smoothing', 0, 3, 0.05),
   slider('gasK', 'Gas', 'Brightness', 0, 2, 0.05),
   slider('occK', 'Gas', 'Smoke dimming', 0, 3, 0.05),
@@ -370,7 +369,7 @@ function applyTune() {
   }
   const h2 = heat2.u;
   h2.curlK.value = 6 * tune.fSwirl; h2.lift.value = 14 * tune.fLift; h2.cool.value = 0.5 * tune.fCool; h2.damp.value = 0.15 * tune.fDrag;
-  h2.flute.value = 0.12 * tune.flute; h2.fluteW.value = 0.14 * tune.fluteW; h2.ripple.value = 0.22 * tune.ripple;
+  h2.flute.value = 0.12 * tune.flute; h2.fluteW.value = 0.14 * tune.fluteW;
   h2.shim.value = 0.6 * tune.shim; h2.shimSize.value = 0.25 * tune.shimSize; h2.shimSpeed.value = 9 * tune.hSpeed;
   U.viewHeat.value = tune.viewHeat ? 1 : 0;
   for (const p of P) p.U.feather.value = tune.feather;
