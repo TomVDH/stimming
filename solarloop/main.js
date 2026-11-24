@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
@@ -33,6 +33,32 @@ const st = {
   next: 0,
 };
 const sun = makeSun();
+// The star on screen: it trails st.star through the switch dip.
+let shown = st.star;
+// The switch dip: the frame darkens, the star swaps, the light returns.
+let dip = null;
+const DIP_DOWN = 0.25, DIP_UP = 0.7;
+// The dip's light, from 1 down to a near black and back.
+const dipLight = () => {
+  if (!dip) return 1;
+  const k = dip.t < DIP_DOWN ? 1 - dip.t / DIP_DOWN : (dip.t - DIP_DOWN) / DIP_UP;
+  return 0.06 + 0.94 * ease(clamp(k));
+};
+// Steps the dip; the star swaps at the dark point. True while it runs.
+function stepDip(dt) {
+  if (shown !== st.star && !dip) {
+    // Reduced motion and the first frame swap at once.
+    if (calm || !started) { shown = st.star; applyView(); return false; }
+    dip = { t: 0 };
+  }
+  if (!dip) return false;
+  // A new pick on the way up turns back down from the same light.
+  if (shown !== st.star && dip.t > DIP_DOWN) dip.t = DIP_DOWN * (1 - (dip.t - DIP_DOWN) / DIP_UP);
+  dip.t += dt;
+  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; applyView(); }
+  if (dip.t >= DIP_DOWN + DIP_UP) dip = null;
+  return true;
+}
 // The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
 const FLUID = new URLSearchParams(location.search).has('fluid');
 // The fluid's run: its clock and the prominence it lives on, or null.
@@ -99,19 +125,35 @@ function fitView(w, h, top = 0, bottom = 0) {
 }
 // The full view zooms out up to 16 times farther: wheel, pinch, or the - and = keys.
 const ZOOM_MAX = 16;
-let fullBase = { cx: 0, cy: 0, hw: 1100 }, zoom = 1;
+let fullBase = { cx: 0, cy: 0, hw: 1100 }, zoom = 1, zoomTo = 1, zoomV = 0;
 function fitFull() {
   fit.full = { cx: fullBase.cx * zoom, cy: fullBase.cy * zoom, hw: fullBase.hw * zoom };
   applyView();
 }
+// The input sets a target; the zoom follows it on a spring.
 function zoomBy(k) {
   if (cam.mode !== 'full') return;
-  const z = clamp(zoom * k, 1, ZOOM_MAX);
-  if (z === zoom) return;
-  zoom = z;
-  fitFull();
+  const z = clamp(zoomTo * k, 1, ZOOM_MAX);
+  if (z === zoomTo) return;
+  zoomTo = z;
+  // Reduced motion jumps straight to the target.
+  if (calm || !started) { zoom = z; zoomV = 0; fitFull(); }
   setLabel(labels.lens, lensLabel());
   poke();
+}
+// A heavy spring in log space: it reaches the target in about 1.5 s, a few percent past.
+function stepZoom(dt) {
+  const x = Math.log(zoom), X = Math.log(zoomTo);
+  if (Math.abs(X - x) < 1e-4 && Math.abs(zoomV) < 1e-3) {
+    if (zoom !== zoomTo) { zoom = zoomTo; fitFull(); }
+    zoomV = 0;
+    return false;
+  }
+  const w = 2.4, damp = 0.72;
+  zoomV += (w * w * (X - x) - 2 * damp * w * zoomV) * dt;
+  zoom = Math.exp(x + zoomV * dt);
+  fitFull();
+  return true;
 }
 // Eases between the framings; the width moves on a log scale, as a zoom does.
 function applyView() {
@@ -122,7 +164,7 @@ function applyView() {
   view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
   view.hh = view.hw / view.asp;
   // An oblate star: the view stretches its equator across the screen.
-  const ob = 1 + STARS[st.star].oblate;
+  const ob = 1 + STARS[shown].oblate;
   view.cx /= ob; view.hw /= ob;
   setRot();
 }
@@ -136,6 +178,7 @@ function toggleLens() {
   store.set('lens', cam.mode);
   applyView();
   setLabel(labels.lens, lensLabel());
+  readHover();
   poke();
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
@@ -146,7 +189,7 @@ function setRot() {
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
   const T = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
   // The star turns on its own axis at its true rate, sped up.
-  const B = STARS[st.star];
+  const B = STARS[shown];
   const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
   M = S ? T.map(row => [0, 1, 2].map(c => row[0] * S[0][c] + row[1] * S[1][c] + row[2] * S[2][c])) : T;
 }
@@ -170,7 +213,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; }, get shown() { return [shown, dip?.t ?? -1]; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -211,7 +254,7 @@ const PICKS = [
 const DIGITS = '1234567890';
 // The bar's labels: the star with its swatch, and the view with its zoom.
 const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
-const lensLabel = () => `Lens · ${cam.mode === 'full' && zoom > 1.01 ? `Full ×${zoom < 9.95 ? zoom.toFixed(1) : Math.round(zoom)}` : cam.mode}`;
+const lensLabel = () => `Lens · ${cam.mode === 'full' && zoomTo > 1.01 ? `Full ×${zoomTo < 9.95 ? zoomTo.toFixed(1) : Math.round(zoomTo)}` : cam.mode}`;
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
   st.star = v;
@@ -327,7 +370,8 @@ function eruptAt(p) {
   snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.star, calm ? 0.7 : 1);
   poke();
 }
-function flareNear(x, y) {
+// The target under a stage point: a region or a prominence, and its distance.
+function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   for (const rg of sun.regions) {
     const [px, py] = toCss(regionPoint(rg).v);
@@ -342,7 +386,53 @@ function flareNear(x, y) {
     const d = Math.hypot(px - x, py - y) * 0.6;
     if (d < bd) { bd = d; best = p; prom = true; }
   }
-  if (prom) eruptAt(best); else flareAt(best);
+  return { t: best, prom, d: bd };
+}
+// A target counts as under the hand within this many CSS pixels.
+const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
+function flareNear(x, y) {
+  const { t, prom, d } = pickAt(x, y);
+  if (d >= reach()) return ripple(x, y);
+  if (prom) eruptAt(t); else flareAt(t);
+}
+// A tap on empty sky: a faint ring spreads from it, with a soft low note.
+let rip = null;
+function ripple(x, y) {
+  rip = { x, y, t: 0 };
+  snd.hush(clamp(x / cssW * 2 - 1, -1, 1), st.star);
+  poke();
+}
+// The ring's life in seconds.
+const RIP_LIFE = 1.8;
+
+/* ---------- hover: the cursor reads the region under it ---------- */
+// The mouse over the stage, or null; touch and pen never hover.
+let hoverAt = null, cursor = '';
+function readHover() {
+  let c = 'default';
+  if (pointer.drag && cam.mode !== 'long') c = 'grabbing';
+  else if (hoverAt && pointer.id === null && pickAt(hoverAt[0], hoverAt[1]).d < reach()) c = 'pointer';
+  else if (cam.mode !== 'long') c = 'grab';
+  if (c !== cursor) { cursor = c; stage.style.cursor = c; }
+  const t = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]).t : null;
+  if (t !== aimed) { aimed = t; poke(); }
+}
+// The target the mouse points at; it glows a little.
+let aimed = null;
+// The target a press holds; it charges with light until release.
+let pressed = null;
+// Eases each target's light toward its aim; true while any still moves.
+function stepLit(dt) {
+  let moving = false;
+  const k = 1 - Math.exp(-dt / 0.22);
+  for (const o of [...sun.regions, ...sun.proms]) {
+    const to = o === pressed ? 1 + 3 * (1 - Math.exp(-(performance.now() - pointer.t0) / 500)) : o === aimed ? 1 : 0;
+    const l = o.lit || 0;
+    if (Math.abs(to - l) < 0.003) { o.lit = to; continue; }
+    o.lit = l + (to - l) * k;
+    moving = true;
+  }
+  return moving;
 }
 
 /* ---------- frame state for the renderer ---------- */
@@ -350,7 +440,7 @@ const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
-  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), rip: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
 };
@@ -365,11 +455,11 @@ function makeFrame() {
   sun.regions.forEach((rg, k) => {
     const fl = sun.flares.find(q => q.rg === rg);
     const boost = fl ? 1 + 1.2 * Math.exp(-fl.t / 6) : 1;
-    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost], k * 4);
+    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost * (1 + LIT_GAIN * (rg.lit || 0))], k * 4);
   });
   f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
-    const fv = flareView(fl, st.star);
+    const fv = flareView(fl, shown);
     f.fl.set([...toView(fv.c), 0], k * 4);
     f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
@@ -382,9 +472,9 @@ function makeFrame() {
     f.sat.set([sx, sy, calm ? S * 0.6 : S, 0], k * 4);
   });
   f.time = st.time;
-  const star = STARS[st.star];
+  const star = STARS[shown];
   f.band = star;
-  f.count = strands(sun, st.time, { star: st.star, activity: act }, ren.data);
+  f.count = strands(sun, st.time, { star: shown, activity: act }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
@@ -434,8 +524,15 @@ function makeFrame() {
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
-  f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
+  f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
+  if (rip) {
+    // The ring slows as it spreads; reduced motion keeps it small and still.
+    const R0 = 0.22 * Math.min(view.W, view.H);
+    const rad = calm ? 0.35 * R0 : R0 * (1 - Math.exp(-rip.t / 0.55));
+    const k = (1 - rip.t / RIP_LIFE) ** 2;
+    f.rip.set([rip.x / cssW * view.W, (1 - rip.y / cssH) * view.H, rad, 0.5 * k * (calm ? 0.7 : 1)]);
+  } else f.rip.fill(0);
   f.lens = weight('long');
   f.full = weight('full');
   f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
@@ -461,7 +558,7 @@ function fluidFrame(r) {
     box: new Float32Array([...e, ...c, ...g]),
     boxT: new Float32Array([e[0], c[0], g[0], e[1], c[1], g[1], e[2], c[2], g[2]]),
     origin: new Float32Array(c.map(x => x * R)),
-    gain: 0.024 * STARS[st.star].prom,
+    gain: 0.024 * STARS[shown].prom,
   };
   r.first = false;
   r.dt = 0;
@@ -499,12 +596,18 @@ function frame(now) {
       }
     }
     for (const fl of sun.flares) cueArcade(fl);
+    // The star turns under a still mouse.
+    if (hoverAt) readHover();
+    const glowing = stepLit(dt);
+    const easing = stepZoom(dt);
+    const dipping = stepDip(dt);
+    if (rip && (rip.t += dt) >= RIP_LIFE) rip = null;
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
-    if (drifting > 0) { mixSound(); snd.hum(st.star); }
-    if (STARS[st.star].beam && drifting > 0) pulse();
+    lively = zooming || easing || dipping || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    if (drifting > 0) { mixSound(); snd.hum(shown); }
+    if (STARS[shown].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
@@ -550,13 +653,15 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
-const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0 };
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, t0: 0, drag: false, p0: 0, w0: 0 };
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
-  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), t0: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  const hit = pickAt(x, y);
+  pressed = hit.d < reach() ? hit.t : null;
   poke();
 });
 stage.addEventListener('pointermove', e => {
@@ -565,7 +670,7 @@ stage.addEventListener('pointermove', e => {
   const now = performance.now();
   const speed = Math.hypot(x - pointer.x, y - pointer.y) / Math.max(1, now - pointer.at) * 1000;
   pointer.x = x; pointer.y = y; pointer.at = now;
-  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) pointer.drag = true;
+  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) { pointer.drag = true; pressed = null; readHover(); }
   if (!pointer.drag) return;
   snd.turn(speed);
   // The surface follows the hand, like a ball rolled under it.
@@ -581,11 +686,18 @@ function endPointer(e) {
   if (e.pointerId !== pointer.id) return;
   const tap = e.type === 'pointerup' && !pointer.drag;
   if (pointer.drag) snd.endTurn();
-  pointer.id = null; pointer.drag = false;
+  pointer.id = null; pointer.drag = false; pressed = null;
   if (tap) flareNear(pointer.x, pointer.y);
+  readHover();
   poke();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, endPointer));
+stage.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  hoverAt = e.target === canvas || e.target === stage ? local(e) : null;
+  readHover();
+});
+stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); });
 // Zoom in the full view: the wheel, a two-finger pinch, the - and = keys.
 stage.addEventListener('wheel', e => {
   if (cam.mode !== 'full') return;
@@ -599,7 +711,7 @@ stage.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
   touches.set(e.pointerId, local(e));
   // A second finger ends the tap and the turn.
-  if (touches.size === 2) { pinch0 = spread(); pointer.drag = true; }
+  if (touches.size === 2) { pinch0 = spread(); pointer.drag = true; pressed = null; }
 });
 stage.addEventListener('pointermove', e => {
   if (!touches.has(e.pointerId)) return;
@@ -620,7 +732,7 @@ addEventListener('keydown', e => {
 whenVisible(stage, on => {
   visible = on;
   if (on) { last = performance.now(); schedule(); }
-  else { halt(); pointer.id = null; pointer.drag = false; snd.quiet(); }
+  else { halt(); pointer.id = null; pointer.drag = false; pressed = null; snd.quiet(); }
 });
 onReducedChange(on => { calm = on; poke(); });
 sound.onChange(on => { if (on) poke(); else snd.quiet(); });
