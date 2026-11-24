@@ -1,7 +1,8 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
 // A flare: the deep synth, then a slow glow chord. A lifting prominence: the synth only. A drag is silent.
-// Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
+// Awake: a voice over a constant deep surround rumble.
+// The Sun's voice is a choir and a slowed choir; the other stars keep an organ choir for now.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -244,16 +245,136 @@ export function makeSound(kit, opt = () => undefined) {
     }
     d.until = t;
   }
+  // The Sun's voice (Tom, 2026-11-24): two choir layers in a long reverb.
+  // Sawtooth waves pass a low pass, then four "ooh" and "ah" band passes.
+  const FORMANTS = [[400, 4, 1], [750, 6, 0.8], [1150, 7, 0.45], [2700, 9, 0.15]];
+  // Semitones above the base, an A two octaves over the hum's root.
+  // Both scales share A3 E4 B4 C#5; Ionian adds G#4, pentatonic adds F#5.
+  // Every 10 to 12 s the two crossfade over 4 s, so no pitch bends (Tom).
+  const SHARED = [[-12, 1, -0.4], [-5, 0.8, 0.4], [2, 0.6, -0.2], [4, 0.55, 0.2]];
+  const ION = [-1, 0.6, 0], PEN = [9, 0.4, 0];
+  const LINES = [[0, 2, 4, 5, 7, 9, 11, 12], [0, 2, 4, 7, 9, 12]];
+  // A 7 s reverb: decaying noise that darkens as it fades.
+  let ir = null;
+  function irOf(ac) {
+    if (ir && ir.ac === ac) return ir.b;
+    const sr = ac.sampleRate, n = Math.floor(sr * 7.5), b = ac.createBuffer(2, n, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = b.getChannelData(ch);
+      let y = 0;
+      for (let i = 0; i < n; i++) {
+        const t = i / sr, x = (Math.random() * 2 - 1) * Math.exp(-t / 1.8) * Math.min(1, t / 0.04);
+        y += (x - y) * (0.5 - 0.38 * Math.min(1, t / 7));
+        d[i] = y;
+      }
+    }
+    ir = { ac, b };
+    return b;
+  }
+  // Two choir layers, at half level each (Tom, 2026-11-24).
+  // The plain choir: one sawtooth wave per note, low passed at 3 kHz.
+  // The slowed choir adds a wave an octave down, low passed at 1.8 kHz.
+  // Each wave sits at exact pitch, so nothing beats (Tom: no wobble).
+  const SUN_LAYERS = [
+    { lp: 3000, amp: 0.7, parts: [[1, 1]] },
+    { lp: 1800, amp: 0.4, parts: [[1, 1.41], [0.5, 1]] },
+  ];
+  function sunChoir(ac, t, base, out, os) {
+    const dry = ac.createGain();
+    dry.gain.value = 0.5;
+    const cv = ac.createConvolver();
+    cv.buffer = irOf(ac);
+    const wet = ac.createGain();
+    wet.gain.value = 1.2;
+    dry.connect(out);
+    cv.connect(wet).connect(out);
+    const at = st => base * 2 ** (st / 12);
+    const v = { ion: [], pen: [], leads: [[], []], li: 0, base, mode: 1, step: 0, nextMode: t + 10 + Math.random() * 2, nextLead: t + 8 };
+    for (const L of SUN_LAYERS) {
+      const mix = ac.createGain();
+      const soft = filt(ac, 'lowpass', L.lp, 0.5);
+      mix.connect(soft);
+      // Level 0.35 of the tuning player, split over two layers, set by ear (Tom).
+      const bus = ac.createGain();
+      bus.gain.value = 0.00735;
+      for (const [f, q, a] of FORMANTS) {
+        const ga = ac.createGain();
+        ga.gain.value = a * 4;
+        soft.connect(filt(ac, 'bandpass', f, q)).connect(ga).connect(bus);
+      }
+      bus.connect(dry);
+      bus.connect(cv);
+      // One note: its waves, and a gain that fades it.
+      const note = (f, a, pan, on = true) => {
+        const g = ac.createGain();
+        g.level = a * L.amp;
+        g.gain.value = on ? g.level : 0;
+        const p = ac.createStereoPanner();
+        p.pan.value = pan;
+        g.connect(p).connect(mix);
+        g.waves = L.parts.map(([k, amp]) => {
+          const o = ac.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = f * k;
+          const w = ac.createGain();
+          w.gain.value = amp;
+          o.start(t); o.stop(t + 1e5);
+          track(o).connect(w).connect(g);
+          os.push(o);
+          return [o, k];
+        });
+        return g;
+      };
+      for (const [st, a, pan] of SHARED) note(at(st), a, pan);
+      v.ion.push(note(at(ION[0]), ION[1], ION[2], false));
+      v.pen.push(note(at(PEN[0]), PEN[1], PEN[2]));
+      // Two top voices take turns, so each step crossfades.
+      v.leads[0].push(note(base, 0.45, 0));
+      v.leads[1].push(note(base, 0.45, 0, false));
+    }
+    return v;
+  }
+  function fade(g, t, from, to, len) {
+    g.gain.setValueAtTime(from, t);
+    g.gain.linearRampToValueAtTime(to, t + len);
+  }
+  // Queues the Sun's moves for four minutes on the audio clock.
+  // Every 10 to 12 s the chord crossfades to the other scale over 4 s.
+  // Every 8 s the top voice crossfades over 2 s to the next note of the scale.
+  function sunSing(d) {
+    const v = d.voice, end = Math.max(v.nextMode, v.nextLead) + 240;
+    while (Math.min(v.nextMode, v.nextLead) < end) {
+      if (v.nextMode <= v.nextLead) {
+        v.mode = 1 - v.mode;
+        const ion = v.mode === 0;
+        for (const g of v.ion) fade(g, v.nextMode, ion ? 0 : g.level, ion ? g.level : 0, 4);
+        for (const g of v.pen) fade(g, v.nextMode, ion ? g.level : 0, ion ? 0 : g.level, 4);
+        v.nextMode += 10 + Math.random() * 2;
+      } else {
+        const line = LINES[v.mode];
+        v.step = (v.step + (Math.random() < 0.7 ? 1 : line.length - 1)) % line.length;
+        const f = v.base * 2 ** (line[v.step] / 12), t = v.nextLead;
+        for (const g of v.leads[v.li]) fade(g, t, g.level, 0, 2);
+        v.li ^= 1;
+        for (const g of v.leads[v.li]) {
+          for (const [o, k] of g.waves) o.frequency.setValueAtTime(f * k, t);
+          fade(g, t, 0, g.level, 2);
+        }
+        v.nextLead += 8;
+      }
+    }
+    d.until = end;
+  }
   function hum(band) {
     const ac = kit.live();
     if (!ac) return;
     if (drone && drone.ac === ac && drone.band === band) {
-      if (ac.currentTime > drone.until - 40) singOn(drone, drone.until);
+      if (ac.currentTime > drone.until - 40) drone.voice ? sunSing(drone) : singOn(drone, drone.until);
       return;
     }
     const t = ac.currentTime + 0.01;
     if (drone && drone.ac === ac) {
-      drone.g.gain.setTargetAtTime(0, t, 1.2);
+      for (const x of [drone.g, drone.gc]) x?.gain.setTargetAtTime(0, t, 1.2);
       for (const o of drone.os) { try { o.stop(t + 6); } catch { /* stopped */ } }
     }
     const root = (ROOT[band] || 220) / 2;
@@ -283,14 +404,26 @@ export function makeSound(kit, opt = () => undefined) {
       os.push(s);
     });
 
+    const humOn = ac.createGain();
+    humOn.gain.value = layers.h;
+    if (band === 'sun') {
+      // The Sun's choir skips the echo hall: its own reverb carries it.
+      const gc = ac.createGain();
+      gc.gain.setValueAtTime(0, t);
+      gc.gain.linearRampToValueAtTime(1, t + 4);
+      humOn.connect(gc).connect(kit.out);
+      const voice = sunChoir(ac, t, root * 4, humOn, os);
+      drone = { ac, band, g, gc, os, voice, until: 0, humOn, rumOn };
+      me.d = drone;
+      sunSing(drone);
+      return;
+    }
     // The organ choir: each note is three voices a few cents apart, so it shimmers.
     const choir = ac.createGain();
     choir.gain.value = 0.022;
     const air = filt(ac, 'highshelf', 3000, 0.7);
     air.gain.value = 3;
     const top = filt(ac, 'lowpass', 9000, 0.5);
-    const humOn = ac.createGain();
-    humOn.gain.value = layers.h;
     choir.connect(air).connect(top).connect(humOn).connect(g);
     const note = (f, amp) => {
       const vo = ac.createGain();
