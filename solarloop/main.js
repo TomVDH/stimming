@@ -264,6 +264,21 @@ const FX = [
   ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1],
   ['fxBend', 'Volume', 'Corona bend', 0, 3, 1],
 ];
+// The grade rows: a tone curve, a sun-glare look, and three sliders.
+const TONES = [['0', 'Film'], ['1', 'ACES'], ['2', 'AgX']];
+const LOOKS = [['0', 'None'], ['1', 'Furnace'], ['2', 'Viewing glass'], ['3', 'Bleach'], ['4', 'Gold haze']];
+const GRADE = [['fxContrast', 'Contrast', 0.3, 2, 1], ['fxSat', 'Saturation', 0, 2, 1], ['fxWarm', 'Warmth', -1, 1, 0]];
+const gradeRows = () => [
+  { type: 'choice', id: 'fxTone', group: 'Grade', label: 'Tone map', value: '0', options: TONES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => poke() },
+  { type: 'choice', id: 'fxLook', group: 'Grade', label: 'Look', value: '0', display: 'stepper', options: LOOKS.map(([value, label]) => ({ value, label })), persist: true, onPick: () => poke() },
+  ...GRADE.map(([id, label, min, max, value]) => ({ type: 'slider', id, group: 'Grade', label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
+  { type: 'button', id: 'gradeReset', group: 'Grade', label: 'Defaults', text: 'Reset', onClick: () => {
+    ui.setting?.('fxTone')?.set('0', true); ui.setting?.('fxLook')?.set('0', true);
+    for (const [id, , , , d] of GRADE) ui.setting?.(id)?.set(d, true);
+    poke();
+  } },
+];
+const gv = (id, d) => ui?.setting?.(id)?.value ?? d;
 // A knob's value: its Dev row, else the default.
 const fxv = id => { const d = FX.find(f => f[0] === id)[5]; return ui?.setting?.(id)?.value ?? d; };
 
@@ -313,6 +328,7 @@ const ui = initPage({ id: ID, bar: {
   dev: [
     ...FX.map(([id, group, label, min, max, value]) => ({ type: 'slider', id, group, label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
+    ...gradeRows(),
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
@@ -323,7 +339,7 @@ const ui = initPage({ id: ID, bar: {
     ['click', 'Tap a region to flare it, or a prominence to lift it off'],
     ['drag', 'Drag to turn the star (the long lens holds still)'],
     ['scroll', 'Zoom from the long lens through the wide view to the full star, and farther out'],
-    ['L', 'Jump to the next lens stop: long, wide, full'],
+    ['L', 'Jump to the next lens stop: long, full, wide'],
     ['S', 'Open the star chart'],
     ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
     ['[', 'Step to the previous star; ] steps to the next'],
@@ -555,7 +571,7 @@ const frameState = {
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
-  fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
+  fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
 };
 function makeFrame() {
@@ -638,6 +654,8 @@ function makeFrame() {
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
+  f.fx4.set([Number(gv('fxTone', '0')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
+  f.fx5.set([gv('fxWarm', 0), 0, 0, 0]);
   eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');

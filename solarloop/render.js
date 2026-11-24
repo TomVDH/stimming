@@ -629,7 +629,7 @@ function noiseVolume(n) {
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
-uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3;
+uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, uFx5;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
 uniform vec2 uRes, uC;
@@ -659,16 +659,58 @@ vec2 sig(vec2 uv, float kx) {
   vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x * uFx1.y) * v.a + texture(uBloom, uv).rgb * 0.38 * uFx1.x;
   return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15);
 }
+// Tone curves on the scene light x; each returns a place on the ramp, 0 to 1.
+// ACES: the Narkowicz fit, then display gamma.
+float toneAces(float x) { x *= 0.6; return pow(clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0), 1.0 / 2.2); }
+// AgX: a log2 encoding, then its default contrast curve.
+float toneAgx(float x) {
+  float e = clamp((log2(max(x, 1e-6)) + 12.47393) / 16.5, 0.0, 1.0);
+  float e2 = e * e, e4 = e2 * e2;
+  return clamp(15.5 * e4 * e2 - 40.14 * e4 * e + 31.96 * e4 - 6.868 * e2 * e + 0.4298 * e2 + 0.1191 * e - 0.00232, 0.0, 1.0);
+}
 vec3 grade(vec2 s) {
   float I = s.x + s.y;
   // The full view shows the whole bright disk, so it takes less exposure.
-  float t = 1.0 - exp(-I * uExpo * uFx3.y * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull));
+  float x = I * uExpo * uFx3.y * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull);
+  // uFx4.x picks the curve: 0 film, 1 ACES, 2 AgX.
+  float t = uFx4.x < 0.5 ? 1.0 - exp(-x) : uFx4.x < 1.5 ? toneAces(x) : toneAgx(x);
   // The long lens presses the tones: a slightly darker, harder curve.
   t = pow(t, 1.0 + 0.15 * uLens);
   float fr = s.y / max(I, 1e-5);
   vec3 a = texture(uLut, vec2(t, (uRow * 2.0 + 0.5) / ${LUTS.length.toFixed(1)})).rgb;
   vec3 b = texture(uLut, vec2(t, (uRow * 2.0 + 1.5) / ${LUTS.length.toFixed(1)})).rgb;
   return mix(a, b, fr);
+}
+// The look: a sun-glare preset, then contrast, saturation and warmth.
+// uFx4.y: 0 none, 1 furnace, 2 viewing glass, 3 bleach, 4 gold haze.
+vec3 look(vec3 c) {
+  float k = uFx4.y;
+  float con = uFx4.z, sat = uFx4.w, warm = uFx5.x;
+  if (k > 0.5 && k < 1.5) {
+    // Furnace: highlights burn gold to white, warm blacks crush.
+    float l = dot(c, vec3(0.3, 0.55, 0.15));
+    c = mix(c, vec3(1.0, 0.86, 0.55), smoothstep(0.45, 0.95, l) * 0.45);
+    c = pow(c, vec3(1.15, 1.25, 1.45));
+    con *= 1.25; warm += 0.35;
+  } else if (k > 1.5 && k < 2.5) {
+    // Viewing glass: a dark welder's filter; only the bright star shows, crisp.
+    float l = dot(c, vec3(0.3, 0.55, 0.15));
+    c *= smoothstep(0.35, 1.0, l) * 1.6;
+    c *= vec3(1.0, 0.72, 0.38);
+    con *= 1.4;
+  } else if (k > 2.5 && k < 3.5) {
+    // Bleach: the silver kept; colour drops, contrast climbs.
+    sat *= 0.45; con *= 1.45;
+  } else if (k > 3.5) {
+    // Gold haze: blacks lift, the frame softens into gold.
+    c = mix(vec3(0.07, 0.05, 0.02), vec3(1.0), c);
+    con *= 0.8; warm += 0.45;
+  }
+  c = clamp((c - 0.5) * con + 0.5, 0.0, 1.0);
+  float g = dot(c, vec3(0.3, 0.55, 0.15));
+  c = mix(vec3(g), c, sat);
+  c *= vec3(1.0 + 0.12 * warm, 1.0 + 0.02 * warm, 1.0 - 0.16 * warm);
+  return c;
 }
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
@@ -759,6 +801,7 @@ void main() {
   c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.85, 1.05, lum) * 0.35 * uFx2.z);
   vec2 v = vUv - 0.5;
   c *= clamp(1.0 - (0.6 + 0.25 * uLens) * uFx2.w * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
+  c = look(c);
   // Fine film grain, strongest in the mid tones: a light touch.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
   vec2 g2 = floor(gl_FragCoord.xy / max(1.0, uRes.y / 900.0));
@@ -925,6 +968,8 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);
     gl.uniform4fv(f.u.uFx3, v.fx3);
+    gl.uniform4fv(f.u.uFx4, v.fx4);
+    gl.uniform4fv(f.u.uFx5, v.fx5);
     gl.uniform1f(f.u.uHaze, Math.min(1, 0.4 + 0.6 * v.lens + 0.3 * v.band.dust));
     gl.uniform3fv(f.u.uHal, B.hal);
     gl.uniform3fv(f.u.uStreak, B.streak);
