@@ -12,7 +12,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 
 | Input | Does |
 |---|---|
-| Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap |
+| Click or tap the stage | Flares the region nearest the tap, or lifts off the prominence nearest the tap. Only the near side answers: the visible disk and its rim, never behind (Tom, 2026-11-23). Hover, press and Space follow the same rule |
 | Point (mouse) | The cursor reads the region under it: a pointer over a region or prominence, grab on the wide and full views, an arrow on the still long lens. The target under the pointer brightens 15 percent |
 | Press and hold | The nearest target swells to 1.6 times its light over about a second; the flare goes on release. A drag cancels it |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |

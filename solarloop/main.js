@@ -397,10 +397,11 @@ function flareAt(rg) {
 // Space flares each region in view in turn.
 function flareNext() {
   const seen = sun.regions.filter(rg => {
+    if (!near(rg.c)) return false;
     const [x, y] = toCss(regionPoint(rg).v);
     return x > 0 && x < cssW && y > 0 && y < cssH;
   });
-  const list = seen.length ? seen : sun.regions;
+  const list = seen.length ? seen : sun.regions.filter(rg => near(rg.c));
   for (let i = 0; i < list.length; i++) {
     const rg = list[(st.next + i) % list.length];
     if (sun.flares.some(f => f.rg === rg && f.t < 12)) continue;
@@ -418,16 +419,19 @@ function eruptAt(p) {
   poke();
 }
 // The target under a stage point: a region or a prominence, and its distance.
+// Only the near side answers the hand: the visible disk and its rim (Tom, 2026-11-23).
+const near = u => toView(u)[2] >= 0;
 function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   for (const rg of sun.regions) {
+    if (!near(rg.c)) continue;
     const [px, py] = toCss(regionPoint(rg).v);
     const d = Math.hypot(px - x, py - y);
     if (d < bd) { bd = d; best = rg; prom = false; }
   }
   for (const p of sun.proms) {
     const v = toView(promApex(p));
-    if (hidden(v) || p.erupt >= 0) continue;
+    if (!near(p.c) || p.erupt >= 0) continue;
     const [px, py] = toCss(v);
     // A prominence is large: it wins a tap anywhere near its body.
     const d = Math.hypot(px - x, py - y) * 0.6;
