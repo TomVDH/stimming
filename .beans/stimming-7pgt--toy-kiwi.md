@@ -34,7 +34,7 @@ Build Kiwi as a Lab toy: a toony kiwi lit with the rendering ideas of raspberry.
   - [x] Dragon fruit (QA 23)
   - [x] Peach (QA 28)
   - [x] Rambutan (QA 29)
-  - [ ] Mangosteen
+  - [x] Mangosteen (QA 30)
   - [ ] Starfruit
   - [ ] Fig
 - [x] Floor contact for every fruit and half; no seams on whole fruit
