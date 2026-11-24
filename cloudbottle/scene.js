@@ -4,6 +4,7 @@
 import { TRI_VS, program, linked, target, free, bind, tri } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
 import { GRADE } from '../shared/grade.js';
+import { SMOKE, smConsts, SM_FIRE } from '../shared/smoke.js';
 import { JUG, PROFILE, NOISE_N, makeNoise } from './jug.js';
 import { ATLAS, fluidPrograms, makeFluid } from './fluid.js';
 
@@ -151,23 +152,14 @@ float densLite(vec3 p) {
   if (jugInner(p) > 0.0 || p.y < WATER) return 0.0;
   return uFog * SY(tDye, (p - BMIN) / CELL).r * smoothstep(0.0, 0.3, uForm);
 }
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
-// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
-const float ABSORB = 2.0, AMBIENT = 0.5, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+${SMOKE}
+${smConsts(SM_FIRE)}
+// Fire's smoke light (shared/smoke.js) after a short self-shadow march.
 float lightT(vec3 p) {
   // Three taps along the key; a far tap stands for the rest of the jug.
   float sum = densLite(p + uKey * 0.012) * 0.012 + densLite(p + uKey * 0.032) * 0.02 + densLite(p + uKey * 0.07) * 0.04;
-  float tau = sum * SIG * ABSORB * 0.5;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT, 0.0, 1.0);
+  return smLight(sum * SIG * smAbsorb * 0.5, smMulti, smPowder, smAmbient);
 }
-/* ---------- end K3 lighting ---------- */
 void main() {
   vec3 ro = uCamPos, rd = camRay(vUv);
   // The bounds: the jug and the space over its mouth.
@@ -186,7 +178,7 @@ void main() {
   float T = 1.0;
   vec3 acc = vec3(0.0);
   // The view and the key: the camera looks into the light, so the fog backlights.
-  float ph = hg(dot(-rd, uKey) * -1.0, G_HG) * 12.56637;
+  float ph = smPhase(dot(-rd, uKey) * -1.0, smG) * 12.56637;
   vec3 key = vec3(1.4, 1.45, 1.53);
   for (int i = 0; i < N; i++) {
     vec3 p = ro + rd * t;
