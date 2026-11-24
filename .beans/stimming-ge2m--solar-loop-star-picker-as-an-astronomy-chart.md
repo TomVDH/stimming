@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T05:37:29Z
-updated_at: 2026-11-24T06:17:06Z
+updated_at: 2026-11-24T07:04:35Z
 parent: stimming-oh7b
 ---
 
@@ -24,3 +24,10 @@ Redo Solar loop's star tray and bar so the star choice reads as an astronomy pic
 - [x] Zoom rail over the bar; tap a stop to glide there
 - [x] S opens the star chart
 - [x] Check 1280 px and 375 x 812, keys, clean console
+
+## Size ladder (Tom picked C, 2026-11-24)
+
+The HR chart read as poorly laid out. The tray is now a size ladder: all 17 on one line, smallest to largest.
+
+- [x] Ladder in chart.js and chart.css; main.js untouched
+- [x] Check 1280 px and 375 x 812 in the in-app pane, keys, clean console

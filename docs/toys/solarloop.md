@@ -16,7 +16,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 | Point (mouse) | The cursor reads the region under it: a pointer over a region or prominence, grab on the wide and full views, an arrow on the still long lens. The target under the pointer brightens 15 percent |
 | Press and hold | The nearest target swells to 1.6 times its light over about a second; the flare goes on release. A drag cancels it |
 | Drag | Wide and full views: turns the star up to 18 degrees each way. The long lens holds still |
-| Star (the bar button shows the star) | Opens the star chart, a Hertzsprung-Russell sheet: spectral class across (O to Y, hot on the left), brightness up. Each star is a swatch in its own colour, sized by its radius on a log scale; a ring marks the current one. The pulsar stands in a gutter past a break: it has no class. Quiet words name the main sequence, the giants, the white dwarfs and the brown dwarfs. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Arrows move to the nearest star that way, [ and ] step through the list, Enter picks, Escape or S closes. On a phone, or a short stage, only the current star and the one in hand show their names |
+| Star (the bar button shows the star) | Opens the star tray, a size ladder (Tom, 2026-11-24): all seventeen stars on one line, smallest to largest, from the pulsar to VY CMa. Each star is a swatch in its own colour, sized by its radius on a log scale, standing on the line; its name stands on its side below it. A ring marks the current one. The foot line gives the star in hand: class, temperature, width. Tap a star to pick it. Left and right (or [ and ]) step along the ladder, Home and End go to its ends, Enter picks, Escape or S closes |
 | Keys 1 to 0 | Pick the main sequence (O to M) and the two brown dwarfs |
 | [ and ] | Step to the previous or the next star, through all seventeen |
 | Zoom (wheel, pinch, - and =) | One zoom through every view: the long lens, the wide view, the full star, then out to 16 times farther. The three views are stops on it. The wheel, a pinch and the keys ride a heavy spring: about 1.4 s to the target, a few percent past, then it settles (Tom, 2026-11-23). The motion slows near each stop, and a pause within 0.15 of a stop settles on it. The zoom rail shows over the bar while the zoom moves: every stop, a mark where the view stands, and the name of where it goes. Tap a stop to glide there. The zoom is stored |
@@ -107,7 +107,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | `index.html` | The page shell |
 | `main.js` | State, the telescope view, the turn, picking, Bar v3 spec, frame loop |
 | `rail.js`, `rail.css` | The zoom rail over the bar |
-| `chart.js`, `chart.css` | The star chart: a sheet the toy owns, in the Bar v3 sheet look. The Star action opens it; the bar labels follow the Bar v2 chips |
+| `chart.js`, `chart.css` | The star tray, a size ladder: a sheet the toy owns, in the Bar v3 sheet look. The Star action opens it; the bar labels follow the Bar v2 chips |
 | `sun.js` | The regions, the loop life cycle, the flare timeline, the stars and the scale bodies; it writes one strand per thread |
 | `render.js` | Raw WebGL2: the disk and corona pass, instanced strands, bloom (`shared/glow.js`), light rays, the final pass, the colour ramps |
 | `eggs.js` | The eggs: the hold timing, each egg's timeline, the pulsar's spin rate |
@@ -166,7 +166,7 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 | Q4 | Drifting: 32 rAF a second. Asleep 63 s after the last input: 0 rAF in 2 s |
 | Q5 | Hidden tab: 0 rAF in 2 s |
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
-| Q7 | Star, Flare, Lens, Activity slider (4 controls); How to play has 7 rows. Star chart (2026-11-23): 1280 x 800, 375 x 812, 812 x 375, clean console |
+| Q7 | Star, Flare, Lens, Activity slider (4 controls); How to play has 7 rows. Star tray as a size ladder (2026-11-24): 1280 x 800 and 375 x 812 in the in-app pane, clean console |
 | Q8 | 1 to 9 and 0, [ and ], S, L (three stops), - and =, the wheel, and Space each do their job; while the chart is open, the toy's keys wait |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |
