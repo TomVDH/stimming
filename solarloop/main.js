@@ -414,6 +414,7 @@ const ui = initPage({ id: ID, bar: {
     // Weight 2 is the house zoom: heavy, about 3.5 s a stop (Tom, 2026-11-24).
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
+    { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
@@ -467,8 +468,12 @@ let cardStar = null;
 function arrive() {
   if (!started || cam.to !== NOTCH || cam.moving || performance.now() < cardAfter) return;
   if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
+  showCard();
+}
+// Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
+// Our Sun's outline above it takes the star's scale on screen.
+function showCard() {
   cardStar = st.star;
-  // Our Sun's diameter on screen at the same scale, for the outline above the card (Tom, 2026-11-24).
   const sun = { d: R / STARS[st.star].rsun * cssH / view.hh, max: cssH * 0.3, view: cssH };
   card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'), sun);
 }
