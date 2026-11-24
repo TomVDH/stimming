@@ -1803,13 +1803,14 @@ void main() {
   vec2 a = aSeg.xy, b = aSeg.zw, d = b - a;
   float l = length(d);
   vec2 u = l > 1e-4 ? d / l : vec2(1.0, 0.0), n = vec2(-u.y, u.x);
-  float r = uSigma * 3.5;
+  float r = uSigma * 4.0;
   vec2 p = (aCorner.x < 0.0 ? a - u * r : b + u * r) + n * aCorner.y * r;
   vP = p; vSeg = aSeg; vE = aE;
   gl_Position = vec4(p / uRes * 2.0 - 1.0, 0.0, 1.0);
 }`;
 // A gaussian spot swept along the segment: the exposure integrates exactly.
 // A short segment holds the same energy, so slow beams burn brighter.
+// The spot falls to zero at the quad's side, so a hot spot shows no edge.
 const BEAM_FS = `#version 300 es
 precision highp float;
 in vec2 vP; flat in vec4 vSeg; flat in float vE;
@@ -1830,29 +1831,42 @@ void main() {
   float s = dot(w, u), perp2 = max(dot(w, w) - s * s, 0.0);
   float k = 0.70710678 / uSigma;
   float along = erf1((len - s) * k) + erf1(s * k);
-  float e = vE / len * exp(-perp2 / (2.0 * uSigma * uSigma)) * along / (5.0132565 * uSigma);
+  float side = max(exp(-perp2 / (2.0 * uSigma * uSigma)) - 3.3546e-4, 0.0);
+  float e = vE / len * side * along / (5.0132565 * uSigma);
   o = vec4(e * uW, 0.0, 0.0);
 }`;
 // Four bilinear taps average a four by four block.
+// A soft knee caps hot light at about six, the level of a bright line.
 const DOWN = `#version 300 es
 precision highp float;
 in vec2 vUv; out vec4 o;
-uniform sampler2D uSrc; uniform vec2 uTexel;
+uniform sampler2D uSrc; uniform vec2 uTexel, uGain;
+vec2 knee(vec2 x) { vec2 q = x * uGain / 6.0; q *= q; return x * inversesqrt(sqrt(1.0 + q * q)); }
 void main() {
-  vec2 s = texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rg
-         + texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rg + texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rg;
+  vec2 s = knee(texture(uSrc, vUv + uTexel * vec2(-1.0, -1.0)).rg) + knee(texture(uSrc, vUv + uTexel * vec2(1.0, -1.0)).rg)
+         + knee(texture(uSrc, vUv + uTexel * vec2(-1.0, 1.0)).rg) + knee(texture(uSrc, vUv + uTexel * vec2(1.0, 1.0)).rg);
   o = vec4(s * 0.25, 0.0, 1.0);
 }`;
+// A true gaussian, one axis per pass, so a halo is round at any brightness.
+// uTaps holds the offset and weight of the centre tap, then of each tap pair.
 const BLUR = `#version 300 es
 precision highp float;
 in vec2 vUv; out vec4 o;
-uniform sampler2D uSrc; uniform vec2 uDir;
+uniform sampler2D uSrc; uniform vec2 uDir; uniform vec2 uTaps[9];
 void main() {
-  vec2 s = texture(uSrc, vUv).rg * 0.227027;
-  s += (texture(uSrc, vUv + uDir * 1.384615).rg + texture(uSrc, vUv - uDir * 1.384615).rg) * 0.316216;
-  s += (texture(uSrc, vUv + uDir * 3.230769).rg + texture(uSrc, vUv - uDir * 3.230769).rg) * 0.070270;
+  vec2 s = texture(uSrc, vUv).rg * uTaps[0].y;
+  for (int i = 1; i < 9; i++) s += (texture(uSrc, vUv + uDir * uTaps[i].x).rg + texture(uSrc, vUv - uDir * uTaps[i].x).rg) * uTaps[i].y;
   o = vec4(s, 0.0, 1.0);
 }`;
+// The bloom kernel: sigma 3.9 bloom texels, out to four sigma.
+// Each bilinear tap merges two texels, so 17 taps cover 33 texels.
+const BLOOM_TAPS = (() => {
+  const S = 3.9, w = i => Math.exp(-i * i / (2 * S * S)), t = [0, w(0)];
+  for (let i = 1; i < 16; i += 2) { const a = w(i), b = w(i + 1); t.push(i + b / (a + b), a + b); }
+  let sum = t[1];
+  for (let i = 3; i < t.length; i += 2) sum += 2 * t[i];
+  return new Float32Array(t.map((v, i) => (i % 2 ? v / sum : v)));
+})();
 // The screen: one bulged tube face behind dusty glass.
 // The beam and the HUD both emit through fringe, grille and scanlines.
 const SCREEN = `#version 300 es
@@ -2509,14 +2523,11 @@ function present(t) {
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
   gl.activeTexture(gl.TEXTURE0);
   gi = 1 - gi;
-  const src = gNew;
-  quadPass(P.down, blm[0], src, u => gl.uniform2f(u.uTexel, 1 / src.w, 1 / src.h));
-  // Two blur rounds, the second wider, keep hot spots round.
-  for (const s of [1, 2.2]) {
-    quadPass(P.blur, blm[1], blm[0], u => gl.uniform2f(u.uDir, s / blm[0].w, 0));
-    quadPass(P.blur, blm[0], blm[1], u => gl.uniform2f(u.uDir, 0, s / blm[0].h));
-  }
-  const ph = PHOS[phos], u = P.screen.u;
+  const src = gNew, ph = PHOS[phos];
+  quadPass(P.down, blm[0], src, b => { gl.uniform2f(b.uTexel, 1 / src.w, 1 / src.h); gl.uniform2f(b.uGain, ph.gain[0], ph.gain[1]); });
+  quadPass(P.blur, blm[1], blm[0], b => { gl.uniform2f(b.uDir, 1 / blm[0].w, 0); gl.uniform2fv(b['uTaps[0]'], BLOOM_TAPS); });
+  quadPass(P.blur, blm[0], blm[1], b => { gl.uniform2f(b.uDir, 0, 1 / blm[0].h); gl.uniform2fv(b['uTaps[0]'], BLOOM_TAPS); });
+  const u = P.screen.u;
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
   gl.useProgram(P.screen.p); gl.bindVertexArray(quadVao);
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, src.tex);
