@@ -378,6 +378,9 @@ One box 26 px tall on `--glass`: a word label, then a 96 px track. The filled pa
 
 ### Sheet (Settings, Dev, tray)
 
+Bar v2 only. Bar v3 sheets and the Dev popover: `docs/plans/bar-v3.md`.
+
+
 - **Shape:** 280 px wide, no radius, 1 px `--fg` border, a `--ring` outline 3 px off, near-opaque backing (`shared/stim.css:413-419`).
 - **Anatomy:** header row in bold caps at 0.14em with an `esc` keycap; sections of rows split by hairlines; a section label at 9.5 px; a Reset footer (`:424`, `:451-459`).
 - **Behaviour:** drops below its corner; on a narrow stage the left sheet rises from the bottom. A short stage scrolls the sheet inside its own box. Opens on click, never on hover.

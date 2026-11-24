@@ -15,6 +15,8 @@ const FRAME = 1000 / 30;
 const fr = (n = 1) => new Promise(r => setTimeout(r, n * FRAME));
 const CARET = '<i class="sg-caret" aria-hidden="true"></i>';
 const DEV_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 4.5 2 8l3.5 3.5M10.5 4.5 14 8l-3.5 3.5M9 3 7 13"/></svg>';
+const SWAP_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h11M10 2l3 3-3 3M14 11H3M6 8l-3 3 3 3"/></svg>';
+const CLOSE_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
 const INFO_SVG = '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><path d="M8 7.4v4"/><circle class="solid" cx="8" cy="4.8" r="0.7"/></svg>';
 
 // An accent is one colour or a gradient; a fill needs an image, line work one colour.
@@ -293,6 +295,46 @@ export function mountSignal(id, spec, ui) {
     }
     return el;
   };
+  // A Dev row: label, control, value. Every toy gets the same three columns.
+  const devRowPart = row => {
+    const handle = ui.setting(row.id);
+    if (!handle) return null;
+    const el = box('sg-dev-row', text('span', 'sg-dev-lb', row.label));
+    el.title = row.label;
+    syncers.push(() => { el.toggleAttribute('data-disabled', !!handle.disabled); el.inert = !!handle.disabled; });
+    if (row.type === 'slider') {
+      const { min = 0, max = 1, step = 0.01 } = row;
+      const input = h('input');
+      Object.assign(input, { type: 'range', min, max, step });
+      input.setAttribute('aria-label', row.label);
+      // The value shows as many decimals as the step has.
+      const dp = (String(step).split('.')[1] || '').length;
+      const v = text('span', 'sg-dev-v', '');
+      input.addEventListener('input', () => { handle.set(Number(input.value), true); sync(); });
+      syncers.push(() => {
+        input.value = String(handle.value);
+        v.textContent = Number(handle.value).toFixed(dp);
+        input.style.setProperty('--v', `${((Number(input.value) - min) / (max - min || 1)) * 100}%`);
+      });
+      el.append(input, v);
+      return el;
+    }
+    /** @type {any} */
+    let ctl = null;
+    if (row.type === 'toggle') ctl = segPart([{ value: false, label: 'Off' }, { value: true, label: 'On' }], () => handle.value, v => handle.set(v, true));
+    else if (row.type === 'choice') ctl = choiceRow(row.options, () => handle.value, v => handle.set(v, true));
+    else if (row.type === 'button') {
+      ctl = btn('sg-word', row.text ?? 'Go');
+      ctl.addEventListener('click', () => row.onClick?.());
+    } else if (row.type === 'link') {
+      ctl = text('a', 'sg-btn sg-word', row.text ?? 'Open');
+      ctl.href = row.href;
+    }
+    if (!ctl) return null;
+    ctl.classList.add('sg-dev-wide');
+    el.append(ctl);
+    return el;
+  };
   // A new row group opens a labelled section, as in Bar v2.
   const addRows = (el, rows) => {
     let group;
@@ -315,13 +357,14 @@ export function mountSignal(id, spec, ui) {
 
     // A sheet opens from its button; only one is open at a time.
     const sheets = [];
-    const sheetPart = (cls, title, anchor) => {
+    // A popover (Dev) lays no glass and leaves the stage live behind it.
+    const sheetPart = (cls, title, anchor, pop = false) => {
       const el = h('div', `sg-sheet ${cls}`);
       el.hidden = true;
       const flash = h('i', 'sg-box sg-box--sheet');
       el.append(text('div', 'sg-sheet-hd', title), flash);
       const api = {
-        el, anchor, flash,
+        el, anchor, flash, pop,
         open(on) {
           if (on && open && open !== api) open.open(false);
           // Focus that was in the sheet returns to its button; a key press opens into the sheet.
@@ -393,12 +436,55 @@ export function mountSignal(id, spec, ui) {
       sys.push(set);
     }
     // Dev rows show only with ?dev, as in Bar v2.
+    // Dev is a popover at one side of the stage (Tom, 2026-11-23: the full sheet hid the toy).
     if (spec.dev?.length && new URLSearchParams(location.search).has('dev')) {
       const dev = btn('sg-ico', DEV_SVG, 'Dev');
-      const sheet = sheetPart('sg-sheet--rows', 'Dev', dev);
-      const rows = h('div', 'sg-rows');
-      addRows(rows, spec.dev);
-      sheet.el.append(rows);
+      const sheet = sheetPart('sg-dev', 'Dev', dev, true);
+      const el = sheet.el;
+      el.setAttribute('role', 'dialog');
+      el.setAttribute('aria-label', 'Dev');
+      // The side and the open group stay for the next load.
+      const DOCK = 'stimming.devdock', GRP = `stimming.${id}.devgroup`;
+      const store = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch {} };
+      const stored = k => { try { return localStorage.getItem(k); } catch { return null; } };
+      el.dataset.dock = stored(DOCK) === 'left' ? 'left' : 'right';
+      const swap = btn('sg-ico sg-dev-dock', SWAP_SVG, 'Other side');
+      swap.addEventListener('click', () => { el.dataset.dock = el.dataset.dock === 'left' ? 'right' : 'left'; store(DOCK, el.dataset.dock); });
+      const close = btn('sg-ico', CLOSE_SVG, 'Close');
+      close.addEventListener('click', () => sheet.open(false));
+      el.querySelector('.sg-sheet-hd').append(swap, close);
+      const body = h('div', 'sg-dev-body');
+      el.append(body);
+      // Rows group in order of their first row; rows with no group come first.
+      /** @type {Map<string, HTMLElement[]>} */
+      const groups = new Map();
+      for (const row of spec.dev) {
+        const r = devRowPart(row);
+        if (!r) continue;
+        const g = row.group || '';
+        if (!groups.has(g)) groups.set(g, []);
+        groups.get(g).push(r);
+      }
+      const named = [...groups.keys()].filter(Boolean);
+      body.append(...(groups.get('') || []));
+      if (named.length === 1) {
+        // One group needs no list: its name heads its rows.
+        body.append(text('div', 'sg-group', named[0]), ...groups.get(named[0]));
+      } else if (named.length) {
+        // Many groups: one line each; a line opens its rows below it, one group at a time.
+        let at = named.includes(stored(GRP)) ? stored(GRP) : null;
+        const heads = named.map(g => {
+          const head = btn('sg-dev-gh', `<span>${g}</span><small>${groups.get(g).length}</small>${CARET}`);
+          const rows = box('sg-dev-rows', groups.get(g));
+          rows.id = `sg-dev-${id}-${named.indexOf(g)}`;
+          head.setAttribute('aria-controls', rows.id);
+          head.addEventListener('click', () => { at = at === g ? null : g; store(GRP, at); show(); });
+          body.append(head, rows);
+          return [g, head, rows];
+        });
+        const show = () => heads.forEach(([g, head, rows]) => { head.setAttribute('aria-expanded', String(g === at)); rows.hidden = g !== at; });
+        show();
+      }
       sys.push(dev);
     }
     // (i) opens How to play: every gesture and every key. Keycaps show nowhere else.
@@ -505,12 +591,15 @@ export function mountSignal(id, spec, ui) {
         el.style.transform = sy === 1 ? '' : `scaleY(${sy})`;
       };
       el.classList.remove('is-closing');
-      glass.toggleAttribute('data-on', on);
-      if (on) {
+      // A popover grows from its own edge, as its style sets.
+      glass.toggleAttribute('data-on', on && !api.pop);
+      if (on && !api.pop) {
         el.scrollTop = 0;
         glass.style.height = `${el.offsetHeight + bar.offsetHeight + 130}px`;
         const a = api.anchor.getBoundingClientRect(), b = el.getBoundingClientRect();
         el.style.transformOrigin = `${Math.round(a.left + a.width / 2 - b.left)}px 100%`;
+      }
+      if (on) {
         if (!RM.matches) for (const [split, sy] of [[0, 0.06], [0, 1], [0, 1], [16, 1], [34, 1]]) {
           if (me !== el._run) return;
           frame(split, sy);
@@ -550,7 +639,7 @@ export function mountSignal(id, spec, ui) {
     [bar, ...sheets.map(s => s.el)].forEach(el => el.addEventListener('pointerdown', press));
     // A mouse or touch press on the bar hands focus back to the stage, so the toy's keys act.
     // Bar v2's toys did this themselves for its chips. A press that opens a sheet keeps focus.
-    bar.addEventListener('click', e => { if (!byKeys && !open && e.target.closest('.sg-btn')) stage.focus({ preventScroll: true }); });
+    bar.addEventListener('click', e => { if (!byKeys && (!open || open.pop) && e.target.closest('.sg-btn')) stage.focus({ preventScroll: true }); });
 
     // An icon button names itself: after a pause on the first, at once on its neighbours.
     const tip = text('span', 'sg-tip', '');
@@ -611,11 +700,14 @@ export function mountSignal(id, spec, ui) {
   // Any input brings the bar back and starts the 8 s again.
   for (const t of ['pointermove', 'pointerdown', 'touchstart', 'keydown', 'wheel']) addEventListener(t, () => poke(), { passive: true, capture: true });
   for (const t of ['pointerup', 'pointercancel', 'blur']) addEventListener(t, () => release(), true);
-  stage.addEventListener('pointerdown', () => open?.open(false));
+  // Play on the stage closes a sheet; a popover stays open while you play.
+  stage.addEventListener('pointerdown', () => { if (!open?.pop) open?.open(false); });
   // While a sheet is open a key is the sheet's, as in Bar v2: the toy's own keys wait.
   // Escape closes the sheet and does nothing else. A control's own key action still runs.
+  // A popover takes keys only while focus is in it; Escape still closes it.
   addEventListener('keydown', e => {
     if (!open) return;
+    if (open.pop && e.key !== 'Escape' && !open.el.contains(document.activeElement)) return;
     if (e.key === 'Escape') { e.preventDefault(); open.open(false); }
     e.stopPropagation();
   }, true);

@@ -71,7 +71,7 @@ _Avoid_: sheet (for the icon sheet)
 The sheet for anyone who plays the toy: comfort, controls, performance.
 
 **Dev**:
-The sheet for the people who build the toy, shown only with `?dev`.
+The tuning popover for the people who build the toy, shown only with `?dev`. In Bar v2 it is a sheet.
 
 **Content zone**:
 The writing under the stage: idea, making-of, changes and credits.
