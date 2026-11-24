@@ -29,7 +29,7 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 - The view is orthographic. The wide view is 1040 star units across on a wide stage (760 at mid widths, 520 on a phone), so the limb reads as a dome; the limb's top stands about a quarter of the way up the free stage.
 - The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The star fills the frame; its limb runs from the middle of the foot to the middle of the left side, and the bottom left corner is open space with its own regions and prominences. The camera never moves there. Loops and prominences draw brighter; the tone curve presses a little darker and harder; the vignette deepens.
 - The full view fits the whole star with sky round it. The view pulls back to 3.2 radii tall. The corona is a raymarched 3D volume in the star's own frame, so it turns with the star: streamers gather on a warped sheet round the magnetic equator, narrow as they climb and bend in a slow spiral with height; polar plumes stand at the poles; fine rays run radially. It scatters the star's light with a Thomson lobe (brightest side on) and falls as the radius to the power 2.2 in density. The march reaches 3.4 radii. The exposure halves, so the whole disk shows its surface.
-- Zooming out past the full star (x1 to x16), the star turns into one far light, with no seam (Tom, 2026-11-24): the corona, the haze, the loops and prominences, and everything round the disk fade out; the surface melts into an even glow; the star burns brighter; and the eye's glare grows over it, a round bloom with four streaks.
+- Zooming out past the full star (x1 to x16), the star turns into one far light, with no seam (Tom, 2026-11-24): the corona, the haze, the loops and prominences, and everything round the disk fade out; the surface melts into an even glow; the star burns brighter; and the Buoy Business flare grows in round it: the disk shrinks to a hard white core, a warm orb about twice the disk wide, and a thin horizontal streak that lengthens across the frame (Tom, 2026-11-24).
 
 ## Eggs (bean `stimming-239r`)
 
@@ -99,7 +99,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | Loops | Bundles of three to six threads between two footpoints on the sphere, height about half the span, with a tilt, a shear and a turned axis. Each lives 24 to 46 s: it rises, shines, drains (knots slide down both legs with growing speed) and fades, then returns with a new shape. Faint long loops climb out of the frame |
 | Flows | Faint ripples climb from the feet: the upflows seen in real loops |
 | Flare | Peak in 0.05 s. Ribbons part from 12 to 62 percent of the region's span. The rope, 12 threads, rises at 14 Mm/s plus 20 Mm/s² and swells into a bulb. Arcade loops form at 0.45 s, then about every 0.6 s, low first; each is born at 22 million kelvin and cools with a 1.6 s time constant; rain from 12 s after its birth |
-| Lens | The flare's core burns white, with an anamorphic streak and three ghosts on the line through the frame's centre |
+| Lens | The Buoy Business anamorphic flare (`shared/flare.js` parts, Tom, 2026-11-24): the core burns white; a soft orb, a thin horizontal streak in a soft sheath (longer for a stronger core) and three ghosts on the line through the frame's centre, all in the star's own streak colour, so a blue star keeps a blue streak. Screen-blended |
 
 ## How it is built
 
@@ -130,9 +130,10 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 
 | Group | Rows |
 |---|---|
-| Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Flare streak and ghosts, Lens dirt, Highlight roll-off, Vignette, Grain |
+| Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Lens dirt, Highlight roll-off, Vignette, Grain |
 | Volume | Haze density, Haze light, Corona (full view), Corona bend |
-| Grade | Tone map: Film (the house curve), ACES (Narkowicz fit) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Lens flare: Anamorphic (the house streak and three ghosts; four streaks on a far star), Ghost chain (seven hexagonal aperture ghosts in shifting hues on the line through the frame's centre, a halo ring and a veiling glare), Iris starburst (six diffraction spikes from a six-blade aperture and a thin rainbow ring); each applies to flare cores and to the far star's glare (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
+| Flare | Orb, Streak, Ghosts |
+| Grade | Tone map: Film (the house curve), ACES (Narkowicz fit) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
 | Zoom | Zoom weight: the followers' time, 1 is about 1.8 s a stop |
 | Sound | Hum (the star's choir) and Space rumble: each on or off |
 
