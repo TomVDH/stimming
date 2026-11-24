@@ -3,9 +3,12 @@
 title: 'Observatory: the cuts follow the chosen dome'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-23T09:58:24Z
-updated_at: 2026-11-23T17:16:02Z
+updated_at: 2026-11-23T23:34:23Z
+parent: stimming-wqq9
 ---
+
 
 The selector session (stimming-iv1u): Tom chose a two-beat pick on 2026-11-23, star then telescope, so the cuts must follow either dome.
 

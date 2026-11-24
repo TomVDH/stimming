@@ -28,6 +28,16 @@ export const FILTERS: Record<Filter, [number, number, number]> = {
   'Hα': [0.012, 0, 0],
 };
 
+// The software shows each filter's picture in that filter's colour.
+// L stays grey: it passes all the light.
+export const TINTS: Record<Filter, [number, number, number]> = {
+  L: [1, 1, 1],
+  R: [1, 0.32, 0.26],
+  G: [0.34, 1, 0.4],
+  B: [0.38, 0.56, 1],
+  'Hα': [1, 0.2, 0.28],
+};
+
 export const rig = {
   /* camera */
   looping: true,
@@ -42,6 +52,12 @@ export const rig = {
   panX: 0,
   panY: 0,
   overlay: { cross: true, stars: false, labels: false },
+  // Past 1:1, drizzle draws detail finer than a sensor pixel.
+  drizzle: true,
+  // A colour picture: R, G and B in turn, each into its own channel.
+  rgb: false,
+  // Calibration: dark and flat frames take the camera's flaws away.
+  calib: false,
   /* mount */
   tracking: true,
   jog: { n: 0, e: 0 },

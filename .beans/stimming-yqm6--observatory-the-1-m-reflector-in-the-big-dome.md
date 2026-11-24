@@ -3,9 +3,12 @@
 title: 'Observatory: the 1 m reflector in the big dome'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-23T09:36:37Z
-updated_at: 2026-11-23T17:16:02Z
+updated_at: 2026-11-23T23:34:22Z
+parent: stimming-wqq9
 ---
+
 
 Tom, 2026-11-23: the new big mirror telescope goes in the new big dome.
 

@@ -24,6 +24,18 @@ float hash(vec2 p) {
   return fract((q.x + q.y) * q.z);
 }
 
+// Smooth value noise for the backlight's patches.
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + 1.0), f.x), f.y);
+}
+
+// One LCD subpixel stripe: 1 inside its third of the pixel.
+float band(float x) {
+  return smoothstep(-0.08, 0.12, x) * smoothstep(1.08, 0.88, x);
+}
+
 // The software's night mode keeps only red light.
 vec3 night(vec3 c) {
   return u_night > 0.5 ? vec3(dot(c, vec3(0.35, 0.5, 0.15)) * 1.15, 0.0, 0.0) : c;
@@ -53,9 +65,22 @@ void main() {
     // An LCD never shows true black; the backlight bleeds in at the edges.
     float rim = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y) * 1.6);
     vec3 black = vec3(0.014, 0.016, 0.022) + (1.0 - smoothstep(0.0, 0.07, rim)) * vec3(0.016, 0.018, 0.026);
+    // The backlight is a little patchy, as every panel is.
+    black *= 0.85 + 0.3 * vnoise(uv * vec2(6.0, 4.0) + 3.7);
+    // An IPS panel glows grey-blue in its corners on dark content.
+    float corner = smoothstep(0.55, 1.0, length((uv - 0.5) * vec2(2.0, 2.3)) / 1.2);
+    black += corner * vec3(0.02, 0.021, 0.027);
     s = black + s * (1.0 - black);
     // The panel dims toward its corners.
     s *= 1.0 - 0.18 * dot(uv - 0.5, uv - 0.5);
+    // Up close, each screen pixel shows as red, green and blue stripes in a dark grid.
+    vec2 cells = vec2(textureSize(u_screen, 0));
+    vec2 vp = uv * cells;
+    float grid = smoothstep(1.8, 4.5, (u_rect.z - u_rect.x) / cells.x);
+    float fx = fract(vp.x) * 3.0, fy = fract(vp.y);
+    vec3 mask = vec3(band(fx), band(fx - 1.0), band(fx - 2.0)) * 2.7;
+    mask *= smoothstep(0.0, 0.1, fy) * smoothstep(1.0, 0.9, fy);
+    s *= mix(vec3(1.0), mask, grid * 0.6);
     // The matte coating holds a faint sheen of the room.
     s += vec3(0.01) * smoothstep(0.5, 0.0, abs(uv.x * 0.75 + uv.y * 0.55 - 0.42));
     col = mix(s, bezel, smoothstep(-1.0, 1.0, d));

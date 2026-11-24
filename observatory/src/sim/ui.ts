@@ -32,17 +32,18 @@ export type View = {
   bar: { px: number; label: string }; banner: string; time: number; still: boolean;
   sel: { name: string; info: string; run: Run | null; found: Found[]; lines: string[] } | null;
   // The help window under the pointer, in monitor px, or null.
-  tip: { title: string; lines: string[]; at: [number, number] } | null;
+  // tries: the lines of its Try, drawn apart in yellow.
+  tip: { title: string; lines: string[]; tries: string[]; at: [number, number] } | null;
   tipsOn: boolean;
 };
 export type Actions = {
   fit(): void; one(): void; zoom(f: number): void;
   goto(i: number): void; startStop(): void; exposure(dir: number): void; filter(f: Filter): void; reset(): void;
   autofocus(): void; guide(): void; night(): void; stars(): void; slewSelected(): void;
-  track(): void; cooler(dir: number): void; tips(): void;
+  track(): void; cooler(dir: number): void; tips(): void; focusStep(dir: number): void; drizzle(): void; rgb(): void; calib(): void;
 };
 // The help window's text width in cells.
-export const TIP_COLS = 40;
+export const TIP_COLS = 44;
 
 /* ---------- the log ---------- */
 const lines: { t: string; text: string; cls: string }[] = [];
@@ -179,7 +180,8 @@ export class Screen {
   // The help window: white on blue, with a shadow, as old DOS help drew it.
   private help(t: NonNullable<View['tip']>): void {
     const g = this.g;
-    const w = TIP_COLS + 4, h = t.lines.length + 2;
+    const extra = t.tries.length ? t.tries.length + 1 : 0;
+    const w = TIP_COLS + 4, h = t.lines.length + extra + 2;
     const pc = Math.floor(t.at[0] / CW), pr = Math.floor((t.at[1] - OY) / CH);
     // Below and right of the pointer; else left of it, or above it.
     let c = pc + 2, r = pr + 1;
@@ -192,6 +194,8 @@ export class Screen {
     this.box(c, r, c + w - 1, r + h - 1, '', V.white);
     this.put(c + 2, r, ` ${t.title} `, V.yellow, V.blue);
     t.lines.forEach((l, i) => this.put(c + 2, r + 1 + i, l, V.white, V.blue));
+    // The Try sits after a blank row, in yellow.
+    t.tries.forEach((l, i) => this.put(c + 2, r + 2 + t.lines.length + i, l, V.yellow, V.blue));
   }
 
   private titleBar(v: View): void {
@@ -206,8 +210,10 @@ export class Screen {
 
   private imageBox(v: View, a: Actions): void {
     const g = this.g;
-    this.box(0, 1, 83, 32, `IMAGE · ${rig.filter} · ${rig.exposure} s · stack ${v.subs}`);
-    this.tip(0, 1, 40, 'image');
+    this.box(0, 1, 83, 32, `IMAGE · ${rig.rgb ? 'RGB' : rig.filter} · ${rig.exposure} s · stack ${v.subs}`);
+    this.tip(0, 1, 33, 'image');
+    // Calibration sits on the top border, after the title.
+    this.key(34, 1, '[Calib]', a.calib, rig.calib, V.white, 'calib');
     // Zoom and overlay keys on the top border, right side.
     let c = 42;
     c = this.key(c, 1, '[Fit]', a.fit, false, V.white, 'fit') + 1;
@@ -255,6 +261,8 @@ export class Screen {
     g.fillRect(x0 + 12, y0 + h - 14, Math.round(v.bar.px), 2);
     g.restore();
     this.put(1, 30, ` ${v.bar.label} `, V.white);
+    // Drizzle sits bottom right inside the picture.
+    this.key(69, 30, rig.drizzle ? '[Drizzle: on ]' : '[Drizzle: off]', a.drizzle, rig.drizzle, V.white, 'drizzle');
     this.put(77, 2, 'N ↑', V.white);
     this.put(77, 3, 'E ←', V.white);
     if (v.banner && (v.still || Math.floor(v.time * 2) % 2 === 0)) {
@@ -266,6 +274,10 @@ export class Screen {
   private logBox(): void {
     this.box(0, 33, 83, 40, 'LOG');
     this.tip(0, 33, 84, 'log', 8);
+    // The picture's flaws, explained on a hover or a click.
+    const flawHot = this.over(74, 33, 8);
+    this.put(74, 33, '[Flaws?]', flawHot ? V.black : V.yellow, flawHot ? V.bcyan : V.black);
+    this.tip(74, 33, 8, 'imageFlaws');
     lines.slice(-6).forEach((l, i) => {
       const fg = l.cls === 'w' ? V.yellow : l.cls === 'ok' ? V.green : l.cls === 'tip' ? V.bcyan : V.grey;
       this.put(2, 34 + i, l.t, V.dark);
@@ -317,7 +329,9 @@ export class Screen {
     this.put(86, 12, 'FILTER', V.grey);
     this.tip(86, 12, 7, 'filter');
     let fc = 93;
-    for (const f of ['L', 'R', 'G', 'B', 'Hα'] as Filter[]) fc = this.key(fc, 12, f === 'Hα' ? ' Hα ' : ` ${f} `, () => a.filter(f), rig.filter === f, V.white, 'filter') + 1;
+    for (const f of ['L', 'R', 'G', 'B', 'Hα'] as Filter[]) fc = this.key(fc, 12, f === 'Hα' ? ' Hα ' : ` ${f} `, () => a.filter(f), !rig.rgb && rig.filter === f, V.white, 'filter') + 1;
+    // RGB: a colour picture from the three colour filters.
+    this.key(fc, 12, ' RGB ', a.rgb, rig.rgb, V.white, 'rgb');
     // The sensor's temperature, then the cooler's set point.
     this.put(86, 13, 'CCD', V.grey);
     this.put(90, 13, v.temp, V.yellow);
@@ -335,7 +349,10 @@ export class Screen {
     const g = this.g;
     this.box(84, 15, 119, 19, 'FOCUS');
     this.put(86, 16, 'POS', V.grey);
+    // The focuser moves by hand with < and >.
+    this.key(89, 16, '<', () => a.focusStep(-1), false, V.white, 'focus');
     this.put(90, 16, String(Math.round(rig.focus)).padStart(6), V.yellow);
+    this.key(96, 16, '>', () => a.focusStep(1), false, V.white, 'focus');
     this.put(98, 16, 'HFR', V.grey);
     this.put(102, 16, `${v.hfr.toFixed(2)}`, V.yellow);
     this.tip(86, 16, 21, 'focus');

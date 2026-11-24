@@ -13,9 +13,10 @@ import {
 } from './optics.ts';
 import { Renderer, STRIDE } from './render.ts';
 import { BINS, Run, classFromTeff, cosmology, isFound, model } from './spectrum.ts';
-import { FILTERS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, guideRms, hfrAt, rig, stepRig, type Filter } from './rig.ts';
+import { SHOWPIECES } from './showpieces.ts';
+import { FILTERS, TINTS, PIXEL_ARCSEC, PIXEL_RAD, SENSOR_H, SENSOR_W, darkRate, defocusArcsec, guideRms, hfrAt, rig, stepRig, type Filter } from './rig.ts';
 import { IMG, SH, SW, Screen, TIP_COLS, af, fitV, log, logText, type Target } from './ui.ts';
-import { ADVICE, eyeTip, programTip, wrap, type Ctx, type EyeCtx } from './tips.ts';
+import { ADVICE, FILTER_SAYS, eyeTip, programTip, wrap, type Ctx, type EyeCtx } from './tips.ts';
 
 const $ = <T extends HTMLElement>(id: string): T => {
   const el = document.getElementById(id);
@@ -115,12 +116,18 @@ let subClock = 0;
 let subs = 0;
 let restack: 'none' | 'reset' | 'reframe' = 'reset';
 let hfrNow = 0;
+// A colour picture's subs per channel: R, G, B.
+let chanSubs = [0, 0, 0];
+const RGB: Filter[] = ['R', 'G', 'B'];
 let stats = { mean: 0, med: 0, sd: 0, max: 0, hist: [] as number[] };
 // Seeing drifts on its own through the night, in arcsec at the zenith.
 let seeingZ = 2.2;
 // Seeing: tip-tilt in px and a slow breath of the disc.
 let jx = 0, jy = 0, breath = 0;
 let targets: (Target & { dir: Vec3 })[] = [];
+// Bleeds for the sensor: x, y, half length and width, four floats each.
+let bleeds = new Array<number>(32).fill(0);
+let nBleed = 0;
 // The monitor's glass on the canvas, in device px.
 let glass: [number, number, number, number] = [0, 0, 1, 1];
 // Tips: on or off, the region under the pointer, and since when.
@@ -128,6 +135,8 @@ let tipsOn = true;
 let tipId: string | null = null;
 let tipSince = 0;
 let tipTimer = 0;
+// A click opens a tip even with tips off.
+let tipPinned = false;
 // A tip shows after the pointer rests this long, in ms.
 const TIP_DWELL = 450;
 // The advisor: when each condition last spoke, and if it cleared since.
@@ -352,6 +361,10 @@ function build(L: Layout): number {
   shown = [];
   detected = [];
   const spectra: { px: number; py: number; F: number; T: number }[] = [];
+  // Stars that overfill their pixels, for the sensor's bleeds.
+  const over: { x: number; y: number; len: number; w: number }[] = [];
+  // The seeing disc as a Gaussian, in sensor pixels.
+  const sigma = (seeing / PIXEL_ARCSEC) / 2.355 + defocusArcsec() / PIXEL_ARCSEC * 0.4;
   const push = (vals: number[]): void => {
     if (n * STRIDE + STRIDE > data.length) {
       const next = new Float32Array(data.length * 2);
@@ -381,6 +394,18 @@ function build(L: Layout): number {
       const half = Math.min(600, Math.max(3, reach(alpha, F, floor), spike * 4, blur + 3 * alpha));
       if (px + half < x0 || px - half > x1 || py + half < y0 || py - half > y1) continue;
       push([px, py, half, 0, r, g, bl, F, alpha, half, spike, 0]);
+      if (camera) {
+        // Electrons from this star in one exposure, through the filter.
+        const tot = F * (r * w[0] + g * w[1] + bl * w[2]) * rig.exposure * EGAIN;
+        const peak = tot / (2 * Math.PI * sigma * sigma);
+        if (peak > FULL) {
+          // Inside rSat every pixel is full; the rest of the charge spills.
+          const r2 = 2 * sigma * sigma * Math.log(peak / FULL);
+          const spare = tot * (1 - FULL / peak) - FULL * Math.PI * r2;
+          const wide = Math.min(6, 1 + 0.08 * Math.sqrt(r2));
+          if (spare > 0) over.push({ x: px, y: py, len: Math.min(SENSOR_H, Math.sqrt(r2) + spare / (2 * FULL * wide)), w: wide });
+        }
+      }
       // Bright stars throw a faint ghost ring, mirrored through the optical axis.
       if (F > 400) {
         const gx = L.cx - (px - L.cx) * 0.6, gy = L.cy - (py - L.cy) * 0.6;
@@ -400,6 +425,25 @@ function build(L: Layout): number {
     shown.push({ b, x: px * toCss, y: py * toCss });
     if (camera && snrOf(F, b.rgb, skyS) > 6) detected.push([px, py]);
   }
+  // Famous objects, as procedural images at their real size.
+  for (const sp of SHOWPIECES) {
+    const d = shellDir(sp.ra, sp.dec);
+    const z = d.x * fr.f.x + d.y * fr.f.y + d.z * fr.f.z;
+    if (z <= 0) continue;
+    const X = (d.x * fr.r.x + d.y * fr.r.y + d.z * fr.r.z) / z;
+    const Y = (d.x * fr.u.x + d.y * fr.u.y + d.z * fr.u.z) / z;
+    const px = L.cx + X * L.scale + jx, py = L.cy - Y * L.scale + jy;
+    const rad = (sp.size / 2) * 60 * ARCSEC * L.scale;
+    const half = rad * 1.25;
+    if (px + half < x0 || px - half > x1 || py + half < y0 || py - half > y1) continue;
+    // Light per screen pixel where the pattern reads 1: the surface brightness times the pixel's area.
+    const perPx = flux(sp.sb + ext) * light / (L.scale * ARCSEC) ** 2;
+    push([px, py, half, 4, sp.q, camera ? 0 : 1, sp.lobes, perPx, rad, sp.kind, sp.pa * RAD, sp.seed]);
+  }
+  over.sort((a, c) => c.len - a.len);
+  nBleed = Math.min(8, over.length);
+  bleeds = over.slice(0, 8).flatMap((o) => [o.x, o.y, o.len, o.w]);
+  while (bleeds.length < 32) bleeds.push(0);
   // The brightest stars' spectra: the grating spreads each one to its right.
   spectra.sort((a, b) => b.F - a.F);
   const len = L.radius * 0.5, gap = L.radius * 0.12;
@@ -537,23 +581,36 @@ function cameraFrame(t: number, L: Layout, common: Record<string, number | numbe
   }
   restack = 'none';
   if (!hfrNow) hfrNow = hfrAt(rig.focus, fwhm());
-  if (fresh) {
-    r.stack({
-      ...common, u_mix: mix, u_noise: noiseK, u_exp: exp, u_egain: EGAIN, u_read: READ, u_full: FULL,
-      u_seed: random() * 100, u_filter: FILTERS[rig.filter], u_dark: darkRate(), u_hot: 300 * Math.pow(2, (rig.sensorTemp + 10) / 6),
-      u_amp: 0.6 * Math.pow(2, (rig.sensorTemp + 10) / 6), u_k: k,
-      u_origin: [L.cx - (SENSOR_W / 2) * k, L.cy - (SENSOR_H / 2) * k], u_sensor: [SENSOR_W, SENSOR_H],
-    });
+  // One sub through a filter, into the given channels.
+  const one = (f: Filter, m: number, nk: number, chan: number[]): void => r.stack({
+    ...common, u_mix: m, u_noise: nk, u_exp: exp, u_egain: EGAIN, u_read: READ, u_full: FULL,
+    u_seed: random() * 100, u_filter: FILTERS[f], u_dark: darkRate(), u_hot: 300 * Math.pow(2, (rig.sensorTemp + 10) / 6),
+    u_amp: 0.6 * Math.pow(2, (rig.sensorTemp + 10) / 6), u_k: k,
+    u_origin: [L.cx - (SENSOR_W / 2) * k, L.cy - (SENSOR_H / 2) * k], u_sensor: [SENSOR_W, SENSOR_H],
+    u_bleeds: bleeds, u_nbleed: nBleed, u_drizzle: rig.drizzle ? 1 : 0,
+    u_line: f === 'Hα' ? 0.3 : 0, u_chan: chan, u_calib: rig.calib ? 1 : 0,
+  });
+  if (fresh && !rig.rgb) one(rig.filter, mix, noiseK, [1, 1, 1]);
+  else if (fresh && mix === 1) {
+    // A new or moved colour stack: one sub per channel at once.
+    if (subs === 1) chanSubs = [1, 1, 1];
+    RGB.forEach((f, c) => one(f, 1, subs === 1 ? 1 : 1 / Math.sqrt(Math.max(1, chanSubs[c])), [c === 0 ? 1 : 0, c === 1 ? 1 : 0, c === 2 ? 1 : 0]));
+  } else if (fresh) {
+    // A colour picture takes R, G and B in turn; each sub joins its own channel.
+    const c = Math.max(0, RGB.indexOf(rig.filter));
+    chanSubs[c]++;
+    one(RGB[c], 1 / chanSubs[c], 1, [c === 0 ? 1 : 0, c === 1 ? 1 : 0, c === 2 ? 1 : 0]);
+    rig.filter = RGB[(c + 1) % 3];
   }
   // The stretch: sky level and noise per work pixel.
-  const w = FILTERS[rig.filter];
+  const w = FILTERS[rig.rgb ? 'G' : rig.filter];
   const area = 1 / (k * k);
   const skyE = (common.u_bg as number[])[1] * (w[0] + w[1] + w[2]) * (1 + 2.2 * 0.45 * Math.exp(-b / 8)) * exp * EGAIN + darkRate() * exp * area;
   const sub = k >= 1 ? Math.sqrt(skyE / area + READ * READ) * area : Math.sqrt(skyE + area * READ * READ);
   const sigma = sub / Math.sqrt(rig.liveStack ? Math.max(1, subs) : 1);
   const black = Math.max(0, skyE - 2 * sigma), soft = Math.max(1e-6, sigma * 4);
   const white = FULL * area;
-  r.camera({ ...common, u_rect: L.rect, u_black: black, u_soft: soft, u_white: white });
+  r.camera({ ...common, u_rect: L.rect, u_black: black, u_soft: soft, u_white: white, u_tint: rig.rgb ? [1, 1, 1] : TINTS[rig.filter] });
   if (fresh && t - lastStats > 150) {
     lastStats = t;
     readStats(L, black, soft, white, area);
@@ -663,9 +720,9 @@ function drawScreen(L: Layout, lstDeg: number, inView: boolean): void {
   }
   // The help window shows once the pointer rests on one region.
   let tip = null;
-  if (tipsOn && tipId && performance.now() - tipSince >= TIP_DWELL) {
+  if ((tipsOn || tipPinned) && tipId && performance.now() - tipSince >= TIP_DWELL) {
     const tp = programTip(tipId, tipCtx(lstDeg));
-    if (tp) tip = { title: tp.title, lines: wrap(tp.text, TIP_COLS), at: screen.hover };
+    if (tp) tip = { title: tp.title, lines: wrap(tp.text, TIP_COLS), tries: tp.try ? wrap(`Try: ${tp.try}`, TIP_COLS) : [], at: screen.hover };
   }
   const state = rig.slew ? 'Slewing' : rig.autofocus ? 'Autofocus running' : !rig.looping ? 'Idle'
     : `Exposing ${subClock.toFixed(1)} / ${rig.exposure} s · ${rig.filter}`;
@@ -711,7 +768,11 @@ function refreshTargets(): void {
     .filter((v) => v.alt > 25)
     .slice(0, 3)
     .map((v) => ({ name: v.f.name, note: `alt ${Math.round(v.alt)}°`, dir: v.d }));
-  targets = [...stars, ...deep];
+  // Famous objects first: they are what a visitor wants to see.
+  const shows = SHOWPIECES.map((s) => ({ s, alt: up(shellDir(s.ra, s.dec)) }))
+    .filter((v) => v.alt > 25)
+    .map((v) => ({ name: v.s.name, note: `alt ${Math.round(v.alt)}°`, dir: shellDir(v.s.ra, v.s.dec) }));
+  targets = [...shows, ...stars, ...deep].slice(0, 6);
 }
 
 async function autofocus(): Promise<void> {
@@ -747,6 +808,8 @@ async function autofocus(): Promise<void> {
 }
 
 const EXPOSURES = [2, 5, 10, 30, 60];
+// One focuser click, in steps of 1 µm.
+const FOCUS_STEP = 25;
 // The cooler's set points in °C.
 const COOLER_SETS = [-25, -20, -15, -10, -5, 0];
 const actions = {
@@ -768,9 +831,18 @@ const actions = {
     log(`Exposure set to ${rig.exposure} s`);
     restack = 'reset';
   },
+  // A colour picture: the camera takes R, G and B in turn.
+  rgb: (): void => {
+    if (rig.rgb) return;
+    rig.rgb = true;
+    rig.filter = 'R';
+    log('Colour: red, green and blue exposures in turn, each in its own colour');
+    restack = 'reset';
+  },
   filter: (f: Filter): void => {
-    if (f === rig.filter) return;
-    log(`Filter wheel: ${rig.filter} → ${f}`);
+    if (f === rig.filter && !rig.rgb) return;
+    rig.rgb = false;
+    log(`Filter ${f}: ${FILTER_SAYS[f]}`);
     rig.filter = f;
     restack = 'reset';
   },
@@ -800,6 +872,24 @@ const actions = {
     if (COOLER_SETS[i] === rig.coolerSet) return;
     rig.coolerSet = COOLER_SETS[i];
     log(`Cooler set point: ${rig.coolerSet} °C`);
+  },
+  // One click moves the focuser 25 steps, a fortieth of a millimetre.
+  focusStep: (dir: number): void => {
+    if (rig.autofocus) return;
+    rig.focus += dir * FOCUS_STEP;
+    hfrNow = hfrAt(rig.focus, fwhm());
+    log(`Focuser ${dir < 0 ? 'in' : 'out'} to ${Math.round(rig.focus).toLocaleString('en')}: stars ${hfrNow.toFixed(2)} px`);
+    restack = 'reset';
+  },
+  calib: (): void => {
+    rig.calib = !rig.calib;
+    log(rig.calib ? 'Calibration on: dark frame subtracted, flat field divided out' : 'Calibration off: the raw picture, flaws and all');
+    restack = 'reset';
+  },
+  drizzle: (): void => {
+    rig.drizzle = !rig.drizzle;
+    log(rig.drizzle ? 'Drizzle on: detail finer than a pixel, rebuilt from many exposures' : 'Drizzle off: each camera pixel shows as a square');
+    restack = 'reset';
   },
   tips: (): void => {
     tipsOn = !tipsOn;
@@ -922,6 +1012,11 @@ function showPageTip(el: HTMLElement): void {
   const p = document.createElement('span');
   p.textContent = t.text;
   tipEl.replaceChildren(b, p);
+  if (t.try) {
+    const em = document.createElement('em');
+    em.textContent = t.try;
+    tipEl.append(em);
+  }
   tipEl.hidden = false;
   // Above the control, inside the window.
   const r = el.getBoundingClientRect(), w = tipEl.offsetWidth, h = tipEl.offsetHeight;
@@ -974,6 +1069,10 @@ stage.addEventListener('keydown', (e) => {
     else if (e.key === ' ') actions.startStop();
     else if (e.key === 't' || e.key === 'T') actions.track();
     else if (e.key === 'h' || e.key === 'H') actions.tips();
+    else if (e.key === 'd' || e.key === 'D') actions.drizzle();
+    else if (e.key === 'c' || e.key === 'C') actions.calib();
+    else if (e.key === '[') actions.focusStep(-1);
+    else if (e.key === ']') actions.focusStep(1);
     else if (e.key.startsWith('Arrow')) {
       // Arrows nudge the mount by a tenth of the view.
       // Shift makes the nudge a fiftieth.
@@ -1021,6 +1120,7 @@ stage.addEventListener('pointermove', (e) => {
       const id = screen.tipAt(m[0], m[1]);
       if (id !== tipId) {
         tipId = id;
+        tipPinned = false;
         tipSince = performance.now();
         clearTimeout(tipTimer);
         if (id && tipsOn) tipTimer = window.setTimeout(() => { uiDirty = true; wake(true); }, TIP_DWELL + 20);
@@ -1064,6 +1164,13 @@ stage.addEventListener('pointerup', (e) => {
     } else if (!drag.moved && performance.now() - drag.t0 < 400 && m && screen.inImage(m[0], m[1])) {
       const b = pickAt(m[0], m[1]);
       if (b && b !== selected) select(b);
+    } else if (!drag.moved && m && screen.tipAt(m[0], m[1])) {
+      // A click on a readout opens its tip at once.
+      tipId = screen.tipAt(m[0], m[1]);
+      tipSince = performance.now() - TIP_DWELL;
+      tipPinned = true;
+      uiDirty = true;
+      wake(true);
     }
   }
   drag = null;
