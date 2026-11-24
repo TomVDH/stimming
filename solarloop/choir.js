@@ -91,6 +91,9 @@ export const VOICES = {
   // WR 124: a Wolf-Rayet star, very hot, in a fast wind and a big pink shell of shed gas (M1-67).
   // A bright, airy, very wide choir: a slow phaser for the wind, long echoes for the shell.
   wr124: P({ ...song('lydian'), ...ARP, voice: 0.7, vowel: 1.35, metal: 0.1, bright: 1.45, step: 9, dist: 0.45, rev: 12, mix: 1.5, width: 2, oct: [1, 0.6, 0.5], swR: 0.09, swD: 0.22, fx: { sweep: 0.5, echo: 0.3 }, gain: 0.34 }),
+  // Beta Lyrae: a blue-white giant pours gas onto a partner hidden in a disc; they eclipse each 112 s.
+  // Two chords trade places for the pair; notes and melody glide like the stream; the choir dims once per orbit.
+  betalyr: P({ ...song('lydian'), ...ARP, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 0.48 }),
   // V1400 Centauri: a young orange K star deep in eclipse behind J1407b's giant rings.
   // A warm choir, dimmed; a phaser and a quicker swell for ringlets that sweep past; a little icy metal.
   j1407: P({ ...song('rise'), ...ARP, voice: 0.8, vowel: 0.85, metal: 0.15, bright: 0.75, step: 9, dist: 0.4, rev: 11, mix: 1.4, width: 1.8, oct: [1, 0.6, 0.6], swR: 0.15, swD: 0.3, fx: { sweep: 0.5, echo: 0.35 }, gain: 0.43 }),
