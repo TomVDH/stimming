@@ -133,8 +133,17 @@ function fitFull() {
   applyView();
 }
 // The input sets a target; the zoom follows it on a spring.
+// Zooming in past the full star carries on into the long lens (Tom).
+// The push must build a little once the view rests at x1, so one wheel tick never jumps.
+let pushIn = 1;
 function zoomBy(k) {
   if (cam.mode !== 'full') return;
+  if (k < 1 && zoomTo <= 1.0001 && zoom < 1.1) {
+    pushIn *= k;
+    if (pushIn < 0.6) { pushIn = 1; goView('long'); }
+    return;
+  }
+  pushIn = 1;
   const z = clamp(zoomTo * k, 1, ZOOM_MAX);
   if (z === zoomTo) return;
   zoomTo = z;
