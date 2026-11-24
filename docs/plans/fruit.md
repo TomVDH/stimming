@@ -26,6 +26,7 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 | Rambutan | After the reference photo (Commons, Rambutan on white): glassy flesh at two depths, milky fibres along the ray, a soft wet film; seed coat, gap and shell; crimson skin, more and thinner spines with curled dark tips |
 | Mangosteen | After the reference photo (Commons, Mangosteens whole and opened): pillowed segments with lobed edges, a dark gap, a wine-red rind; skin darkened to near-black purple; olive cap |
 | Starfruit | After reference photos (Commons, carambola whole and star slices): deeper star, clear golden flesh at two depths, veins and walls, smaller seeds; warmer golden skin with green-brown ridge crests; less glow |
+| Fig | After the reference photo (Commons, Fig cut open): strands as warped long cells, wine to rose to pale, honey seeds, a slit hollow, a wandering rind edge; skin with ribs and bloom, less light through |
 | Blood orange | Tried vesicles as geometry: read as a petal mosaic (Tom: not realistic). Now one wet face: dark flesh, sac-scale round domes under a sharp reflection for crinkled glints, faint walls, narrow albedo, thick rind (reference: Commons, Silentcynic, CC BY 3.0) |
 
 ## Interaction (Tom, 2026-11-23)

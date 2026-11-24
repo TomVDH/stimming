@@ -17,7 +17,7 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 | 7 | Mangosteen | Six snow-white segments as soft pillows with shaded creases, each bulging to a rounded lobe; a dark gap; a thick wine-red rind, near black at the skin, a few yellow latex beads. Skin a glossy near-black purple; an olive four-lobed cap |
 | 8 | Passion fruit | A mound of 300 soft golden jelly sacs as real geometry, each with a dark seed off its middle, over a juice floor; a thick spongy pith with a yellow lining. Skin: deep purple folds and dimples, fine white specks |
 | 9 | Starfruit | A deep star slice: clear golden flesh at two depths with small juice-cell glints; a pale star core, a pale vein out along each arm, faint walls from each valley; small flat seeds near the core; a thin skin, brown at the ridge tips. Waxy golden skin, ridges green then brown at the crest |
-| 0 | Fig | A white rind round red fibres and pale seeds, a small dark hollow |
+| 0 | Fig | Wet strands of flesh, each a round ridge of its own shade, deep wine at the middle to rose and pale pink at the rind; many honey seeds with small shadows; an irregular dark slit in the middle; a cream rind with strands reaching in. Skin dark purple, green toward the stem, faint ribs and a dusty bloom |
 
 ## Play
 
