@@ -3,7 +3,7 @@
 // A flare: a crack, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
-// Awake: an underwater rumble and a soft angelic organ choir; flares land on a low brass blast.
+// Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -112,8 +112,8 @@ export function makeSound(kit) {
   }
 
   // The star's voice while the toy is awake, in two layers.
-  // The rumble: deep and gentle, a bellow heard under water.
-  // The drone: a soft angelic organ choir that wobbles slightly; its top voice slowly sings.
+  // The space rumble: a constant, dense, deep surround drone, a seamless loop.
+  // The hum: a soft angelic organ choir that wobbles slightly; its top voice slowly sings.
   // A major pentatonic for the top voice, in semitones above the chord's root.
   const SING = [12, 14, 16, 19, 21, 24, 21, 19, 16, 14];
   // Organ drawbars by harmonic: 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1'.
@@ -139,20 +139,58 @@ export function makeSound(kit) {
     waves.set(key, { ac, w });
     return w;
   }
-  // Brown noise at the full sample rate: a clean, deep rumble with no grit.
-  let brown = null;
-  function brownOf(ac) {
-    if (brown && brown.ac === ac) return brown.b;
-    const n = Math.round(ac.sampleRate * 8);
-    const b = ac.createBuffer(1, n, ac.sampleRate);
-    const d = b.getChannelData(0);
-    let v = 0;
-    for (let i = 0; i < n; i++) { v = (v + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = v * 3.5; }
-    // Fade the ends together, so the loop has no click.
-    for (let i = 0; i < 4800; i++) { const k = i / 4800; d[i] *= k; d[n - 1 - i] *= k; }
-    brown = { ac, b };
-    return b;
+  // The space rumble: a constant, dense, deep surround drone.
+  // It renders once per star into a stereo loop whose end crossfades into its start.
+  const LOOP = 24, FADE = 3;
+  // Folds the tail past LOOP back over the head with an equal-power fade, so the loop has no seam.
+  function seal(buf, ac) {
+    const sr = buf.sampleRate, n = LOOP * sr, f = FADE * sr;
+    const out = ac.createBuffer(2, n, sr);
+    for (let ch = 0; ch < 2; ch++) {
+      const a = buf.getChannelData(ch), o = out.getChannelData(ch);
+      o.set(a.subarray(0, n));
+      for (let i = 0; i < f; i++) {
+        const k = i / f;
+        o[i] = a[i] * Math.sin(k * Math.PI / 2) + a[n + i] * Math.cos(k * Math.PI / 2);
+      }
+    }
+    return out;
   }
+  // Two independent deep noise beds, one per side, and a cluster of low sines spread wide.
+  async function renderBed(ac, root) {
+    const sr = ac.sampleRate, len = LOOP + FADE;
+    const c = new OfflineAudioContext(2, len * sr, sr);
+    const merge = c.createChannelMerger(2);
+    merge.connect(c.destination);
+    for (let ch = 0; ch < 2; ch++) {
+      const b = c.createBuffer(1, len * sr, sr);
+      const d = b.getChannelData(0);
+      let x = 0;
+      for (let i = 0; i < d.length; i++) { x = (x + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = x * 3.5; }
+      const s = c.createBufferSource();
+      s.buffer = b;
+      const lp = c.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 140; lp.Q.value = 0.7;
+      const lp2 = c.createBiquadFilter();
+      lp2.type = 'lowpass'; lp2.frequency.value = 140; lp2.Q.value = 0.7;
+      s.connect(lp).connect(lp2).connect(merge, 0, ch);
+      s.start(0);
+    }
+    // The tonal floor: twelve low sines round the root two octaves down, each placed in the field.
+    const tone = c.createGain();
+    tone.gain.value = 0.05;
+    tone.connect(c.destination);
+    for (let k = 0; k < 12; k++) {
+      const o = c.createOscillator();
+      o.frequency.value = root * [0.25, 0.375, 0.5][k % 3] * (1 + (k - 5.5) * 0.0016);
+      const p = c.createStereoPanner();
+      p.pan.value = ((k * 5) % 12) / 5.5 - 1;
+      o.connect(p).connect(tone);
+      o.start(0);
+    }
+    return seal(await c.startRendering(), ac);
+  }
+  let bed = null;
   let drone = null;
   // Which layers sound: the Dev toggles set them.
   const layers = { hum: true, rumble: true };
@@ -204,34 +242,24 @@ export function makeSound(kit) {
     g.connect(kit.out);
     send(ac, g, 0.8);
 
-    // The rumble: brown noise, muffled, swelling like a slow breath.
-    const rum = ac.createGain();
-    rum.gain.value = 0.16;
-    // An on and off bus per layer, for the Dev toggles.
+    // The space rumble: a seamless rendered loop, added once it is ready.
     const rumOn = ac.createGain();
     rumOn.gain.value = layers.rumble ? 1 : 0;
-    rum.connect(rumOn).connect(g);
-    const nz = track(ac.createBufferSource());
-    nz.buffer = brownOf(ac);
-    nz.loop = true;
-    nz.start(t, Math.random() * 7);
-    nz.stop(t + 1e5);
-    os.push(nz);
-    const mud = filt(ac, 'lowpass', 150, 0.8);
-    const groan = filt(ac, 'bandpass', 72, 4);
-    const bel = ac.createGain();
-    bel.gain.value = 0.55;
-    nz.connect(mud).connect(bel).connect(rum);
-    nz.connect(groan).connect(rum);
-    // Three slow breaths out of step, so the swell never repeats.
-    lfo(0.061, 0.35, bel.gain);
-    lfo(0.097, 45, mud.frequency);
-    lfo(0.043, 16, groan.frequency);
-    // A sub tone under the rumble, felt more than heard.
-    const sub = ac.createGain();
-    sub.gain.value = 0.06;
-    sub.connect(rum);
-    for (const m of [0.25, 0.2512]) { const o = osc(ac, 'sine', root * m, t, 1e5); o.connect(sub); os.push(o); }
+    rumOn.connect(g);
+    const me = { ac, band };
+    const bedP = bed && bed.ac === ac && bed.root === root ? Promise.resolve(bed.b) : renderBed(ac, root).then(b => (bed = { ac, root, b }).b);
+    bedP.then(b => {
+      // A newer star, mute, or a hidden tab won the race: drop this one.
+      if (drone !== me.d || kit.live() !== ac) return;
+      const s = track(ac.createBufferSource());
+      s.buffer = b;
+      s.loop = true;
+      const a = ac.createGain();
+      a.gain.value = 0.12;
+      s.connect(a).connect(rumOn);
+      s.start(ac.currentTime + 0.02, Math.random() * LOOP);
+      os.push(s);
+    });
 
     // The organ choir: each note is three voices a few cents apart, so it shimmers.
     const choir = ac.createGain();
@@ -271,6 +299,7 @@ export function makeSound(kit) {
     for (const [m, a] of [[0.5, 0.55], [1, 1], [1.5, 0.7], [2, 0.6], [2.5198, 0.4]]) note(root * m, a);
     const lead = note(root * 2, 0.5);
     drone = { ac, band, g, os, root, lead, step: 0, until: 0, humOn, rumOn };
+    me.d = drone;
     singOn(drone, t + 9);
   }
 
