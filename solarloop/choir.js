@@ -91,6 +91,10 @@ export const VOICES = {
   // WR 124: a Wolf-Rayet star, very hot, in a fast wind and a big pink shell of shed gas (M1-67).
   // A bright, airy, very wide choir: a slow phaser for the wind, long echoes for the shell.
   wr124: P({ ...song('lydian'), ...ARP, voice: 0.7, vowel: 1.35, metal: 0.1, bright: 1.45, step: 9, dist: 0.45, rev: 12, mix: 1.5, width: 2, oct: [1, 0.6, 0.5], swR: 0.09, swD: 0.22, fx: { sweep: 0.5, echo: 0.3 }, gain: 0.34 }),
+  // The Thorne–Żytkow object: a red supergiant with a neutron star in its core (1977 prediction).
+  // It starts from the quasar's sound (Tom's reference): darker and heavier for the giant,
+  // a metal ring for the core, and a slow swell for its faint pulse.
+  tzo: P({ ...song('ominous'), ...ARP, ...ANALOG, wave: 'pulse', det: 12, res: 5, fmot: 0.45, aDrift: 8, metal: 0.3, bright: 0.75, step: 13, dist: 0.6, rev: 13, mix: 1.7, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.08, swD: 0.3, glowWave: 'sawtooth', fx: { radio: 0.25, machine: 0.3, dark: 0.3, echo: 0.35 }, gain: 0.11 }),
   // The holes and the quasar: far, cold and slow (2026-11-24). Taps never fire on them.
   // Cygnus X-1: a black hole fed by a blue supergiant; X-ray hot. Glassy FM overtones.
   cygx1: P({ ...song('overtones'), ...ARP, wave: 'fm', voice: 0.1, det: 8, res: 6, fmot: 0.4, metal: 0.35, bright: 1.1, step: 10, dist: 0.75, rev: 13, mix: 1.7, width: 1.8, oct: [0.9, 0.7, 0.8], swR: 0.05, swD: 0.12, glowWave: 'sine', fx: { sweep: 0.35, dark: 0.3, echo: 0.35 }, gain: 0.27 }),
