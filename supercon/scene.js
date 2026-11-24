@@ -297,11 +297,10 @@ export function createScene(canvas, { onLost } = {}) {
     renderer.setSize(w, h, false);
     composer.setPixelRatio(dpr);
     composer.setSize(w, h);
-    if (composer.readBuffer.samples !== samples) {
-      composer.readBuffer.samples = samples;
-      composer.readBuffer.dispose();
-    }
-    composer.writeBuffer.samples = 0;
+    // renderTarget1 holds the scene with MSAA; the passes use the plain one.
+    const ms = composer.renderTarget1, plain = composer.renderTarget2;
+    if (ms.samples !== samples) { ms.samples = samples; ms.dispose(); }
+    if (plain.samples !== 0) { plain.samples = 0; plain.dispose(); }
     bloom.setSize(Math.round(w * dpr * bloomScale), Math.round(h * dpr * bloomScale));
     vapour.resize(Math.round(w * dpr * fogScale), Math.round(h * dpr * fogScale));
     if (lamp.shadow.mapSize.x !== shadow) {
@@ -377,6 +376,9 @@ export function createScene(canvas, { onLost } = {}) {
   function render(t = 0) {
     grade.uniforms.uSeed.value = t % 100;
     vapour.prepare(scene, camera);
+    // The passes swap the buffers an odd number of times a frame.
+    // The scene must start in the MSAA target, so swap back when needed.
+    if (composer.readBuffer !== composer.renderTarget1) composer.swapBuffers();
     composer.render();
   }
   async function warm(s) {

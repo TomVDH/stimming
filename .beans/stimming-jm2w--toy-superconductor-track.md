@@ -39,3 +39,4 @@ Build Superconductor track (idea 130, group A, a science toy) as a Lab toy: an M
 - Q10: 7.65 ms mean, 8.1 ms p95 through a glide and a pour (headless Edge, D3D11, RTX 3070; vsync bound). Tom checks on a real screen.
 - Icons: no pick in icons/picks.json, so A of spike supercon-1 is on the menu. The intro emblem is A's emblem at 128: the ring's near half white with its joints cut, the far half grey, the puck white over a black shadow and gap.
 - Open for Tom: 3D or flat (3D by default), pour or re-dip, the Dutch name (draft Supergeleiderbaan), the icon pick.
+- MSAA: the composer swaps its buffers an odd number of times a frame, so MSAA was on only in every other frame. The scene now always starts in renderTarget1, the MSAA target (2026-11-23). Wrecking ball has the same resize code.
