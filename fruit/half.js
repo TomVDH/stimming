@@ -403,7 +403,8 @@ export function solidMaterial(U, { col = 'vec3(0.03)', rough = 0.3, f0 = 0.04, w
         secClip(vL);
         vec3 n = normalize(vN);
         // A hollow shows its inside: the normal turns to the eye.
-        if (!gl_FrontFacing) n = -n;
+        // three.js flips the winding for BackSide, so gl_FrontFacing reads true there.
+        ${side === THREE.BackSide ? 'n = -n;' : 'if (!gl_FrontFacing) n = -n;'}
         ${bump > 0 ? `{
           vec3 q = vL * ${bumpScale.toFixed(1)};
           float e = 0.3, c = vn(q);

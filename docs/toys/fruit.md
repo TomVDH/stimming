@@ -11,7 +11,7 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 | 1 | Kiwi | Flesh drawn at two depths, wandering pale rays; 38 spokes of jelly cells, each a juice bead round a black seed; a raised fibrous core. Fuzz with rubbed short patches |
 | 2 | Pomegranate | 380 arils as real geometry: long teardrops pressed flat against their neighbours, juice lit through to a seed inside; some sliced flat at the cut. Open chambers between spongy pith walls; a crown with dry stamens |
 | 3 | Blood orange | One wet translucent face: dark maroon flesh with red and orange patches; each cut sac a small round dome, so the studio's reflection breaks into crinkled glints; faint segment walls, a soft pale core, a narrow pink-white albedo, a thick orange rind with oil glands |
-| 4 | Peach | Gold flesh, red at the stone; a ridged stone in one half, its hollow in the other |
+| 4 | Peach | Pale cream wet flesh; dark red at the stone that thins into soft threads, each angle its own reach; red under a blushed skin. An almond stone with deep furrows and pits, red flesh caught in them, in one half; its wet red hollow in the other |
 | 5 | Dragon fruit | Grey-white translucent wet flesh, finely crinkled, black oval seeds each in a clear halo; a thick magenta rind that blushes inward. Skin crimson-magenta with thick fleshy bracts in a spiral, green at the tips, a crown of them at one end |
 | 6 | Rambutan | Glassy white flesh round a brown seed; long hooked spines (the fuzz ribbons) |
 | 7 | Mangosteen | A thick crimson rind round white segments; a green four-lobed cap |
