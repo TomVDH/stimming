@@ -3,6 +3,7 @@
 // The camera does not turn: a screen point maps to the ray (X, Y, 1).
 // So the view depth of a point is its world z.
 import { OUTPUT } from '../shared/output.js';
+import { SMOKE, SM_FIRE, smConsts } from '../shared/smoke.js';
 
 const HEAD = `#version 300 es
 precision highp float;
@@ -385,11 +386,9 @@ float steam(vec3 p, bool lite) {
   for (int k = 0; k < 5; k++) d += tower(p, k, lite);
   return d;
 }
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
-// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
-const float ABSORB = 2.0, AMBIENT = 0.5, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+${SMOKE}
+${smConsts(SM_FIRE)}
+// Fire's smoke light (shared/smoke.js) after a short self-shadow march.
 float lightT(vec3 p, vec3 L) {
   // Three taps toward the key; the far tap stands for the rest of the way.
   vec3 dir = L - p;
@@ -397,15 +396,9 @@ float lightT(vec3 p, vec3 L) {
   dir /= dist;
   float a = min(dist * 0.15, 14.0), b = min(dist * 0.4, 40.0), c = min(dist * 0.8, 110.0);
   float sum = steam(p + dir * a, true) * a + steam(p + dir * b, true) * (b - a) + steam(p + dir * c, true) * (c - b);
-  float tau = sum * SIG * ABSORB * 0.5;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT * 0.35, 0.0, 1.0);
+  // The steam keeps a lower ambient floor than Fire's smoke.
+  return smLight(sum * SIG * smAbsorb * 0.5, smMulti, smPowder, smAmbient * 0.35);
 }
-/* ---------- end K3 lighting ---------- */
 // The strongest glow near p: the key for the self-shadow.
 vec4 keyAt(vec3 p) {
   vec4 best = vec4(0.0);
@@ -429,7 +422,7 @@ vec3 light(vec3 p, vec3 rd, float dens) {
   if (key.w > 0.0) {
     vec3 dl = key.xyz - p;
     float r = length(dl);
-    float ph = hg(dot(rd, dl / r), G_HG) * 12.56637;
+    float ph = smPhase(dot(rd, dl / r), smG) * 12.56637;
     vec3 c = key.xyz == uVentL.xyz ? FOUNTC : ENTRYC;
     Li += c * key.w * lightT(p, key.xyz) * ph * 1500.0 / (r * r + 2500.0);
   }

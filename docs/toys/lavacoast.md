@@ -60,7 +60,7 @@ Six small programs, so D3D11 links each fast.
 1. Sky: stars, a faint galaxy band, a warm airglow over the sea's rim.
 2. Land: the slope mesh with the lava (320 x 320) and the island mesh round it. Crust plates with cracks that narrow and dim as they cool, hot threads along the flow, an open stream down steep faces, the glow of the lava field on the ground.
 3. Clots and spatter: screen-space streaks, added light.
-4. Steam, at half size: a march with Fire's smoke shading (K3 lighting), keyed by the brightest glow near each point, plus the lava field's glow and the sky. Two blur passes hide the dither.
+4. Steam, at half size: a march with Fire's smoke light from `shared/smoke.js` (`SM_FIRE`, with the ambient floor at 0.35 of Fire's), after three self-shadow taps toward the brightest glow near each point; plus the lava field's glow and the sky. Two blur passes hide the dither.
 5. Sea: waves, a mirror image of the shore, the glow of the entries in the water, surf, then the steam over all.
 6. Final: bloom (`shared/glow.js`), vignette, night grade, ACES fit.
 
