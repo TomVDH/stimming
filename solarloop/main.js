@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -289,7 +289,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
+  beam: new Float32Array(4), spin: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
 };
 function makeFrame() {
@@ -353,6 +353,8 @@ function makeFrame() {
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
   // The pulsar's magnetic axis, in the view frame.
   if (star.beam) f.beam.set([...toView(magAxis(st.time)), star.beam]); else f.beam.fill(0);
+  // The spin axis carries the wind nebula's torus and jets.
+  if (star.beam) f.spin.set([...toView(SPIN), star.beam]); else f.spin.fill(0);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   f.cam.set([st.yaw, st.pitch, star.lensing, 0]);
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.

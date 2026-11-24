@@ -119,7 +119,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex, uBeam;
+uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
@@ -167,8 +167,11 @@ void main() {
       // Behind the wave the corona dims.
       hot *= 1.0 - 0.3 * uFlW[k].y * smoothstep(uFlW[k].x, 0.0, a);
     }
-    // A neutron star's magnetic poles burn hot.
-    if (uBeam.w > 0.0) hot += uDisk.x * 1.6 * uBeam.w * exp(-(1.0 - abs(dot(n, uBeam.xyz))) / 0.03);
+    // A neutron star's magnetic poles burn hot: a white cap in a soft ring.
+    if (uBeam.w > 0.0) {
+      float pc = 1.0 - abs(dot(n, uBeam.xyz));
+      hot += uBeam.w * (5.0 * exp(-pc / 0.006) + 1.2 * exp(-pc / 0.05));
+    }
     // The chromosphere glows red at the very edge.
     cool += uDisk2.y * 0.5 * smoothstep(0.2, 0.0, mu);
     // Dust in front of the disk dims it in slow patches.
@@ -199,21 +202,53 @@ void main() {
     float vis = r < R ? smoothstep(-60.0, 60.0, c.z) : 1.0;
     hot += uDisk2.w * uReg[k].w * vis * exp(-dot(d, d) / (2.0 * 70.0 * 70.0));
   }
-  // A pulsar's two beams sweep out from its magnetic poles; facing us, they flash.
+  // A pulsar's two beams: narrow cones from its magnetic poles, swept by the spin.
   if (uBeam.w > 0.0) {
     for (int k = 0; k < 2; k++) {
       vec3 b = k == 0 ? uBeam.xyz : -uBeam.xyz;
       float l2 = length(b.xy);
+      // The star hides the half of a cone that points away behind it.
       float behind = b.z < 0.0 && r < R ? 0.0 : 1.0;
-      if (l2 > 1e-3 && r > R * 0.98) {
-        float da = acos(clamp(dot(P / r, b.xy / l2), -1.0, 1.0));
-        float wid = 0.05 + 0.3 * (1.0 - l2);
-        float fall = exp(-(r - R) / (1800.0 * l2 + 300.0));
-        float grain = 0.75 + 0.5 * fbm(vec3(r * 0.004 - uTime * 2.0, da * 30.0, float(k)));
-        hot += uBeam.w * 1.4 * exp(-pow(da / wid, 2.0)) * fall * grain * behind;
+      if (l2 > 0.02) {
+        vec2 bd = b.xy / l2;
+        float along = dot(P, bd);
+        if (along > 0.0) {
+          // Depth along the cone: the projection shortens it by l2.
+          float s3 = along / l2;
+          float across = abs(P.x * bd.y - P.y * bd.x);
+          float wid = R * 0.06 + s3 * 0.09 * l2 + s3 * 0.18 * (1.0 - l2);
+          float core = exp(-pow(across / (wid * 0.25), 2.0));
+          float sheath = exp(-pow(across / wid, 2.0));
+          // Bunches of charge stream out along the beam.
+          float grain = 0.6 + 0.8 * fbm(vec3(s3 * 0.003 - uTime * 3.0, across * 0.01, float(k) * 3.0));
+          // The cone starts at the pole, where the axis leaves the surface.
+          float fall = exp(-s3 / 2600.0) * smoothstep(R * l2 * 0.8, R * l2 + 20.0, along);
+          hot += uBeam.w * (1.6 * core + 0.5 * sheath) * grain * fall * behind;
+        }
       }
-      hot += uBeam.w * 4.0 * pow(max(b.z, 0.0), 14.0) * exp(-max(r - R, 0.0) / 500.0);
+      // A beam aimed at the eye: the pole flares in a tight burst.
+      float face = pow(max(b.z, 0.0), 60.0);
+      hot += uBeam.w * face * (6.0 * exp(-dot(P - b.xy * R, P - b.xy * R) / (2.0 * 140.0 * 140.0)) + 0.6 * exp(-max(r - R, 0.0) / 260.0));
     }
+  }
+  // The wind nebula: a torus round the spin equator, and a jet from each spin pole.
+  if (uSpin.w > 0.0 && r > R) {
+    vec2 sp = length(uSpin.xy) > 1e-3 ? normalize(uSpin.xy) : vec2(0.0, 1.0);
+    vec2 e1 = vec2(sp.y, -sp.x);
+    float x = dot(P, e1), y = dot(P, sp);
+    float tilt = max(abs(uSpin.z), 0.12);
+    // The ring seen at a slant: an ellipse, short along the spin axis.
+    float rho = length(vec2(x, y / tilt));
+    float RT = R * 2.3;
+    float tex = 0.5 + fbm(vec3(atan(y / tilt, x) * 3.0, rho * 0.004, uTime * 0.03));
+    // The near half of the torus is brighter: relativistic flow toward the eye.
+    float near = 0.7 + 0.3 * sign(y) * sign(uSpin.z);
+    cool += uSpin.w * 0.4 * exp(-pow((rho - RT) / (RT * 0.16), 2.0)) * tex * near;
+    cool += uSpin.w * 0.12 * exp(-pow((rho - RT * 1.5) / (RT * 0.3), 2.0)) * tex;
+    // The jets wander like a hose under pressure.
+    float wig = 60.0 * sin(abs(y) * 0.004 - uTime * 0.6) * smoothstep(0.0, R * 2.0, abs(y));
+    float jet = exp(-pow((x - wig) / (R * 0.08 + abs(y) * 0.04), 2.0)) * exp(-abs(y) / (R * 3.5)) * smoothstep(R * 0.9, R * 1.5, abs(y));
+    hot += uSpin.w * 0.35 * jet * (0.6 + 0.8 * fbm(vec3(y * 0.004 - uTime * 0.8 * sign(y), x * 0.01, 2.0)));
   }
   // The erupting bubble: a faint shell, dim inside.
   for (int k = 0; k < 2; k++) {
@@ -588,7 +623,7 @@ void main() {
   float r = length(P);
   // Gravity bends the light round a neutron star: the sky slides outward at the limb.
   // The shift never reaches into the disk, so the limb stays single.
-  if (uCam.z > 0.0 && r > R) uv -= normalize(P) * min(uCam.z * 0.08 * R * R / r, (r - R) * 0.6) / uView.zw * 0.5;
+  if (uCam.z > 0.0 && r > R) uv -= normalize(P) * min(uCam.z * 0.08 * R * R / r, (r - R) * 0.75) / uView.zw * 0.5;
   // Heat bends the air above the limb.
   float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
@@ -720,6 +755,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uDust, v.band.dust);
     gl.uniform1f(s.u.uFull, v.full);
     gl.uniform4fv(s.u.uBeam, v.beam);
+    gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);

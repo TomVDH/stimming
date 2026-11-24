@@ -40,12 +40,13 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // field, beam, lensing: a neutron star's field lines, pulsar beams and bent light.
 const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0 };
 export const STARS = {
-  // A neutron star: 24 km across, a city's width, spinning.
+  // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
+  // Field lines, two beam cones, bent light, and a wind nebula round it.
   neutron: {
-    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, wave: 0.9, field: 1, beam: 1, lensing: 1,
-    row: 5, rsun: 1.72e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1.2,
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, wave: 0.9, field: 1, beam: 1, lensing: 2.2,
+    row: 5, rsun: 1.72e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.7,
     hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
-    disk: [1.3, 0.06, 0.3, 0.6], disk2: [80, 0, 0, 0], tex: [40, 4, 0, 0.5],
+    disk: [0.6, 0.18, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 440,
   },
   // Sirius B: a white dwarf, a star's mass in a ball smaller than the earth.
@@ -191,7 +192,7 @@ export const bodySize = (star, body) => BODIES[body].km / 1000 / star.rsun;
 /* ---------- a neutron star's spin ---------- */
 // The magnetic axis turns about the spin axis on a cone that crosses the line of sight.
 // Halfway between up and the eye: a beam rises overhead, then sweeps past the eye.
-const SPIN = norm([0.1, 0.7, 0.7]);
+export const SPIN = norm([0.1, 0.7, 0.7]);
 export const SPIN_PERIOD = 1.6;
 export function magAxis(time) {
   const a = 2 * Math.PI * time / SPIN_PERIOD;
@@ -400,19 +401,24 @@ export function strands(sun, time, { star, activity }, out) {
 }
 
 // Dipole field lines: each leaves near one magnetic pole and returns near the other.
+// Closed shells nest round the star; the outer ones reach the edge of the frame.
+const FIELD_N = 56;
 function fieldStrands(time, B, out, n) {
   const m = magAxis(time);
   const u = norm(cross(m, [0.3, 0.2, 0.93])), v = cross(m, u);
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < FIELD_N; i++) {
     const q = k => hash(i, k, 41);
-    const ph = (i / 30) * 2 * Math.PI + q(1) * 0.2;
-    const th = 0.55 + 0.45 * q(2);
+    const ph = (i / FIELD_N) * 2 * Math.PI + q(1) * 0.25;
+    // Three shells: low and bright, middle, and tall and faint.
+    const shell = i % 3;
+    const th = [0.95, 0.7, 0.5][shell] + 0.12 * (q(2) - 0.5);
     const ring = add(scale(u, Math.cos(ph)), v, Math.sin(ph));
     const A = norm(add(scale(m, Math.cos(th)), ring, Math.sin(th)));
     const Bf = norm(add(scale(m, -Math.cos(th)), ring, Math.sin(th)));
     // A dipole line from colatitude th rises to R over sin squared.
     const h = R * (1 / Math.sin(th) ** 2 - 1);
-    n = put(out, n, A, h, Bf, 0, 1 + q(3), B.field * 0.05 * (0.4 + 0.6 * q(4)), q(5) * 7, 0);
+    const I = B.field * [0.16, 0.11, 0.07][shell] * (0.5 + 0.5 * q(4));
+    n = put(out, n, A, h, Bf, 0, 0.8 + q(3), I, q(5) * 7, 0);
   }
   return n;
 }

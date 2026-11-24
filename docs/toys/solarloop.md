@@ -46,7 +46,7 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 | Betelgeuse | 764 | Rust and orange; a handful of giant cells, deep limb darkening, a dusty envelope | Our sun, 1.8 units, a speck |
 | VY CMa | 1420 | Blood red, brown shadows; giant cells, a thick envelope of dust arcs and knots | Our sun, 1 unit, a speck of light |
 | Sirius B | 0.0084 | A white dwarf, cyan white and smooth | None |
-| Neutron star | 0.0000172 (12 km) | Electric blue to white, a smooth surface with white-hot magnetic poles. It spins every 1.6 s: two beams sweep from the poles and the frame burns white each time one passes the eye; 30 dipole field lines turn with it; gravity bends the sky at its limb | None |
+| Pulsar (the Vela pulsar, a neutron star) | 0.0000172 (12 km) | A dark violet sphere with two white-hot magnetic polar caps. It spins every 1.6 s: two narrow beam cones sweep from the caps like a lighthouse, with charge streaming out along them, and a cap flares when its beam faces the eye. 56 dipole field lines in three shells turn with it. A wind nebula surrounds it: a torus round the spin equator, brighter on its near side, and a wandering jet from each spin pole. Gravity bends the sky at its limb | None |
 
 The sun is the default: the furnace, and apart from Desert eclipse's white corona and pink prominences. The hum and the notes fall in key as the star grows.
 
