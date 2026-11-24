@@ -49,6 +49,27 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 | Sirius B | 0.0084 | A white dwarf, cyan white and smooth |
 | Pulsar (the Vela pulsar, a neutron star) | 0.0000172 (12 km) | A dark violet sphere with two white-hot magnetic polar caps. It spins every 1.6 s: two narrow beam cones sweep from the caps like a lighthouse, with charge streaming out along them, and a cap flares when its beam faces the eye. 56 dipole field lines in three shells turn with it. A wind nebula surrounds it: a torus round the spin equator, brighter on its near side, and a wandering jet from each spin pole. Gravity bends the sky at its limb |
 
+Every star turns on its own axis at its true rate, run 10,000 times faster (Tom, 2026-11-23). The surface, the regions, the loops, the prominences and the corona turn with it.
+
+| Star | True period | In the toy |
+|---|---|---|
+| Luhman 16 | 5.3 h | 1.9 s |
+| WISE 0855 | about 10 h (an estimate) | 3.6 s |
+| Vega | 12.5 h | 4.5 s |
+| Regulus | 16 h | 5.7 s |
+| Zeta Ophiuchi, Sirius B | about 1 day (estimates) | 8.6 s |
+| T Tauri | 2.8 days | 24 s |
+| Sirius | 5.5 days | 48 s |
+| Epsilon Eridani | 11.2 days | 97 s |
+| Procyon | 23 days | 3.3 min |
+| Sun | 25.4 days | 3.7 min |
+| Proxima | 83 days | 12 min |
+| Rigel | about 160 days (an estimate) | 23 min |
+| Arcturus | about 2 years | 1.8 h |
+| Betelgeuse, VY CMa | decades | a day or more: still |
+
+The pulsar keeps its own 1.6 s spin: Vela turns 11 times a second, and 10,000 times that cannot be drawn.
+
 The sun is the default: the furnace, and apart from Desert eclipse's white corona and pink prominences. The hum and the notes fall in key as the star grows.
 
 ## The model (lengths in star units; the star's radius is 696)

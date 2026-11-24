@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-24T04:58:48Z
-updated_at: 2026-11-24T05:32:40Z
+updated_at: 2026-11-24T05:34:33Z
 parent: stimming-oh7b
 ---
 
@@ -28,3 +28,5 @@ Tom, 2026-11-23: redo Solar loop's stars (follows stimming-e35i). Planets out (o
 - [x] No hexagon granules and no haze blobs over the disk (Tom, 2026-11-23)
 
 - [x] No bodies beside the stars; the full view zooms out 16 times (Tom, 2026-11-23)
+
+- [x] Every star rotates at its true rate x 10,000 (Tom, 2026-11-23)

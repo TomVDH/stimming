@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -141,7 +141,19 @@ function setRot() {
   const cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), cy = Math.cos(st.yaw), sy = Math.sin(st.yaw);
   const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
-  M = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
+  const T = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
+  // The star turns on its own axis at its true rate, sped up.
+  const B = STARS[st.star];
+  const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
+  M = S ? T.map(row => [0, 1, 2].map(c => row[0] * S[0][c] + row[1] * S[1][c] + row[2] * S[2][c])) : T;
+}
+// A turn by angle a about the axis u (Rodrigues).
+function axisTurn(u, a) {
+  const l = Math.hypot(u[0], u[1], u[2]), x = u[0] / l, y = u[1] / l, z = u[2] / l;
+  const c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+  return [[t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+    [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+    [t * x * z - s * y, t * y * z + s * x, t * z * z + c]];
 }
 const toView = p => [0, 1, 2].map(r => M[r][0] * p[0] + M[r][1] * p[1] + M[r][2] * p[2]);
 // A view point to stage CSS pixels, y down.
@@ -312,6 +324,7 @@ const frameState = {
 function makeFrame() {
   const f = frameState;
   f.view.set([view.cx, view.cy, view.hw, view.hh]);
+  setRot();
   // Column-major: the rot columns are M's columns; toSun is M transposed.
   f.rot.set([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]);
   f.toSun.set([M[0][0], M[0][1], M[0][2], M[1][0], M[1][1], M[1][2], M[2][0], M[2][1], M[2][2]]);
