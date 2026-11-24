@@ -59,7 +59,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 Six small programs, so D3D11 links each fast. With d3dcompiler_47 (`tools/fxc/`), the march compiles in 0.8 s, world, drops and cockpit in 0.2 s each, the rest in under 0.1 s.
 
-1. March, at half size: the wall, the floor and the haze. It skips air by a safe distance to the nearest cloud; when steps run out, the ray finishes on the smooth wall. Light: Fire's smoke shading (K3 lighting), with the sun's path through the smooth wall in closed form, three taps for the near lumps, and sky light that fades with depth into the wall.
+1. March, at half size: the wall, the floor and the haze. It skips air by a safe distance to the nearest cloud; when steps run out, the ray finishes on the smooth wall. Light: Fire's smoke light from `shared/smoke.js` (`smTransmit`, Fire's look with `absorb` 1.0), with the sun's path through the smooth wall in closed form, three taps for the near lumps, and sky light that fades with depth into the wall.
 2. Blur: five taps each way hide the dither.
 3. World: sky, sea (confused swell, wind streaks, whitecaps, the shade of the wall and the floor), the cloud over them, rain rushing past.
 4. Drops, at half size: beads and runs on the panes (`shared/glassrain.js`); each front pane's wiper clears an arc that fills again.

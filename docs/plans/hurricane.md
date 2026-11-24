@@ -87,7 +87,7 @@ One hero moment, finished to high fidelity:
 
 **The stadium:** a density field in cylinder coordinates round the eye centre. The wall's inner edge leans out with height (`r_in = r0 + h·cot(slope)`), stepped in ledges, eroded by a baked 3D noise (copy of `window/noise3d.js`). The low swirl is a thin layer at 0.6 to 1.8 km with gaps, turned by the tangential wind. The march is in two ranges: a short, dense range near the camera (inside the wall), then long strides to the far wall.
 
-**Cloud shading follows Fire's smoke** (rule: smoke follows Fire's shader): the K3 lighting block as `cloudbottle/scene.js` carries it. A shadow march toward the sun (three to six taps), Beer, the multiple-scatter lobe (`exp(-τ·0.25)·0.5`), powder (`1 − exp(−2τ)`), an ambient floor, and the two-lobe phase from `shared/clouds.js`. Sky light from above darkens with depth into the wall.
+**Cloud shading follows Fire's smoke** (rule: smoke follows Fire's shader): Fire's smoke light from `shared/smoke.js` (until 2026-11-23, the pasted K3 lighting block). A shadow march toward the sun (three to six taps), Beer, the multiple-scatter lobe (`exp(-τ·0.25)·0.5`), powder (`1 − exp(−2τ)`), an ambient floor, and the two-lobe phase from `shared/clouds.js`. Sky light from above darkens with depth into the wall.
 
 **The sea:** after Window seat's sea (`window/shader.js`: `seaWaves`, `monahan`, `caps`), written small in the world pass of `hurricane/scene.js`. Long foam streaks lie along the local wind under the wall; the swell in the eye is high and confused. The wall's shadow falls on the sea and the swirl.
 

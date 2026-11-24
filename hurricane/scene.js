@@ -8,6 +8,10 @@ import { CLOUDS } from '../shared/clouds.js';
 import { GLASS_RAIN } from '../shared/glassrain.js';
 import { OUTPUT } from '../shared/output.js';
 import { GRADE } from '../shared/grade.js';
+import { SMOKE, SM_FIRE, smConsts } from '../shared/smoke.js';
+
+// Fire's smoke look; the toy's own taps already scale tau.
+const SMOKE_LOOK = { ...SM_FIRE, absorb: 1.0 };
 
 const HEAD = `#version 300 es
 precision highp float;
@@ -101,20 +105,8 @@ float wallLen(vec3 p, vec3 l, float sMax) {
 }
 // The sun's path in the smooth wall from p, up to the wall top.
 float sunLen(vec3 p) { return wallLen(p, uSun, max((uShape.z + 0.4 - p.y) / uSun.y, 0.0)); }
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// Beer, the multiple-scatter lobe, the powder term.
-// The ambient floor becomes sky light that fades with depth: a storm is not a puff.
-const float ABSORB = 1.0, AMBIENT = 0.5, POWDER = 0.59, MULTI = 1.0;
-float k3(float tau) {
-  tau *= ABSORB;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  return mix(base, base * powder, POWDER);
-}
-/* ---------- end K3 lighting ---------- */
-`;
+${SMOKE}
+${smConsts(SMOKE_LOOK)}`;
 
 /* ---------- march: the wall, the cloud floor, the haze ---------- */
 const MARCH = `${WORLD}
@@ -162,7 +154,8 @@ vec3 lightAt(vec3 p, float r, float wall, float ph) {
   float crown = 0.55 + 0.45 * smoothstep(0.5, 4.0, p.y);
   // Light deep in cloud has scattered many times: it turns grey.
   vec3 sky = mix(SKY_L, vec3(0.7, 0.74, 0.78), smoothstep(0.0, 0.5, open));
-  vec3 L = SUN_L * k3(tau) * ph + sky * AMBIENT * crown * mass * exp(-0.6 * open);
+  // Fire's smoke light; the ambient floor becomes sky light that fades with depth.
+  vec3 L = SUN_L * smTransmit(tau * smAbsorb, smMulti, smPowder) * ph + sky * smAmbient * crown * mass * exp(-0.6 * open);
   vec3 fd = p - uFlash.xyz;
   float f2 = dot(fd, fd);
   L += vec3(0.8, 0.85, 1.0) * uFlash.w * exp(-sqrt(f2) * 1.1) / (0.04 + f2);
