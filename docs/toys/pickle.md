@@ -33,7 +33,7 @@ Idea 134, group A, a lab demonstration: plug in a gherkin; it hums and glows sod
 - The glow is a sodium point light inside the pickle's right end. The pickle casts no shadow from it: the light leaves through the flesh. The forks cast hard shadows on the plate.
 - The skin filters the glow: pale stripes pass more light, warts and dark skin less, so the pattern shows against it.
 - Sodium light is one spectral line. A grade pulls the scene to one orange hue as the glow takes over, and the exposure drops, as the eye adapts.
-- Steam: a raymarched volume with Fire's smoke shading (K3 lighting), lit by the glow from below and by the room from above.
+- Steam: a raymarched volume with Fire's smoke light from `shared/smoke.js`, lit by the glow from below and by the room from above.
 
 ## Controls
 
@@ -59,7 +59,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 | Stack type | Scene |
 | Tier | three.js 0.170, WebGL 2 |
 | Post | RenderPass, the steam pass, UnrealBloomPass, OutputPass, a grade pass (sodium mono, vignette, grain) |
-| Steam | A half-size raymarch (28 steps) of up to 14 noise-eroded puffs, Fire's smoke lighting (marked K3) with the glow as a moving point key, a depth prepass, a two-pass blur. It runs only while steam shows. |
+| Steam | A half-size raymarch (28 steps) of up to 14 noise-eroded puffs, Fire's smoke light from `shared/smoke.js` (`SM_FIRE`) with the glow as a moving point key, a depth prepass, a two-pass blur. It runs only while steam shows. |
 | Sparks | Up to 96 points: ballistic brine drops; under the arc they burn sodium yellow |
 
 ## Sound
@@ -78,7 +78,7 @@ Web Audio on the shared kit, muted by default. Belgian mains, 230 V at 50 Hz.
 | `index.html` | The page shell |
 | `main.js` | State, the heat and arc model, the bar, input, the frame loop |
 | `scene.js` | The set, the pickle shader, sparks, post |
-| `steam.js` | The steam volume (K3 lighting) |
+| `steam.js` | The steam volume; its light comes from `shared/smoke.js` |
 | `sound.js` | Web Audio beds and one-shots |
 
 ## Reduced motion

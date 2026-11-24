@@ -1,9 +1,10 @@
 // Glowing pickle: steam. A raymarched volume at half size, from Wrecking ball's dust.
 // Puffs rise from the hot pickle; a depth prepass stops the march at solids.
-// Lighting is Fire's smoke shading (Tom, 2026-11-22: "fire toy smoke shader -- always").
+// The light is Fire's smoke light from shared/smoke.js.
 import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { SMOKE, smConsts } from '../shared/smoke.js';
 
 const MAXP = 14;
 // Noise space: one unit is 4 cm of steam.
@@ -94,23 +95,14 @@ float densLite(vec3 p) {
   float b = puffs(p);
   return b * (texture(uNoise, p * K - vec3(0.0, uT * 0.3, 0.0)).r * 0.9 + 0.05);
 }
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
-// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
-const float ABSORB = 2.0, AMBIENT = 0.5, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+${SMOKE}
+${smConsts()}
+// Fire's smoke light (shared/smoke.js) after three taps toward the key.
 float lightT(vec3 p, vec3 key) {
   // Three taps along the key; a far tap stands for the rest of the cloud.
   float sum = densLite(p + key * (0.08 / K)) * 0.08 + densLite(p + key * (0.22 / K)) * 0.14 + densLite(p + key * (0.5 / K)) * 0.3;
-  float tau = sum * 9.0 * ABSORB * 0.5;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT, 0.0, 1.0);
+  return smLight(sum * 9.0 * smAbsorb * 0.5, smMulti, smPowder, smAmbient);
 }
-/* ---------- end K3 lighting ---------- */
 void main() {
   // The view ray, and the distance to the first solid surface.
   vec4 v = uProjInv * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
@@ -132,7 +124,7 @@ void main() {
   float t = t0 + dt * j;
   float T = 1.0;
   vec3 S = vec3(0.0);
-  float phR = hg(dot(rd, uRoomD), G_HG) * 12.56637;
+  float phR = smPhase(dot(rd, uRoomD), smG) * 12.56637;
   for (int i = 0; i < N; i++) {
     vec3 p = ro + rd * t;
     t += dt;
@@ -144,7 +136,7 @@ void main() {
     vec3 gv = uGlowP - p;
     float r2 = dot(gv, gv);
     vec3 key = gv * inversesqrt(r2);
-    vec3 Li = uGlowC / (r2 + 2e-4) * lightT(p, key) * hg(dot(rd, key), G_HG) * 12.56637;
+    vec3 Li = uGlowC / (r2 + 2e-4) * lightT(p, key) * smPhase(dot(rd, key), smG) * 12.56637;
     Li += uRoom * lightT(p, uRoomD) * phR;
     Li += vec3(0.012, 0.014, 0.02);
     float al = 1.0 - exp(-max(d, 0.0) * SIG * dt);

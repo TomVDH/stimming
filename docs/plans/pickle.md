@@ -17,7 +17,7 @@ Tom's brief: "MVP at high fidelity, with icons for the lab and intro as well, ba
 | Set | A white plate on a dark table in a dim room. A gherkin across the plate, a steel fork pushed into each end, a clip lead on each fork. Nothing else. | Look rule: no props. The plate is the classroom demonstration. |
 | Room light | Very dim and cool, from the upper left, as from a window with the blinds down. | The first frame is a picture: the pickle reads green, the forks glint. |
 | Glow light | A point light at the hot end, sodium orange, with soft shadows. A grade pulls the scene toward one hue as the glow takes over. | Sodium light is monochrome: colours go, only orange and dark remain. |
-| Steam | A raymarched volume at half size, Fire's smoke shading (K3 lighting), lit by the glow from below. | Tom's rule: smoke and steam follow Fire's shader. |
+| Steam | A raymarched volume at half size, Fire's smoke light from `shared/smoke.js`, lit by the glow from below. | Tom's rule: smoke and steam follow Fire's shader. |
 | Mains | 230 V, 50 Hz. The Variac slider sets 90 to 230 V. | Tom is in Belgium. |
 
 ## The hero moment
