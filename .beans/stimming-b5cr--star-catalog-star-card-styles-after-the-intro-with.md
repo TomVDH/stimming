@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T23:12:15Z
-updated_at: 2026-11-24T23:25:47Z
+updated_at: 2026-11-24T23:32:23Z
 parent: stimming-e35i
 ---
 
@@ -24,3 +24,5 @@ Tom, 2026-11-24: "lets actually redo some styles for the info callout (we also w
 - [x] The new card waits until 1.75 s after the light returns; measured 1.76 s
 
 - [x] A spectral class row first on the card; the type line keeps the plain words (Tom: "in the intro we'd like a spectral class readout as well")
+
+- [x] Our Sun's outline at the star's scale above the card: a circle, a speck, or the top of its circle; checked on Betelgeuse, Arcturus, Procyon, the Sun and the pulsar (Tom: "an outline of our sun's diameter above the intro call out")

@@ -103,16 +103,52 @@ export function makeCard(o) {
     type();
   }
 
+  // Our Sun at the same scale as the star on screen, above the card (Tom, 2026-11-24).
+  // d is its diameter in CSS pixels; max is the room above the card; view is the stage's height.
+  // Too small to draw, it is a dot; too large for the room, the top of its circle, still to scale.
+  function sunMark({ d, max, view }) {
+    const el = h('div', 'c-sun');
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    const ring = document.createElementNS(NS, 'circle');
+    let w, ht, note;
+    if (d < 4) {
+      w = ht = 6; note = 'the Sun, a speck at this scale';
+      Object.entries({ cx: 3, cy: 3, r: 2.2, class: 'c-sun-dot' }).forEach(([k, v]) => ring.setAttribute(k, v));
+    } else if (d <= max) {
+      w = ht = d + 2; note = 'the Sun, to scale';
+      Object.entries({ cx: w / 2, cy: ht / 2, r: d / 2 }).forEach(([k, v]) => ring.setAttribute(k, v));
+    } else {
+      // The arc: the top of a circle too large to fit, still at its true curve.
+      w = Math.min(max * 1.6, 300); ht = Math.min(max, d / 2) * 0.45;
+      Object.entries({ cx: w / 2, cy: d / 2 + 1, r: d / 2 }).forEach(([k, v]) => ring.setAttribute(k, v));
+      note = d > view ? 'the Sun, wider than this view' : 'the Sun, to scale';
+      svg.style.overflow = 'hidden';
+    }
+    svg.setAttribute('width', w); svg.setAttribute('height', ht);
+    svg.setAttribute('viewBox', `0 0 ${w} ${ht}`);
+    svg.append(ring);
+    el.append(svg, h('span', 'c-sun-k', note));
+    return el;
+  }
+
   return {
     /**
      * @param {{ name: string, type: string, latin: string | null, rows: [string, string][] }} c
      * @param {string} style One of CARD_STYLES.
+     * @param {{ d: number, max: number } | null} sun Our Sun's size on screen, or null.
      */
-    show(c, style = 'intro') {
+    show(c, style = 'intro', sun = null) {
       clear();
       box = h('div', `sl-card sl-card--${style}`);
       box.setAttribute('aria-hidden', 'true');
       o.stage.append(box);
+      // The Sun's outline appears a beat after the card starts.
+      if (sun) {
+        const mark = sunMark(sun);
+        box.append(mark);
+        if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
+      }
       if (style === 'caption') {
         if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
         else caption(c);

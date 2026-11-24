@@ -468,7 +468,9 @@ function arrive() {
   if (!started || cam.to !== NOTCH || cam.moving || performance.now() < cardAfter) return;
   if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
   cardStar = st.star;
-  card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'));
+  // Our Sun's diameter on screen at the same scale, for the outline above the card (Tom, 2026-11-24).
+  const sun = { d: R / STARS[st.star].rsun * cssH / view.hh, max: cssH * 0.3, view: cssH };
+  card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'), sun);
 }
 // A new card style plays at once when the view rests on the full star.
 function replayCard() {
