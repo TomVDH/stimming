@@ -125,7 +125,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
   <div class="now">
     <b id="n_star">Select a star</b>
     <span>Key <i id="n_key">–</i></span>
-    <span>Harmony <i id="n_scale">–</i></span>
+    <span>Scale now <i id="n_scale">–</i></span>
     <span>Chord <i id="n_chord">–</i></span>
     <span>Melody note <i id="n_lead">–</i></span>
     <span>Choir voices <i id="n_voices">–</i></span>
@@ -138,7 +138,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
     <label class="sw" title="Plays a tap again and again, so you hear each tap change at once."><input type="checkbox" id="rep"> Repeat every</label>
     <select id="repGap" title="Time between repeated taps."><option value="3">3 s</option><option value="5" selected>5 s</option><option value="8">8 s</option><option value="12">12 s</option></select>
     <span class="sep"></span>
-    <label class="sw" title="Sets the harmony of the selected star. A song builds its chords and melody from it.">Harmony <select id="harm"></select></label>
+    <label class="sw" title="The scale of the selected star: the notes its chords and melody use. Same as Scale in the Song section.">Scale <select id="harm"></select></label>
     <span class="sep"></span>
     <label class="sw" title="Turns the choir on or off, as the Sound settings of the toy do."><input type="checkbox" id="humOn" checked> Choir</label>
     <label class="sw" title="Turns the space rumble on or off, as the Sound settings of the toy do."><input type="checkbox" id="rumOn" checked> Rumble</label>
@@ -240,7 +240,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
 </div>
 
 <script type="module">
-import { choir, tapBus, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, BLAST_VOICES, CHORDS, structural, keyed, chordLabel, chordOf, scaleOf, degrees, zoomAt, VOICES, SUN, FX, WAVES, TAP_WAVES, HARMONIES, VOICINGS, MELODIES, ECHOES, MOVES, KINDS, PROGRESSIONS, ZOOM, ZOOM_KEYS, renderBed, LOOP } from './choir.js';
 import { VERSIONS } from './legacy.js';
 import { ROOT, makeSound, nearOf } from './sound.js';
 import { CHART } from './chart.js';
@@ -260,8 +260,9 @@ const opts = o => Object.entries(o);
 // Every control: its words, range and how its value reads.
 // `restart` rows rebuild the choir; `tap` rows change the sounding tap.
 const SECS = [
-  { title: 'Song', intro: 'The chords the star plays, in order, and how the melody moves. Harmony is in the top bar.', rows: [
-    { k: 'progName', label: 'Progression', help: 'A named song to start from.', song: 1 },
+  { title: 'Song', intro: 'The notes the star uses, the chords it plays in order, and how the melody moves.', summary: 1, rows: [
+    { k: 'harmony', label: 'Scale', help: 'The notes this star uses. Chords and melody come from it.', scale: 1, restart: 1 },
+    { k: 'progName', label: 'Progression', help: 'A named chord list to start from. Some set the scale too.', song: 1 },
     { k: 'prog', label: 'Chords', help: 'Each chord, its kind and how long it holds.', editor: 1 },
     { k: 'melody', label: 'Melody', help: 'How the top voice moves.', restart: 1, options: opts(MELODIES) },
     { k: 'voicing', label: 'Voicing', help: 'How the chord notes spread.', restart: 1, options: opts(VOICINGS) },
@@ -374,13 +375,14 @@ const rows = {};
 for (const s of SECS) {
   const el = document.createElement(s.fold ? 'details' : 'div');
   el.className = 'sec';
-  el.innerHTML = s.fold ? `<summary><h2 style="display:inline">${s.title}</h2></summary><p class="intro">${s.intro}</p>` : `<h2>${s.title}</h2><p class="intro">${s.intro}</p>`;
+  el.innerHTML = (s.fold ? `<summary><h2 style="display:inline">${s.title}</h2></summary><p class="intro">${s.intro}</p>` : `<h2>${s.title}</h2><p class="intro">${s.intro}</p>`) + (s.summary ? '<p class="sum" id="songSum" style="margin:0 8px 8px;color:var(--ink)"></p>' : '');
   for (const r of s.rows) {
     const row = document.createElement('div');
     row.className = 'row';
     const chips = r.restart ? '<span class="chip" title="A change restarts the choir.">↻</span>' : '';
     let c;
     if (r.editor) { c = '<div class="prog" id="prog"></div><div class="acts" style="margin:4px 8px"><button class="sm" id="addCh">Add chord</button></div>'; row.style.gridTemplateColumns = '1fr'; }
+    else if (r.scale) c = `<select>${HARMONIES.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select><small class="mute" id="scaleNotes" style="display:block;margin-top:4px;font-size:12px"></small>`;
     else if (r.song) c = `<select>${Object.entries(PROGRESSIONS).map(([k, v]) => `<option value="${k}">${v.name}</option>`).join('')}<option value="custom" disabled>Custom</option></select><small class="mute" id="progDesc" style="display:block;margin-top:4px;font-size:12px"></small>`;
     else if (r.options) c = `<select>${r.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>`;
     else if (r.check) c = `<label class="sw"><input type="checkbox"> on</label>`;
@@ -551,9 +553,16 @@ function show() {
   for (const { r, row, input, on, v } of Object.values(rows)) {
     if (r.editor) continue;
     if (r.song) {
-      const nm = progName(p);
+      const nm = progName(p), pr = PROGRESSIONS[nm];
       input.value = nm;
-      $('progDesc').textContent = nm === 'custom' ? 'Your own chords.' : PROGRESSIONS[nm].desc;
+      const sets = pr && pr.harmony !== undefined && pr.chords ? ` It sets the scale to ${harmName(pr.harmony)}.` : '';
+      $('progDesc').textContent = nm === 'custom' ? 'Your own chords.' : nm === 'sun' && p.harmony !== 'cross' ? `No chord list: one chord, held in ${harmName(p.harmony)}.` : pr.desc + sets;
+      continue;
+    }
+    if (r.scale) {
+      input.value = String(p.harmony);
+      $('scaleNotes').textContent = scaleText(p);
+      v.textContent = '';
       continue;
     }
     const val = getV(p, r);
@@ -569,9 +578,37 @@ function show() {
     if (r.fx && on && !on.checked) v.textContent = 'off';
   }
   drawProg(p);
+  $('songSum').textContent = songText(p);
   listLabels();
   drawCompare();
   benchShow();
+}
+// Plain words for the song: the scale's notes, each chord's notes, one summary sentence.
+const NAME = f => NN[((Math.round(12 * Math.log2(f / 440) + 69)) % 12 + 12) % 12];
+const HNAME = { cross: 'Ionian and pentatonic', 0: 'Ionian', 1: 'pentatonic', 2: 'harmonic minor', 3: 'harmonic series' };
+const harmName = h => HNAME[h] ?? String(h);
+const baseOf = () => rootOf(sel) * 2;
+function scaleText(p) {
+  const b = baseOf(), sc = scaleOf(p.harmony), names = r => r.map(x => NAME(b * x)).join(' ');
+  if (p.harmony === 'cross') return `Notes: Ionian ${names(scaleOf(0).melody)}, then pentatonic ${names(scaleOf(1).melody)}, in turn.`;
+  let t = `Notes: ${names(sc.melody)}.`;
+  if (p.harmony === 1 && p.prog) t += ' Pentatonic has no thirds to stack, so chords use Ionian; the melody stays pentatonic.';
+  if (p.harmony === 3) t += ' Overtones of one note: not tempered, a little off the piano.';
+  return t;
+}
+function chordNotes(c, p) {
+  const ch = chordOf(c, p.harmony), b = baseOf();
+  return ch.tones.map(t => NAME(b * ch.root * t)).join(' ') + (c.shift ? '  (outside the scale)' : '');
+}
+function songText(p) {
+  const key = NAME(baseOf()), mel = { step: 'steps from note to note', glide: 'slides from note to note', arp: 'walks up and down the chord', off: 'is off' }[p.melody];
+  if (!p.prog) {
+    if (p.harmony === 'cross') return `One chord on ${key}. Every 10 to 12 s the scale changes between Ionian and pentatonic. The melody ${mel} on the scale.`;
+    return `One chord on ${key}, held, in ${harmName(p.harmony)}. The melody ${mel} on the scale.`;
+  }
+  const list = p.prog.map(c => chordLabel(c, p.harmony)).join(' → ');
+  const lens = [...new Set(p.prog.map(c => c.len))];
+  return `${harmName(p.harmony)[0].toUpperCase() + harmName(p.harmony).slice(1)} on ${key}. Chords: ${list}, ${lens.length === 1 ? lens[0] + ' s each' : 'lengths ' + p.prog.map(c => c.len + ' s').join(', ')}, then round again. The melody ${mel} on each chord's notes${p.melody === 'arp' ? '' : ', with scale notes between'}.`;
 }
 // The step editor: one row per chord, with its degree, kind and length.
 function drawProg(p) {
@@ -586,7 +623,8 @@ function drawProg(p) {
       <select data-f="deg">${degs.map(d => `<option value="${d.deg}">${d.label}</option>`).join('')}</select>
       <select data-f="kind">${Object.entries(KINDS).map(([k, n]) => `<option value="${k}">${n}</option>`).join('')}</select>
       <label class="mute" style="display:flex;gap:4px;align-items:center;font-size:12px"><input type="number" data-f="len" min="2" max="60" step="1" value="${c.len}"> s</label>
-      <span class="mv acts"><button class="sm" data-a="up" title="Moves the chord earlier.">↑</button><button class="sm" data-a="down" title="Moves the chord later.">↓</button><button class="sm" data-a="del" title="Removes the chord.">✕</button></span>`;
+      <span class="mv acts"><button class="sm" data-a="up" title="Moves the chord earlier.">↑</button><button class="sm" data-a="down" title="Moves the chord later.">↓</button><button class="sm" data-a="del" title="Removes the chord.">✕</button></span>
+      <small class="mute cn" style="grid-column:2/-1;margin-top:-2px">Notes: ${chordNotes(c, p)}</small>`;
     r.querySelector('[data-f=deg]').value = c.deg;
     r.querySelector('[data-f=kind]').value = c.kind;
     r.title = chordLabel(c, p.harmony) + (c.shift ? ` (root moved ${c.shift} semitones)` : '');
@@ -622,6 +660,7 @@ function edit(fn, tapEdit = false) {
 }
 for (const { r, input, on, v } of Object.values(rows)) {
   if (r.editor) continue;
+  if (r.scale) { input.addEventListener('change', () => edit(q => { q.harmony = harmV(input.value); })); continue; }
   if (r.song) {
     input.addEventListener('change', () => edit(q => {
       const pr = PROGRESSIONS[input.value];

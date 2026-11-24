@@ -146,6 +146,8 @@ const SCALES = { 0: [0, 2, 4, 5, 7, 9, 11].map(R), 1: [0, 2, 4, 7, 9].map(R), 2:
 // Chords stack thirds; pentatonic and the blend build chords on Ionian.
 const chordScale = h => SCALES[h === 'cross' || h === 1 ? 0 : h];
 const melodyScale = h => SCALES[h === 'cross' ? 0 : h];
+// The scale a harmony's melody uses, and the one its chords stack on, as ratios.
+export const scaleOf = h => ({ melody: melodyScale(h), chords: chordScale(h) });
 const stepOf = (sc, i) => sc[((i % sc.length) + sc.length) % sc.length] * 2 ** Math.floor(i / sc.length);
 // One chord: its root as a ratio over the base, and its roles over the root.
 export function chordOf(c, harmony) {
