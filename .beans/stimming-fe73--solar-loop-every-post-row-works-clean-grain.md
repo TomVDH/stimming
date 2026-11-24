@@ -3,8 +3,9 @@
 title: 'Solar loop: every post row works; clean grain'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-24T21:56:43Z
-updated_at: 2026-11-24T21:56:43Z
+updated_at: 2026-11-24T22:26:25Z
 parent: stimming-e35i
 ---
 
@@ -17,3 +18,5 @@ Tom, 2026-11-24: "can we please get proper post fx settings, grain cleaned up an
 - [x] One-line hints on each post row (shown once the shell's hint field lands)
 - [ ] Tooltips: the shell's hint field (shared change, its own bean and PR)
 - [ ] Tom looks at it live
+
+- [x] Grain keeps 1.4 CSS pixels when the detail ladder drops the resolution mid-zoom (Tom: "the noise doesn't seem to be at uniform scale")

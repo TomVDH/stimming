@@ -855,6 +855,8 @@ uniform vec2 uSway;
 uniform vec2 uHoleF;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
+// Device pixels per CSS pixel: screen-fixed effects keep their size in CSS pixels.
+uniform float uDpr;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -1094,10 +1096,10 @@ void main() {
   vec2 v = vUv - 0.5;
   c *= clamp(1.0 - (0.6 + 0.25 * uLens) * uFx2.w * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
   c = look(c);
-  // Film grain: soft clumps about 1.4 CSS pixels wide, a new frame of it 24 times a second.
+  // Film grain: soft clumps 1.4 CSS pixels wide at any resolution, 24 frames a second.
   // It sits in the mid tones and stays out of black space; it holds still while the toy sleeps.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
-  vec2 gp = gl_FragCoord.xy / (1.4 * max(1.0, uRes.y / 900.0));
+  vec2 gp = gl_FragCoord.xy / max(1.0, 1.4 * uDpr);
   // The frame count wraps, so the hash keeps its precision.
   float gf = mod(floor(uTime * 24.0), 64.0);
   vec2 gi = floor(gp), gt = fract(gp);
@@ -1287,6 +1289,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(f.u.uTime, v.time % 4000);
     gl.uniform1f(f.u.uExpo, B.expo);
     gl.uniform1f(f.u.uSc, v.sc);
+    gl.uniform1f(f.u.uDpr, v.dpr);
     gl.uniform1f(f.u.uRow, B.row);
     tri(gl, null, empty);
   }

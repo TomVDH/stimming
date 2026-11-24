@@ -687,6 +687,8 @@ function makeFrame() {
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
   f.sc = Math.max(1, view.H / 900);
+  // The detail ladder can drop the resolution mid-zoom; the grain follows CSS pixels.
+  f.dpr = view.H / Math.max(1, cssH);
   // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
   f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
   // Mercury at true size, in transit on the long lens; nothing beside the limb.
