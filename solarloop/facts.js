@@ -6,6 +6,8 @@
 // Thorne-Zytkow object: Thorne and Zytkow 1977; model sizes after Farmer et al. 2023.
 // status: what is known of an object that is only predicted. core: what hides inside.
 // V1400 Centauri: Mamajek et al. 2012; Kenworthy and Mamajek 2015 (the rings). rings: a ring system's size.
+// Beta Lyrae: Harmanec and Scholz 1993 (the period); Mennickent and Djurasevic 2013 (the disc). orbit: a binary's period.
+// mag may be a range in words.
 // "about" marks an estimate or a value that sources dispute; null leaves the line out.
 // name: the card's name where it differs from the tray's short one.
 // latin: the formal name; it is left out where it equals the common name.
@@ -31,6 +33,7 @@ export const FACTS = {
   wr124: { name: 'WR 124', latin: 'QR Sagittae', cat: null, turn: null, mag: 11.2, wide: 'about 12 suns', dist: 'about 21,000 light years', age: 'about 8.6 million years' },
   tzo: { name: 'Thorne–Żytkow object', latin: null, cat: null, status: 'predicted in 1977, not yet found', core: 'a neutron star about 20 km wide', turn: null, mag: null, wide: 'about 1,000 suns, a model', dist: null, age: null },
   j1407: { latin: null, cat: 'J1407', status: 'eclipsed by rings for 56 days in 2007; not seen since', rings: 'at least 37, out to 0.6 AU', turn: 'about 3.2 days', mag: 12.2, wide: null, dist: 'about 450 light years', age: 'about 16 million years' },
+  betalyr: { latin: 'Sheliak', cat: 'HIP 92420', orbit: '12.94 days, 19 seconds longer each year', turn: null, mag: '3.3 to 4.4', wide: null, dist: 'about 1,000 light years', age: null },
   siriusb: { latin: 'Alpha Canis Majoris B', cat: 'WD 0642−166', turn: null, mag: 8.44, wide: '0.008 of the sun', dist: '8.6 light years', age: 'about 228 million years' },
   cygx1: { latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years' },
   sgra: { latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null },
@@ -53,7 +56,7 @@ export function cardLines(id, name) {
   return {
     head: [f.name ?? name, f.latin].filter(Boolean),
     rows: [
-      row('status', f.status), row('catalogue', f.cat), row('mass', f.mass), row('core', f.core), row('rings', f.rings), row('rotation', f.turn), row('magnitude', f.mag == null ? null : fmtMag(f.mag)),
+      row('status', f.status), row('catalogue', f.cat), row('mass', f.mass), row('core', f.core), row('rings', f.rings), row('orbit', f.orbit), row('rotation', f.turn), row('magnitude', f.mag == null ? null : typeof f.mag === 'string' ? f.mag : fmtMag(f.mag)),
       row('width', f.wide), row('distance', f.dist), row('age', f.age),
     ].filter(Boolean),
   };

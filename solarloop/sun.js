@@ -53,7 +53,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
 // core: a buried neutron star shown in cutaway through the disk.
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
-const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+// bin: a binary partner in a thick disc: separation, disc radius and thickness in R; stream, jet and disc light.
+const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -199,6 +200,16 @@ export const STARS = {
     disk: [1.85, 1, 0.02, 0.32], disk2: [110, 0.6, 0.35, 0.07], tex: [30, 6, 0.05, 0.7],
     wide: 'none', long: 'none', root: 138.59,
   },
+  // Beta Lyrae: a blue-white giant pours gas onto a heavier partner hidden in a thick disc.
+  // The donor turns once per orbit, 12.94 days; its partner circles it about four radii out.
+  betalyr: {
+    ...FLARE, day: 12.94, rain: 0.3, reach: 2.6,
+    bin: { a: 3.85, rd: 1.8, th: 0.6, q: 0.226, jet: 0.6, light: 1, heat: 1 },
+    row: 23, rsun: 15, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.3, dust: 0, rays: 1,
+    hal: [0.6, 0.72, 1], streak: [0.6, 0.76, 1],
+    disk: [1.5, 0.5, 0.06, 0.4], disk2: [90, 0.25, 0.3, 0.07], tex: [70, 8, 0.08, 0.42],
+    wide: 'none', long: 'none', root: 130.81,
+  },
   // Rigel: a blue supergiant, 79 suns wide.
   rigel: {
     ...FLARE, day: 160, rain: 0.3,
@@ -253,6 +264,44 @@ export const STARS = {
     wide: 'none', long: 'none', root: 73.42,
   },
 };
+/* ---------- a binary's stream, traced through gravity ---------- */
+// A parcel of gas leaves L1 and falls in the rotating frame of the pair.
+// The restricted three-body problem: two point masses, Coriolis, the spin's pull.
+// Units: the separation is 1, the pair's mass is 1, the orbit's rate is 1.
+// Returns 12 points in the donor's frame, in donor radii: x, y, z and the stream's width.
+const paths = new WeakMap();
+export function streamPath(bin) {
+  if (paths.has(bin)) return paths.get(bin);
+  const q = bin.q, md = q / (1 + q), mg = 1 / (1 + q), xd = -mg, xg = md;
+  // L1: where the pulls and the spin balance on the line between the stars.
+  const f = x => x - md * (x - xd) / Math.abs(x - xd) ** 3 - mg * (x - xg) / Math.abs(x - xg) ** 3;
+  let lo = xd + 0.01, hi = xg - 0.01;
+  for (let i = 0; i < 80; i++) { const m = (lo + hi) / 2; if (f(lo) * f(m) <= 0) hi = m; else lo = m; }
+  const acc = (x, y, vx, vy) => {
+    const r1 = Math.hypot(x - xd, y) ** 3, r2 = Math.hypot(x - xg, y) ** 3;
+    return [2 * vy + x - md * (x - xd) / r1 - mg * (x - xg) / r2, -2 * vx + y - md * y / r1 - mg * y / r2];
+  };
+  const d = st => { const a = acc(...st); return [st[2], st[3], a[0], a[1]]; };
+  let s = [(lo + hi) / 2 + 0.003, 0, 0.01, 0];
+  const pts = [[s[0], s[1]]];
+  const rdA = bin.rd / bin.a, dt = 0.0005;
+  // RK4 until the parcel strikes the disc's rim.
+  for (let n = 0; n < 40000 && Math.hypot(s[0] - xg, s[1]) > rdA; n++) {
+    const k1 = d(s), k2 = d(s.map((v, i) => v + dt / 2 * k1[i])), k3 = d(s.map((v, i) => v + dt / 2 * k2[i])), k4 = d(s.map((v, i) => v + dt * k3[i]));
+    s = s.map((v, i) => v + dt / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+    pts.push([s[0], s[1]]);
+  }
+  // The donor's frame: the donor at the centre, the partner on +x, the spin about +y.
+  const toR = ([x, y]) => [(x - xd) * bin.a, 0, -y * bin.a];
+  const out = [[1, 0, 0, 0.12]];
+  for (let i = 0; i < 11; i++) {
+    const p = toR(pts[Math.round(i / 10 * (pts.length - 1))]);
+    out.push([...p, 0.14 + 0.16 * i / 10]);
+  }
+  paths.set(bin, out);
+  return out;
+}
+
 // Every star weights its loops by one temperature response.
 export const resp = lt => gauss(lt, 5.95, 0.2) + 0.04 * gauss(lt, 7.0, 0.3);
 // Scale bodies: diameter in km; bright bodies shine, dark ones block light.

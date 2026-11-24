@@ -88,6 +88,9 @@ const LUTS = [
   // V1400 Centauri: a young orange K star; the ring dust backlit amber tan.
   [['000000', 0], ['0e0502', 0.1], ['341404', 0.25], ['7c300a', 0.43], ['c85e16', 0.6], ['f4963c', 0.76], ['ffca8e', 0.89], ['fff2e4', 1]],
   [['000000', 0], ['0a0704', 0.12], ['2a1e10', 0.3], ['6a5030', 0.5], ['b0905e', 0.68], ['e6cfa4', 0.84], ['fff6e8', 1]],
+  // Beta Lyrae: a blue-white giant; the disc, the stream and the jets glow warm white.
+  [['000000', 0], ['03070d', 0.1], ['0e2036', 0.26], ['2a5888', 0.44], ['6a9ed6', 0.62], ['b4d4f6', 0.78], ['eaf4ff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['0c0806', 0.12], ['32241a', 0.3], ['7a5a40', 0.5], ['caa07a', 0.68], ['f2dcc0', 0.84], ['fffaf2', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -319,6 +322,9 @@ uniform vec4 uWind;
 uniform float uCore;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
 uniform vec4 uRing, uRing2;
+// A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
+// uBinN: the disc's axis in the view frame.
+uniform vec4 uBin, uBinD, uBinN;
 // A black hole: on, the disc's tilt toward the eye, disc light, disc heat.
 uniform vec4 uHole;
 // One pixel in Schwarzschild radii, and the lensed stars' gain.
@@ -654,6 +660,20 @@ void main() {
     hot += 0.4 * uDisk.x * exp(-dot(d, d) / 0.3);
   }
   hot *= shade;
+  // Beta Lyrae's partner: its disc and stream are gas in the volume pass.
+  // Here only the jets: thin flows from the disc's faces, with knots that travel out.
+  if (uBin.w > 0.0) {
+    vec2 dq = P / R - uBin.xy;
+    vec2 nx = length(uBinN.xy) > 1e-3 ? normalize(uBinN.xy) : vec2(0.0, 1.0);
+    float u = dot(dq, vec2(nx.y, -nx.x)), jy = abs(dot(dq, nx));
+    // The donor hides the jets behind it.
+    float vis = uBin.z > 0.0 ? 1.0 : step(R, r);
+    float jet = exp(-pow(u / (0.05 + 0.05 * jy), 2.0)) * smoothstep(uBinD.y, uBinD.y + 0.5, jy) * exp(-jy / 2.5);
+    cool += uBinD.z * uDisk.x * 0.7 * jet * vis * (0.5 + fbm(vec3(jy * 2.0 - uTime * 0.5, u * 5.0, 1.0)));
+    // The hidden star: a bright sphere at the disc's heart; the gas in front dims it.
+    float dd = length(dq);
+    cool += vis * uDisk.x * (3.0 * smoothstep(0.36, 0.3, dd) + 0.6 * exp(-dd * dd / 0.25));
+  }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
 
@@ -799,6 +819,9 @@ uniform sampler3D uNoise;
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime, uDens, uDust, uLight, uCorona, uBend;
+// A binary's gas: the partner (centre in R, on), its disc, its axis, and the stream's path.
+// uGas: on, scattered light, own heat. uPath: 12 points in R and the stream's width.
+uniform vec4 uBin, uBinD, uBinN, uGas, uPath[12];
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -846,6 +869,46 @@ float corona(vec3 p) {
   float polar = smoothstep(0.72, 0.95, abs(u.y)) * rays;
   return pow(R / r, 2.2) * (sheet * lumps * (0.5 + 0.7 * rays) + 0.1 * rays + 0.3 * polar);
 }
+// A binary's gas, in donor radii: the partner's flared disc and the stream that feeds it.
+// One noise cell is a quarter radius.
+float gn(vec3 p) { return nz(p * 0.0625); }
+float gas(vec3 p) {
+  vec3 q = p - uBin.xyz, n = uBinN.xyz;
+  float h = dot(q, n);
+  vec3 pl = q - h * n;
+  float s = length(pl), rd = uBinD.x;
+  // Flared: thicker toward the rim.
+  float H = uBinD.y * 0.55 * (0.25 + 0.75 * pow(min(s / rd, 1.0), 1.3));
+  // Denser inward; the rim frays out softly, so its ends never read square.
+  float disc = smoothstep(rd * 1.1, rd * 0.45, s) * smoothstep(0.04, 0.2, s) * exp(-h * h / (2.0 * H * H));
+  // Gas turns at the Kepler rate in streaks that shear and reset unseen.
+  vec3 e1 = normalize(cross(n, vec3(0.0, 0.0, 1.0)) + vec3(1e-4, 0.0, 0.0));
+  float phi = atan(dot(pl, cross(n, e1)), dot(pl, e1));
+  float x = uTime * 0.35 * pow(max(s, 0.2), -1.5) / 1.5708;
+  float fa = fract(x), fb = fract(x + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
+  float pa = phi - 1.5708 * fa + 2.3 * floor(x), pb = phi - 1.5708 * fb + 2.3 * floor(x + 0.5) + 1.7;
+  float ta = gn(vec3(cos(pa) * 3.0, sin(pa) * 3.0, s * 5.0 + h * 2.0));
+  float tb = gn(vec3(cos(pb) * 3.0, sin(pb) * 3.0, s * 5.0 + h * 2.0 + 21.0));
+  float tur = mix(tb, ta, wa);
+  // Wisps lift off the faces: a second noise frays the height.
+  disc *= (0.15 + 2.0 * tur * tur) * (0.7 + 0.6 * gn(vec3(s * 9.0, h * 14.0, phi * 2.0)));
+  // The stream: a tube along the path gravity traced, clumps flowing down it.
+  float st = 0.0;
+  for (int i = 0; i < 11; i++) {
+    vec3 a = uPath[i].xyz, ab = uPath[i + 1].xyz - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+    float w = mix(uPath[i].w, uPath[i + 1].w, t);
+    vec3 dd = p - a - ab * t;
+    st = max(st, exp(-dot(dd, dd) / (w * w)));
+  }
+  st *= 0.55 + 0.9 * gn(p * 6.0 - vec3(uTime * 0.6, 0.0, 0.0));
+  return disc + 1.3 * st;
+}
+// The gas's own heat: only the hot spot where the stream strikes.
+float gasHeat(vec3 p) {
+  vec3 e = p - uPath[11].xyz;
+  return 1.5 * exp(-dot(e, e) / 0.05);
+}
 
 /* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
 // A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
@@ -869,17 +932,45 @@ void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
   // The corona reaches far, so the march does too when it shows.
-  float reach = uCorona > 0.0 ? 3.4 * R : 2.2 * R;
+  // A binary's gas reaches past its partner, so the march does too, in more steps.
+  bool bin = uGas.x > 0.0;
+  float reach = bin ? 6.2 * R : uCorona > 0.0 ? 3.4 * R : 2.2 * R;
   float z1 = r < R ? sqrt(R * R - r * r) : -reach;
   float z0 = reach;
-  const int N = 32;
+  int N = bin ? 48 : 32;
   float dt = (z0 - z1) / float(N);
   // Interleaved gradient noise, stepped each frame so no pattern holds still.
   float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
   float T = 1.0;
-  float acc = 0.0;
-  for (int i = 0; i < N; i++) {
+  float acc = 0.0, accG = 0.0;
+  for (int i = 0; i < 48; i++) {
+    if (i >= N) break;
     vec3 p = vec3(P, z0 - dt * (float(i) + j));
+    // A binary's gas: lit by the donor with the K3 shading, and glowing with its own heat.
+    if (bin) {
+      vec3 pr = p / R;
+      float g = gas(pr);
+      if (g > 0.004) {
+        float rr = length(pr);
+        vec3 k = -pr / rr;
+        // Self-shadow: two taps toward the donor, then Beer, the scatter lobe and the powder term.
+        float tau = (gas(pr + k * 0.25) * 0.25 + gas(pr + k * 0.7) * 0.45) * ABSORB * 1.3;
+        float base = exp(-tau) + exp(-tau * 0.25) * 0.5;
+        float lit = clamp(mix(base, base * (1.0 - exp(-tau * 2.0)), POWDER) + AMBIENT, 0.0, 1.0);
+        float al = 1.0 - exp(-g * 2.6 * dt / R);
+        // The donor lights the gas only a little, so the cloud stays dark.
+        acc += T * al * uGas.y * lit * hg(normalize(p).z, G_HG) * 12.56637 / (rr * rr);
+        // The hidden star inside lights the gas from within: its light diffuses out through the cloud.
+        vec3 tc = uBin.xyz - pr;
+        float dc = length(tc);
+        vec3 kc = tc / max(dc, 1e-3);
+        float tauC = (gas(pr + kc * min(0.2, dc * 0.4)) * min(0.2, dc * 0.4) + gas(pr + kc * dc * 0.7) * dc * 0.5) * ABSORB;
+        float inner = exp(-tauC) + 0.35 * exp(-tauC * 0.3);
+        accG += T * al * (uGas.w * inner / (dc * dc + 0.08) * hg(-kc.z, 0.3) * 12.56637 + uGas.z * gasHeat(pr));
+        T *= 1.0 - al;
+        if (T < 0.02) break;
+      }
+    }
     if (uCorona > 0.0) {
       // Thomson scattering: brightest seen side on, a cos squared lobe toward the eye.
       float cz = normalize(p).z;
@@ -897,7 +988,7 @@ void main() {
     T *= 1.0 - al;
     if (T < 0.02) break;
   }
-  o = vec4(acc, 0.0, 0.0, T);
+  o = vec4(acc, accG, 0.0, T);
 }`;
 
 // A three-tap blur along one axis: it hides the march dither, as in Fire.
@@ -965,7 +1056,8 @@ vec2 sig(vec2 uv, float kx) {
   v = mix(vec4(0.0, 0.0, 0.0, 1.0), v, max(off, min(uFilm.w, 1.0)));
   // The volume dims what lies behind it and adds the star light it scatters.
   vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x * uFx1.y) * v.a + texture(uBloom, uv).rgb * 0.38 * uFx1.x;
-  return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15);
+  // The volume's green holds a binary's glowing gas: it takes the cool ramp.
+  return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15 + v.g);
 }
 // Tone curves on the scene light x; each returns a place on the ramp, 0 to 1.
 // ACES: the Narkowicz fit, then display gamma.
@@ -1286,6 +1378,9 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uCore, v.band.core);
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
+    gl.uniform4fv(s.u.uBin, v.bin);
+    gl.uniform4fv(s.u.uBinD, v.binD);
+    gl.uniform4fv(s.u.uBinN, v.binN);
     gl.uniform2fv(s.u.uHoleSky, v.holeSky);
     gl.uniform1f(s.u.uJet, v.jet);
     gl.uniform1i(s.u.uZero, 0);
@@ -1334,6 +1429,11 @@ export async function makeRender(gl, opts = {}) {
     gl.uniformMatrix3fv(vp.u.uToSun, false, v.toSun);
     gl.uniform1f(vp.u.uCorona, v.corona);
     gl.uniform1f(vp.u.uBend, v.bend);
+    gl.uniform4fv(vp.u.uBin, v.bin);
+    gl.uniform4fv(vp.u.uBinD, v.binD);
+    gl.uniform4fv(vp.u.uBinN, v.binN);
+    gl.uniform4fv(vp.u.uGas, v.gas);
+    gl.uniform4fv(vp.u.uPath, v.path);
     tri(gl, volA, empty);
     const bp = P.blur;
     gl.useProgram(bp.p);

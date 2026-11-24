@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, BCRIT, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
+import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
@@ -346,6 +346,7 @@ const PICKS = [
   ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['j1407', 'V1400 Centauri', 'oklch(0.72 0.14 55)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
+  ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
@@ -656,6 +657,7 @@ const frameState = {
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
   ring: new Float32Array(4), ring2: new Float32Array(4),
+  bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
   const f = frameState;
@@ -707,6 +709,17 @@ function makeFrame() {
     f.ring.set([rg.tau, rg.cx + 7 * Math.sin(st.time * 0.03), rg.cy + 2 * Math.cos(st.time * 0.021), rg.ratio]);
     f.ring2.set([rg.angle, rg.glow, 0, 0]);
   } else { f.ring.fill(0); f.ring2.fill(0); }
+  // A binary: the donor turns once per orbit, so its partner holds still in the star's frame.
+  // The stream follows the path gravity traced from L1; the gas lives in the volume pass.
+  const bn = star.bin;
+  if (bn) {
+    const c = toView([bn.a, 0, 0]);
+    f.bin.set([c[0], c[1], c[2], 1]);
+    f.binD.set([bn.rd, bn.th, bn.jet, bn.light]);
+    f.binN.set([...toView([0, 1, 0]), 0]);
+    f.gas.set([1, 2.5 * bn.light * fxv('fxVolLight'), 3 * bn.heat, 4.5 * bn.heat]);
+    streamPath(bn).forEach((q, k) => f.path.set([...toView(q.slice(0, 3)), q[3]], k * 4));
+  } else { f.bin.fill(0); f.binD.fill(0); f.binN.fill(0); f.gas.fill(0); }
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
@@ -758,10 +771,11 @@ function makeFrame() {
   f.lift = lift;
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
   // w: the star's dust, which keeps the haze over its disk.
-  f.film.set([0.018, 0, 0.35, star.dust]);
+  // A binary's gas crosses the donor's face, so the volume shows over the disk.
+  f.film.set([0.018, 0, 0.35, star.bin ? 1 : star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
-  f.volDens *= (1 - 0.95 * far) * (hole ? 0 : 1);
+  f.volDens *= (1 - 0.95 * far) * (hole ? 0 : 1) * (star.bin ? 0.3 : 1);
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight') * f.off;
   // The 3D corona shows in the full view; its light follows the star's own corona.
   f.corona = hole ? 0 : weight('full') * fxv('fxCorona') * star.disk[3] * 6 * f.off;
