@@ -32,7 +32,7 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Bright rings arch over the northern sky, seen from their unlit side. Their shadow lies on the deck.
 - A low sun at the side, 10 degrees up (Tom, 2026-11-23): the heads on the deck throw long shadows.
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
-- The top deck (Tom, 2026-11-24): whole cover with no holes or breaks, and large swirls like Tornado alley's. A tile 2,048 km square, baked once at load, holds whirls 230 to 660 km across with spiral arms and calm cores. A step toward the sun lights each roll's sunward side. On the deck the sun leads; shade keeps little fill and takes a bruised violet in the folds, as under Tornado alley's storm base.
+- The top deck (Tom, 2026-11-24): whole cover with no holes or breaks, in east-west bands with a few large swirls like Tornado alley's (Tom: "a couple of swirls that otherwise integrate into cloud bands"). A tile 4,096 km square, baked once at load, holds five whirls 300 to 840 km across; each drags the band lines round it and winds them into a calm core. One stands ahead of the start view. A step toward the sun lights each roll's sunward side. On the deck the sun leads; shade keeps little fill and takes a bruised violet in the folds, as under Tornado alley's storm base.
 - Twisters keep their simple form but take Tornado alley's funnel light (Tom, 2026-11-24): a lit flank that falls off into the body, cool slate shade that darkens with depth, a darker top under the ceiling.
 - At the first touch the capsule skims the tops to their horizon; a few thunderheads punch up to 30 to 38 km with anvils; the haze lid's sheets pass as veils. Inside the white deck, dense billows stand against brighter gaps (Tom, 2026-11-23).
 - Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
@@ -90,7 +90,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 ## Loading and state
 
-- The march links in three zones (top, mid, deep). Only the start zone links before the first frame; the others link after it, in the background. The capsule holds at a zone's edge until that zone has linked.
+- The march links in four zones (tops, top, mid, deep). Over 12 km only the top deck renders: its cover is whole, so rays stop at its base (Tom, 2026-11-24: "only the layer that's visible renders"). Every zone's rays stop at its floor. Only the start zone links before the first frame; the others link after it, in the background, while the eye is in the deck. The capsule holds at a zone's edge until that zone has linked.
 - A reload or a lost GPU context resumes at the same depth and look, within 30 minutes, in the same tab.
 
 ## Sound
@@ -105,7 +105,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `main.js` | Bar, capsule and eye, gestures, frame loop, ladder |
 | `world.js` | Planet, decks, light table, ring profile, palette, shared GLSL |
 | `map.js` | Pass 1: bands, the storm, its wake |
-| `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into three zone programs. `SWIRL_FS` bakes the top deck's swirl tile |
+| `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into four zone programs. `SWIRL_FS` bakes the top deck's swirl tile |
 | `sky.js` | Space, sun, rings, limb haze |
 | `post.js` | Pass 4: the composite. The final grade |
 | `cabin.js` | The capsule: wall, bezel, liner, panes; the window's two layers (near fog copied from Window seat, wet pane from `shared/wetglass.js`), cracks, the crush |

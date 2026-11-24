@@ -18,6 +18,8 @@ Tom, 2026-11-24: "lets add a dev flag to take off the capsule window frame altge
 - [x] Screenshot to Tom with the frame off
 - [ ] QA: console, idle sleep, reduced motion, frame time
 - [x] Tom, 2026-11-24: twisters take Tornado alley's funnel light (form and motion stay)
+- [x] Tom, 2026-11-24: a few swirls set in cloud bands, not a field of pinwheels
+- [x] Tom, 2026-11-24: only the visible layer renders: a tops zone, rays stop at the zone floor, cheap far sun taps
 - [ ] Grandeur: limb, aerial perspective, anvil shadows across the swirls
 - [ ] Height field bake for the top deck (frame time is 1.8 to 3 ms now; held until a larger screen needs it)
 - [x] Toy doc and plan lines
@@ -29,3 +31,10 @@ Tom, 2026-11-24: "lets add a dev flag to take off the capsule window frame altge
 - Frame time, clouds at half size: 200 km 2.8 ms, 60 km 3.0, 30 km 2.5, 12 km 1.8, -10 km 2.8. At full size: 5.3, 6.5, 5.7, 4.5, 7.5.
 - Cold first link took 12 to 22 s in the pane once; cached links take 15 ms. To check on a cold profile.
 - The rings seen from above came from the log spiral winding without end near each whirl's centre; the winding now stops at 0.3 R.
+
+## Pass 2, 2026-11-24
+
+- Five whirls in a 4,096 km band tile; each rotates the band field round its centre, fading past 1.3 R.
+- Zones: tops (over 12 km, the top deck only), top, mid, deep; rays stop at the zone floor; far sun taps on the top deck read bands and swirls only.
+- Frame time at 992 x 720 (pane, noisy, shared GPU): clouds at full size 200 km 3.1 ms (was 5.3), 60 km 5.4 (6.5), 30 km 5.4 (5.7); at half size 1.7 to 2.6 ms.
+- Cold first link 3.9 s in the pane (was 12 to 22 s).

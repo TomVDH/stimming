@@ -171,10 +171,10 @@ function marchCut() {
 }
 
 // The march programs by zone; the deeper ones link after the first frame.
-const MZ = { top: null, mid: null, deep: null };
+const MZ = { tops: null, top: null, mid: null, deep: null };
 // Links the other zones in the background, nearest first, one at a time.
 async function linkRest() {
-  const order = { top: ['mid', 'deep'], mid: ['top', 'deep'], deep: ['mid', 'top'] }[zoneFor(S.alt)];
+  const order = { tops: ['top', 'mid', 'deep'], top: ['tops', 'mid', 'deep'], mid: ['top', 'tops', 'deep'], deep: ['mid', 'top', 'tops'] }[zoneFor(S.alt)];
   for (const z of order) {
     if (MZ[z]) continue;
     await idle(2000);
@@ -247,7 +247,6 @@ function bakeSwirl(n) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_3D, vol);
   gl.uniform1i(P.swirl.u.uVol, 0);
-  gl.uniform1i(P.swirl.u.uReach, 2);
   tri(gl, swirl, vao);
   gl.bindTexture(gl.TEXTURE_2D, swirl.tex);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
