@@ -5,7 +5,7 @@ status: in-progress
 type: epic
 priority: normal
 created_at: 2026-11-23T08:46:34Z
-updated_at: 2026-11-23T23:10:00Z
+updated_at: 2026-11-24T01:55:00Z
 ---
 
 Tom, 2026-11-23: "we want to have all our current toys have a one by one pass for new icons -- this is a new subsession we work chunked there -- ensure we involve our sheet".
@@ -42,3 +42,8 @@ Tom: "Like all iterations we ever had, per toy, all functional and displaying". 
 - [x] Live earlier menu tiles, Retired group, icon lab row
 - [x] Emblems resolve without 404s
 - [x] Phone layout of the All view
+
+## Sheet: keep, cut and a cleaner layout (Tom, 2026-11-23)
+
+Tom: "go across the icon rounds -- make this fucking easy -- also allow me to negative select icons so we can eliminate them once and for all", and "pls clean up the sheet". Each toy is one block: the name on top, Current on the left, each group of icons labelled (Round n of m and its gallery, Menu earlier, Icon lab). A click steps an icon through keep, cut and clear; Hide cut takes cut icons off the sheet; Copy marks gives both lists. A find box (/) narrows to a toy; J and K jump from toy to toy. Kintsugi: the repo holds one round (kintsugi-1), its Current tile (unchanged since 16 Nov) and one traced emblem; no other pass reached icons/.
+- [x] Keep and cut marks, Hide cut, find box, J and K, labelled groups

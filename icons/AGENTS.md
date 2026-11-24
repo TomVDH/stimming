@@ -8,7 +8,7 @@ Workbench for menu icons. The live icons are inline SVG in `index.html` (`docs/m
 - Look at the main-shelf icons first. Prism, Fidget board and Heat putty are the reference.
 - Icon work happens per toy, in that toy's own chat. Tom starts those chats.
 - Generate no icon until the icon sheet shows its slot. Renew the sheet first when it is out of date.
-- Tom's verdicts live in `icons/picks.json`. Tom marks tiles on the sheet; `Copy marks` gives JSON.
+- Tom's verdicts live in `icons/picks.json`. On the sheet a click steps an icon through keep, cut and clear; `Hide cut` takes cut icons off the sheet; `Copy marks` gives both lists as JSON. A cut on the sheet is Tom's no for that icon.
 
 ## The standard
 

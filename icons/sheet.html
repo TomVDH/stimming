@@ -18,6 +18,7 @@
   --line: oklch(0.24 0.014 275);
   --panel: oklch(0.195 0.014 275);
   --mark: oklch(0.85 0.14 85);
+  --cut: oklch(0.68 0.19 25);
   --focus: oklch(0.84 0.13 205);
   --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --tile: 128px;
@@ -61,9 +62,20 @@ h3 span { color: var(--faint); }
 .row.old { padding-top: 0; border-top: 0; }
 .row.old h2 small { margin: 0; text-align: right; }
 .row .none { width: var(--tile); }
-/* All rounds: every icon of every round, wrapped in a wide third column. */
+/* All rounds: one block per toy. The name sits on top; Current and every round line up in two columns. */
 .all .wrap { max-width: 1180px; }
-.all .cols, .all .row { grid-template-columns: minmax(0, 160px) var(--tile) minmax(0, 1fr); }
+.all .cols, .all .row { grid-template-columns: var(--tile) minmax(0, 1fr); row-gap: 6px; }
+.all .cols > :first-child { display: none; }
+.all .row { padding-top: 18px; scroll-margin-top: 150px; }
+.all .row h2 { grid-column: 1 / -1; font-size: 18px; }
+.all .row > .cell { grid-column: 1; grid-row: 2 / span 2; align-self: start; }
+.all .row.old { padding-top: 10px; }
+.all .row.old > .none { grid-column: 1; grid-row: 1 / span 2; }
+.all .row > .alts { grid-column: 2; }
+.row[hidden] { display: none !important; }
+/* Each group of icons says where it comes from. */
+.rl { grid-column: 2; margin: 0; color: var(--faint); font-size: 11px; letter-spacing: 0.04em; }
+.rl b { color: var(--muted); font-weight: 650; }
 .all .alts { grid-template-columns: minmax(0, 1fr); }
 .all .alts .slot { grid-column: 1; }
 .all .cols .two { display: block; }
@@ -107,6 +119,16 @@ h3 span { color: var(--faint); }
 .slot { display: grid; place-items: center; border: 1px dashed oklch(0.3 0.016 275); color: var(--faint); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; cursor: pointer; }
 .slot.load { border-style: solid; border-color: var(--line); }
 .marked > .tile, .marked > .logo, .slot.marked { outline: 2px solid var(--mark); outline-offset: -2px; }
+/* A cut icon dims behind a red ring; Hide cut takes it off the sheet. */
+.cutmark > .tile, .cutmark > .logo, .slot.cutmark { outline: 2px solid var(--cut); outline-offset: -2px; opacity: 0.4; }
+.past .cutmark .still { opacity: 0.4; }
+.past .cutmark .still::after { box-shadow: inset 0 0 0 2px var(--cut); }
+.past .cutmark p { text-decoration: line-through; }
+.hidecut .past .cutmark, .hidecut .slot.cutmark { display: none; }
+.marks i { color: var(--cut); font-style: normal; font-weight: 650; }
+.chip[aria-pressed="true"] { color: var(--fg); border-color: var(--muted); }
+.find { width: 150px; padding: 5px 12px; font: inherit; font-size: 13px; color: var(--fg); background: none; border: 1px solid var(--line); border-radius: 999px; }
+.find::placeholder { color: var(--faint); }
 .note { margin: 28px 0 0; color: var(--faint); font-size: 12px; }
 @media (max-width: 640px) {
   :root { --gap: 8px; --gutter: 8px; }
@@ -136,12 +158,13 @@ h3 span { color: var(--faint); }
         <button id="r-all" type="button" aria-pressed="true">All rounds</button>
         <button id="r-latest" type="button" aria-pressed="false">Latest A and D</button>
       </div>
-      <div class="marks"><span id="count"></span><button class="chip" id="copy" type="button" hidden>Copy marks</button><button class="chip" id="clear" type="button" hidden>Clear</button></div>
+      <input class="find" id="find" type="search" placeholder="Find a toy  /" aria-label="Find a toy" autocomplete="off" spellcheck="false">
+      <div class="marks"><span id="count"></span><button class="chip" id="hide" type="button" aria-pressed="false" hidden>Hide cut</button><button class="chip" id="copy" type="button" hidden>Copy marks</button><button class="chip" id="clear" type="button" hidden>Clear</button></div>
     </div>
     <div class="cols"><span>Toy</span><span>Current</span><span class="two"><span>Shaded object</span><span>Isometric block<em>The alt style</em></span></span></div>
   </div>
   <div id="rows"><div id="list"></div></div>
-  <p class="note">Click a tile or an empty slot to mark it. Copy marks gives the list as JSON.</p>
+  <p class="note">Click an icon once to keep it, twice to cut it, a third time to clear it. Hide cut takes the cut icons off the sheet. Copy marks gives both lists as JSON. J and K jump to the next and previous toy; / finds a toy.</p>
 </div>
 <script type="module">
 // The gallery that holds each toy's two alt styles.
@@ -270,6 +293,8 @@ section > .row, section > .dirs { display: contents !important; }
 .dir.slot { display: grid !important; place-items: center; align-content: center !important; width: var(--tile); aspect-ratio: 1; border: 1px dashed oklch(0.3 0.016 275) !important;
   color: oklch(0.42 0.02 275); font: 500 10px/1.35 Gabarito, system-ui, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; }
 .dir.marked .t128, .dir.marked .s128, .dir.marked .glass, .dir.slot.marked { outline: 2px solid oklch(0.85 0.14 85) !important; outline-offset: -2px; border-radius: 14px; }
+.dir.cutmark .t128, .dir.cutmark .s128, .dir.cutmark .glass, .dir.slot.cutmark { outline: 2px solid oklch(0.68 0.19 25) !important; outline-offset: -2px; border-radius: 14px; opacity: 0.4; }
+body.hidecut .dir.cutmark { visibility: hidden !important; }
 `;
 // The All view lifts every card's 128 tile into one wrapping grid, each with its name under it.
 const ALL_CSS = `
@@ -291,10 +316,17 @@ body.trans .pick2 .emb, body.both .pick2 .emb, body.trans .pick2 .embs, body.bot
 body.trans .pick2 .flash, body.both .pick2 .flash { display: none !important; }
 .pick2.cut > .t128, .pick2.cut > .s128 { opacity: 0.35; }
 .pick2.marked > .t128, .pick2.marked > .s128, .pick2.marked .glass { outline: 2px solid oklch(0.85 0.14 85) !important; outline-offset: -2px; }
+.pick2.cutmark > .t128, .pick2.cutmark > .s128, .pick2.cutmark .glass { outline: 2px solid oklch(0.68 0.19 25) !important; outline-offset: -2px; opacity: 0.4; }
+.pick2.cutmark > p { text-decoration: line-through; }
+body.hidecut .pick2.cutmark { display: none !important; }
 `;
 
 const $ = id => document.getElementById(id);
-const marks = (() => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch { return new Set(); } })();
+// Two lists: icons Tom keeps and icons Tom cuts. Earlier marks are keeps.
+const CUTKEY = 'stimming.icons.cuts', HIDEKEY = 'stimming.icons.hidecut';
+const stored = k => { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')); } catch { return new Set(); } };
+const marks = stored(KEY), cuts = stored(CUTKEY);
+let hideCut = (() => { try { return localStorage.getItem(HIDEKEY) === '1'; } catch { return false; } })();
 // A mark from before rounds names no round: it was on the first round.
 for (const k of [...marks]) {
   const m = k.match(/^(.+)-([ad])$/);
@@ -361,14 +393,22 @@ const keyOf = (id, l, r) => `${id}-${l}@${r}`;
 // An earlier round gets a row of its own: its name, no Current, its two slots.
 const slot = (id, l, s, r) => `<div class="slot${s === 'have' ? ' load' : ''}" data-key="${keyOf(id, l, r)}" tabindex="0" role="button" aria-label="${nameOf(id)}, ${l === 'a' ? 'Shaded object' : 'Isometric block'}, round ${r}">${wordOf(id, s, r)}</div>`;
 // The All view knows its cards only once the gallery loads; it holds one waiting slot.
-const alts = (id, r) => (ALL ? `<div class="alts"><div class="slot load">${r}</div></div>` : `<div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l, r), r)).join('')}</div>`);
+const alts = (id, r) => (ALL ? `<div class="alts"><div class="slot${r == null ? '' : ' load'}">${r ?? 'No round yet'}</div></div>` : `<div class="alts">${COLS.map(([l]) => slot(id, l, stateOf(id, l, r), r)).join('')}</div>`);
+// Each group says where it comes from: its place among the toy's rounds and its gallery.
+const gal = r => (/^\d+$/.test(r) ? `spike ${r}` : r);
+const rl = (id, r) => {
+  if (!ALL) return '';
+  if (r == null) return '';
+  const rs = rounds(id), i = rs.indexOf(String(r));
+  return `<p class="rl"><b>Round ${i + 1} of ${rs.length}</b> · ${gal(r)}${i === rs.length - 1 && rs.length > 1 ? ' · newest' : ''}</p>`;
+};
 // Earlier menu tiles, newest first, under the rounds.
 // Each runs live in a snapshot of its day's menu; the still is the fallback.
 const day = d => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 const span = t => (t.from === t.to ? day(t.from) : `${day(t.from)} to ${day(t.to)}`);
 const hist = id => (past[id]?.length ? `<section class="row old" data-toy="${id}" data-round="">
-    <h2><small>menu, earlier</small></h2>
     <div class="none"></div>
+    <p class="rl"><b>Menu, earlier</b> · ${past[id].length} tile${past[id].length > 1 ? 's' : ''} the menu had, newest first</p>
     <div class="alts"><div class="past">${past[id].map((t, i) => [t, i + 1]).reverse().map(([t, n]) => `<div data-key="${id}-menu${n}@menu" tabindex="0" role="button" aria-label="${nameOf(id)}, menu tile ${n}, ${span(t)}">
       <span class="still"><img src="${t.file}" alt="" width="128" height="128" loading="lazy" decoding="async">${t.page ? `<iframe src="${t.page}?lab#${t.id || id}" title="${nameOf(id)}, menu tile ${n}" loading="lazy" tabindex="-1" scrolling="no"></iframe>` : ''}</span>
       <p><b>Menu ${n}</b> · ${span(t)}</p>
@@ -376,8 +416,8 @@ const hist = id => (past[id]?.length ? `<section class="row old" data-toy="${id}
   </section>` : '');
 // Icon lab directions: live SVG, with the lab's own hover.
 const labRow = id => (early[id]?.length ? `<section class="row old" data-toy="${id}" data-round="">
-    <h2><small>icon lab, early</small></h2>
     <div class="none"></div>
+    <p class="rl"><b>Icon lab</b> · the first three directions</p>
     <div class="alts"><div class="past">${early[id].map(e => `<div data-key="${id}-${slug(e.set)}@lab" tabindex="0" role="button" aria-label="${nameOf(id)}, icon lab, ${e.set}">
       <span class="still fig">${e.svg}</span>
       <p><b>${e.set}</b> · icon lab</p>
@@ -386,15 +426,17 @@ const labRow = id => (early[id]?.length ? `<section class="row old" data-toy="${
 const row = ({ id }) => {
   const emb = names[id]?.emblem, rs = rounds(id), r = rs.at(-1);
   return `<section class="row" id="row-${id}" data-toy="${id}" data-round="${r ?? ''}">
-    <h2>${nameOf(id)}${rs.length > 1 ? `<small>${r}</small>` : ''}</h2>
+    <h2>${nameOf(id)}${!ALL && rs.length > 1 ? `<small>${r}</small>` : ''}</h2>
     <div class="cell" data-key="${id}-current" tabindex="0" role="button" aria-label="${nameOf(id)}, Current">
       <div class="tile"></div>
       <div class="logo">${emb ? `<i style="--emblem: url(../${emb})"></i>` : ''}</div>
     </div>
+    ${rl(id, r)}
     ${alts(id, r)}
   </section>` + rs.slice(0, -1).reverse().map(o => `<section class="row old" data-toy="${id}" data-round="${o}">
-    <h2><small>${o}</small></h2>
+    ${ALL ? '' : `<h2><small>${o}</small></h2>`}
     <div class="none"></div>
+    ${rl(id, o)}
     ${alts(id, o)}
   </section>`).join('') + hist(id) + labRow(id);
 };
@@ -450,8 +492,14 @@ function goLive() {
 // Each tile sits on its row's Current cell.
 const place = () => {
   if (!tiles.size) return;
-  menuFrame.style.left = `${document.querySelector('.cell').offsetLeft}px`;
-  for (const [id, a] of tiles) a.style.setProperty('top', `${document.querySelector(`#row-${id} .cell`).offsetTop}px`, 'important');
+  const shown = document.querySelector('.row:not([hidden]) > .cell');
+  if (shown) menuFrame.style.left = `${shown.offsetLeft}px`;
+  for (const [id, a] of tiles) {
+    const row = document.getElementById(`row-${id}`);
+    // A toy the find box hides takes its Current tile with it.
+    a.style.setProperty('display', row.hidden ? 'none' : 'grid', 'important');
+    if (!row.hidden) a.style.setProperty('top', `${row.querySelector('.cell').offsetTop}px`, 'important');
+  }
 };
 const count = l => toys.filter(t => stateOf(t.id, l) === 'have').length;
 const older = toys.reduce((n, t) => n + Math.max(0, rounds(t.id).length - 1), 0);
@@ -473,11 +521,11 @@ const layout = () => {
 // Marks: a click toggles one; the list goes out as JSON.
 // The All view learns each card's own name as it mounts.
 const titles = new Map();
-const output = () => {
+const listOf = set => {
   const o = {};
   for (const id of [...toys.map(t => t.id), ...gone2]) {
-    const ls = marks.has(`${id}-current`) ? ['Current'] : [];
-    for (const k of marks) {
+    const ls = set.has(`${id}-current`) ? ['Current'] : [];
+    for (const k of set) {
       const m = k.startsWith(`${id}-`) && k.slice(id.length + 1).match(/^(.+)@(.+)$/);
       if (!m) continue;
       const n = m[1].match(/^menu(\d+)$/)?.[1], t = n && past[id]?.[n - 1];
@@ -487,24 +535,45 @@ const output = () => {
     }
     if (ls.length) o[id] = ls;
   }
-  return JSON.stringify({ marked: o }, null, 2);
+  return o;
 };
+const output = () => JSON.stringify({ keep: listOf(marks), cut: listOf(cuts) }, null, 2);
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify([...marks])); localStorage.setItem(CUTKEY, JSON.stringify([...cuts])); } catch {} };
 const paint = () => {
-  for (const d of [document, ...docs]) for (const c of d.querySelectorAll('[data-key]')) c.classList.toggle('marked', marks.has(c.dataset.key));
-  $('count').innerHTML = marks.size ? `<b>${marks.size}</b> marked` : '';
-  $('copy').hidden = $('clear').hidden = !marks.size;
+  for (const d of [document, ...docs]) {
+    d.body.classList.toggle('hidecut', hideCut);
+    for (const c of d.querySelectorAll('[data-key]')) { c.classList.toggle('marked', marks.has(c.dataset.key)); c.classList.toggle('cutmark', cuts.has(c.dataset.key)); }
+  }
+  // The Current tile lies over its cell, so it dims itself.
+  for (const [id, a] of tiles) a.style.setProperty('opacity', cuts.has(`${id}-current`) ? '0.4' : '1', 'important');
+  $('count').innerHTML = [marks.size && `<b>${marks.size}</b> keep`, cuts.size && `<i>${cuts.size}</i> cut`].filter(Boolean).join(' · ');
+  $('copy').hidden = $('clear').hidden = !marks.size && !cuts.size;
+  $('hide').hidden = !cuts.size && !hideCut;
+  $('hide').setAttribute('aria-pressed', String(hideCut));
 };
+// A click steps through keep, cut and clear.
 const toggle = key => {
-  marks.has(key) ? marks.delete(key) : marks.add(key);
-  try { localStorage.setItem(KEY, JSON.stringify([...marks])); } catch {}
+  if (marks.has(key)) { marks.delete(key); cuts.add(key); } else if (cuts.has(key)) cuts.delete(key); else marks.add(key);
+  save();
   paint();
+  fitAll();
 };
 const onClick = e => { const c = e.target.closest('[data-key]'); if (c) toggle(c.dataset.key); };
+// J and K step from toy to toy; the row under the bar counts as the current one.
+const step = d => {
+  const rows = [...$('list').querySelectorAll('.row:not(.old):not([hidden])')];
+  const top = document.querySelector('.head').getBoundingClientRect().bottom + 8;
+  const at = rows.findIndex(r => r.getBoundingClientRect().top > top);
+  const i = at < 0 ? rows.length : at;
+  rows[d > 0 ? i : Math.max(0, i - 2)]?.scrollIntoView({ block: 'start' });
+};
 const onKey = e => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-  const c = e.target.closest?.('[data-key]');
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.matches?.('input')) return;
+  const c = e.target.closest?.('[data-key]'), k = e.key.toLowerCase();
   if (c && (e.key === 'Enter' || e.key === ' ')) { toggle(c.dataset.key); e.preventDefault(); }
-  else if (e.key.toLowerCase() === 't') show(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
+  else if (k === 't') show(VIEWS[(VIEWS.indexOf(view) + 1) % VIEWS.length]);
+  else if (k === 'j' || k === 'k') { step(k === 'j' ? 1 : -1); e.preventDefault(); }
+  else if (e.key === '/') { $('find').focus(); e.preventDefault(); }
 };
 document.addEventListener('click', onClick);
 document.addEventListener('keydown', onKey);
@@ -512,7 +581,31 @@ $('copy').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(output()); $('copy').textContent = 'Copied'; } catch { $('copy').textContent = 'Copy failed'; }
   setTimeout(() => { $('copy').textContent = 'Copy marks'; }, 1400);
 });
-$('clear').addEventListener('click', () => { marks.clear(); try { localStorage.removeItem(KEY); } catch {} paint(); });
+$('clear').addEventListener('click', () => {
+  if (!confirm(`Clear all marks: ${marks.size} keep and ${cuts.size} cut?`)) return;
+  marks.clear();
+  cuts.clear();
+  save();
+  paint();
+  fitAll();
+});
+$('hide').addEventListener('click', () => {
+  hideCut = !hideCut;
+  try { localStorage.setItem(HIDEKEY, hideCut ? '1' : '0'); } catch {}
+  paint();
+  fitAll();
+});
+// The find box keeps the toys whose name or id holds the text.
+$('find').addEventListener('input', () => {
+  const q = $('find').value.trim().toLowerCase();
+  for (const s of $('list').querySelectorAll('.row')) {
+    const id = s.dataset.toy;
+    s.hidden = !!q && !`${id} ${nameOf(id)} ${pastNames[id] || ''}`.toLowerCase().includes(q);
+  }
+  for (const h of $('list').querySelectorAll('h3')) h.hidden = !!q;
+  place();
+});
+$('find').addEventListener('keydown', e => { if (e.key === 'Escape') { $('find').value = ''; $('find').dispatchEvent(new Event('input')); $('find').blur(); } });
 
 // Icon, Intro logo (the luminance emblem) or Both, stacked in each cell.
 const VIEWS = ['icon', 'trans', 'both'];
