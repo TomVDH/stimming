@@ -11,7 +11,7 @@ import { devPanel } from './devpanel.js';
 
 /* ---------- controls ---------- */
 const tune = { thr: 0.5, shape: 'column', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines',
-  bend: 1, fluteW: 1, flute: 1, flicker: 1, showHeat: false };
+  bend: 1, fluteW: 3.5, flute: 1, flicker: 1, showHeat: false };
 // Shape presets: length and spread; Custom takes the sliders.
 const SHAPES = { stubby: [1.8, 0.12], column: [5, 0.04] };
 // Motion presets: noise size (per metre), speed and strength.
@@ -37,7 +37,7 @@ const ROWS = [
   slider('speed', 'Cone', 'Flow speed', 0, 3, 0.05),
   slider('bend', 'Heat', 'Bend strength', 0, 3, 0.05),
   slider('flute', 'Heat', 'Flutes', 0, 3, 0.05),
-  slider('fluteW', 'Heat', 'Flute width', 0.3, 3, 0.05),
+  slider('fluteW', 'Heat', 'Flute count', 1, 8, 0.5),
   slider('flicker', 'Heat', 'Flicker', 0, 3, 0.05),
   { type: 'toggle', id: 'showHeat', group: 'Heat', label: 'Show heat', value: false, onToggle: v => { tune.showHeat = v; apply(); } },
   { type: 'choice', id: 'board', group: 'Board', label: 'Backdrop', value: 'lines', options: [
@@ -173,9 +173,12 @@ heatMat.colorNode = Fn(() => {
     const tail = float(1.0).sub(smoothstep(U.len.sub(fz), U.len, s.add(tn.sub(0.5).mul(fz).mul(0.9).mul(U.turb))));
     const live = smoothstep(-0.05, 0.1, s).mul(tail).mul(smoothstep(0.0, 0.05, P.y));
     const h = exp(rr.mul(rr).mul(-1.6)).mul(live).mul(U.thr.mul(0.7).add(0.3));
-    // The core is fluted glass: upright flutes that waver down the jet.
-    const wav = mx_noise_float(vec3(P.y.mul(1.3), U.flowT.mul(0.35), 3.1)).mul(1.6);
-    const fl = sin(P.x.sub(U.noz.x).div(U.fluteW.mul(0.14)).mul(6.2832).add(wav)).mul(exp(rr.mul(rr).mul(-4.0)));
+    // The hottest inner core is fluted glass: a few thin upright lines.
+    // fluteW holds the count across the inner core; they waver down the jet.
+    const wav = mx_noise_float(vec3(P.y.mul(1.3), U.flowT.mul(0.35), 3.1)).mul(0.25);
+    const ph = P.x.sub(U.noz.x).div(R.mul(1.1)).mul(U.fluteW).mul(0.5).add(wav);
+    const line = smoothstep(0.82, 1.0, sin(ph.mul(6.2832)).abs());
+    const fl = line.mul(exp(rr.mul(rr).mul(-12.0))).mul(2.0);
     // A fine flicker races down with the flow.
     const fk = mx_noise_float(vec3(P.x.mul(7.0), P.y.mul(5.0).add(U.flowT.mul(2.0)), P.z.mul(7.0)));
     sum.addAssign(h.mul(fl.mul(U.flute).mul(0.5).add(1.0)).mul(fk.mul(U.flicker).mul(0.45).add(1.0)).mul(ds));
