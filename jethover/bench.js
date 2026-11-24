@@ -17,7 +17,7 @@ import { devPanel } from './devpanel.js';
 /* ---------- controls ---------- */
 const tune = { thr: 0.5, shape: 'column', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines',
   bend: 1, fluteW: 3.5, flute: 1, flicker: 1, showHeat: false,
-  soot: true, sAmount: 1, sDark: 1, sLife: 1, sSpeed: 1, sLit: 1 };
+  soot: true, sAmount: 1, sSide: 1, sDark: 1, sLife: 1, sSpeed: 1, sLit: 1 };
 // Shape presets: length and spread; Custom takes the sliders.
 const SHAPES = { stubby: [1.8, 0.12], column: [5, 0.04] };
 // Motion presets: noise size (per metre), speed and strength.
@@ -48,6 +48,7 @@ const ROWS = [
   { type: 'toggle', id: 'showHeat', group: 'Heat', label: 'Show heat', value: false, onToggle: v => { tune.showHeat = v; apply(); } },
   { type: 'toggle', id: 'soot', group: 'Soot', label: 'Soot', value: true, onToggle: v => { tune.soot = v; apply(); } },
   slider('sAmount', 'Soot', 'Amount', 0, 3, 0.05),
+  slider('sSide', 'Soot', 'Beside the jet', 0, 3, 0.05),
   slider('sDark', 'Soot', 'Darkness', 0, 3, 0.05),
   slider('sLife', 'Soot', 'Lifetime', 0.2, 4, 0.05),
   slider('sSpeed', 'Soot', 'Speed', 0.2, 2, 0.05),
@@ -231,8 +232,9 @@ gu.ambient.value.setRGB(0.05, 0.05, 0.06);
 gu.shadowAbsorption.value = 2.2; gu.shadowAmbient.value = 0.15; gu.asymmetry.value = 0.35;
 // Layer 2 makes the heat bend; the gas gives only the smoke sum.
 gu.heatGain.value = 0;
-// All the soot darkens what lies behind it, as Fire's shadow pass does.
-gu.occMin.value = 0.02; gu.occFloor.value = 1;
+// The soot darkens what lies behind it, as Fire's shadow pass does.
+// Thin haze does not darken; only denser clouds read.
+gu.occMin.value = 0.15; gu.occFloor.value = 1;
 // Only the main jet drives the gas; the other two slots stay off.
 for (let j = 1; j < 3; j++) { gu.jetP[j].value.set(0, -100, 0); gu.jetK[j].value.set(0, 0, 0, 0.4); }
 const vol = gas.volume({ steps: 56, lift: 0 });
@@ -290,8 +292,11 @@ function apply() {
   // Soot: a feed at the tail of the cone, its darkening, its fade.
   U.soot.value = tune.soot ? 1 : 0; U.sLit.value = tune.sLit; U.sSpeed.value = tune.sSpeed;
   gu.tailSoot.value = tune.soot ? 1500 * tune.sAmount : 0;
-  gu.dissipation.value = 0.3 / tune.sLife;
-  gu.occGain.value = 6 * tune.sDark;
+  // About a fifth as much soot rides beside the jet.
+  gu.sideSoot.value = tune.soot ? 300 * tune.sAmount * tune.sSide : 0;
+  // The clouds fade in about 1.7 s, so they do not linger.
+  gu.dissipation.value = 0.6 / tune.sLife;
+  gu.occGain.value = 4 * tune.sDark;
   const sh = SHAPES[tune.shape];
   if (sh) { goal.len = sh[0]; goal.spread = sh[1]; }
   const [fq, sp, tb] = MOTIONS[tune.motion] || MOTIONS.fast;

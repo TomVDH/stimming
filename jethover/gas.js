@@ -238,6 +238,8 @@ export function createFire({
     occMin: uniform(0.25), occGain: uniform(1.0),
     // Jet hover: soot fed at the tail of each hot jet's reach, per second.
     tailSoot: uniform(0.0),
+    // Jet hover: soot fed along the column's edge, per second.
+    sideSoot: uniform(0.0),
     occFloor: uniform(0.0),
   };
 
@@ -523,6 +525,9 @@ export function createFire({
       // Noise breaks the feed into wisps that peel off the jet's edge.
       const wisp = smoothstep(0.5, 0.8, mx_noise_float(wp.mul(vec3(2.2, 0.8, 2.2)).add(vec3(u.time.mul(0.9), u.time.mul(-1.6), 0.0))).mul(0.5).add(0.5));
       density.addAssign(u.tailSoot.mul(tail).mul(wisp).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
+      // Jet hover: a lighter feed along the column's edge, so some soot rides beside the jet.
+      const side = smoothstep(L.mul(0.15), L.mul(0.4), sRaw).mul(float(1.0).sub(smoothstep(L.sub(1.0), L.sub(0.2), sRaw))).mul(smoothstep(R.mul(0.7), R.mul(1.1), r)).mul(float(1.0).sub(smoothstep(R.mul(1.4), R.mul(2.0), r)));
+      density.addAssign(u.sideSoot.mul(side).mul(wisp).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
       const land = P.add(A.mul(L));
       // A jet that ends in free air neither smokes nor steams the floor.
       const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
