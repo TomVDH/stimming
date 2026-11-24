@@ -1,10 +1,11 @@
 ---
 # stimming-8gez
 title: 'Solar loop: probe an eruption as Fires fluid'
-status: in-progress
+status: completed
 type: spike
+priority: normal
 created_at: 2026-11-23T22:40:20Z
-updated_at: 2026-11-23T22:40:20Z
+updated_at: 2026-11-24T00:03:01Z
 parent: stimming-e35i
 ---
 
@@ -16,7 +17,7 @@ Question (Tom, 2026-11-23): can Fire's 3D fluid carry the eruption? Probe only, 
 - [x] Draw it as glowing cool plasma, added before bloom
 - [x] Captures: docs/qa/solarloop/27 (the arch at rest) and 28 (6 s into its eruption)
 - [x] Round two (Tom: a block forms; follow the prominences): guide field along the prominence, condensing plasma, drain and sink at the feet, soft box faces, lift with the threads
-- [ ] Tom's verdict: keep, tune or drop
+- [x] Tom's verdict (2026-11-23): keep it flagged. The fluid haze stays behind ?fluid; the toy's default is unchanged.
 
 ## Finding
 
