@@ -37,3 +37,4 @@ Build Wrecking ball (idea 72, group E, a machine) as a Lab toy: an MVP at high f
 - Q10: 7.8 ms mean, 8.1 ms p95 through a hit (headless Edge, D3D11, RTX 3070; vsync bound). Sim step under 1 ms. Tom checks on a real screen.
 - Icons: no pick in icons/picks.json, so A of spike wreckingball-1 is on the menu. The intro emblem is A's emblem at 128: the ball, its chain and the wall's face in white with the joints cut in. The favicon shared/favicons/wreckingball.png comes from the menu tile.
 - Open for Tom: 3D or flat (3D by default), a boom in frame or not, the Dutch name (draft Sloopkogel), the icon pick.
+- MSAA fix (2026-11-23): the passes swap the composer buffers three times a frame, so the scene used the MSAA target only every other frame. renderTarget1 now holds the MSAA and the scene always starts there, as in Superconductor (a8f3237b). Check: the scene render target had 0, 4, 0, 4 samples before and 4 on all 12 frames after, with and without dust.
