@@ -4,8 +4,12 @@
 // Each star is a swatch in its own colour, sized by its radius on a log scale.
 // The toy owns this sheet; it copies the Bar v3 sheet look.
 
+import { FACTS } from './facts.js';
+
 // Star data: the class or stage, and the surface temperature (K).
 // A black hole has no surface temperature: t is null.
+// kind: how the swatch draws the body; a plain star leaves it out (Tom, 2026-11-24).
+// brown, proto, wind, tzo, ringed, binary, dwarf, pulsar, hole, quasar.
 export const CHART = {
   zetaoph: { t: 34000, cls: 'O9.5 V' },
   regulus: { t: 12000, cls: 'B8 IV' },
@@ -15,22 +19,22 @@ export const CHART = {
   sun: { t: 5772, cls: 'G2 V' },
   epseri: { t: 5080, cls: 'K2 V' },
   proxima: { t: 3040, cls: 'M5.5 V' },
-  luhman: { t: 1300, cls: 'L7.5 + T0.5' },
-  wise: { t: 285, cls: 'Y4' },
-  ttauri: { t: 4000, cls: 'K0 protostar' },
+  luhman: { kind: 'brown', t: 1300, cls: 'L7.5 + T0.5' },
+  wise: { kind: 'brown', t: 285, cls: 'Y4' },
+  ttauri: { kind: 'proto', t: 4000, cls: 'K0 protostar' },
   arcturus: { t: 4290, cls: 'K1.5 III red giant' },
   rigel: { t: 12100, cls: 'B8 Ia supergiant' },
   betelgeuse: { t: 3600, cls: 'M1 Ia supergiant' },
   vycma: { t: 3490, cls: 'M5 Ia hypergiant' },
-  wr124: { t: 44700, cls: 'WN8h Wolf-Rayet' },
-  tzo: { t: 3500, cls: 'Thorne–Żytkow object, predicted' },
-  j1407: { t: null, cls: 'K5 young star, ringed eclipse' },
-  betalyr: { t: 13300, cls: 'B7 II donor, interacting binary' },
-  siriusb: { t: 25000, cls: 'DA2 white dwarf' },
-  neutron: { t: 700000, cls: 'neutron star' },
-  cygx1: { t: null, cls: 'stellar black hole' },
-  sgra: { t: null, cls: 'supermassive black hole' },
-  qso: { t: null, cls: 'quasar' },
+  wr124: { kind: 'wind', t: 44700, cls: 'WN8h Wolf-Rayet' },
+  tzo: { kind: 'tzo', t: 3500, cls: 'Thorne–Żytkow object, predicted' },
+  j1407: { kind: 'ringed', t: null, cls: 'K5 young star, ringed eclipse' },
+  betalyr: { kind: 'binary', t: 13300, cls: 'B7 II donor, interacting binary' },
+  siriusb: { kind: 'dwarf', t: 25000, cls: 'DA2 white dwarf' },
+  neutron: { kind: 'pulsar', t: 700000, cls: 'neutron star' },
+  cygx1: { kind: 'hole', t: null, cls: 'stellar black hole' },
+  sgra: { kind: 'hole', t: null, cls: 'supermassive black hole' },
+  qso: { kind: 'quasar', t: null, cls: 'quasar' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.
@@ -74,7 +78,6 @@ export function makeChart(o) {
   el.hidden = true;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Star chart');
-  el.append(h('div', 'sl-hd', '<span>Star</span><em class="sl-hint"></em>'));
   const ribbon = h('div', 'sl-ribbon');
   const ladder = h('div', 'sl-ladder');
   // Page arrows at the ends; each shows only when more lies that way.
@@ -97,7 +100,8 @@ export function makeChart(o) {
     b.dataset.value = s.value;
     b.style.setProperty('--c', s.colour);
     b.style.setProperty('--f', String(sizeOf(s.rsun)));
-    b.innerHTML = `<span class="sl-well"><i class="sl-sw" aria-hidden="true"></i></span><span class="sl-name">${s.name}</span>`;
+    // The swatch draws the kind of body, so a black hole never reads as a star.
+    b.innerHTML = `<span class="sl-well"><i class="sl-sw" data-kind="${c.kind || 'star'}" aria-hidden="true"></i></span><span class="sl-name">${s.name}</span>`;
     b.setAttribute('aria-label', [s.name, c.cls, fmtT(c.t), fmtR(s.rsun, s.value)].filter(Boolean).join(', '));
     b.addEventListener('click', async () => {
       o.onPick(s.value);
@@ -136,17 +140,16 @@ export function makeChart(o) {
   }, { passive: false });
   new ResizeObserver(edges).observe(ladder);
 
-  // The foot line names the star in hand: pointed, focused, or the current one.
+  // The foot line names the object in hand and its type: pointed, focused, or the current one.
+  // The star card carries the rest of the facts (Tom, 2026-11-24).
   function tell(s) {
     const cur = s || o.stars.find(x => x.value === o.get());
-    const c = CHART[cur.value];
-    info.innerHTML = `<b>${cur.name}</b><span>${c.cls}</span>${c.t == null ? '' : `<span>${fmtT(c.t)}</span>`}<span>${fmtR(cur.rsun, cur.value)}</span>`;
+    info.innerHTML = `<b>${cur.name}</b><span>${FACTS[cur.value]?.type ?? CHART[cur.value].cls}</span>`;
   }
   function sync() {
     for (const { b, s } of btns) b.setAttribute('aria-pressed', String(s.value === o.get()));
     if (!el.contains(document.activeElement)) tell();
   }
-  const touch = () => matchMedia('(pointer: coarse)').matches;
 
   let closedAt = 0, run = 0;
   async function open(on) {
@@ -156,7 +159,6 @@ export function makeChart(o) {
       const c = o.cover();
       el.style.setProperty('--foot', `${c.bottom}px`);
       el.style.setProperty('--head', `${c.top}px`);
-      el.querySelector('.sl-hint').textContent = touch() ? 'tap a star' : '← → · [ ] · s';
       sync();
       el.hidden = false;
       glass.dataset.on = '';

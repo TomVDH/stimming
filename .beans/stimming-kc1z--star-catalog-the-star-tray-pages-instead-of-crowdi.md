@@ -3,8 +3,9 @@
 title: 'Star catalog: the star tray pages instead of crowding'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-24T22:24:54Z
-updated_at: 2026-11-24T22:24:54Z
+updated_at: 2026-11-24T23:20:44Z
 parent: stimming-e35i
 ---
 
@@ -16,3 +17,9 @@ Tom, 2026-11-24: "I wanna redo the star selector -- a ribbon is good but we shou
 - [x] Checked at 1280 x 800 with 21 objects
 - [ ] 375 x 812 not checked yet
 - [ ] Tom looks at it live
+
+## Cleaner, kinds that read (Tom, 2026-11-24: "just arrange and make better -- factor in scale or uniqueness of the body -- black hole should not look like star")
+
+- [x] No header row; the foot line gives the name and type only
+- [x] A swatch per kind of body: brown, proto, wind, tzo, ringed, binary, dwarf, pulsar, hole, quasar
+- [x] Checked both ends of the ribbon at 1280 x 800
