@@ -2,6 +2,7 @@
 // Sources: SIMBAD-cited Wikipedia values, the ATNF Pulsar Catalogue, Joyce et al. 2020.
 // Black holes: GRAVITY Collaboration 2022 (Sagittarius A*); Miller-Jones et al. 2021 (Cygnus X-1).
 // 3C 273: GRAVITY Collaboration 2018 (its mass); Hipparcos measured it as a star.
+// WR 124: Hamann et al. 2019 (radius, age); the Gaia distance.
 // "about" marks an estimate or a value that sources dispute; null leaves the line out.
 // name: the card's name where it differs from the tray's short one.
 // latin: the formal name; it is left out where it equals the common name.
@@ -24,6 +25,7 @@ export const FACTS = {
   rigel: { latin: 'Beta Orionis A', cat: 'HIP 24436', turn: 'about 100 days', mag: 0.13, wide: '74 suns', dist: 'about 850 light years', age: 'about 8 million years' },
   betelgeuse: { latin: 'Alpha Orionis', cat: 'HIP 27989', turn: 'about 36 years', mag: 0.5, wide: 'about 760 suns', dist: 'about 550 light years', age: 'about 8 to 14 million years' },
   vycma: { name: 'VY Canis Majoris', latin: null, cat: 'HIP 35793', turn: null, mag: 7.95, wide: 'about 1,420 suns', dist: 'about 3,800 light years', age: 'about 8 million years' },
+  wr124: { name: 'WR 124', latin: 'QR Sagittae', cat: null, turn: null, mag: 11.2, wide: 'about 12 suns', dist: 'about 21,000 light years', age: 'about 8.6 million years' },
   siriusb: { latin: 'Alpha Canis Majoris B', cat: 'WD 0642−166', turn: null, mag: 8.44, wide: '0.008 of the sun', dist: '8.6 light years', age: 'about 228 million years' },
   cygx1: { latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years' },
   sgra: { latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null },

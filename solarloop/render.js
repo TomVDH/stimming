@@ -79,6 +79,9 @@ const LUTS = [
   // 3C 273: the big blue bump, pale blue to white; the jet and the near side violet white.
   [['000000', 0], ['05070c', 0.1], ['16203a', 0.26], ['3c5a8c', 0.44], ['7ea0d4', 0.62], ['c0d6f6', 0.78], ['eef4ff', 0.9], ['ffffff', 1]],
   [['000000', 0], ['08060e', 0.12], ['221a40', 0.3], ['56489a', 0.5], ['9c90dc', 0.68], ['dcd6fa', 0.84], ['ffffff', 1]],
+  // WR 124: violet blue to white in its wind; the nebula glows hydrogen pink.
+  [['000000', 0], ['05060e', 0.1], ['161c40', 0.26], ['3a4c9a', 0.44], ['7a8ee0', 0.6], ['bcc8ff', 0.74], ['eef1ff', 0.86], ['ffffff', 1]],
+  [['000000', 0], ['0e0308', 0.12], ['3a0a22', 0.3], ['821e48', 0.5], ['d0507a', 0.68], ['f6a8c0', 0.84], ['fff0f4', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -304,6 +307,8 @@ uniform vec4 uReg[${NR}];
 uniform vec4 uSpot[${NR}];
 uniform vec4 uFl[2], uFlB[2];
 uniform vec4 uEgg[4], uDim[2];
+// A Wolf-Rayet wind: its glow, its clumps, the nebula's light, the nebula's radius in R.
+uniform vec4 uWind;
 // A black hole: on, the disc's tilt toward the eye, disc light, disc heat.
 uniform vec4 uHole;
 // One pixel in Schwarzschild radii, and the lensed stars' gain.
@@ -413,6 +418,8 @@ void main() {
         shade *= 1.0 - 0.62 * pen - 0.33 * umb;
       }
     }
+    // A Wolf-Rayet wind veils the disk: clumps drift outward across its face.
+    if (uWind.x > 0.0) hot *= 0.82 + 0.36 * fbm(q * 11.0 + vec3(0.0, 0.0, 2.2 * log(1.03 - mu) - uTime * 0.05));
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
     // A neutron star's magnetic poles burn hot: a white cap in a soft ring.
@@ -445,6 +452,15 @@ void main() {
     float fine = fbm(u * 7.6 + vec3(0.0, 0.0, h * 0.006 - tb * 0.3 + 4.1));
     hot = uDisk.w * (exp(-h / uDisk2.x) * (0.6 + 0.8 * fine) + 0.3 * exp(-h / 360.0) * (0.4 + 1.2 * st * st));
     // The chromosphere: a thin bright rim, and a ragged fringe of spicules.
+    // A Wolf-Rayet wind: no edge, a thick glow; clumps stream out, about 700 km/s.
+    // The noise is fine across the sky and long along each radius: streaks.
+    if (uWind.x > 0.0) {
+      float lh = log(h / R + 0.03);
+      float cl = fbm(u * 11.0 + vec3(0.0, 0.0, lh * 2.2 - uTime * 0.05));
+      float fall = pow(R / r, 2.5);
+      hot += uWind.x * uDisk.x * 0.55 * fall * (0.7 + 0.6 * cl);
+      hot += uWind.y * uDisk.x * 0.9 * fall * pow(smoothstep(0.5, 0.85, cl), 2.0);
+    }
     float sh = 3.0 + 9.0 * pow(vn(u * 48.0 + vec3(0.0, 0.0, uTime * 0.05 + 0.5)), 2.0);
     cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(u * 143.0 + vec3(0.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
     if (uDust > 0.0) {
@@ -568,6 +584,21 @@ void main() {
   }
   // Real light: the corona and everything round the disk lose weight to the disk.
   if (r >= R) { hot *= uOff; cool *= uOff; }
+  // M1-67: knots of shed gas round a Wolf-Rayet star, not to scale.
+  // The true nebula is 45 million times the star's width; it shows as the view pulls back.
+  if (uWind.z > 0.0 && r > R) {
+    float rr = r / (R * uWind.w);
+    // The knots crowd along one axis, as in the JWST picture.
+    float ang = atan(P.y, P.x);
+    float axis = 0.45 + 0.55 * pow(cos(ang - 0.9), 2.0);
+    vec3 nq = vec3(P / (R * uWind.w) * 2.6, 1.3 + uTime * 0.002);
+    vec3 nw = vec3(fbm(nq * 0.7 + 3.0), fbm(nq * 0.7 + 7.0), 0.0);
+    float kn = smoothstep(0.42, 0.72, fbm(nq + 0.7 * nw));
+    float env = smoothstep(0.2, 0.65, rr) * exp(-pow(max(rr - 0.85, 0.0) / 0.4, 2.0));
+    float neb = env * axis * uWind.z;
+    cool += neb * (0.16 + 1.0 * kn * kn);
+    hot += neb * 0.15 * kn;
+  }
   hot *= shade;
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
@@ -1197,6 +1228,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uEgg, v.egg);
     gl.uniform4fv(s.u.uDim, v.dim);
     gl.uniform4fv(s.u.uHole, v.hole);
+    gl.uniform4fv(s.u.uWind, v.band.wind);
     gl.uniform2fv(s.u.uHoleSky, v.holeSky);
     gl.uniform1f(s.u.uJet, v.jet);
     gl.uniform1i(s.u.uZero, 0);
