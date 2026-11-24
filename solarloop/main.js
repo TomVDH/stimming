@@ -182,9 +182,16 @@ function toggleLens() {
   springTo(cam.to < 0.5 ? 2 : cam.to > 1.5 ? 1 : 0);
 }
 // The wheel, a pinch and the - and = keys move the zoom by dz.
+// One magnet notch: a pause near the full star settles the zoom on it (Tom, 2026-11-24).
+const NOTCH = 2, NOTCH_REACH = 0.3;
+let settle = 0;
 function zoomBy(dz) {
   if (chart?.isOpen) return;
   springTo(cam.to + dz);
+  clearTimeout(settle);
+  settle = setTimeout(() => {
+    if (Math.abs(cam.to - NOTCH) < NOTCH_REACH && cam.to !== NOTCH) springTo(NOTCH);
+  }, 300);
 }
 // Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
@@ -276,6 +283,8 @@ const FX = [
   ['fxOrb', 'Flare', 'Orb', 0, 3, 1],
   ['fxStreak', 'Flare', 'Streak', 0, 3, 1],
   ['fxGhost', 'Flare', 'Ghosts', 0, 3, 1],
+  ['fxReal', 'Real light', 'Exposure lift', 0, 2, 1],
+  ['fxGlare', 'Real light', 'Glare', 0, 3, 1],
 ];
 // The grade rows: a tone curve, a sun-glare look, and three sliders.
 const TONES = [['0', 'Film'], ['1', 'ACES'], ['2', 'AgX']];
@@ -585,7 +594,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0,
+  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
 };
@@ -660,21 +669,29 @@ function makeFrame() {
   const far = ease(clamp((cam.z - 2) / 2));
   f.far = far;
   f.cam.set([st.yaw, st.pitch, star.lensing, far]);
+  // Real light (Tom, 2026-11-24): up close the star is masked so the corona shows.
+  // Pulled back, the exposure rises and the disk outshines what lies round it.
+  const real = ease(clamp((cam.z - 1.2) / 2.4));
+  const lift = 2 ** (2.2 * real * fxv('fxReal'));
+  // Off-disk light keeps a quarter of its look against the lifted disk; far off it fades.
+  f.off = (1 - 0.75 * real) / lift * (1 - 0.8 * far);
+  f.glare = real * fxv('fxGlare');
+  f.lift = lift;
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
   // w: the star's dust, which keeps the haze over its disk.
   f.film.set([0.018, 0, 0.35, star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
   f.volDens *= 1 - 0.95 * ease(clamp((cam.z - 2) / 2));
-  f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight');
+  f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight') * f.off;
   // The 3D corona shows in the full view; its light follows the star's own corona.
-  f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6 * (1 - far);
+  f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6 * f.off;
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
-  f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
+  f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), f.lift]);
   f.fx4.set([Number(gv('fxTone', '0')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
-  f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), 0]);
+  f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), f.glare]);
   eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');

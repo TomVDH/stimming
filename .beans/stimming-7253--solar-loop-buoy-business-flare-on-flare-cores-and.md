@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T20:57:20Z
-updated_at: 2026-11-24T21:03:59Z
+updated_at: 2026-11-24T21:11:35Z
 parent: stimming-e35i
 ---
 
@@ -24,3 +24,13 @@ Tom, 2026-11-24: "redo the lens flare and display of the star as we zoom out -- 
 - Far star: Sun at x4 and x16, a white core, warm orb, long streak; Rigel at x6 keeps a blue streak; VY CMa a dim red disk with a faint red streak.
 - Ghosts stay on the star when it sits at the frame centre, as Buoy Business places them.
 - Clean console at 1280 x 800.
+
+## Second pass (Tom, 2026-11-24)
+
+"the lens flare doesnt go off the viewport -- it ends before -- so our streaks should cut off somewhat realistically -- we want a globular -- we want some ghosts maybe too -- ensure we have a bit of a starry background too when zoomed out"
+
+- [x] Streak tapers out before the frame's edge
+- [x] Round, globular glow round the far star, white heart, star-coloured edge
+- [x] Ghosts: rimmed discs, warm and teal, off axis when the light is centred
+- [x] Starfield in two layers behind the far star
+- [x] Check Betelgeuse at x4 and x16

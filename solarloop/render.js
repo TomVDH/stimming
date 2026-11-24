@@ -123,6 +123,8 @@ uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 // far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
 uniform float uFar;
+// off: the weight of light round the disk against the disk's own light.
+uniform float uOff;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlB[2];
@@ -357,8 +359,8 @@ void main() {
     hot *= 1.0 - 0.6 * min(uFlB[k].z, 1.0) * vis * smoothstep(1.0, 0.55, d);
     hot += uFlB[k].z * shell * vis;
   }
-  // From far away the corona and everything round the disk fade out.
-  if (r >= R) { hot *= 1.0 - 0.97 * uFar; cool *= 1.0 - 0.97 * uFar; }
+  // Real light: the corona and everything round the disk lose weight to the disk.
+  if (r >= R) { hot *= uOff; cool *= uOff; }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
 
@@ -679,8 +681,8 @@ vec3 grade(vec2 s) {
   float I = s.x + s.y;
   // The full view shows the whole bright disk, so it takes less exposure.
   float x = I * uExpo * uFx3.y * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull);
-  // Far away the star burns brighter, as a point source does to the eye.
-  x *= 1.0 + 3.0 * uCam.w;
+  // Real light: the exposure rises as the view pulls back, so the disk burns white.
+  x *= uFx3.w;
   // uFx4.x picks the curve: 0 film, 1 ACES, 2 AgX.
   float t = uFx4.x < 0.5 ? 1.0 - exp(-x) : uFx4.x < 1.5 ? toneAces(x) : toneAgx(x);
   // The long lens presses the tones: a slightly darker, harder curve.
@@ -725,16 +727,46 @@ ${FLARE}
 // The Buoy Business anamorphic flare, in the star's own colour (Tom, 2026-11-24).
 // The parts replace flBuoy: its warm pull turns blue streaks grey.
 // The toy's gains: orb, streak, ghosts, on the graded frame.
-const vec3 SL_FLARE = vec3(0.32, 0.55, 0.07);
+const vec3 SL_FLARE = vec3(0.32, 0.55, 0.18);
+// One ghost: a soft disc with a brighter rim, as an aperture ghost shows.
+float ringGhost(vec2 uv, vec2 at, float asp, float r) {
+  return max(flGhost(uv, at, asp, r) - 0.55 * flGhost(uv, at, asp, r * 0.7), 0.0);
+}
 // src is in pixels; g scales the whole flare; fall sets the orb's width.
-vec3 lensFlare(vec2 src, float g, float fall, float len) {
+// len sets the streak's falloff; reach, in frame heights, is where it ends.
+vec3 lensFlare(vec2 src, float g, float fall, float len, float reach) {
   vec2 uv = gl_FragCoord.xy / uRes, s = src / uRes;
   float asp = uRes.x / uRes.y;
   vec2 d = flOffset(uv, s, asp, 1.0);
   vec3 orb = mix(uStreak, vec3(1.0), 0.45) * flOrb(d, fall) * SL_FLARE.x * uFx5.y;
-  vec3 line = uStreak * flLine(d, FL_BB.x, len) * SL_FLARE.y * uFx2.x;
-  vec3 ghost = mix(uStreak, uStreak * FL_ORANGE, 0.4) * flGhosts(uv, s, asp, 1.0, FL_BB.w, 0.0) * SL_FLARE.z * uFx5.z;
+  // The streak tapers out before the frame's edge, as a real lens streak does.
+  float cut = smoothstep(reach, reach * 0.45, abs(d.x));
+  vec3 line = uStreak * flLine(d, FL_BB.x, len) * cut * SL_FLARE.y * uFx2.x;
+  // Ghosts lie on the line through the frame's centre.
+  // A light near the centre still throws them a little off axis.
+  vec2 toC = vec2(0.5) - s;
+  toC = mix(vec2(-0.16, 0.11), toC, smoothstep(0.0, 0.15, length(toC)));
+  float gh = 0.9 * ringGhost(uv, s + toC * 0.7, asp, 0.04) + 0.5 * ringGhost(uv, s + toC * 2.2, asp, 0.13);
+  float gc = 0.7 * ringGhost(uv, s + toC * 1.4, asp, 0.08) + 0.4 * flGhost(uv, s - toC * 0.45, asp, 0.025);
+  vec3 ghost = (mix(uStreak, uStreak * FL_ORANGE, 0.4) * gh + mix(uStreak.bgr, vec3(0.6, 0.9, 0.8), 0.5) * gc) * SL_FLARE.z * uFx5.z;
   return (orb + line + ghost) * g;
+}
+// A sparse starfield in two layers, most stars faint; yaw and pitch slide it.
+vec3 starfield(vec2 fc) {
+  vec3 acc = vec3(0.0);
+  for (int l = 0; l < 2; l++) {
+    float fine = l == 0 ? 1.0 : 0.0;
+    float cell = mix(26.0, 9.0, fine) * uSc;
+    vec2 q = fc / cell + vec2(17.3, 5.1) * float(l) + uCam.xy * vec2(-30.0, 30.0) * mix(1.0, 0.6, fine);
+    vec2 id = floor(q), f = fract(q) - 0.5;
+    if (hash(id + float(l) * 13.1) > mix(0.22, 0.07, fine)) continue;
+    vec2 at = (vec2(hash(id + 3.7), hash(id + 9.1)) - 0.5) * 0.8;
+    float dd = length((f - at) * cell) / uSc;
+    float b = mix(0.9, 0.35, fine) * pow(hash(id + 21.3), 3.0) + 0.04;
+    vec3 col = mix(vec3(1.0, 0.8, 0.62), vec3(0.72, 0.84, 1.0), hash(id + 5.5));
+    acc += col * b * exp(-dd * dd / mix(1.1, 0.5, fine));
+  }
+  return acc;
 }
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
@@ -789,22 +821,34 @@ void main() {
   float bll = bl.r * uMix.y + bl.g * uMix.z;
   // Halation: the film's red glow round bright light.
   c += uHal * (1.0 - exp(-bll * 0.8)) * 0.45 * uFx1.w;
+  // The disk's centre and radius on screen, in pixels.
+  vec2 src = uC * uRes;
+  float rp = R / uView.w * 0.5 * uRes.y;
+  float dl = length(gl_FragCoord.xy - src);
+  // Zoomed out, the stars come through behind the star; never over its disk.
+  if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < 2; k++) {
     float S = uSat[k].z;
     if (S <= 0.0) continue;
     // A stronger core throws a longer streak.
-    fl += lensFlare(uSat[k].xy, min(S, 1.5), FL_BB.z, FL_BB.y * (1.2 + 1.6 * min(S, 1.5)));
+    fl += lensFlare(uSat[k].xy, min(S, 1.5), FL_BB.z, FL_BB.y * (1.2 + 1.6 * min(S, 1.5)), 0.3 + 0.2 * min(S, 1.5));
+  }
+  // The glare is white at its heart and takes the star's own colour farther out.
+  vec3 gc = grade(vec2(3.0, 0.2)), gw = grade(vec2(0.9, 0.15));
+  // Real light: the star's glare spreads past the limb and covers the corona.
+  if (uFx5.w > 0.0) {
+    float past = max(dl - rp, 0.0);
+    fl += (gc * 0.6 * exp(-past / (rp * 0.35 + 8.0 * uSc)) + gw * 0.45 * exp(-past / (rp * 1.5 + 40.0 * uSc))) * uFx5.w;
   }
   // The far star: the disk shrinks to a hard core; the flare grows in round it.
   if (uCam.w > 0.0) {
-    vec2 src = uC * uRes;
-    // The disk's radius on screen, in pixels.
-    float rp = R / uView.w * 0.5 * uRes.y;
+    // A round, globular glow, the eye's bloom on a point of light.
+    fl += (gc * 0.8 * exp(-dl / (rp * 1.6 + 14.0 * uSc)) + gw * 0.5 * exp(-dl / (rp * 6.0 + 70.0 * uSc))) * uCam.w;
     // The orb spans about twice the disk.
     float fall = uRes.y / (rp * 2.2 + 10.0 * uSc);
-    fl += lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w));
+    fl += lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w), 0.42 + 0.2 * uCam.w);
   }
   // Screen blend: the flare washes the frame; light past white stays as it is.
   c += min(fl, vec3(1.0)) * max(1.0 - c, 0.0);
@@ -912,6 +956,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform1f(s.u.uFar, v.far);
+    gl.uniform1f(s.u.uOff, v.off);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlB, v.flB);
@@ -927,7 +972,7 @@ export async function makeRender(gl, opts = {}) {
       gl.uniform2f(p.u.uRes, W, H);
       gl.uniform1f(p.u.uTime, v.time % 4000);
       gl.uniform1f(p.u.uRain, v.band.rain);
-      gl.uniform1f(p.u.uGain, (1 + 0.9 * v.lens) * (1 - v.far));
+      gl.uniform1f(p.u.uGain, (1 + 0.9 * v.lens) * v.off);
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, v.data, 0, v.count * STRIDE);
       gl.enable(gl.BLEND);

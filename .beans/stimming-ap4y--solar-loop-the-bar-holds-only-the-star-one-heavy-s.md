@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T20:57:20Z
-updated_at: 2026-11-24T21:00:42Z
+updated_at: 2026-11-24T21:07:57Z
 parent: stimming-e35i
 ---
 
@@ -25,3 +25,8 @@ Picks: star picker only (Space and L stay as keys, Activity to Settings); the ch
 - Path: zoom rate (d log width / dz) stays between 0.56 and 1.44 from z 0 to 4; no flat spot at a stop; largest step change 0.01.
 - Motion: L from the long lens to the full star starts soft (z 0.001, 0.0015, 0.0022 on the first frames), never passes 2, 99 percent at 1.72 s.
 - Space flares; the wheel sets the target and shows the rail; Activity and Zoom weight rows present; clean console at 1280 x 800 and 375 x 812.
+
+## Magnet notch (Tom, 2026-11-24)
+
+- [x] One magnet notch: a pause within 0.3 of the full star settles there
+- [ ] Tom tries the notch live
