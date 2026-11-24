@@ -1,6 +1,6 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
 // Space is silent, so the sound is a sonification: each part has a visible cause.
-// A flare or a lifting prominence: the deep synth only (Tom). A drag is silent.
+// A flare: the deep synth, then a slow glow chord. A lifting prominence: the synth only. A drag is silent.
 // Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
@@ -310,10 +310,28 @@ export function makeSound(kit) {
   }
 
   // The flare: only the deep synth (Tom): no wind, no roar, no chord.
+  // A tap: the brass blast, then the glow chord (Tom: only these two).
   function flare(pan, band, k = 1) {
     const ac = kit.live();
     if (!ac) return;
-    braam(ac, ac.currentTime + 0.005, pan, band, clamp(k, 0.3, 1) * 0.7, 6);
+    const t = ac.currentTime + 0.005;
+    const K = clamp(k, 0.3, 1);
+    braam(ac, t, pan, band, K * 0.7, 6);
+    // The glow: a slow chord while the arcade shines.
+    const root = (ROOT[band] || 220) / 2;
+    const pad = voice(ac, pan * 0.5);
+    pad.gain.setValueAtTime(0, t + 1.5);
+    pad.gain.linearRampToValueAtTime(0.05 * K, t + 8);
+    pad.gain.setValueAtTime(0.05 * K, t + 16);
+    pad.gain.exponentialRampToValueAtTime(0.0002, t + 34);
+    const plp = filt(ac, 'lowpass', 900, 0.5);
+    plp.connect(pad);
+    for (const m of [1, 1.4983, 2, 2.9966]) {
+      const a = osc(ac, 'triangle', root * m * jit(0.004), t + 1.5, 33);
+      a.detune.value = (Math.random() - 0.5) * 12;
+      a.connect(plp);
+    }
+    send(ac, pad, 0.4);
   }
 
   // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
