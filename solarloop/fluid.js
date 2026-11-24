@@ -1,6 +1,7 @@
-// Solar loop fluid probe: an eruption as Fire's 3D fluid. Only with ?fluid (spike stimming-8gez).
-// A box stands on the star at the erupting site: up is radial, the surface is its floor.
-// The box fills with a rope of plasma; heat and a growing lift throw it out into space.
+// Solar loop fluid probe: Fire's 3D fluid as the haze round a prominence. Only with ?fluid (spike stimming-8gez).
+// A box stands on the star under the prominence in view: up is radial, the surface is its floor.
+// Plasma condenses along the prominence's own shape; a guide field steers it down the legs.
+// When the prominence erupts, the guide grows as its threads do, and the haze lifts with them.
 /* ---------- K3: volume fluid (raw WebGL2 port of shared/fire.js, from cloudbottle/fluid.js) ---------- */
 // The method follows Fire: advect, buoyancy, turbulence, vorticity confinement,
 // a Jacobi pressure solve, dye transport.
@@ -53,6 +54,17 @@ bool wet(ivec3 c) { return all(greaterThanEqual(c, ivec3(0))) && c.x < NX && c.y
 // Outside the box is open space, except below the floor: the star's surface.
 bool open(ivec3 c) { return c.y >= 0; }
 float h31(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+// The guide: x the kind (1 an arch, 2 a hedgerow curtain), y half the footprint, z the height, w the drain speed.
+uniform vec4 uGuide;
+// An arch's nested field lines are semi-ellipses; s is 1 on the prominence's own line.
+float archS(vec3 P) { return sqrt(P.x * P.x / (uGuide.y * uGuide.y) + P.y * P.y / (uGuide.z * uGuide.z)); }
+// How close a point lies to the prominence: 1 on it, 0 well away.
+float nearGuide(vec3 P, float wS, float wZ) {
+  float z = exp(-pow(P.z / (wZ * NF.z * CELL), 2.0));
+  if (uGuide.x < 1.5) return exp(-pow((archS(P) - 1.0) / wS, 2.0)) * z * step(0.0, P.y);
+  float prof = pow(max(1.0 - pow(P.x / uGuide.y, 2.0), 0.0), 0.6);
+  return smoothstep(uGuide.y, uGuide.y * 0.85, abs(P.x)) * smoothstep(uGuide.z * prof * 1.1 + 1.0, uGuide.z * prof * 0.5, P.y) * z;
+}
 float vn3(vec3 p) {
   vec3 i = floor(p), u = fract(p);
   u = u * u * (3.0 - 2.0 * u);
@@ -81,6 +93,21 @@ void main() {
   vec3 pc = vec3(c) + 0.5, P = BMIN + pc * CELL;
   vec3 v = S(tVel, pc - F(tVel, c).xyz * uDt / CELL).xyz;
   vec4 dye = F(tDye, c);
+  // The field steers the gas along itself: plasma drains down the prominence's legs.
+  if (uGuide.x > 0.5) {
+    vec3 td = vec3(0.0, -1.0, 0.0);
+    float near = nearGuide(P, 0.3, 0.2);
+    if (uGuide.x < 1.5) {
+      float H2 = uGuide.z * uGuide.z, L2 = uGuide.y * uGuide.y;
+      vec2 t2 = normalize(vec2(P.y / H2, -P.x / L2) + 1e-6) * (P.x >= 0.0 ? 1.0 : -1.0);
+      td = vec3(t2, 0.0);
+      // The field holds the plasma on its line: a pull back toward s = 1.
+      vec2 g = normalize(vec2(P.x / L2, P.y / H2) + 1e-6);
+      v.xy -= g * (archS(P) - 1.0) * uGuide.z * 1.6 * near * uDt;
+    }
+    vec3 along = td * uGuide.w;
+    v = mix(v, along + (v - td * dot(v, td)) * 0.6, clamp(near * 2.0 * uDt, 0.0, 1.0));
+  }
   // Hot plasma rises; the field's growing lift carries the plasma itself out.
   v.y += (dye.g * uBuoy + clamp(dye.r, 0.0, 1.5) * uLift) * uDt;
   // Fire's ambient turbulence: a drifting noise field stirs the gas.
@@ -151,24 +178,20 @@ void main() {
 // Dye: r the plasma, g its heat.
 const ADVECT_DYE = `${HEAD}
 uniform sampler2D tVel, tDye;
-uniform float uDt, uFill, uEmit, uSpan, uTime;
+uniform float uDt, uEmit, uTime;
 void main() {
   ivec3 c = cellOf(gl_FragCoord.xy);
   vec3 pc = vec3(c) + 0.5, P = BMIN + pc * CELL;
   vec4 d = S(tDye, pc - F(tVel, c).xyz * uDt / CELL);
-  float gas = d.r * max(1.0 - 0.04 * uDt, 0.0), heat = d.g * max(1.0 - 0.25 * uDt, 0.0);
-  // The foot keeps feeding the eruption: a ragged line of plasma along the site.
-  float line = smoothstep(uSpan, uSpan * 0.7, abs(P.x)) * smoothstep(3.0 * CELL, 0.0, P.y) * smoothstep(0.14 * NF.z * CELL, 0.0, abs(P.z));
-  float rag = 0.6 + 0.8 * vn3(P * 0.05 + vec3(0.0, 0.0, uTime));
-  gas += line * uEmit * uDt * 2.5 * rag;
-  heat += line * uEmit * uDt * 3.0;
-  // At the start the box holds the prominence: a rope along the site, low over the floor.
-  if (uFill > 0.0) {
-    float hy = 0.2 * NF.y * CELL, ry = 0.06 * NF.y * CELL, rz = 0.1 * NF.z * CELL;
-    float rope = exp(-pow((P.y - hy) / ry, 2.0)) * exp(-pow(P.z / rz, 2.0)) * smoothstep(uSpan, uSpan * 0.6, abs(P.x));
-    float n = vn3(P * 0.04);
-    gas = mix(gas, rope * (0.6 + 1.2 * n), uFill);
-    heat = mix(heat, rope * 0.8, uFill);
+  float gas = d.r * max(1.0 - 0.12 * uDt, 0.0), heat = d.g * max(1.0 - 0.25 * uDt, 0.0);
+  // Plasma that drains to the foot sinks into the surface instead of pooling there.
+  gas *= max(1.0 - smoothstep(5.0 * CELL, 0.0, P.y) * 2.5 * uDt, 0.0);
+  // Plasma condenses along the prominence in clumps that drift with time.
+  if (uGuide.x > 0.5 && uEmit > 0.0) {
+    float on = nearGuide(P, 0.07, 0.07);
+    float knots = vn3(P * 0.035 + vec3(0.0, uTime * 0.35, 0.0));
+    gas += on * knots * knots * uEmit * uDt * 1.6;
+    heat += on * uEmit * uDt * 0.2;
   }
   o = vec4(gas, heat, 0.0, 0.0);
 }`;
@@ -182,6 +205,12 @@ uniform mat3 uToSun, uBox, uBoxT;
 uniform vec3 uO;
 uniform float uGain;
 in vec2 vUv;
+// The box's faces fade softly, so its edges never show.
+float edge(vec3 p) {
+  vec3 lo = p - BMIN, hi = BMIN + NF * CELL - p;
+  float m = min(min(lo.x, hi.x), min(min(lo.z, hi.z), hi.y));
+  return smoothstep(0.0, 4.0 * CELL, m);
+}
 const float R = ${R.toFixed(1)};
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
@@ -203,7 +232,7 @@ void main() {
     vec3 p = ro + rd * (t0 + dt * (float(i) + j));
     // Past the star's surface nothing more shows.
     if (length(uBox * p + uO) < R) break;
-    float d = max(S(tDye, (p - BMIN) / CELL).r, 0.0);
+    float d = max(S(tDye, (p - BMIN) / CELL).r, 0.0) * edge(p);
     if (d < 0.002) continue;
     acc += T * d * dt;
     T *= exp(-d * dt * 0.004);
@@ -243,11 +272,16 @@ export function makeFluid(gl, P, empty) {
   const set = (p, name, v) => { if (p.u[name] != null) gl.uniform1f(p.u[name], v); };
   const clear = t => { gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); };
 
-  // s: dt, t, fill, emit, lift, span.
+  // s: dt, t, reset, warm (extra steps to build the haze), emit, lift, guide.
   function step(s) {
     gl.disable(gl.BLEND);
     if (s.reset) [...vel, ...dye, ...pr].forEach(clear);
+    for (let i = 0; i < (s.warm || 0); i++) once({ ...s, dt: 1 / 30, warm: 0 });
+    once(s);
+  }
+  function once(s) {
     const dt = s.dt;
+    const guide = (p) => { if (p.u.uGuide != null) gl.uniform4fv(p.u.uGuide, s.guide); };
     if (dt > 0) {
       let p = P.fCurl;
       gl.useProgram(p.p);
@@ -260,9 +294,10 @@ export function makeFluid(gl, P, empty) {
       bind(gl, p, 'tDye', 1, dye[0]);
       bind(gl, p, 'tCurl', 2, curl);
       set(p, 'uDt', dt); set(p, 'uTime', s.t);
-      set(p, 'uBuoy', 45); set(p, 'uLift', s.lift);
-      set(p, 'uTurb', 70); set(p, 'uTurbF', 1 / 70);
-      set(p, 'uVort', 1.2); set(p, 'uDamp', 0.08);
+      set(p, 'uBuoy', 8); set(p, 'uLift', s.lift);
+      set(p, 'uTurb', 40); set(p, 'uTurbF', 1 / 60);
+      set(p, 'uVort', 1.2); set(p, 'uDamp', 0.12);
+      guide(p);
       tri(gl, vel[1], empty);
       swap(vel);
 
@@ -292,7 +327,8 @@ export function makeFluid(gl, P, empty) {
     bind(gl, p, 'tVel', 0, vel[0]);
     bind(gl, p, 'tDye', 1, dye[0]);
     set(p, 'uDt', Math.max(dt, 0)); set(p, 'uTime', s.t);
-    set(p, 'uFill', s.fill || 0); set(p, 'uEmit', s.emit); set(p, 'uSpan', s.span);
+    set(p, 'uEmit', s.emit);
+    guide(p);
     tri(gl, dye[1], empty);
     swap(dye);
   }

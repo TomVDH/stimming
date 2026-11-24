@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, STARS, NR, bodySize, BODIES, magAxis, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -32,14 +32,24 @@ const st = {
   next: 0,
 };
 const sun = makeSun();
-// The fluid probe (spike stimming-8gez): an eruption as Fire's fluid, only with ?fluid.
+// The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
 const FLUID = new URLSearchParams(location.search).has('fluid');
-// The running fluid eruption: its clock, the site and its owner, or null.
+// The fluid's run: its clock and the prominence it lives on, or null.
 let fluidRun = null;
-function startFluid(owner, site, span) {
-  if (fluidRun) fluidRun.owner.fluid = false;
-  owner.fluid = true;
-  fluidRun = { t: 0, dt: 0, owner, site, span, first: true };
+function startFluid(p) {
+  fluidRun = { t: 0, dt: 0, owner: p, first: true, mode: cam.mode };
+}
+// The prominence nearest the middle of the stage that stands in view.
+function promInView() {
+  let best = null, bd = Infinity;
+  for (const p of sun.proms) {
+    const v = toView(p.c.map(x => x * (R + p.h * 0.5)));
+    const [x, y] = toCss(v);
+    if (x < 0 || x > cssW || y < 0 || y > cssH) continue;
+    const d = Math.hypot(x - cssW / 2, y - cssH / 2);
+    if (d < bd) { bd = d; best = p; }
+  }
+  return best;
 }
 
 let gl = null, ren = null, raf = 0, timer = 0, visible = true, last = 0, frameNo = 0, calm = reduced();
@@ -218,7 +228,6 @@ function resize(force = false) {
 function flareAt(rg) {
   if (!rg) return;
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
-  if (FLUID) startFluid(fl, rg, rg.len * 0.5);
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
   fl.snapped = 0;
@@ -243,7 +252,7 @@ function flareNext() {
 function eruptAt(p) {
   if (!p || p.erupt >= 0) return;
   startEruption(p);
-  if (FLUID) startFluid(p, p, p.len * 0.45);
+  if (FLUID && fluidRun?.owner !== p) startFluid(p);
   snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.star, calm ? 0.7 : 1);
   poke();
 }
@@ -359,17 +368,22 @@ function draw() {
   ren.frame(makeFrame());
 }
 
-// The fluid's step and draw for this frame: the box stands on the site, radial up.
+// The fluid's step and draw for this frame: the box stands under the prominence, radial up.
+// Its guide follows the prominence's own size, growing as the threads do in an eruption.
 function fluidFrame(r) {
-  const { c, e, f: g } = r.site;
+  const p = r.owner;
+  const { c, e, f: g } = p;
   const t = r.t;
+  const ph = promPhase(p);
+  const lifting = p.erupt >= 0 && p.erupt < 17;
+  const guide = new Float32Array([p.type === 'arch' ? 1 : 2, p.len / 2, p.h * (1 + ph.grow), 28]);
   const out = {
-    step: { dt: r.dt, t, reset: r.first, fill: r.first ? 1 : 0, emit: t < 5 ? 1 : 0, lift: 8 + 9 * t, span: r.span },
+    step: { dt: r.dt, t, reset: r.first, warm: r.first ? 150 : 0, emit: ph.fade, lift: lifting ? 6 + 10 * p.erupt : 0, guide },
     view: frameState.view, toSun: frameState.toSun,
     box: new Float32Array([...e, ...c, ...g]),
     boxT: new Float32Array([e[0], c[0], g[0], e[1], c[1], g[1], e[2], c[2], g[2]]),
     origin: new Float32Array(c.map(x => x * R)),
-    gain: 0.012 * (1 - Math.min(1, Math.max(0, (t - 16) / 8))),
+    gain: 0.024 * STARS[st.star].prom,
   };
   r.first = false;
   r.dt = 0;
@@ -398,16 +412,19 @@ function frame(now) {
     }
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
-    if (fluidRun) {
-      fluidRun.dt = Math.min(dt, 1 / 30) * (calm ? 0.8 : 1);
-      fluidRun.t += fluidRun.dt;
-      if (fluidRun.t > 24) { fluidRun.owner.fluid = false; fluidRun = null; }
+    if (FLUID) {
+      // A new framing may show another prominence: the fluid moves to it.
+      if (!fluidRun || fluidRun.mode !== cam.mode) { const p = promInView(); if (p) startFluid(p); }
+      if (fluidRun) {
+        fluidRun.dt = Math.min(dt, 1 / 30) * (calm ? 0.8 : 1) * Math.max(drifting, fluidRun.owner.erupt >= 0 ? 1 : 0);
+        fluidRun.t += fluidRun.dt;
+      }
     }
     for (const fl of sun.flares) cueArcade(fl);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || !!fluidRun || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;

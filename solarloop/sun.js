@@ -350,7 +350,7 @@ function fieldStrands(time, B, out, n) {
 }
 
 // The prominence's growth, light and kind over its eruption clock.
-function promPhase(p) {
+export function promPhase(p) {
   const t = p.erupt;
   if (t < 0) return { grow: 0, fade: 1, kind: 3 };
   // It lifts with growing speed, fades as it leaves, then forms again.
@@ -359,8 +359,6 @@ function promPhase(p) {
 }
 
 function promStrands(p, B, time, out, n) {
-  // The fluid probe draws this eruption itself.
-  if (p.fluid) return n;
   const { grow, fade, kind } = promPhase(p);
   if (fade <= 0.002) return n;
   const I0 = B.prom * fade;
@@ -417,8 +415,7 @@ function flareStrands(fl, B, out, n) {
   const h0 = rg.span[1] * 0.42;
   const hr = C.ropeH(t, h0);
   const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(500, 900, hr)) * fl.k;
-  // The fluid probe draws the rope itself.
-  if (ropeI > 0.002 && !fl.fluid) {
+  if (ropeI > 0.002) {
     const A = footT(rg, ROPE_TURN, 0, -rg.len * 0.6), Bf = footT(rg, ROPE_TURN, 0, rg.len * 0.6);
     const twR = 2.5 + 0.2 * (hr - h0);
     for (let k = 0; k < 12; k++) {

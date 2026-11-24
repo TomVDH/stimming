@@ -80,7 +80,7 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 
 ## Fluid probe (`?fluid`, spike `stimming-8gez`)
 
-Only with `?fluid` in the address. A prominence eruption or a flare's rope runs as Fire's 3D fluid (`solarloop/fluid.js`, a trimmed copy of the K3 fluid in `cloudbottle/fluid.js`): a 32 x 48 x 32 box of 12.5-unit cells stands on the site, radial up, the star's surface its floor and every other side open. It fills with a rope of plasma, the foot feeds it for 5 s, heat and a lift that grows with time throw it out; Fire's turbulence and vorticity curl it. A march through the box at half size adds it to the light as cool plasma before bloom. The strands of that eruption hide while it runs; it ends at 24 s. Captures 27 to 29.
+Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trimmed copy of the K3 fluid in `cloudbottle/fluid.js`) is the haze round the prominence nearest the middle of the view. A 32 x 48 x 32 box of 12.5-unit cells stands under it, radial up, the star's surface its floor and every other side open; its faces fade, so no edge shows. Plasma condenses in drifting clumps along the prominence's own shape: an arch's semi-ellipse, or a hedgerow's curtain. A guide field steers the flow along that shape, so the haze drains down the legs and sinks into the surface, and holds it on the line. When the prominence erupts, the guide grows exactly as its threads do and a lift carries the plasma, so the haze lifts with them. A march through the box at half size adds it to the light as cool plasma before bloom. The threads stay drawn. Captures 27 and 28.
 
 ## Frame loop
 
