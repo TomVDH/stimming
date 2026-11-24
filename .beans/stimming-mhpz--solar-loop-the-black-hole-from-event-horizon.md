@@ -1,10 +1,11 @@
 ---
 # stimming-mhpz
 title: 'Solar loop: the black hole from Event horizon'
-status: todo
+status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-24T21:45:55Z
-updated_at: 2026-11-24T21:45:55Z
+updated_at: 2026-11-24T21:56:18Z
 parent: stimming-e35i
 ---
 
