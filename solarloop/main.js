@@ -315,6 +315,8 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
+    ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
+    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndTick', 'Pulsar tick'], ['sndTelegraph', 'Egg: telegraph'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -362,7 +364,7 @@ addEventListener('keydown', e => {
 });
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 3000 });
-const snd = makeSound(kit);
+const snd = makeSound(kit, id => ui?.setting?.(id)?.value);
 
 /* ---------- GL ---------- */
 const canvas = document.createElement('canvas');

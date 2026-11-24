@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T05:58:16Z
-updated_at: 2026-11-24T06:24:45Z
+updated_at: 2026-11-24T06:37:24Z
 parent: stimming-oh7b
 ---
 
@@ -23,6 +23,8 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [ ] The hit: Tom heard an "attack sound" on a flare. Check what is left of the hit with Tom.
 - [ ] Eggs audio (branch claude/solarloop-eggs-3a554c, bean stimming-239r): telegraph() crackles (Tom may not want them), dim() chord, tick(at, lvl) on the audio clock for the Vela buzz.
 - [x] Remove hush() once the micro branch's caller removal reaches feature/stimming-on77 and is merged here
+- [x] Dev Sound rows: hum, rumble and interaction levels; on/off for tap blast, tap glow, lift, pulsar tick, telegraph, Dimming (Tom)
+- [ ] Sun choir redo: soft, gentle, ethereal, angelic (Tom); inline demo heard, awaiting his yes
 - [ ] Other stars follow the same voice in their own keys
 - [ ] Bring the side-branch sounds (eggs, micro) into the same voice
 - [ ] Doc Sound section true

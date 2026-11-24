@@ -8,7 +8,10 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // The key falls as the star grows: the hypergiant hums lowest.
 const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 220, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
 
-export function makeSound(kit) {
+// `opt(id)` reads a Dev row; a missing row means on, at level 1.
+export function makeSound(kit, opt = () => undefined) {
+  const on = id => opt(id) ?? true;
+  const lvl = id => opt(id) ?? 1;
   let pending = 0;
   // Every scheduled source, so mute or a hidden tab can stop them.
   const live = new Set();
@@ -19,7 +22,19 @@ export function makeSound(kit) {
     return node;
   };
 
-  function voice(ac, pan, dest = kit.out) {
+  // Interaction sounds share one bus, so one Dev level sets them all.
+  let fx = null;
+  function fxOf(ac) {
+    if (!fx || fx.ac !== ac) {
+      const dry = ac.createGain(), wet = ac.createGain();
+      dry.connect(kit.out);
+      wet.connect(hallOf(ac));
+      fx = { ac, dry, wet };
+    }
+    fx.dry.gain.value = fx.wet.gain.value = lvl('sndFxLvl');
+    return fx;
+  }
+  function voice(ac, pan, dest = fxOf(ac).dry) {
     const g = ac.createGain();
     g.gain.value = 0;
     const p = ac.createStereoPanner();
@@ -72,10 +87,10 @@ export function makeSound(kit) {
     hall = { ac, in: inp };
     return inp;
   }
-  function send(ac, g, amt) {
+  function send(ac, g, amt, to = fxOf(ac).wet) {
     const s = ac.createGain();
     s.gain.value = amt;
-    g.connect(s).connect(hallOf(ac));
+    g.connect(s).connect(to);
   }
 
   // A soft clip gives the blast its brass edge.
@@ -193,7 +208,7 @@ export function makeSound(kit) {
   let bed = null;
   let drone = null;
   // Which layers sound: the Dev toggles set them.
-  const layers = { hum: true, rumble: true, lvl: 1 };
+  const layers = { hum: true, rumble: true, h: 1, lvl: 1 };
   // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
   // The rumble grows as the view closes in on the star (Tom).
   // Level in dB by closeness, against the old fixed level (Tom).
@@ -207,13 +222,14 @@ export function makeSound(kit) {
     return Math.pow(10, (y0 + (y1 - y0) * (x - x0) / (x1 - x0)) / 20);
   }
   function mixLayers(hum, rumble, near = 0) {
-    const lvl = rumble ? rumbleAt(near) : 0;
-    if (layers.hum === hum && Math.abs(layers.lvl - lvl) < 0.01) return;
-    layers.hum = hum; layers.rumble = rumble; layers.lvl = lvl;
+    const h = hum ? lvl('sndHumLvl') : 0;
+    const r = rumble ? rumbleAt(near) * lvl('sndRumbleLvl') : 0;
+    if (Math.abs(layers.h - h) < 0.01 && Math.abs(layers.lvl - r) < 0.01) return;
+    layers.hum = hum; layers.rumble = rumble; layers.h = h; layers.lvl = r;
     if (!drone) return;
     const t = drone.ac.currentTime;
-    drone.humOn.gain.setTargetAtTime(hum ? 1 : 0, t, 0.4);
-    drone.rumOn.gain.setTargetAtTime(lvl, t, 0.4);
+    drone.humOn.gain.setTargetAtTime(h, t, 0.4);
+    drone.rumOn.gain.setTargetAtTime(r, t, 0.4);
   }
 
   // Queues the top voice's next notes: one every 7 to 11 s, gliding between them.
@@ -246,7 +262,7 @@ export function makeSound(kit) {
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(1, t + 6);
     g.connect(kit.out);
-    send(ac, g, 0.8);
+    send(ac, g, 0.8, hallOf(ac));
 
     // The space rumble: a seamless rendered loop, added once it is ready.
     const rumOn = ac.createGain();
@@ -274,7 +290,7 @@ export function makeSound(kit) {
     air.gain.value = 3;
     const top = filt(ac, 'lowpass', 9000, 0.5);
     const humOn = ac.createGain();
-    humOn.gain.value = layers.hum ? 1 : 0;
+    humOn.gain.value = layers.h;
     choir.connect(air).connect(top).connect(humOn).connect(g);
     const note = (f, amp) => {
       const vo = ac.createGain();
@@ -301,22 +317,21 @@ export function makeSound(kit) {
     singOn(drone, t + 9);
   }
 
-  // A prominence lifts off: the blast, a long rising rush, a tone that bends up.
+  // A prominence lifts off: the brass blast only (Tom).
   function rise(pan, band, k = 1) {
     const ac = kit.live();
-    if (!ac) return;
-    // Only the deep synth (Tom): no rush, no bending tone.
+    if (!ac || !on('sndLift')) return;
     braam(ac, ac.currentTime + 0.005, pan, band, clamp(k, 0.3, 1), 9);
   }
 
-  // The flare: only the deep synth (Tom): no wind, no roar, no chord.
   // A tap: the brass blast, then the glow chord (Tom: only these two).
   function flare(pan, band, k = 1) {
     const ac = kit.live();
     if (!ac) return;
     const t = ac.currentTime + 0.005;
     const K = clamp(k, 0.3, 1);
-    braam(ac, t, pan, band, K * 0.7, 6);
+    if (on('sndBlast')) braam(ac, t, pan, band, K * 0.7, 6);
+    if (!on('sndGlow')) return;
     // The glow: a slow chord while the arcade shines.
     const root = (ROOT[band] || 220) / 2;
     const pad = voice(ac, pan * 0.5);
@@ -337,7 +352,7 @@ export function makeSound(kit) {
   // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
   function tick() {
     const ac = kit.live();
-    if (!ac || !kit.noise) return;
+    if (!ac || !kit.noise || !on('sndTick')) return;
     const t = ac.currentTime + 0.003;
     const c = voice(ac, 0);
     env(c, t, 0.12, 0.001, 0.05);
@@ -354,7 +369,7 @@ export function makeSound(kit) {
   // In 1859 operators sent messages on the storm's current alone.
   function telegraph() {
     const ac = kit.live();
-    if (!ac || !kit.noise) return;
+    if (!ac || !kit.noise || !on('sndTelegraph')) return;
     const t0 = ac.currentTime + 0.02;
     const pan = Math.random() < 0.5 ? -0.55 : 0.55;
     const bar = (at, f, lvl) => {
@@ -383,7 +398,7 @@ export function makeSound(kit) {
   // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
-    if (!ac) return;
+    if (!ac || !on('sndDim')) return;
     const t = ac.currentTime + 0.01;
     const root = (ROOT[band] || 220) / 2;
     const pad = voice(ac, 0);
