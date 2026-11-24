@@ -228,6 +228,8 @@ const ui = initPage({ id: ID, bar: {
   dev: [
     ...FX.map(([id, group, label, min, max, value]) => ({ type: 'slider', id, group, label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
+    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -470,7 +472,7 @@ function frame(now) {
     D.frame(dt);
     frameNo++;
     lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
-    if (drifting > 0) snd.hum(st.star);
+    if (drifting > 0) { mixSound(); snd.hum(st.star); }
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
   } finally {
@@ -504,6 +506,8 @@ function schedule(delay = 0) {
   if (delay > 4) timer = setTimeout(() => { timer = 0; schedule(); }, delay - 2);
   else raf = requestAnimationFrame(frame);
 }
+// The Dev toggles turn the hum and the rumble on and off.
+function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true); }
 function poke() {
   lastInput = performance.now();
   if (!raf && !timer) last = performance.now();

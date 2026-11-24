@@ -3,7 +3,7 @@
 // A flare: a crack, a rush as the rope lifts, a low roar, a glassy note per arcade loop,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
-// Awake: an underwater rumble and an angelic, singing drone; flares land on a low brass blast.
+// Awake: an underwater rumble and a soft angelic organ choir; flares land on a low brass blast.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -113,10 +113,57 @@ export function makeSound(kit) {
 
   // The star's voice while the toy is awake, in two layers.
   // The rumble: deep and gentle, a bellow heard under water.
-  // The drone: an angelic hum, a soft choir on a chord, its top voice slowly singing.
+  // The drone: a soft angelic organ choir that wobbles slightly; its top voice slowly sings.
   // A major pentatonic for the top voice, in semitones above the chord's root.
   const SING = [12, 14, 16, 19, 21, 24, 21, 19, 16, 14];
+  // Organ drawbars by harmonic: 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1'.
+  const BARS = { 1: 1, 2: 0.7, 3: 0.42, 4: 0.5, 5: 0.12, 6: 0.22, 8: 0.18 };
+  // "Ah" formants: centre in Hz, width, weight.
+  const AH = [[700, 130, 1], [1150, 160, 0.6], [2600, 260, 0.28], [3300, 300, 0.12]];
+  // One wave per note: organ partials plus a choir's vowel shape over the harmonics.
+  const waves = new Map();
+  function waveFor(ac, f) {
+    const key = Math.round(f);
+    const hit = waves.get(key);
+    if (hit && hit.ac === ac) return hit.w;
+    const N = 40;
+    const re = new Float32Array(N + 1), im = new Float32Array(N + 1);
+    for (let h = 1; h <= N; h++) {
+      const hz = h * f;
+      let vow = 0;
+      for (const [c, w, a] of AH) vow += a * Math.exp(-(((hz - c) / w) ** 2));
+      const organ = BARS[h] || 0;
+      im[h] = 0.62 * organ + 0.38 * vow / Math.pow(h, 0.35);
+    }
+    const w = ac.createPeriodicWave(re, im);
+    waves.set(key, { ac, w });
+    return w;
+  }
+  // Brown noise at the full sample rate: a clean, deep rumble with no grit.
+  let brown = null;
+  function brownOf(ac) {
+    if (brown && brown.ac === ac) return brown.b;
+    const n = Math.round(ac.sampleRate * 8);
+    const b = ac.createBuffer(1, n, ac.sampleRate);
+    const d = b.getChannelData(0);
+    let v = 0;
+    for (let i = 0; i < n; i++) { v = (v + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = v * 3.5; }
+    // Fade the ends together, so the loop has no click.
+    for (let i = 0; i < 4800; i++) { const k = i / 4800; d[i] *= k; d[n - 1 - i] *= k; }
+    brown = { ac, b };
+    return b;
+  }
   let drone = null;
+  // Which layers sound: the Dev toggles set them.
+  const layers = { hum: true, rumble: true };
+  function mixLayers(hum, rumble) {
+    if (layers.hum === hum && layers.rumble === rumble) return;
+    layers.hum = hum; layers.rumble = rumble;
+    if (!drone) return;
+    const t = drone.ac.currentTime;
+    drone.humOn.gain.setTargetAtTime(hum ? 1 : 0, t, 0.4);
+    drone.rumOn.gain.setTargetAtTime(rumble ? 1 : 0, t, 0.4);
+  }
   // Queues the top voice's next notes: one every 7 to 11 s, gliding between them.
   function singOn(d, from) {
     const ac = d.ac;
@@ -124,15 +171,14 @@ export function makeSound(kit) {
     for (let k = 0; k < 24; k++) {
       d.step = (d.step + (Math.random() < 0.7 ? 1 : SING.length - 1)) % SING.length;
       const f = d.root * Math.pow(2, SING[d.step] / 12);
-      d.lead.frequency.setTargetAtTime(f, t, 1.4);
-      d.lead2.frequency.setTargetAtTime(f * 1.0035, t, 1.4);
+      for (const o of d.lead) o.frequency.setTargetAtTime(f, t, 1.4);
       t += 7 + Math.random() * 4;
     }
     d.until = t;
   }
   function hum(band) {
     const ac = kit.live();
-    if (!ac || !kit.noise) return;
+    if (!ac) return;
     if (drone && drone.ac === ac && drone.band === band) {
       if (ac.currentTime > drone.until - 40) singOn(drone, drone.until);
       return;
@@ -144,75 +190,87 @@ export function makeSound(kit) {
     }
     const root = (ROOT[band] || 220) / 2;
     const os = [];
+    const lfo = (hz, depth, target) => {
+      const l = osc(ac, 'sine', hz, t, 1e5);
+      const lg = ac.createGain();
+      lg.gain.value = depth;
+      l.connect(lg).connect(target);
+      os.push(l);
+      return l;
+    };
     const g = ac.createGain();
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(1, t + 6);
     g.connect(kit.out);
-    send(ac, g, 0.9);
+    send(ac, g, 0.8);
 
-    // The rumble: brown-ish noise, muffled, swelling like a slow breath.
+    // The rumble: brown noise, muffled, swelling like a slow breath.
     const rum = ac.createGain();
-    rum.gain.value = 0.11;
-    rum.connect(g);
-    const nz = noise(ac, t, 1e5, 0.22);
-    const mud = filt(ac, 'lowpass', 110, 0.9);
-    const groan = filt(ac, 'bandpass', 70, 5);
+    rum.gain.value = 0.16;
+    // An on and off bus per layer, for the Dev toggles.
+    const rumOn = ac.createGain();
+    rumOn.gain.value = layers.rumble ? 1 : 0;
+    rum.connect(rumOn).connect(g);
+    const nz = track(ac.createBufferSource());
+    nz.buffer = brownOf(ac);
+    nz.loop = true;
+    nz.start(t, Math.random() * 7);
+    nz.stop(t + 1e5);
+    os.push(nz);
+    const mud = filt(ac, 'lowpass', 150, 0.8);
+    const groan = filt(ac, 'bandpass', 72, 4);
     const bel = ac.createGain();
-    bel.gain.value = 0.5;
+    bel.gain.value = 0.55;
     nz.connect(mud).connect(bel).connect(rum);
     nz.connect(groan).connect(rum);
-    // Two slow breaths out of step, so the swell never repeats.
-    for (const [hz, dep, tgt] of [[0.061, 0.35, bel.gain], [0.097, 40, mud.frequency], [0.043, 18, groan.frequency]]) {
-      const l = osc(ac, 'sine', hz, t, 1e5);
-      const lg = ac.createGain();
-      lg.gain.value = dep;
-      l.connect(lg).connect(tgt);
-      os.push(l);
-    }
+    // Three slow breaths out of step, so the swell never repeats.
+    lfo(0.061, 0.35, bel.gain);
+    lfo(0.097, 45, mud.frequency);
+    lfo(0.043, 16, groan.frequency);
     // A sub tone under the rumble, felt more than heard.
     const sub = ac.createGain();
-    sub.gain.value = 0.05;
+    sub.gain.value = 0.06;
     sub.connect(rum);
     for (const m of [0.25, 0.2512]) { const o = osc(ac, 'sine', root * m, t, 1e5); o.connect(sub); os.push(o); }
-    os.push(nz);
 
-    // The drone: soft saws through "ah" formants, a choir on root, fifth, octave and tenth.
+    // The organ choir: each note is three voices a few cents apart, so it shimmers.
     const choir = ac.createGain();
-    choir.gain.value = 0.018;
-    choir.connect(g);
-    const mix = ac.createGain();
-    mix.gain.value = 1;
-    const soft = filt(ac, 'lowpass', 2400, 0.5);
-    mix.connect(soft);
-    for (const [f, q, a] of [[700, 6, 1], [1150, 7, 0.55], [2600, 9, 0.22], [320, 4, 0.5]]) {
-      const bp = filt(ac, 'bandpass', f, q);
-      const ga = ac.createGain();
-      ga.gain.value = a * 3;
-      soft.connect(bp).connect(ga).connect(choir);
-    }
-    // A slow vibrato, shared, so the voices breathe together.
-    const vib = osc(ac, 'sine', 4.6, t, 1e5);
-    const vg = ac.createGain();
-    vg.gain.value = 0.9;
-    vib.connect(vg);
-    os.push(vib);
-    const sing = (f, amp) => {
+    choir.gain.value = 0.022;
+    // A slow swell in loudness: the slight wobble of breath in a choir.
+    lfo(0.23, 0.004, choir.gain);
+    const air = filt(ac, 'highshelf', 3000, 0.7);
+    air.gain.value = 3;
+    const top = filt(ac, 'lowpass', 9000, 0.5);
+    const humOn = ac.createGain();
+    humOn.gain.value = layers.hum ? 1 : 0;
+    choir.connect(air).connect(top).connect(humOn).connect(g);
+    // The wobble: a slow drift of pitch and a faint fast shimmer, shared by every voice.
+    const wob = ac.createGain();
+    wob.gain.value = 1;
+    lfo(0.35, 6, wob);
+    lfo(5.2, 2, wob);
+    const note = (f, amp) => {
       const vo = ac.createGain();
       vo.gain.value = amp;
-      vo.connect(mix);
-      const pair = [];
-      for (const d of [0.997, 1.003]) {
-        const o = osc(ac, 'sawtooth', f * d, t, 1e5);
-        vg.connect(o.detune);
-        o.connect(vo);
+      vo.connect(choir);
+      const set = [];
+      for (const c of [-7, 0, 7]) {
+        const o = ac.createOscillator();
+        o.setPeriodicWave(waveFor(ac, f));
+        o.frequency.value = f;
+        o.detune.value = c;
+        wob.connect(o.detune);
+        o.start(t); o.stop(t + 1e5);
+        track(o).connect(vo);
         os.push(o);
-        pair.push(o);
+        set.push(o);
       }
-      return pair;
+      return set;
     };
-    for (const [m, a] of [[1, 1], [1.5, 0.7], [2, 0.6], [2.52, 0.35]]) sing(root * m, a);
-    const [lead, lead2] = sing(root * 2, 0.45);
-    drone = { ac, band, g, os, root, lead, lead2, step: 0, until: 0 };
+    // A 16' bass, then root, fifth, octave and the major tenth.
+    for (const [m, a] of [[0.5, 0.55], [1, 1], [1.5, 0.7], [2, 0.6], [2.5198, 0.4]]) note(root * m, a);
+    const lead = note(root * 2, 0.5);
+    drone = { ac, band, g, os, root, lead, step: 0, until: 0, humOn, rumOn };
     singOn(drone, t + 9);
   }
 
@@ -373,5 +431,5 @@ export function makeSound(kit) {
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, tick, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, tick, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

@@ -111,6 +111,7 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 |---|---|
 | Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Flare streak and ghosts, Lens dirt, Highlight roll-off, Vignette, Grain |
 | Volume | Haze density, Haze light, Corona (full view), Corona bend |
+| Sound | Hum (organ choir) and Space rumble: each on or off |
 
 ## Fluid probe (`?fluid`, spike `stimming-8gez`)
 
@@ -130,8 +131,8 @@ Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trim
 Muted by default. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
 
 - Awake, the star's voice in two layers (Tom, 2026-11-23). The star sets the key: the larger the star, the lower.
-  - The rumble: deep and gentle, a bellow heard under water. Slowed noise through a low pass and a groaning band pass, swelling on three slow breaths out of step, over a sub tone two octaves down.
-  - The drone: an angelic, melodic hum. Soft detuned saws through "ah" formants, a choir on root, fifth, octave and tenth, with a shared slow vibrato. Its top voice sings a major pentatonic line, one note every 7 to 11 s, gliding between them.
+  - The rumble: deep and gentle, a bellow heard under water. Brown noise made at the full sample rate (clean, no grit) through a low pass and a groaning band pass, swelling on three slow breaths out of step, over a sub tone two octaves down.
+  - The hum: a soft angelic organ choir (Tom: crisp, it wobbles slightly). Each note is a custom wave, organ drawbars plus an "ah" vowel shape, played by three voices 7 cents apart. A 16' bass, then root, fifth, octave and major tenth. A slow pitch drift and a faint fast shimmer make it wobble; air above 3 kHz keeps it crisp. Its top voice sings a major pentatonic line, one note every 7 to 11 s, gliding between them. Tuned on the sun first.
 - A pulsar ticks: a dry click on a short thump each time a beam sweeps past the eye.
 - A flare or an eruption lands on a low brass blast: stacked saws through a soft clip, a filter that opens and closes.
 - An eruption: a long rush swept upward over 13 s, and a tone that bends up a fifth.
