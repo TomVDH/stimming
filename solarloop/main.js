@@ -555,7 +555,7 @@ function frame(now) {
     frameNo++;
     lively = zooming || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
-    if (STARS[st.star].beam && (drifting > 0 || egg?.kind === 'voice')) pulse(dt);
+    if (STARS[st.star].beam && (drifting > 0 || egg?.kind === 'voice')) pulse();
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
@@ -566,12 +566,12 @@ function frame(now) {
 let lastFace = 0, lastTurn = 0;
 // The point in a turn where the beam faces the eye.
 const FACE = (() => { let b = 0, bz = -2; for (let i = 0; i < 360; i++) { const z = magAxis(i / 360 * SPIN_PERIOD)[2]; if (z > bz) { bz = z; b = i / 360; } } return b; })();
-function pulse(dt) {
+function pulse() {
   const turn = st.spin / SPIN_PERIOD - FACE;
-  // Fast turns pass the eye between frames: count turns, place ticks on the audio clock.
+  // Fast turns pass the eye between frames: count turns, one tick each.
   if (egg?.kind === 'voice' && egg.rate > 1.5) {
-    const n = Math.min(8, Math.floor(turn) - Math.floor(lastTurn));
-    for (let i = 0; i < n; i++) snd.tick(dt * (i + 1) / n, 0.6);
+    const n = Math.min(2, Math.floor(turn) - Math.floor(lastTurn));
+    for (let i = 0; i < n; i++) snd.tick();
   } else {
     const face = toView(magAxis(st.spin))[2];
     if (face > 0.95 && lastFace <= 0.95) snd.tick();
