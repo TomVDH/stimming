@@ -98,18 +98,34 @@ function fitView(w, h, top = 0, bottom = 0) {
 }
 // The full view zooms out up to 16 times farther: wheel, pinch, or the - and = keys.
 const ZOOM_MAX = 16;
-let fullBase = { cx: 0, cy: 0, hw: 1100 }, zoom = 1;
+let fullBase = { cx: 0, cy: 0, hw: 1100 }, zoom = 1, zoomTo = 1, zoomV = 0;
 function fitFull() {
   fit.full = { cx: fullBase.cx * zoom, cy: fullBase.cy * zoom, hw: fullBase.hw * zoom };
   applyView();
 }
+// The input sets a target; the zoom follows it on a spring.
 function zoomBy(k) {
   if (cam.mode !== 'full') return;
-  const z = clamp(zoom * k, 1, ZOOM_MAX);
-  if (z === zoom) return;
-  zoom = z;
-  fitFull();
+  const z = clamp(zoomTo * k, 1, ZOOM_MAX);
+  if (z === zoomTo) return;
+  zoomTo = z;
+  // Reduced motion jumps straight to the target.
+  if (calm || !started) { zoom = z; zoomV = 0; fitFull(); }
   poke();
+}
+// A heavy spring in log space: it reaches the target in about 1.5 s, a few percent past.
+function stepZoom(dt) {
+  const x = Math.log(zoom), X = Math.log(zoomTo);
+  if (Math.abs(X - x) < 1e-4 && Math.abs(zoomV) < 1e-3) {
+    if (zoom !== zoomTo) { zoom = zoomTo; fitFull(); }
+    zoomV = 0;
+    return false;
+  }
+  const w = 2.4, damp = 0.72;
+  zoomV += (w * w * (X - x) - 2 * damp * w * zoomV) * dt;
+  zoom = Math.exp(x + zoomV * dt);
+  fitFull();
+  return true;
 }
 // Eases between the framings; the width moves on a log scale, as a zoom does.
 function applyView() {
@@ -168,7 +184,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -524,11 +540,12 @@ function frame(now) {
     // The star turns under a still mouse.
     if (hoverAt) readHover();
     const glowing = stepLit(dt);
+    const easing = stepZoom(dt);
     if (rip && (rip.t += dt) >= RIP_LIFE) rip = null;
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || easing || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
