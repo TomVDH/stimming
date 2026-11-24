@@ -36,8 +36,18 @@ const st = {
   pitch: 0, yaw: 0,
   // The pulsar's own clock: a voice egg runs it faster.
   spin: 34,
+  // The star's own turn, in star seconds; the rate below sets its pace.
+  turn: 34 * SPIN_UP,
   next: 0,
 };
+/* ---------- turn speed: real time, x5k or x10k (Tom, 2026-11-24) ---------- */
+// id, bar label, times faster than life.
+const RATES = [['real', 'Real time', 1], ['x5k', '×5k', 5e3], ['x10k', '×10k', 1e4]];
+const savedRate = RATES.find(r => r[0] === store.get('rate'));
+// rate eases to its target on a log scale, so a switch never jolts the star.
+const turn = { pick: savedRate ? savedRate[0] : 'x10k', lr: 0, vr: 0 };
+turn.lr = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
+const rateLabel = () => `Turn · ${RATES.find(r => r[0] === turn.pick)[1]}`;
 const sun = makeSun();
 // The star on screen: it trails st.star through the switch dip.
 let shown = st.star;
@@ -272,7 +282,7 @@ function setRot() {
   const TP = mul(rx, ry);
   // The star turns on its own axis at its true rate, sped up.
   const B = STARS[shown];
-  const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
+  const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.turn / (B.day * 86400)) % 1)) : null;
   M = S ? mul(TP, S) : TP;
   // A binary's orbit tilts toward the eye, so its disc shows its face; the eclipses stay partial.
   if (B.bin?.tilt) {
@@ -300,7 +310,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get rate() { return [turn.pick, 10 ** turn.lr]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -388,7 +398,7 @@ function pickStar(v) {
 }
 const ui = initPage({ id: ID, bar: {
   // The bar holds only the star (Tom, 2026-11-24); Space and L stay as keys.
-  actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }],
+  actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }, { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() }],
   settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
   quality: true,
   // Tuning for the people who build the toy; the Dev button shows with ?dev.
@@ -413,11 +423,20 @@ const ui = initPage({ id: ID, bar: {
     ['S', 'Open the star chart'],
     ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
     ['[', 'Step to the previous star; ] steps to the next'],
+    ['T', 'Turn speed: real time, 5,000 or 10,000 times faster'],
   ],
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
 const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
-const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name) };
+const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), rate: chipLabel(rateLabel()) };
+// The turn button steps through the speeds; the star eases to the new one.
+function cycleRate() {
+  const i = RATES.findIndex(r => r[0] === turn.pick);
+  turn.pick = RATES[(i + 1) % RATES.length][0];
+  store.set('rate', turn.pick);
+  setLabel(labels.rate, rateLabel());
+  poke();
+}
 function setLabel(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
 const chart = makeChart({
   frame: stage.closest('.stim-frame') || stage.parentElement,
@@ -620,11 +639,12 @@ function surfaceAt(x, y) {
 function startEgg(x, y) {
   const kind = EGGS[st.star];
   // The star turns during the hold: the flash lands under the finger.
-  const now = st.time;
+  const now = st.time, turnNow = st.turn;
   st.time += HOLD - CUE;
+  st.turn += (HOLD - CUE) * 10 ** turn.lr;
   setRot();
   const c = surfaceAt(x, y);
-  st.time = now;
+  st.time = now; st.turn = turnNow;
   setRot();
   if (kind === 'carrington') egg = makeCarrington(c);
   else if (kind === 'dimming') egg = makeDimming();
@@ -864,6 +884,7 @@ function frame(now) {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
+    const turning = stepTurn(dt);
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
     const swaying = stepSway(dt);
@@ -894,7 +915,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || swaying || settling || adapting || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || turning || swaying || settling || adapting || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
@@ -971,6 +992,21 @@ stage.addEventListener('pointermove', e => {
   if (farAt(cam.z) > 0) poke();
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
+
+/* ---------- the star's turn ---------- */
+// Advances the star's own turn at its eased rate; true while the rate still eases.
+// Reduced motion jumps to the new rate.
+function stepTurn(dt) {
+  const target = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
+  let easing = false;
+  if (calm) { turn.lr = target; turn.vr = 0; }
+  else if (Math.abs(turn.lr - target) > 1e-4 || Math.abs(turn.vr) > 1e-4) {
+    [turn.lr, turn.vr] = follow(turn.lr, target, turn.vr, 0.35, dt);
+    easing = true;
+  } else { turn.lr = target; turn.vr = 0; }
+  st.turn += dt * drifting * 10 ** turn.lr;
+  return easing;
+}
 
 /* ---------- turn back: a released star eases home ---------- */
 // After a drag the star turns back to its home angle over about 3 s (Tom, 2026-11-24).
