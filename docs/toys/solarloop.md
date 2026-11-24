@@ -29,6 +29,16 @@ Tap a region and it flares: two ribbons flash, the core burns white with an anam
 - The long lens is the default (Tom, 2026-11-23). It is 560 units across (420 at mid widths, 300 on a phone). The star fills the frame; its limb runs from the middle of the foot to the middle of the left side, and the bottom left corner is open space with its own regions and prominences. The camera never moves there. Loops and prominences draw brighter; the tone curve presses a little darker and harder; the vignette deepens.
 - The full view fits the whole star with sky round it. The view pulls back to 3.2 radii tall. The corona is a raymarched 3D volume in the star's own frame, so it turns with the star: streamers gather on a warped sheet round the magnetic equator, narrow as they climb and bend in a slow spiral with height; polar plumes stand at the poles; fine rays run radially. It scatters the star's light with a Thomson lobe (brightest side on) and falls as the radius to the power 2.2 in density. The march reaches 3.4 radii. The exposure halves, so the whole disk shows its surface.
 
+## Eggs (bean `stimming-239r`)
+
+A still press of 3 s on three stars plays a real event from that star (Tom, 2026-11-23). From 0.6 s the event builds; a release before 3 s runs it back out and does not flare. Each egg also plays on its own, about once per 25 minutes awake, but never under reduced motion. The code is in `eggs.js`.
+
+| Star | Egg | What happens |
+|---|---|---|
+| Sun | The Carrington flare, 1 September 1859 | A large spot group darkens in under the finger. The spot lands under the finger at 3 s, although the sun turns. Then two white-light kernels flash and part, as Carrington and Hodgson saw them by eye, and a large flare (1.6 times) rises from them. With sound on, 6.3 s later the storm reaches the earth (17.6 hours, at 10,000 times): a far telegraph sounder clacks |
+| Betelgeuse | The Great Dimming, 2019 to 2020 | A cool patch spreads over the southern half. Then a dust veil condenses over it and past the southern limb; the star falls to about 43 percent of its light, then clears by 36 s. The veil's noise sits in the star's frame. With sound on, a chord falls and muffles |
+| Pulsar | Vela's true voice | The spin rises on a log scale from one turn in 1.6 s to Vela's true 11.19 turns a second; the beams and the field lines go with it. Each turn is one tick, so with sound on the ticks run into a buzz. A release eases it back over about 5 s. Under reduced motion the spin rises only 4 times |
+
 ## The stars
 
 The model runs in star units: the star's radius is always 696, so on our sun one unit is one Mm. The image holds two light channels, hot plasma (the disk, the corona, the loops) and cool plasma (the prominences, the chromosphere, the rope); each star grades them through its own pair of colour ramps after a film tone curve.
@@ -98,6 +108,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | `chart.js`, `chart.css` | The star chart: a sheet the toy owns, in the Bar v3 sheet look. The Star action opens it; the bar labels follow the Bar v2 chips |
 | `sun.js` | The regions, the loop life cycle, the flare timeline, the stars and the scale bodies; it writes one strand per thread |
 | `render.js` | Raw WebGL2: the disk and corona pass, instanced strands, bloom (`shared/glow.js`), light rays, the final pass, the colour ramps |
+| `eggs.js` | The eggs: the hold timing, each egg's timeline, the pulsar's spin rate |
 | `sound.js` | Web Audio |
 
 - The disk pass: boiling granules (bent by noise, so they never read as hexagons), swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the bubble's shell and cavity. No wave runs over the disk (Tom, 2026-11-23).
@@ -124,7 +135,7 @@ Only with `?fluid` in the address. Fire's 3D fluid (`solarloop/fluid.js`, a trim
 
 ## Frame loop
 
-- Lively while a flare or an eruption runs, the lens zooms, the zoom spring settles, a drag turns the star, a target's hover or press light eases or a star switch dips.
+- Lively while a flare, an eruption or an egg runs, a press is held, the lens zooms, the zoom spring settles, a drag turns the star, a target's hover or press light eases or a star switch dips.
 - Drifting at 30 fps: the loops' life cycle.
 - Asleep 60 s after the last input: the drift eases to a stop over 2 s and the loop stops.
 - Hidden tab: the loop and both clocks stop.
