@@ -334,12 +334,14 @@ function readHover() {
 }
 // The target the mouse points at; it glows a little.
 let aimed = null;
+// The target a press holds; it charges with light until release.
+let pressed = null;
 // Eases each target's light toward its aim; true while any still moves.
 function stepLit(dt) {
   let moving = false;
   const k = 1 - Math.exp(-dt / 0.22);
   for (const o of [...sun.regions, ...sun.proms]) {
-    const to = o === aimed ? 1 : 0;
+    const to = o === pressed ? 1 + 3 * (1 - Math.exp(-(performance.now() - pointer.t0) / 500)) : o === aimed ? 1 : 0;
     const l = o.lit || 0;
     if (Math.abs(to - l) < 0.003) { o.lit = to; continue; }
     o.lit = l + (to - l) * k;
@@ -554,13 +556,14 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
-const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0 };
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, t0: 0, drag: false, p0: 0, w0: 0 };
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
-  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), t0: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  pressed = pickAt(x, y).t;
   poke();
 });
 stage.addEventListener('pointermove', e => {
@@ -569,7 +572,7 @@ stage.addEventListener('pointermove', e => {
   const now = performance.now();
   const speed = Math.hypot(x - pointer.x, y - pointer.y) / Math.max(1, now - pointer.at) * 1000;
   pointer.x = x; pointer.y = y; pointer.at = now;
-  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) { pointer.drag = true; readHover(); }
+  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) { pointer.drag = true; pressed = null; readHover(); }
   if (!pointer.drag) return;
   snd.turn(speed);
   // The surface follows the hand, like a ball rolled under it.
@@ -585,7 +588,7 @@ function endPointer(e) {
   if (e.pointerId !== pointer.id) return;
   const tap = e.type === 'pointerup' && !pointer.drag;
   if (pointer.drag) snd.endTurn();
-  pointer.id = null; pointer.drag = false;
+  pointer.id = null; pointer.drag = false; pressed = null;
   if (tap) flareNear(pointer.x, pointer.y);
   readHover();
   poke();
@@ -610,7 +613,7 @@ stage.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'touch') return;
   touches.set(e.pointerId, local(e));
   // A second finger ends the tap and the turn.
-  if (touches.size === 2) { pinch0 = spread(); pointer.drag = true; }
+  if (touches.size === 2) { pinch0 = spread(); pointer.drag = true; pressed = null; }
 });
 stage.addEventListener('pointermove', e => {
   if (!touches.has(e.pointerId)) return;
@@ -631,7 +634,7 @@ addEventListener('keydown', e => {
 whenVisible(stage, on => {
   visible = on;
   if (on) { last = performance.now(); schedule(); }
-  else { halt(); pointer.id = null; pointer.drag = false; snd.quiet(); }
+  else { halt(); pointer.id = null; pointer.drag = false; pressed = null; snd.quiet(); }
 });
 onReducedChange(on => { calm = on; poke(); });
 sound.onChange(on => { if (on) poke(); else snd.quiet(); });
