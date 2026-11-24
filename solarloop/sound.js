@@ -294,11 +294,41 @@ export function makeSound(kit) {
     send(ac, c, 0.3);
   }
 
+  // The Carrington storm reaches the earth: a far telegraph sounder clacks, its line sparks.
+  // In 1859 operators sent messages on the storm's current alone.
+  function telegraph() {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const t0 = ac.currentTime + 0.02;
+    const pan = Math.random() < 0.5 ? -0.55 : 0.55;
+    const bar = (at, f, lvl) => {
+      const g = voice(ac, pan);
+      env(g, at, lvl, 0.0015, 0.05);
+      noise(ac, at, 0.07, 1.2).connect(filt(ac, 'bandpass', f, 6)).connect(g);
+      send(ac, g, 0.6);
+    };
+    // The sounder: a click as the key goes down, a clack as it comes up.
+    let at = t0;
+    for (let i = 0; i < 22; i++) {
+      const len = Math.random() < 0.35 ? 0.2 : 0.07;
+      bar(at, 1500 * jit(0.05), 0.09);
+      bar(at + len, 900 * jit(0.05), 0.06);
+      at += len + (Math.random() < 0.2 ? 0.3 : 0.09);
+    }
+    // Sparks: short crackles where the current jumps at the instrument.
+    for (let i = 0; i < 9; i++) {
+      const sp = t0 + Math.random() * (at - t0);
+      const g = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.3, -1, 1));
+      env(g, sp, 0.07 * jit(0.5), 0.001, 0.03 + 0.05 * Math.random());
+      noise(ac, sp, 0.12, 2).connect(filt(ac, 'highpass', 3500, 0.7)).connect(g);
+    }
+  }
+
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     wind = null;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, tick, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, tick, telegraph, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

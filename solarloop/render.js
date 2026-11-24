@@ -123,6 +123,7 @@ uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
+uniform vec4 uEgg[4];
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -178,6 +179,22 @@ void main() {
     float dark = pow(max(mu, 0.02), uTex.w);
     float bright = 1.0 + 0.6 * (inversesqrt(max(mu, 0.04)) - 1.0);
     hot = uDisk.x * max(tex, 0.08) * mix(dark, bright, uDisk.z);
+    // An egg's sunspots: a dark umbra in a ragged penumbra.
+    for (int k = 0; k < 2; k++) {
+      if (uEgg[k].w <= 0.0) continue;
+      float a = acos(clamp(dot(n, uEgg[k].xyz), -1.0, 1.0));
+      float sz = 0.4 + 0.6 * uEgg[k].w;
+      float rag = vn((n - uEgg[k].xyz) * 900.0 + 4.0);
+      float pen = smoothstep(0.042 * sz * (0.8 + 0.4 * rag), 0.03 * sz, a);
+      float umb = smoothstep(0.019 * sz, 0.013 * sz, a);
+      hot *= 1.0 - min(uEgg[k].w, 1.0) * (0.62 * pen + 0.35 * umb);
+    }
+    // An egg's white-light kernels: they burn through to white.
+    for (int k = 2; k < 4; k++) {
+      if (uEgg[k].w <= 0.0) continue;
+      float a = acos(clamp(dot(n, uEgg[k].xyz), -1.0, 1.0));
+      hot += uEgg[k].w * uDisk.x * (14.0 * exp(-pow(a / 0.0045, 2.0)) + 0.8 * exp(-a / 0.008));
+    }
     for (int k = 0; k < ${NR}; k++) {
       float dd = 2.0 - 2.0 * dot(n, uReg[k].xyz);
       float m = exp(-dd / 0.006) * uReg[k].w;
@@ -815,6 +832,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);
     gl.uniform4fv(s.u.uFlB, v.flB);
+    gl.uniform4fv(s.u.uEgg, v.egg);
     tri(gl, hdr, empty);
 
     if (v.count > 0) {

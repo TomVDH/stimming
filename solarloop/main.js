@@ -9,6 +9,7 @@ import { detail } from '../shared/detail.js';
 import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END } from './eggs.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -167,7 +168,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -216,7 +217,7 @@ const ui = initPage({ id: ID, bar: {
       { value: 'siriusb', label: 'Sirius B · white dwarf', dot: 'oklch(0.88 0.06 210)', group: 'Life stages' },
       { value: 'neutron', label: 'Pulsar · neutron star', dot: 'oklch(0.72 0.15 270)', group: 'Life stages' },
     ],
-    onPick: v => { if (!STARS[v]) return; st.star = v; store.set('star', v); applyView(); poke(); },
+    onPick: v => { if (!STARS[v]) return; st.star = v; egg = null; store.set('star', v); applyView(); poke(); },
   },
   actions: [
     { verb: 'flare', key: 'Space', onPress: () => flareNext() },
@@ -312,6 +313,59 @@ function flareNear(x, y) {
   if (prom) eruptAt(best); else flareAt(best);
 }
 
+/* ---------- eggs: a long hold on a star plays its real famous event ---------- */
+// The egg in play, or null. Its clock t reaches 0 at the end of the hold.
+let egg = null;
+// A view point under the stage point x, y, as a unit vector in the star's frame.
+function surfaceAt(x, y) {
+  let vx = view.cx + (x / cssW * 2 - 1) * view.hw, vy = view.cy + (1 - y / cssH * 2) * view.hh;
+  // A point off the disk moves in onto it.
+  const r = Math.hypot(vx, vy), lim = 0.9 * R;
+  if (r > lim) { vx *= lim / r; vy *= lim / r; }
+  const v = [vx, vy, Math.sqrt(Math.max(0, R * R - vx * vx - vy * vy))];
+  return [0, 1, 2].map(c => (M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]) / R);
+}
+function startEgg(x, y) {
+  const kind = EGGS[st.star];
+  // The star turns during the hold: the flash lands under the finger.
+  const now = st.time;
+  st.time += HOLD - CUE;
+  setRot();
+  const c = surfaceAt(x, y);
+  st.time = now;
+  setRot();
+  if (kind === 'carrington') egg = makeCarrington(c);
+  return !!egg;
+}
+// One step of the egg's clock; a hold let go early runs it back out.
+function stepEgg(dt, holding) {
+  if (!egg) return;
+  if (egg.t < 0 && !holding && !egg.rare) {
+    egg.t -= dt * 2;
+    if (egg.t <= CUE - HOLD) egg = null;
+    return;
+  }
+  egg.t += dt;
+  if (egg.kind === 'carrington') {
+    if (egg.t >= 0 && !egg.fired) {
+      egg.fired = true;
+      const fl = startFlare(sun, egg.rg, st.time, calm ? 1.1 : 1.6);
+      fl.snapped = 0;
+      snd.flare(clamp(toCss(toView(egg.rg.c.map(x => x * R)))[0] / cssW * 2 - 1, -1, 1), st.star, 1);
+    }
+    // The storm reaches the earth: its telegraph lines spark.
+    if (egg.t >= CARR_STORM && !egg.storm) { egg.storm = true; snd.telegraph(); }
+    if (egg.t >= CARR_END) egg = null;
+  }
+}
+// The egg's uniforms: two spots, then two kernels, each a view point and a weight.
+function eggFrame(out) {
+  out.fill(0);
+  if (egg?.kind !== 'carrington') return;
+  const c = carrington(egg);
+  [...c.spots, ...c.kernels].forEach(([p, w], k) => out.set([...toView(p), calm ? w * 0.7 : w], k * 4));
+}
+
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
@@ -320,6 +374,7 @@ const frameState = {
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
+  egg: new Float32Array(16),
 };
 function makeFrame() {
   const f = frameState;
@@ -402,6 +457,7 @@ function makeFrame() {
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
+  eggFrame(f.egg);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');
   f.full = weight('full');
@@ -466,10 +522,18 @@ function frame(now) {
       }
     }
     for (const fl of sun.flares) cueArcade(fl);
+    // A still press past the cue starts the star's egg under it.
+    const holding = pointer.id !== null && !pointer.drag;
+    if (holding && !egg && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE && startEgg(pointer.x0, pointer.y0)) pointer.egg = true;
+    // Now and then an egg comes on its own, near the middle of the view.
+    if (!egg && !calm && drifting > 0 && EGGS[st.star] && Math.random() < dt / RARE) {
+      if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()))) egg.rare = true;
+    }
+    stepEgg(dt, holding && pointer.egg);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
@@ -515,13 +579,14 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
-const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0 };
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, t0: 0, drag: false, egg: false, p0: 0, w0: 0 };
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
-  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  const now = performance.now();
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: now, t0: now, drag: false, egg: false, p0: st.pitch, w0: st.yaw });
   poke();
 });
 stage.addEventListener('pointermove', e => {
@@ -544,7 +609,8 @@ stage.addEventListener('pointermove', e => {
 });
 function endPointer(e) {
   if (e.pointerId !== pointer.id) return;
-  const tap = e.type === 'pointerup' && !pointer.drag;
+  // A press that started an egg is not a tap.
+  const tap = e.type === 'pointerup' && !pointer.drag && !pointer.egg;
   if (pointer.drag) snd.endTurn();
   pointer.id = null; pointer.drag = false;
   if (tap) flareNear(pointer.x, pointer.y);
