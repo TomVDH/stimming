@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-24T04:22:49Z
+updated_at: 2026-11-24T04:39:08Z
 parent: stimming-oh7b
 ---
 
@@ -73,3 +73,5 @@ Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 bloc
 - [x] Low-fi Dev panel (devpanel.js) in place of the Dev sheet; the hot air at real time with a fast flicker (Tom, 2026-11-23: "low fi pop over", "far more fast and less gel like")
 
 - [x] Dry ground in place of the wet mirror (Tom, 2026-11-23: "it is not floating above water")
+
+- [x] No hard walls on the 2D plane; cooled soot dark; Exhaust reach on Dev, 3 m (Tom, 2026-11-23: "whats up wth the blending here", "DONT NEED TO reach the floor")

@@ -143,9 +143,11 @@ export function makePost({ renderer, scene, camera, volScene, heatScene, planeSc
   const behind = exp(sumAt.mul(U.occ).negate());
   // Soot glows while hot and turns black as it cools.
   const pl = plane.sample(screenUV);
-  const cool = float(1.0).sub(smoothstep(0.15, 0.6, pl.b));
+  const cool = float(1.0).sub(smoothstep(0.35, 0.8, pl.b));
   const absorb = exp(pl.g.mul(U.sootDark).mul(cool.mul(0.7).add(0.3)).mul(U.soot).negate());
-  const sootGlow = vec3(1.0, 0.45, 0.12).mul(pl.g.mul(pl.b).mul(pl.b).mul(U.sootGlow).mul(U.soot));
+  // Only soot near the hot core glows; the cooled sheet stays dark.
+  const hot = smoothstep(0.55, 0.95, pl.b);
+  const sootGlow = vec3(1.0, 0.45, 0.12).mul(float(1.0).sub(exp(pl.g.negate())).mul(hot).mul(hot).mul(U.sootGlow).mul(U.soot));
   const view = vec3(pl.r.mul(3.0).mul(U.viewHeat), pl.g.mul(1.5).mul(U.viewSoot), 0.0);
   const lit = vec4(sceneCol.rgb.mul(behind).mul(absorb).add(gasCol.rgb).add(sootGlow).add(view), 1.0);
   const glow = bloom(lit, 0.55, 0.6, 0.85);

@@ -121,6 +121,11 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
       const s = wp.sub(N.xy).dot(N.zw).clamp(0.0, K.x);
       const hold = mix(0.8, 0.25, smoothstep(0.5, 3.0, s));
       v.assign(mix(v, N.zw.mul(K.z), core(wp, j).mul(hold)));
+      // Past its reach the jet breaks up: the push dies in the column below.
+      const s0 = wp.sub(N.xy).dot(N.zw);
+      const r0 = wp.sub(N.xy).sub(N.zw.mul(s0)).length();
+      const past = smoothstep(K.x, K.x.add(1.2), s0).mul(float(1.0).sub(smoothstep(1.0, 3.0, r0))).mul(K.z.sign());
+      v.mulAssign(float(1.0).sub(past.mul(u.dt).mul(10.0)).max(0.0));
     }
     // The floor is solid.
     If(c.y.equal(0), () => { v.y.assign(max(v.y, 0.0)); });
@@ -187,15 +192,22 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     const a = S(src, i0).xy, b = S(src, i0.add(ex)).xy, cc = S(src, i0.add(ey)).xy, d = S(src, i0.add(ex).add(ey)).xy;
     const T = S(hatT, p).xy.add(S(src, p).xy.sub(S(backT, p).xy).mul(0.5)).clamp(min(min(a, b), min(cc, d)), max(max(a, b), max(cc, d))).toVar();
     T.mulAssign(exp(vec2(u.cool, u.sootFade).negate().mul(u.dt)));
-    // The top and side edges let the heat out.
+    // The top and side walls let heat and soot out.
+    // A wide band clears them fast, so nothing piles up at a wall.
     const edge = min(min(p.x, float(1).sub(p.x)), float(1).sub(p.y));
-    T.mulAssign(smoothstep(0.0, 0.05, edge));
+    T.mulAssign(mix(float(1).sub(u.dt.mul(8.0)).max(0.0), float(1.0), smoothstep(0.0, 0.15, edge)));
+    T.mulAssign(smoothstep(0.0, 0.02, edge));
     // Each jet core feeds heat.
     const wp = world(p);
     for (let j = 0; j < 2; j++) {
       const k = core(wp, j, 0.8);
       T.x.assign(mix(T.x, max(T.x, u.jetK[j].w), k.mul(u.dt).mul(40.0).clamp(0, 1)));
       T.y.addAssign(k.mul(u.sootFeed).mul(u.jetK[j].w).mul(u.dt));
+      // Past its reach the jet's heat mixes away fast.
+      const N = u.jetN[j], s0 = wp.sub(N.xy).dot(N.zw);
+      const r0 = wp.sub(N.xy).sub(N.zw.mul(s0)).length();
+      const past = smoothstep(u.jetK[j].x, u.jetK[j].x.add(1.2), s0).mul(float(1.0).sub(smoothstep(1.0, 3.0, r0))).mul(u.jetK[j].w.sign());
+      T.x.mulAssign(float(1.0).sub(past.mul(u.dt).mul(4.0)).max(0.0));
     }
     T.y.assign(T.y.min(4.0));
     textureStore(dst, c, vec4(T, 0, 1)).toWriteOnly();
@@ -225,7 +237,10 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
 
   const mat = new THREE.MeshBasicNodeMaterial({ fog: false, depthWrite: false, depthTest: false });
   mat.colorNode = Fn(() => {
-    const T = texture(heat[0], uv()).xy;
+    // The plane fades out toward its sides and top, so no wall shows.
+    const e = uv();
+    const fade = smoothstep(0.0, 0.12, min(e.x, float(1).sub(e.x))).mul(smoothstep(0.0, 0.1, float(1).sub(e.y)));
+    const T = texture(heat[0], e).xy.mul(fade);
     // Fast small cells break the heat into a flicker, not a gel.
     const q = world(uv()).div(u.shimSize);
     const n = mx_noise_float(vec3(q.x, q.y.add(u.time.mul(u.shimSpeed)), u.time.mul(u.shimSpeed).mul(0.37)));

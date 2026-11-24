@@ -35,8 +35,6 @@ const YAW0 = -Math.PI / 2 + 0.32;
 const craft = { y: HOVER_Y, vy: 0, x: 0, vx: 0, tx: 0, ty: HOVER_Y, yaw: 0 };
 // The nozzles stand 1.62 m under the craft's centre, at world z -3.1.
 const NOZ_DY = 1.62, NOZ_Z = -3.1;
-// The visible jet runs 9 m at most; past that it spreads in free air.
-const JET_MAX = 9;
 
 /* ---------- time of day ---------- */
 const timeSaved = saved('time');
@@ -68,7 +66,7 @@ const tune = {
   bendK: 2, capK: 1.5, heatBlur: 0.5, heatK: 1, hSpeed: 1, shim: 1, shimSize: 1,
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
-  fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
+  reach: 3, fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
   sAmount: 1, sLife: 1, sDark: 1, sGlow: 1, sootOn: true, view: 'off',
 };
 const slider = (id, group, label, min, max, step) => ({
@@ -89,6 +87,7 @@ const DEV_ROWS = [
   slider('exSmoke', 'Gas', 'Exhaust smoke', 0, 3, 0.05),
   slider('exHeat', 'Gas', 'Exhaust heat', 0, 3, 0.05),
   slider('speedK', 'Gas', 'Gas speed', 0.2, 2, 0.05),
+  slider('reach', 'Fluid', 'Exhaust reach (m)', 1, 12, 0.1),
   slider('fSwirl', 'Fluid', 'Swirl', 0, 3, 0.05),
   slider('fLift', 'Fluid', 'Lift', 0, 3, 0.05),
   slider('fCool', 'Fluid', 'Cooling', 0, 3, 0.05),
@@ -410,7 +409,8 @@ function pose() {
     j.a.copy(axis);
     const lenG = j.n.y / Math.max(0.2, -axis.y);
     j.c.copy(j.n).addScaledVector(axis, lenG);
-    const len = Math.min(lenG, JET_MAX);
+    // The exhaust reaches tune.reach metres; it touches the pad only when lower.
+    const len = Math.min(lenG, tune.reach);
     const p = P[i];
     p.U.thr.value = i === 2 ? eng.rpm : thr;
     p.U.time.value = clock;
