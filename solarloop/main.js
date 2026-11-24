@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 mark('libs');
@@ -329,6 +329,23 @@ function readHover() {
   else if (hoverAt && pointer.id === null && pickAt(hoverAt[0], hoverAt[1]).d < reach()) c = 'pointer';
   else if (cam.mode !== 'long') c = 'grab';
   if (c !== cursor) { cursor = c; stage.style.cursor = c; }
+  const t = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]).t : null;
+  if (t !== aimed) { aimed = t; poke(); }
+}
+// The target the mouse points at; it glows a little.
+let aimed = null;
+// Eases each target's light toward its aim; true while any still moves.
+function stepLit(dt) {
+  let moving = false;
+  const k = 1 - Math.exp(-dt / 0.22);
+  for (const o of [...sun.regions, ...sun.proms]) {
+    const to = o === aimed ? 1 : 0;
+    const l = o.lit || 0;
+    if (Math.abs(to - l) < 0.003) { o.lit = to; continue; }
+    o.lit = l + (to - l) * k;
+    moving = true;
+  }
+  return moving;
 }
 
 /* ---------- frame state for the renderer ---------- */
@@ -351,7 +368,7 @@ function makeFrame() {
   sun.regions.forEach((rg, k) => {
     const fl = sun.flares.find(q => q.rg === rg);
     const boost = fl ? 1 + 1.2 * Math.exp(-fl.t / 6) : 1;
-    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost], k * 4);
+    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost * (1 + LIT_GAIN * (rg.lit || 0))], k * 4);
   });
   f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
@@ -487,10 +504,11 @@ function frame(now) {
     for (const fl of sun.flares) cueArcade(fl);
     // The star turns under a still mouse.
     if (hoverAt) readHover();
+    const glowing = stepLit(dt);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || glowing || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
     if (STARS[st.star].beam && drifting > 0) pulse();
     again = lively || drifting > 0;
