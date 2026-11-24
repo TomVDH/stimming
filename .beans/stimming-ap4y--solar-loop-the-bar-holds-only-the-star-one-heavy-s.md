@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T20:57:20Z
-updated_at: 2026-11-24T21:07:57Z
+updated_at: 2026-11-24T21:12:54Z
 parent: stimming-e35i
 ---
 
@@ -30,3 +30,9 @@ Picks: star picker only (Space and L stay as keys, Activity to Settings); the ch
 
 - [x] One magnet notch: a pause within 0.3 of the full star settles there
 - [ ] Tom tries the notch live
+
+## Farther, heavier in (Tom, 2026-11-24)
+
+- [x] The farthest zoom pulls back 32 times (was 16); rail labels come from the pull-back
+- [x] Zooming in takes 1.4 times as long: 2.5 s against 1.7 s out, measured
+- [x] Tidy: the stored zoom was never read, so it goes; far is worked out once

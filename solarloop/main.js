@@ -90,7 +90,7 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
 // Three framings on one zoom axis: the long lens on the bottom left limb, the wide dome, the full star.
 // z is 0 on the long lens, 1 on the wide view, 2 on the full star.
-// Past 2 the full view pulls back: z 3 is 4 times farther, z 4 is 16 times.
+// Past 2 the full view pulls back: z 4 is 32 times farther (Tom, 2026-11-24).
 const VIEWS = ['long', 'wide', 'full'];
 const Z_MAX = 4;
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
@@ -114,7 +114,9 @@ const weight = name => {
   return z <= 1 ? ease(clamp(z)) : 1 - ease(clamp(z - 1));
 };
 // How far the full view pulls back at z.
-const pullBack = z => 2 ** (Math.max(0, z - 2) * 2);
+const pullBack = z => 2 ** (Math.max(0, z - 2) * 2.5);
+// A pull-back as words: x5.7, x32.
+const pullText = z => { const k = pullBack(z); return `×${k < 9.95 ? k.toFixed(1) : Math.round(k)}`; };
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
   const narrow = asp < 0.8;
@@ -197,7 +199,6 @@ function zoomBy(dz) {
 function springTo(z) {
   z = clamp(z, 0, Z_MAX);
   cam.to = z;
-  store.set('lensZ', z.toFixed(3));
   // Reduced motion and the first frame jump straight to the target.
   if (!started || calm) {
     cam.z = cam.aim = z; cam.v = cam.va = 0; cam.moving = false;
@@ -215,10 +216,12 @@ function follow(x, X, v, T, dt) {
 }
 // The zoom's weight: each follower's time constant; one stop settles in 1.8 s.
 const ZOOM_T = 0.35;
+// Zooming in is slower and heavier than zooming out (Tom, 2026-11-24).
+const ZOOM_IN = 1.4;
 // Steps both followers; true while the zoom moves.
 function stepZoom(dt) {
   if (!cam.moving) return false;
-  const T = ZOOM_T * gv('zoomWeight', 1);
+  const T = ZOOM_T * gv('zoomWeight', 1) * (cam.to < cam.z ? ZOOM_IN : 1);
   [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
   [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
   cam.z = clamp(cam.z, 0, Z_MAX);
@@ -321,10 +324,7 @@ const PICKS = [
 const DIGITS = '1234567890';
 // The bar's label: the star with its swatch.
 const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
-const zoomText = z => {
-  const name = VIEWS[Math.min(2, Math.round(z))], k = pullBack(z);
-  return z > 2.02 ? `full ×${k < 9.95 ? k.toFixed(1) : Math.round(k)}` : name;
-};
+const zoomText = z => z > 2.02 ? `full ${pullText(z)}` : VIEWS[Math.round(z)];
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
   st.star = v;
@@ -379,7 +379,7 @@ const chart = makeChart({
 });
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
-  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [3, '×4'], [4, '×16']],
+  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [3, pullText(3)], [4, pullText(4)]],
   max: Z_MAX,
   text: zoomText,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
@@ -665,7 +665,7 @@ function makeFrame() {
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
-  // Past the full star the view pulls back; far runs 0 to 1 by x16.
+  // Past the full star the view pulls back; far runs 0 to 1 by x32.
   const far = ease(clamp((cam.z - 2) / 2));
   f.far = far;
   f.cam.set([st.yaw, st.pitch, star.lensing, far]);
@@ -682,7 +682,7 @@ function makeFrame() {
   f.film.set([0.018, 0, 0.35, star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
-  f.volDens *= 1 - 0.95 * ease(clamp((cam.z - 2) / 2));
+  f.volDens *= 1 - 0.95 * far;
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight') * f.off;
   // The 3D corona shows in the full view; its light follows the star's own corona.
   f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6 * f.off;
