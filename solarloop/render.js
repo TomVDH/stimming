@@ -666,6 +666,8 @@ uniform vec4 uSat[2];
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, uFx5;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
+// The far lens's sway with the mouse, -1 to 1 on each axis.
+uniform vec2 uSway;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 in vec2 vUv;
@@ -769,7 +771,8 @@ vec3 lensFlare(vec2 src, float g, float fall, float len, float reach) {
   vec3 line = uStreak * flLine(d, FL_BB.x, len) * cut * SL_FLARE.y * uFx2.x;
   // Ghosts lie on the line through the frame's centre.
   // A light near the centre still throws them a little off axis.
-  vec2 toC = vec2(0.5) - s;
+  // The mouse sway moves the lens's optical centre, so the ghosts swing.
+  vec2 toC = vec2(0.5) + uSway * vec2(0.025, 0.02) - s;
   toC = mix(vec2(-0.16, 0.11), toC, smoothstep(0.0, 0.15, length(toC)));
   float gh = 0.9 * ringGhost(uv, s + toC * 0.7, asp, 0.04) + 0.5 * ringGhost(uv, s + toC * 2.2, asp, 0.13);
   float gc = 0.7 * ringGhost(uv, s + toC * 1.4, asp, 0.08) + 0.4 * flGhost(uv, s - toC * 0.45, asp, 0.025);
@@ -782,7 +785,8 @@ vec3 starfield(vec2 fc) {
   for (int l = 0; l < 2; l++) {
     float fine = l == 0 ? 1.0 : 0.0;
     float cell = mix(26.0, 9.0, fine) * uSc;
-    vec2 q = fc / cell + vec2(17.3, 5.1) * float(l) + uCam.xy * vec2(-30.0, 30.0) * mix(1.0, 0.6, fine);
+    // The sway slides the near layer more than the far one: a little depth.
+    vec2 q = (fc - uSway * uRes.y * mix(0.008, 0.003, fine)) / cell + vec2(17.3, 5.1) * float(l) + uCam.xy * vec2(-30.0, 30.0) * mix(1.0, 0.6, fine);
     vec2 id = floor(q), f = fract(q) - 0.5;
     if (hash(id + float(l) * 13.1) > mix(0.22, 0.07, fine)) continue;
     vec2 at = (vec2(hash(id + 3.7), hash(id + 9.1)) - 0.5) * 0.8;
@@ -1060,6 +1064,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(f.u.uLens, v.lens);
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
+    gl.uniform2fv(f.u.uSway, v.sway);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);

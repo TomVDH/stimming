@@ -1,19 +1,20 @@
-// Solar loop: the zoom rail. One line holds every lens stop and the zoom past them.
+// Solar loop: the zoom rail. A dashed left half for the close views, a pip at the full star,
+// and a plain right half for the pull-back (Tom, 2026-11-24). No words.
 // It shows while the zoom moves and leaves 1.4 s after it stops.
-// A tap on a stop glides the zoom there.
+// A tap on the line glides the zoom there.
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
-const h = (tag, cls, html) => {
+const h = (tag, cls) => {
   const el = document.createElement(tag);
   if (cls) el.className = cls;
-  if (html != null) el.innerHTML = html;
   return el;
 };
 
 /**
  * Builds the zoom rail on the stage's frame.
- * @param {{ frame: HTMLElement, stops: [number, string][], max: number, text: (z: number) => string,
+ * @param {{ frame: HTMLElement, mid: number, max: number, text: (z: number) => string,
  *   cover: () => { top: number, bottom: number }, onPick: (z: number) => void }} o
+ * mid is the zoom at the pip; text names a zoom for screen readers.
  */
 export function makeRail(o) {
   const link = h('link');
@@ -21,27 +22,22 @@ export function makeRail(o) {
   link.href = new URL('rail.css', import.meta.url).href;
   document.head.append(link);
 
+  // The pip sits at the middle: each half holds its own stretch of the zoom.
+  const at = z => z <= o.mid ? 0.5 * z / o.mid : 0.5 + 0.5 * (z - o.mid) / (o.max - o.mid);
+  const zAt = p => p <= 0.5 ? 2 * p * o.mid : o.mid + (2 * p - 1) * (o.max - o.mid);
+
   const el = h('div', 'sl-rail');
   el.hidden = true;
-  el.setAttribute('role', 'group');
+  el.setAttribute('role', 'slider');
   el.setAttribute('aria-label', 'Zoom');
-  const now = h('div', 'sl-rail-now');
-  now.setAttribute('aria-live', 'polite');
-  const track = h('div', 'sl-rail-track');
-  // The stretch past the full view is the zoom out, drawn fainter.
-  const out = h('i', 'sl-rail-out');
-  out.style.left = `${(2 / o.max) * 100}%`;
+  el.setAttribute('aria-valuemin', '0');
+  el.setAttribute('aria-valuemax', String(o.max));
   const mark = h('i', 'sl-rail-mark');
-  track.append(out, mark);
-  for (const [z, label] of o.stops) {
-    const b = h('button', `sl-rail-stop${z > 2 ? ' sl-rail-stop--out' : ''}`, `<i></i><span>${label}</span>`);
-    b.type = 'button';
-    b.style.left = `${(z / o.max) * 100}%`;
-    b.setAttribute('aria-label', `Zoom to ${label}`);
-    b.addEventListener('click', () => o.onPick(z));
-    track.append(b);
-  }
-  el.append(now, track);
+  el.append(h('i', 'sl-rail-near'), h('i', 'sl-rail-far'), h('i', 'sl-rail-pip'), mark);
+  el.addEventListener('click', e => {
+    const r = el.getBoundingClientRect();
+    o.onPick(zAt(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))));
+  });
   o.frame.append(el);
 
   let timer = 0, held = false;
@@ -59,16 +55,12 @@ export function makeRail(o) {
     timer = setTimeout(() => { el.hidden = true; el.classList.remove('is-leaving'); }, RM.matches ? 0 : 100);
   }
   return {
-    // The mark stands at z; the words name where the zoom is going.
+    // The mark stands at z; screen readers hear where the zoom is going.
     show(z, to) {
       el.style.setProperty('--foot', `${o.cover().bottom}px`);
-      mark.style.left = `${(z / o.max) * 100}%`;
-      const t = o.text(to);
-      if (now.textContent !== t) now.textContent = t;
-      for (const b of track.querySelectorAll('.sl-rail-stop')) {
-        const at = Number.parseFloat(b.style.left) / 100 * o.max;
-        b.toggleAttribute('data-on', Math.abs(at - to) < 0.02);
-      }
+      mark.style.left = `${at(z) * 100}%`;
+      el.setAttribute('aria-valuenow', to.toFixed(2));
+      el.setAttribute('aria-valuetext', o.text(to));
       el.classList.remove('is-leaving');
       el.hidden = false;
       later();

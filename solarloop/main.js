@@ -12,6 +12,8 @@ import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
+import { makeCard } from './card.js';
+import { cardLines } from './facts.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -102,6 +104,8 @@ const z0 = 0;
 // Every input sets to; the camera never overshoots and never jolts.
 const cam = {
   z: z0, aim: z0, to: z0,
+  // Where the current move began.
+  from: z0,
   // The followers' speeds, and true while they move.
   v: 0, va: 0, moving: false,
   // The nearest stop names the framing.
@@ -142,7 +146,7 @@ function fitView(w, h, top = 0, bottom = 0) {
   const nx = Math.sin(psi), ny = Math.cos(psi);
   // The limb stands a quarter of the frame in from its edge, along psi.
   const d = 0.5 * (hwL * Math.abs(nx) + hhL * Math.abs(ny));
-  fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL, psi, d };
+  fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL };
   // The full star: the whole disk, its prominences and some sky round it.
   const free2 = Math.max(0.4 * h, h - top - bottom);
   // Pulled back, so the corona has room to stretch out.
@@ -204,12 +208,16 @@ function zoomBy(dz) {
 // Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
   z = clamp(z, 0, Z_MAX);
+  // A move away from the full star fades the star card.
+  if (z !== NOTCH) card?.fade();
+  if (!cam.moving) cam.from = cam.z;
   cam.to = z;
   // Reduced motion and the first frame jump straight to the target.
   if (!started || calm) {
     cam.z = cam.aim = z; cam.v = cam.va = 0; cam.moving = false;
     applyView();
     readHover();
+    arrive();
   } else cam.moving = true;
   rail?.show(cam.z, cam.to);
   poke();
@@ -233,6 +241,7 @@ function stepZoom(dt) {
   cam.z = clamp(cam.z, 0, Z_MAX);
   if (Math.abs(cam.to - cam.z) < 2e-4 && Math.abs(cam.v) < 2e-3 && Math.abs(cam.va) < 2e-3) {
     cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false;
+    arrive();
   }
   applyView();
   rail.show(cam.z, cam.to);
@@ -382,16 +391,25 @@ const chart = makeChart({
   get: () => st.star,
   onPick: pickStar,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
-  onOpen: on => { if (on) rail.hide(); },
+  onOpen: on => { if (on) { rail.hide(); card.clear(); } },
 });
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
-  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [4, pullText(4)], [6, pullText(6)]],
+  mid: NOTCH,
   max: Z_MAX,
   text: zoomText,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
   onPick: z => springTo(z),
 });
+// The star card: the star's name and facts type on, then fade (Tom, 2026-11-24).
+// It shows only on the full star: zoomed out to it, glided there by a pick, or opened there.
+const card = makeCard({ stage });
+let cardStar = null;
+function arrive() {
+  if (!started || cam.to !== NOTCH || (cam.from > NOTCH - 0.05 && cardStar === st.star)) return;
+  cardStar = st.star;
+  card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name));
+}
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented || chart.isOpen) return;
   if (e.target.closest?.('input, textarea, select, .s2-sheet, .sg-sheet')) return;
@@ -654,14 +672,11 @@ function makeFrame() {
   if (rA > 0.12 * wh) { ex = w.cx + w.hw * 0.72 + rA * 0.45; ey = w.cy + wh * 0.5 + rA * 0.35; }
   const [ax, ay] = px(ex, ey);
   f.bodyA.set([ax, ay, rA * ppm, star.wide === 'none' ? 0 : 1 - weight('long')]);
-  const L = fit.long, lh = L.hw / view.asp;
-  const tx = Math.cos(L.psi), ty = -Math.sin(L.psi);
-  // The transit runs along a chord across the disk, over about five minutes.
-  const span = 2.4 * Math.hypot(L.hw, lh);
-  const s0 = ((st.time * 1.5 + span * 0.5) % span) - span / 2;
-  const depth = R - L.d - 0.45 * lh;
-  // It runs along the limb, across the disk.
-  const bx = depth * Math.sin(L.psi) - tx * s0, by = depth * Math.cos(L.psi) - ty * s0;
+  const L = fit.long;
+  // The transit runs level across the disk, east to west with the star's turn (Tom, 2026-11-24).
+  // Its chord passes through the long lens frame, a little south of the equator.
+  const by = L.cy, cw = Math.sqrt(Math.max(0, R * R - by * by)), span = 2 * cw + 60;
+  const bx = ((st.time * 1.5) % span) - span / 2;
   const [qx, qy] = px(bx, by);
   const on = star.long === 'none' ? 0 : Math.min(1, Math.max(0, (R - Math.hypot(bx, by)) / 6));
   // The transit shows on the long lens and on the full star.
@@ -857,19 +872,18 @@ stage.addEventListener('pointermove', e => {
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
 
-/* ---------- sway: far out the mouse wobbles the lens ---------- */
-// A light spring follows the mouse, a little past and back.
+/* ---------- sway: far out the mouse gently nudges the lens ---------- */
+// A slow, critically damped follow: no overshoot, about 2 s to settle (Tom, 2026-11-24).
 const sway = { x: 0, y: 0, vx: 0, vy: 0 };
-const SWAY_W = 6, SWAY_DAMP = 0.45;
-// Steps the spring; true while it moves.
+const SWAY_T = 0.9;
+// Steps the follow; true while it moves.
 function stepSway(dt) {
   const on = calm ? 0 : farAt(cam.z);
   const tx = hoverAt && on ? (hoverAt[0] / cssW * 2 - 1) * on : 0;
   const ty = hoverAt && on ? (1 - hoverAt[1] / cssH * 2) * on : 0;
-  sway.vx += (SWAY_W * SWAY_W * (tx - sway.x) - 2 * SWAY_DAMP * SWAY_W * sway.vx) * dt;
-  sway.vy += (SWAY_W * SWAY_W * (ty - sway.y) - 2 * SWAY_DAMP * SWAY_W * sway.vy) * dt;
-  sway.x += sway.vx * dt; sway.y += sway.vy * dt;
-  const still = Math.abs(tx - sway.x) + Math.abs(ty - sway.y) + Math.abs(sway.vx) + Math.abs(sway.vy) < 1e-3;
+  [sway.x, sway.vx] = follow(sway.x, tx, sway.vx, SWAY_T, dt);
+  [sway.y, sway.vy] = follow(sway.y, ty, sway.vy, SWAY_T, dt);
+  const still = Math.abs(tx - sway.x) + Math.abs(ty - sway.y) + Math.abs(sway.vx) + Math.abs(sway.vy) < 1e-4;
   if (still) { sway.x = tx; sway.y = ty; sway.vx = sway.vy = 0; }
   return !still;
 }
@@ -937,6 +951,8 @@ try {
   await introDone;
   started = true;
   poke();
+  // A visit that opens on the full star shows the card once the intro has gone.
+  if (cam.z === NOTCH) setTimeout(() => { cam.from = -1; arrive(); }, 900);
 } catch (err) {
   console.error(err);
   fail.removeAttribute('hidden');
