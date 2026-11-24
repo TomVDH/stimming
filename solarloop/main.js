@@ -6,9 +6,12 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
+import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
+import { makeChart } from './chart.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
+import { makeRail } from './rail.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -29,9 +32,37 @@ const st = {
   // The ambient clock: it runs while the toy drifts and stops asleep.
   time: 34,
   pitch: 0, yaw: 0,
+  // The pulsar's own clock: a voice egg runs it faster.
+  spin: 34,
   next: 0,
 };
 const sun = makeSun();
+// The star on screen: it trails st.star through the switch dip.
+let shown = st.star;
+// The switch dip: the frame darkens, the star swaps, the light returns.
+let dip = null;
+const DIP_DOWN = 0.25, DIP_UP = 0.7;
+// The dip's light, from 1 down to a near black and back.
+const dipLight = () => {
+  if (!dip) return 1;
+  const k = dip.t < DIP_DOWN ? 1 - dip.t / DIP_DOWN : (dip.t - DIP_DOWN) / DIP_UP;
+  return 0.06 + 0.94 * ease(clamp(k));
+};
+// Steps the dip; the star swaps at the dark point. True while it runs.
+function stepDip(dt) {
+  if (shown !== st.star && !dip) {
+    // Reduced motion and the first frame swap at once.
+    if (calm || !started) { shown = st.star; applyView(); return false; }
+    dip = { t: 0 };
+  }
+  if (!dip) return false;
+  // A new pick on the way up turns back down from the same light.
+  if (shown !== st.star && dip.t > DIP_DOWN) dip.t = DIP_DOWN * (1 - (dip.t - DIP_DOWN) / DIP_UP);
+  dip.t += dt;
+  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; applyView(); }
+  if (dip.t >= DIP_DOWN + DIP_UP) dip = null;
+  return true;
+}
 // The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
 const FLUID = new URLSearchParams(location.search).has('fluid');
 // The fluid's run: its clock and the prominence it lives on, or null.
@@ -57,17 +88,32 @@ let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
 
 /* ---------- the view: a telescope, so an orthographic projection ---------- */
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
-// Three framings: the long lens on the bottom left limb, the wide dome, the full star.
+// Three framings on one zoom axis: the long lens on the bottom left limb, the wide dome, the full star.
+// z is 0 on the long lens, 1 on the wide view, 2 on the full star.
+// Past 2 the full view pulls back: z 3 is 4 times farther, z 4 is 16 times.
 const VIEWS = ['long', 'wide', 'full'];
+const Z_MAX = 4;
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
-// The long lens is the default (Tom, 2026-11-23).
-const saved = store.get('lens');
-// cam eases from one framing to the next; t runs from 0 to 1.
-const cam = { mode: VIEWS.includes(saved) ? saved : 'long', from: '', t: 1 };
-cam.from = cam.mode;
+// Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
+const z0 = 0;
+// cam glides z from one value to the next; t runs from 0 to 1 over dur seconds.
+const cam = {
+  z: z0, from: z0, to: z0, t: 1, dur: 0,
+  // The wheel's spring: on while it runs, and its speed.
+  spring: false, v: 0,
+  // The nearest stop names the framing.
+  get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
+};
 const ease = t => t * t * (3 - 2 * t);
-// How much of a framing is in the current view, from 0 to 1.
-const weight = name => { const k = ease(cam.t); return (cam.from === name ? 1 - k : 0) + (cam.mode === name ? k : 0); };
+// How much of a framing is in the current view, from 0 to 1; the weights add to 1.
+const weight = name => {
+  const z = Math.min(cam.z, 2), i = VIEWS.indexOf(name);
+  if (i === 0) return 1 - ease(clamp(z));
+  if (i === 2) return ease(clamp(z - 1));
+  return z <= 1 ? ease(clamp(z)) : 1 - ease(clamp(z - 1));
+};
+// How far the full view pulls back at z.
+const pullBack = z => 2 ** (Math.max(0, z - 2) * 2);
 function fitView(w, h, top = 0, bottom = 0) {
   const asp = w / h;
   const narrow = asp < 0.8;
@@ -93,30 +139,77 @@ function fitView(w, h, top = 0, bottom = 0) {
   // Pulled back, so the corona has room to stretch out.
   const hhF = narrow ? 1.45 * R / asp : 1.6 * R * h / free2;
   const hwF = hhF * asp;
-  fit.full = { cx: 0, cy: (top - bottom) * hhF / h * -1 + 0, hw: hwF };
-  fit.full.cy = -(bottom - top) * hhF / h;
+  fit.full = { cx: 0, cy: -(bottom - top) * hhF / h, hw: hwF };
   applyView();
 }
-// Eases between the framings; the width moves on a log scale, as a zoom does.
+// Mixes the two framings round z; the width moves on a log scale, as a zoom does.
+// The ease holds the view near each stop, so the stops feel like detents.
 function applyView() {
-  const k = ease(cam.t);
-  const a = fit[cam.from], b = fit[cam.mode];
-  view.cx = a.cx + (b.cx - a.cx) * k;
-  view.cy = a.cy + (b.cy - a.cy) * k;
-  view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k);
+  const z = cam.z, i = Math.min(1, Math.floor(z));
+  const a = fit[VIEWS[i]], b = fit[VIEWS[i + 1]], k = z >= 2 ? 1 : ease(z - i), s = pullBack(z);
+  view.cx = (a.cx + (b.cx - a.cx) * k) * s;
+  view.cy = (a.cy + (b.cy - a.cy) * k) * s;
+  view.hw = Math.exp(Math.log(a.hw) + (Math.log(b.hw) - Math.log(a.hw)) * k) * s;
   view.hh = view.hw / view.asp;
+  // An oblate star: the view stretches its equator across the screen.
+  const ob = 1 + STARS[shown].oblate;
+  view.cx /= ob; view.hw /= ob;
   setRot();
 }
-// L steps through the framings: long lens, wide dome, full star.
-function toggleLens() {
-  // A step during a zoom starts from wherever the view now stands.
-  if (cam.t < 1) { cam.from = cam.t < 0.5 ? cam.from : cam.mode; }
-  else cam.from = cam.mode;
-  cam.mode = VIEWS[(VIEWS.indexOf(cam.mode) + 1) % VIEWS.length];
-  cam.t = !started || calm ? 1 : 0;
-  store.set('lens', cam.mode);
+// Glides the zoom to z over dur seconds, from wherever the view now stands.
+function glideTo(z, dur) {
+  z = clamp(z, 0, Z_MAX);
+  cam.from = cam.z; cam.to = z; cam.t = 0;
+  cam.spring = false; cam.v = 0;
+  cam.dur = !started || calm ? 0 : dur;
+  if (!cam.dur) { cam.z = z; cam.t = 1; }
+  store.set('lensZ', z.toFixed(3));
   applyView();
+  setLabel(labels.lens, lensLabel());
+  readHover();
+  rail?.show(cam.z, cam.to);
   poke();
+}
+// L jumps to the next stop in Tom's order: long lens, full star, wide dome, then back.
+function toggleLens() {
+  glideTo(cam.to < 0.5 ? 2 : cam.to > 1.5 ? 1 : 0, 2);
+}
+// The wheel, a pinch and the - and = keys move the zoom by dz.
+// Close to a stop, a pause settles the zoom on it.
+let settle = 0;
+function zoomBy(dz) {
+  if (chart?.isOpen) return;
+  springTo(cam.to + dz);
+  clearTimeout(settle);
+  settle = setTimeout(() => {
+    const s = Math.round(cam.to);
+    if (s <= 2 && Math.abs(cam.to - s) > 0.001 && Math.abs(cam.to - s) < 0.15) springTo(s);
+  }, 350);
+}
+// The wheel's zoom follows its target on a heavy spring (Tom, 2026-11-23).
+function springTo(z) {
+  z = clamp(z, 0, Z_MAX);
+  // Reduced motion and the first frame jump straight to the target.
+  if (!started || calm) { glideTo(z, 0); return; }
+  if (cam.t < 1) cam.t = 1;
+  cam.to = z; cam.spring = true;
+  store.set('lensZ', z.toFixed(3));
+  setLabel(labels.lens, lensLabel());
+  rail?.show(cam.z, cam.to);
+  poke();
+}
+// The spring reaches its target in about 1.4 s, a few percent past.
+function stepSpring(dt) {
+  const x = cam.z, X = cam.to;
+  if (Math.abs(X - x) < 1e-4 && Math.abs(cam.v) < 1e-3) cam.spring = false;
+  if (cam.spring) {
+    const w = 2.4, damp = 0.72;
+    cam.v += (w * w * (X - x) - 2 * damp * w * cam.v) * dt;
+    cam.z = clamp(x + cam.v * dt, 0, Z_MAX);
+  } else { cam.z = X; cam.v = 0; }
+  applyView();
+  rail.show(cam.z, cam.to);
+  return cam.spring;
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -124,7 +217,19 @@ function setRot() {
   const cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), cy = Math.cos(st.yaw), sy = Math.sin(st.yaw);
   const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
-  M = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
+  const T = rx.map(row => [0, 1, 2].map(c => row[0] * ry[0][c] + row[1] * ry[1][c] + row[2] * ry[2][c]));
+  // The star turns on its own axis at its true rate, sped up.
+  const B = STARS[shown];
+  const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.time * SPIN_UP / (B.day * 86400)) % 1)) : null;
+  M = S ? T.map(row => [0, 1, 2].map(c => row[0] * S[0][c] + row[1] * S[1][c] + row[2] * S[2][c])) : T;
+}
+// A turn by angle a about the axis u (Rodrigues).
+function axisTurn(u, a) {
+  const l = Math.hypot(u[0], u[1], u[2]), x = u[0] / l, y = u[1] / l, z = u[2] / l;
+  const c = Math.cos(a), s = Math.sin(a), t = 1 - c;
+  return [[t * x * x + c, t * x * y - s * z, t * x * z + s * y],
+    [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
+    [t * x * z - s * y, t * y * z + s * x, t * z * z + c]];
 }
 const toView = p => [0, 1, 2].map(r => M[r][0] * p[0] + M[r][1] * p[1] + M[r][2] * p[2]);
 // A view point to stage CSS pixels, y down.
@@ -138,7 +243,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -163,26 +268,44 @@ const FX = [
 const fxv = id => { const d = FX.find(f => f[0] === id)[5]; return ui?.setting?.(id)?.value ?? d; };
 
 /* ---------- bar ---------- */
+// The stars in pick order: main sequence by class, brown dwarfs, life stages.
+// Keys 1 to 0 pick the first ten; [ and ] step through all of them.
+const PICKS = [
+  ['zetaoph', 'Zeta Ophiuchi', 'oklch(0.7 0.16 275)'], ['regulus', 'Regulus', 'oklch(0.82 0.09 245)'],
+  ['vega', 'Vega', 'oklch(0.94 0.02 250)'], ['sirius', 'Sirius', 'oklch(0.9 0.04 250)'],
+  ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
+  ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
+  ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
+  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
+  ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
+  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
+  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'],
+].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
+const DIGITS = '1234567890';
+// The bar's labels: the star with its swatch, and the view with its zoom.
+const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
+const zoomText = z => {
+  const name = VIEWS[Math.min(2, Math.round(z))], k = pullBack(z);
+  return z > 2.02 ? `full ×${k < 9.95 ? k.toFixed(1) : Math.round(k)}` : name;
+};
+const lensLabel = () => `Lens · ${zoomText(cam.to)}`;
+function pickStar(v) {
+  if (!STARS[v] || v === st.star) return;
+  st.star = v;
+  egg = null;
+  store.set('star', v);
+  // A new star opens on the whole star.
+  glideTo(2, 2);
+  applyView();
+  setLabel(labels.star, starLabel());
+  chart?.sync();
+  poke();
+}
 const ui = initPage({ id: ID, bar: {
-  choice: {
-    label: 'Star',
-    value: st.star,
-    // Smallest to largest: a city's width to a thousand suns.
-    options: [
-      { value: 'neutron', label: 'Neutron star', dot: 'oklch(0.72 0.15 270)', key: '1' },
-      { value: 'siriusb', label: 'Sirius B', dot: 'oklch(0.88 0.06 210)', key: '2' },
-      { value: 'proxima', label: 'Proxima', dot: 'oklch(0.62 0.19 35)', key: '3' },
-      { value: 'sun', label: 'Sun', dot: 'oklch(0.82 0.15 80)', key: '4' },
-      { value: 'sirius', label: 'Sirius', dot: 'oklch(0.9 0.04 250)', key: '5' },
-      { value: 'rigel', label: 'Rigel', dot: 'oklch(0.8 0.1 240)', key: '6' },
-      { value: 'betelgeuse', label: 'Betelgeuse', dot: 'oklch(0.68 0.18 45)', key: '7' },
-      { value: 'vycma', label: 'VY CMa', dot: 'oklch(0.5 0.17 28)', key: '8' },
-    ],
-    onPick: v => { if (!STARS[v]) return; st.star = v; store.set('star', v); poke(); },
-  },
   actions: [
+    { verb: 'star', label: starLabel(), onPress: () => chart?.toggle() },
     { verb: 'flare', key: 'Space', onPress: () => flareNext() },
-    { verb: 'lens', label: 'Lens', key: 'L', onPress: () => toggleLens() },
+    { verb: 'lens', label: lensLabel(), key: 'L', onPress: () => toggleLens() },
   ],
   slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
   quality: true,
@@ -190,14 +313,53 @@ const ui = initPage({ id: ID, bar: {
   dev: [
     ...FX.map(([id, group, label, min, max, value]) => ({ type: 'slider', id, group, label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
+    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
     ['click', 'Tap a region to flare it, or a prominence to lift it off'],
     ['drag', 'Drag to turn the star (the long lens holds still)'],
-    ['L', 'Step through the long lens, the wide view and the full star'],
+    ['scroll', 'Zoom from the long lens through the wide view to the full star, and farther out'],
+    ['L', 'Jump to the next lens stop: long, wide, full'],
+    ['S', 'Open the star chart'],
+    ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
+    ['[', 'Step to the previous star; ] steps to the next'],
   ],
 } });
+// The Bar v2 chips hold the labels; Bar v3 follows them.
+const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
+const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), lens: chipLabel(lensLabel()) };
+function setLabel(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
+const chart = makeChart({
+  frame: stage.closest('.stim-frame') || stage.parentElement,
+  focusBack: stage,
+  stars: PICKS,
+  get: () => st.star,
+  onPick: pickStar,
+  cover: () => ui.cover?.() || { top: 58, bottom: 56 },
+  onOpen: on => { if (on) rail.hide(); },
+});
+const rail = makeRail({
+  frame: stage.closest('.stim-frame') || stage.parentElement,
+  stops: [[0, 'Long'], [1, 'Wide'], [2, 'Full'], [3, '×4'], [4, '×16']],
+  max: Z_MAX,
+  text: zoomText,
+  cover: () => ui.cover?.() || { top: 58, bottom: 56 },
+  onPick: z => glideTo(z, Math.max(0.6, Math.abs(z - cam.z) * 0.7)),
+});
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented || chart.isOpen) return;
+  if (e.target.closest?.('input, textarea, select, .s2-sheet, .sg-sheet')) return;
+  const i = DIGITS.indexOf(e.key);
+  if (i >= 0) pickStar(PICKS[i].value);
+  else if (e.key === 's' || e.key === 'S') chart.open(true);
+  else if (e.key === '[' || e.key === ']') {
+    const at = PICKS.findIndex(x => x.value === st.star);
+    pickStar(PICKS[(at + (e.key === ']' ? 1 : -1) + PICKS.length) % PICKS.length].value);
+  } else return;
+  e.preventDefault();
+});
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 3000 });
 const snd = makeSound(kit);
@@ -230,7 +392,6 @@ function flareAt(rg) {
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
-  fl.snapped = 0;
   poke();
 }
 // Space flares each region in view in turn.
@@ -256,7 +417,8 @@ function eruptAt(p) {
   snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.star, calm ? 0.7 : 1);
   poke();
 }
-function flareNear(x, y) {
+// The target under a stage point: a region or a prominence, and its distance.
+function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   for (const rg of sun.regions) {
     const [px, py] = toCss(regionPoint(rg).v);
@@ -271,21 +433,129 @@ function flareNear(x, y) {
     const d = Math.hypot(px - x, py - y) * 0.6;
     if (d < bd) { bd = d; best = p; prom = true; }
   }
-  if (prom) eruptAt(best); else flareAt(best);
+  return { t: best, prom, d: bd };
+}
+// A target counts as under the hand within this many CSS pixels.
+const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
+// A tap anywhere flares the nearest region or lifts the nearest prominence.
+function flareNear(x, y) {
+  const { t, prom } = pickAt(x, y);
+  if (prom) eruptAt(t); else flareAt(t);
+}
+
+/* ---------- hover: the cursor reads the region under it ---------- */
+// The mouse over the stage, or null; touch and pen never hover.
+let hoverAt = null, cursor = '';
+function readHover() {
+  let c = 'default';
+  if (pointer.drag && cam.mode !== 'long') c = 'grabbing';
+  else if (hoverAt && pointer.id === null && pickAt(hoverAt[0], hoverAt[1]).d < reach()) c = 'pointer';
+  else if (cam.mode !== 'long') c = 'grab';
+  if (c !== cursor) { cursor = c; stage.style.cursor = c; }
+  const t = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]).t : null;
+  if (t !== aimed) { aimed = t; poke(); }
+}
+// The target the mouse points at; it glows a little.
+let aimed = null;
+// The target a press holds; it charges with light until release.
+let pressed = null;
+// Eases each target's light toward its aim; true while any still moves.
+function stepLit(dt) {
+  let moving = false;
+  const k = 1 - Math.exp(-dt / 0.22);
+  for (const o of [...sun.regions, ...sun.proms]) {
+    const to = o === pressed ? 1 + 3 * (1 - Math.exp(-(performance.now() - pointer.t0) / 500)) : o === aimed ? 1 : 0;
+    const l = o.lit || 0;
+    if (Math.abs(to - l) < 0.003) { o.lit = to; continue; }
+    o.lit = l + (to - l) * k;
+    moving = true;
+  }
+  return moving;
+}
+
+/* ---------- eggs: a long hold on a star plays its real famous event ---------- */
+// The egg in play, or null. Its clock t reaches 0 at the end of the hold.
+let egg = null;
+// A view point under the stage point x, y, as a unit vector in the star's frame.
+function surfaceAt(x, y) {
+  let vx = view.cx + (x / cssW * 2 - 1) * view.hw, vy = view.cy + (1 - y / cssH * 2) * view.hh;
+  // A point off the disk moves in onto it.
+  const r = Math.hypot(vx, vy), lim = 0.9 * R;
+  if (r > lim) { vx *= lim / r; vy *= lim / r; }
+  const v = [vx, vy, Math.sqrt(Math.max(0, R * R - vx * vx - vy * vy))];
+  return [0, 1, 2].map(c => (M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]) / R);
+}
+function startEgg(x, y) {
+  const kind = EGGS[st.star];
+  // The star turns during the hold: the flash lands under the finger.
+  const now = st.time;
+  st.time += HOLD - CUE;
+  setRot();
+  const c = surfaceAt(x, y);
+  st.time = now;
+  setRot();
+  if (kind === 'carrington') egg = makeCarrington(c);
+  else if (kind === 'dimming') egg = makeDimming();
+  else if (kind === 'voice') egg = makeVoice();
+  return !!egg;
+}
+// One step of the egg's clock; a hold let go early runs it back out.
+function stepEgg(dt, holding) {
+  if (!egg) return;
+  if (egg.kind === 'voice') {
+    egg.t += dt;
+    // Reduced motion: the spin rises only four times.
+    stepVoice(egg, dt, holding, SPIN_PERIOD, calm ? 4 : Infinity);
+    if (egg.done) egg = null;
+    return;
+  }
+  if (egg.t < 0 && !holding && !egg.rare) {
+    egg.t -= dt * 2;
+    if (egg.t <= CUE - HOLD) egg = null;
+    return;
+  }
+  egg.t += dt;
+  if (egg.kind === 'carrington') {
+    if (egg.t >= 0 && !egg.fired) {
+      egg.fired = true;
+      const fl = startFlare(sun, egg.rg, st.time, calm ? 1.1 : 1.6);
+      snd.flare(clamp(toCss(toView(egg.rg.c.map(x => x * R)))[0] / cssW * 2 - 1, -1, 1), st.star, 1);
+    }
+    // The storm reaches the earth: its telegraph lines spark.
+    if (egg.t >= CARR_STORM && !egg.storm) { egg.storm = true; snd.telegraph(); }
+    if (egg.t >= CARR_END) egg = null;
+  } else if (egg.kind === 'dimming') {
+    if (egg.t >= 0 && !egg.fired) { egg.fired = true; snd.dim(st.star); }
+    if (egg.t >= DIM_END) egg = null;
+  }
+}
+// The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
+// The dimming: south in the view frame and the veil, then the cool patch.
+function eggFrame(out, dim) {
+  out.fill(0); dim.fill(0);
+  if (egg?.kind === 'carrington') {
+    const c = carrington(egg);
+    [...c.spots, ...c.kernels].forEach(([p, w], k) => out.set([...toView(p), calm ? w * 0.7 : w], k * 4));
+  } else if (egg?.kind === 'dimming') {
+    const d = dimming(egg);
+    dim.set([...toView(SOUTH), d.veil, d.cool, 0, 0, 0]);
+  }
 }
 
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flW: new Float32Array(8), flB: new Float32Array(8),
+  regs: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
+  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
+  egg: new Float32Array(16), dim: new Float32Array(8),
 };
 function makeFrame() {
   const f = frameState;
   f.view.set([view.cx, view.cy, view.hw, view.hh]);
+  setRot();
   // Column-major: the rot columns are M's columns; toSun is M transposed.
   f.rot.set([M[0][0], M[1][0], M[2][0], M[0][1], M[1][1], M[2][1], M[0][2], M[1][2], M[2][2]]);
   f.toSun.set([M[0][0], M[0][1], M[0][2], M[1][0], M[1][1], M[1][2], M[2][0], M[2][1], M[2][2]]);
@@ -293,13 +563,12 @@ function makeFrame() {
   sun.regions.forEach((rg, k) => {
     const fl = sun.flares.find(q => q.rg === rg);
     const boost = fl ? 1 + 1.2 * Math.exp(-fl.t / 6) : 1;
-    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost], k * 4);
+    f.regs.set([...toView(rg.c), (0.45 + 0.75 * act) * boost * (1 + LIT_GAIN * (rg.lit || 0))], k * 4);
   });
-  f.fl.fill(0); f.flW.fill(0); f.flB.fill(0); f.sat.fill(0);
+  f.fl.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
-    const fv = flareView(fl, st.star);
+    const fv = flareView(fl, shown);
     f.fl.set([...toView(fv.c), 0], k * 4);
-    f.flW.set([fv.wave[0], fv.wave[1], 0, 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
     // The saturated core shows where the kernel is in view; behind the limb, the arcade top shines.
     let v = toView(fv.c.map(x => x * (R + fv.kernel[0])));
@@ -310,16 +579,16 @@ function makeFrame() {
     f.sat.set([sx, sy, calm ? S * 0.6 : S, 0], k * 4);
   });
   f.time = st.time;
-  const star = STARS[st.star];
+  const star = STARS[shown];
   f.band = star;
-  f.count = strands(sun, st.time, { star: st.star, activity: act }, ren.data);
+  f.count = strands(sun, st.time, { star: shown, activity: act, spin: st.spin }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
   f.sc = Math.max(1, view.H / 900);
   // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
   f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
-  // Scale bodies at true size: one beside the limb, one in transit on the long lens.
+  // Mercury at true size, in transit on the long lens; nothing beside the limb.
   const ppm = view.H / (2 * view.hh);
   const px = (x, y) => [((x - view.cx) / view.hw * 0.5 + 0.5) * view.W, ((y - view.cy) / view.hh * 0.5 + 0.5) * view.H];
   const w = fit.wide, wh = w.hw / view.asp;
@@ -328,7 +597,7 @@ function makeFrame() {
   // A body too big for the sky hangs in the top right corner, cut by the frame.
   if (rA > 0.12 * wh) { ex = w.cx + w.hw * 0.72 + rA * 0.45; ey = w.cy + wh * 0.5 + rA * 0.35; }
   const [ax, ay] = px(ex, ey);
-  f.bodyA.set([ax, ay, rA * ppm, 1 - weight('long')]);
+  f.bodyA.set([ax, ay, rA * ppm, star.wide === 'none' ? 0 : 1 - weight('long')]);
   const L = fit.long, lh = L.hw / view.asp;
   const tx = Math.cos(L.psi), ty = -Math.sin(L.psi);
   // The transit runs along a chord across the disk, over about five minutes.
@@ -343,11 +612,17 @@ function makeFrame() {
   f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, (1 - weight('wide')) * on]);
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
   // The pulsar's magnetic axis, in the view frame.
-  if (star.beam) f.beam.set([...toView(magAxis(st.time)), star.beam]); else f.beam.fill(0);
+  if (star.beam) f.beam.set([...toView(magAxis(st.spin)), star.beam]); else f.beam.fill(0);
+  // The spin axis carries the wind nebula's torus and jets.
+  if (star.beam) f.spin.set([...toView(SPIN), star.beam]); else f.spin.fill(0);
+  // A young star's disk and jets turn with the star.
+  const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
+  f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   f.cam.set([st.yaw, st.pitch, star.lensing, 0]);
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
-  f.film.set([0.018, 0, 0.35, 0]);
+  // w: the star's dust, which keeps the haze over its disk.
+  f.film.set([0.018, 0, 0.35, star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight');
@@ -356,7 +631,8 @@ function makeFrame() {
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
-  f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), 0]);
+  f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
+  eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');
   f.full = weight('full');
@@ -383,7 +659,7 @@ function fluidFrame(r) {
     box: new Float32Array([...e, ...c, ...g]),
     boxT: new Float32Array([e[0], c[0], g[0], e[1], c[1], g[1], e[2], c[2], g[2]]),
     origin: new Float32Array(c.map(x => x * R)),
-    gain: 0.024 * STARS[st.star].prom,
+    gain: 0.024 * STARS[shown].prom,
   };
   r.first = false;
   r.dt = 0;
@@ -403,12 +679,16 @@ function frame(now) {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
-    // The lens zooms over about two seconds.
-    const zooming = cam.t < 1;
-    if (zooming) {
-      cam.t = Math.min(1, cam.t + dt / 2);
-      if (cam.t >= 1) cam.from = cam.mode;
+    st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
+    // The zoom glides: a lens step over two seconds, the wheel in a quarter second.
+    let zooming = cam.t < 1;
+    if (cam.spring) zooming = stepSpring(dt);
+    else if (zooming) {
+      cam.t = Math.min(1, cam.t + dt / cam.dur);
+      const k = cam.dur >= 1 ? ease(cam.t) : 1 - (1 - cam.t) ** 3;
+      cam.z = cam.from + (cam.to - cam.from) * k;
       applyView();
+      rail.show(cam.z, cam.to);
     }
     stepFlares(sun, dt * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
@@ -420,13 +700,24 @@ function frame(now) {
         fluidRun.t += fluidRun.dt;
       }
     }
-    for (const fl of sun.flares) cueArcade(fl);
+    // The star turns under a still mouse.
+    if (hoverAt) readHover();
+    const glowing = stepLit(dt);
+    const dipping = stepDip(dt);
+    // A still press past the cue starts the star's egg under it.
+    const holding = pointer.id !== null && !pointer.drag;
+    if (holding && !egg && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE && startEgg(pointer.x0, pointer.y0)) pointer.egg = true;
+    // Now and then an egg comes on its own, near the middle of the view.
+    if (!egg && !calm && drifting > 0 && EGGS[st.star] && Math.random() < dt / RARE) {
+      if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()))) egg.rare = true;
+    }
+    stepEgg(dt, holding && pointer.egg);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
-    if (drifting > 0) snd.hum(st.star);
-    if (STARS[st.star].beam && drifting > 0) pulse();
+    lively = zooming || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    if (drifting > 0) { mixSound(); snd.hum(shown); }
+    if (STARS[shown].beam && (drifting > 0 || egg?.kind === 'voice')) pulse();
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
@@ -434,20 +725,21 @@ function frame(now) {
   }
 }
 // A pulsar ticks as each beam sweeps past the eye.
-let lastFace = 0;
+let lastFace = 0, lastTurn = 0;
+// The point in a turn where the beam faces the eye.
+const FACE = (() => { let b = 0, bz = -2; for (let i = 0; i < 360; i++) { const z = magAxis(i / 360 * SPIN_PERIOD)[2]; if (z > bz) { bz = z; b = i / 360; } } return b; })();
 function pulse() {
-  const m = toView(magAxis(st.time));
-  const face = m[2];
-  if (face > 0.95 && lastFace <= 0.95) snd.tick();
-  lastFace = face;
-}
-// Each arcade loop that snaps in plays its note once.
-function cueArcade(fl) {
-  while (fl.snapped < ARCADE && fl.t >= flareCurve.born(fl.snapped)) {
-    const p = regionPoint(fl.rg);
-    snd.snap(fl.snapped, clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star);
-    fl.snapped++;
+  const turn = st.spin / SPIN_PERIOD - FACE;
+  // Fast turns pass the eye between frames: count turns, one tick each.
+  if (egg?.kind === 'voice' && egg.rate > 1.5) {
+    const n = Math.min(2, Math.floor(turn) - Math.floor(lastTurn));
+    for (let i = 0; i < n; i++) snd.tick();
+  } else {
+    const face = toView(magAxis(st.spin))[2];
+    if (face > 0.95 && lastFace <= 0.95) snd.tick();
+    lastFace = face;
   }
+  lastTurn = turn;
 }
 function rest() {
   snd.quiet();
@@ -459,6 +751,10 @@ function schedule(delay = 0) {
   if (delay > 4) timer = setTimeout(() => { timer = 0; schedule(); }, delay - 2);
   else raf = requestAnimationFrame(frame);
 }
+// The Dev toggles turn the hum and the rumble on and off.
+// Closeness for the mix: 1 on the long lens, 0 on the full star, below 0 zoomed out.
+const nearness = () => Math.log(fit.full.hw / view.hw) / Math.log(fit.full.hw / fit.long.hw);
+function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness()); }
 function poke() {
   lastInput = performance.now();
   if (!raf && !timer) last = performance.now();
@@ -470,24 +766,24 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
-const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, drag: false, p0: 0, w0: 0 };
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, t0: 0, drag: false, egg: false, p0: 0, w0: 0 };
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
-  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  const now = performance.now();
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: now, t0: now, drag: false, egg: false, p0: st.pitch, w0: st.yaw });
+  pressed = pickAt(x, y).t;
   poke();
 });
 stage.addEventListener('pointermove', e => {
   if (e.pointerId !== pointer.id) return;
   const [x, y] = local(e);
   const now = performance.now();
-  const speed = Math.hypot(x - pointer.x, y - pointer.y) / Math.max(1, now - pointer.at) * 1000;
   pointer.x = x; pointer.y = y; pointer.at = now;
-  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) pointer.drag = true;
+  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) { pointer.drag = true; pressed = null; readHover(); }
   if (!pointer.drag) return;
-  snd.turn(speed);
   // The surface follows the hand, like a ball rolled under it.
   const k = 0.75 / Math.max(320, cssH);
   // The long lens holds still: the camera never moves there.
@@ -499,19 +795,54 @@ stage.addEventListener('pointermove', e => {
 });
 function endPointer(e) {
   if (e.pointerId !== pointer.id) return;
-  const tap = e.type === 'pointerup' && !pointer.drag;
-  if (pointer.drag) snd.endTurn();
-  pointer.id = null; pointer.drag = false;
+  // A press that started an egg is not a tap.
+  const tap = e.type === 'pointerup' && !pointer.drag && !pointer.egg;
+  pointer.id = null; pointer.drag = false; pressed = null;
   if (tap) flareNear(pointer.x, pointer.y);
+  readHover();
   poke();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, endPointer));
+stage.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  hoverAt = e.target === canvas || e.target === stage ? local(e) : null;
+  readHover();
+});
+stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); });
+// Zoom through every view: the wheel, a two-finger pinch, the - and = keys.
+stage.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoomBy(clamp(e.deltaY, -120, 120) * 0.0025);
+}, { passive: false });
+const touches = new Map();
+let pinch0 = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
+stage.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'touch') return;
+  touches.set(e.pointerId, local(e));
+  // A second finger ends the tap and the turn.
+  if (touches.size === 2) { pinch0 = spread(); pointer.drag = true; pressed = null; }
+});
+stage.addEventListener('pointermove', e => {
+  if (!touches.has(e.pointerId)) return;
+  touches.set(e.pointerId, local(e));
+  if (touches.size !== 2 || !pinch0) return;
+  const d = spread();
+  zoomBy(Math.log2(pinch0 / Math.max(d, 1)));
+  pinch0 = d;
+});
+['pointerup', 'pointercancel'].forEach(t => stage.addEventListener(t, e => { touches.delete(e.pointerId); if (touches.size < 2) pinch0 = 0; }));
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.('input, textarea')) return;
+  if (e.key === '-' || e.key === '_') zoomBy(0.25);
+  else if (e.key === '=' || e.key === '+') zoomBy(-0.25);
+});
 
 /* ---------- life cycle ---------- */
 whenVisible(stage, on => {
   visible = on;
   if (on) { last = performance.now(); schedule(); }
-  else { halt(); pointer.id = null; pointer.drag = false; snd.quiet(); }
+  else { halt(); pointer.id = null; pointer.drag = false; pressed = null; snd.quiet(); }
 });
 onReducedChange(on => { calm = on; poke(); });
 sound.onChange(on => { if (on) poke(); else snd.quiet(); });
