@@ -17,7 +17,7 @@ import { devPanel } from './devpanel.js';
 /* ---------- controls ---------- */
 const tune = { thr: 0.5, motion: 'fast', len: 5, r0: 0.4, spread: 0.04, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines',
   bend: 1, fluteW: 3.5, flute: 1, flicker: 1, showHeat: false,
-  soot: true, res: 'med', sAmount: 1, sSide: 1, sDark: 1, sLife: 1, sSpeed: 1, sLit: 1 };
+  soot: true, res: 'med', sAmount: 1, sDark: 1, sLife: 1, sSpeed: 1, sLit: 1 };
 // Motion presets: noise size (per metre), speed and strength.
 const MOTIONS = { fast: [3.5, 2.0, 1.0], slow: [1.0, 0.45, 1.3], steady: [1.5, 0.3, 0.2] };
 const slider = (id, group, label, min, max, step) => ({
@@ -46,7 +46,6 @@ const ROWS = [
     { value: 'low', label: 'Low' }, { value: 'med', label: 'Medium' }, { value: 'high', label: 'High' },
   ], onPick: async v => { tune.res = v; await buildSoot(v); apply(); } },
   slider('sAmount', 'Soot', 'Amount', 0, 3, 0.05),
-  slider('sSide', 'Soot', 'Beside the jet', 0, 3, 0.05),
   slider('sDark', 'Soot', 'Darkness', 0, 3, 0.05),
   slider('sLife', 'Soot', 'Lifetime', 0.2, 4, 0.05),
   slider('sSpeed', 'Soot', 'Speed', 0.2, 2, 0.05),
@@ -235,8 +234,12 @@ async function buildSoot(level) {
   gu = gas.u;
   gas.setEmitters(pts);
   gu.emitTemperature.value = 330; gu.emitDensity.value = 120; gu.emitGain.value = 1;
-  gu.feed.value.set(0.05, 0);
-  gu.buoyancy.value = 0.6; gu.weight.value = 0.05;
+  // The jet core carries heat down its drive.
+  gu.feed.value.set(0.4, 0);
+  // The hot exhaust is light: it goes down only so far, then rises back up.
+  gu.buoyancy.value = 1.6; gu.weight.value = 0.05;
+  // The jet runs free past its drive and pulls the still air in.
+  gu.freeJet.value = 1; gu.entrain.value = 2.0;
   gu.turbulence.value = 4.0; gu.turbFrequency.value = 10.0; gu.vorticity.value = 8.0;
   gu.velDamping.value = 0.25; gu.cooling.value = 1.3;
   gu.skyShadow.value = 1.2;
@@ -267,9 +270,9 @@ function stepSoot(dt) {
   // A rebuild in progress skips the gas.
   if (building) return;
   const n = U.noz.value, L = U.len.value, thr = U.thr.value;
-  // The jet drives the gas down to the end of the cone, or to the floor.
+  // The nozzle drives only the jet's first metres; momentum carries it on.
   gu.jetP[0].value.copy(n);
-  gu.jetA[0].value.set(0, -1, 0, Math.min(L, n.y));
+  gu.jetA[0].value.set(0, -1, 0, Math.min(1.2 + 2.5 * thr, n.y));
   gu.jetK[0].value.set(16 * (0.35 + 0.75 * thr), 6 + 26 * thr, 0, U.r0.value);
   gu.sourcePosition.value.copy(n);
   gu.emitMatrix.value.copy(emitM.makeTranslation(n.x, n.y, n.z));
@@ -307,9 +310,9 @@ function apply() {
   U.showHeat.value = tune.showHeat ? 1 : 0;
   // Soot: a feed at the tail of the cone, its darkening, its fade.
   U.soot.value = tune.soot ? 1 : 0; U.sLit.value = tune.sLit; U.sSpeed.value = tune.sSpeed;
-  gu.tailSoot.value = tune.soot ? 1500 * tune.sAmount : 0;
-  // About half as much soot rides beside the jet.
-  gu.sideSoot.value = tune.soot ? 700 * tune.sAmount * tune.sSide : 0;
+  // Soot mixes through the jet column; none is dumped at one spot.
+  gu.tailSoot.value = 0; gu.sideSoot.value = 0;
+  gu.coreSoot.value = tune.soot ? 900 * tune.sAmount : 0;
   // The clouds fade in about 1.7 s, so they do not linger.
   gu.dissipation.value = 0.6 / tune.sLife;
   gu.occGain.value = 4 * tune.sDark;

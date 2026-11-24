@@ -240,6 +240,12 @@ export function createFire({
     tailSoot: uniform(0.0),
     // Jet hover: soot fed along the column's edge, per second.
     sideSoot: uniform(0.0),
+    // Jet hover: 1 lets the jet run free past its drive: no stop, no spill, it entrains air.
+    freeJet: uniform(0.0),
+    // Jet hover: how hard the jet's edge pulls the still air in.
+    entrain: uniform(0.0),
+    // Jet hover: soot mixed through the jet column, per second.
+    coreSoot: uniform(0.0),
     occFloor: uniform(0.0),
   };
 
@@ -421,11 +427,15 @@ export function createFire({
       const core = float(1.0).sub(smoothstep(R.mul(0.35), R, r)).mul(smoothstep(-0.4, 0.1, sRaw)).mul(float(1.0).sub(smoothstep(L.sub(0.6), L.add(0.2), sRaw)));
       newVel.assign(mix(newVel, A.mul(K.x), core.mul(relax)));
       // Jet hover: past its reach the jet breaks up; its push fades below, so the soot keeps rolling.
-      const past = smoothstep(L.sub(0.3), L.add(0.5), sRaw).mul(float(1.0).sub(smoothstep(R.mul(1.5), R.mul(4.0), r)));
+      // A free jet skips this: its momentum carries on, and buoyancy turns it.
+      const past = smoothstep(L.sub(0.3), L.add(0.5), sRaw).mul(float(1.0).sub(smoothstep(R.mul(1.5), R.mul(4.0), r))).mul(float(1.0).sub(u.freeJet));
       newVel.mulAssign(float(1.0).sub(past.mul(u.dt).mul(20.0)).max(0.0));
       // The broken jet spills outward, so its soot peels off sideways.
       const outDir = vec3(w.x, 0.0, w.z).sub(vec3(A.x, 0.0, A.z).mul(sRaw));
       newVel.addAssign(outDir.div(outDir.length().add(0.2)).mul(K.x.mul(0.35)).mul(past).mul(u.dt).mul(8.0));
+      // Jet hover: a free jet's edge drags the still air in and down with it.
+      const shell = smoothstep(R.mul(0.9), R.mul(1.4), r).mul(float(1.0).sub(smoothstep(R.mul(2.5), R.mul(4.5), r))).mul(smoothstep(-0.2, 0.6, sRaw)).mul(float(1.0).sub(smoothstep(L.mul(2.5), L.mul(4.0), sRaw)));
+      newVel.addAssign(outDir.div(outDir.length().add(0.2)).negate().add(A.mul(0.6)).mul(K.x.mul(u.entrain)).mul(shell).mul(u.dt));
       const land = P.add(A.mul(L));
       // A jet that ends in free air makes no sheet on the floor.
       const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
@@ -528,6 +538,9 @@ export function createFire({
       // Jet hover: a lighter feed along the column's edge, so some soot rides beside the jet.
       const side = smoothstep(L.mul(0.15), L.mul(0.4), sRaw).mul(float(1.0).sub(smoothstep(L.sub(1.0), L.sub(0.2), sRaw))).mul(smoothstep(R.mul(0.7), R.mul(1.1), r)).mul(float(1.0).sub(smoothstep(R.mul(1.4), R.mul(2.0), r)));
       density.addAssign(u.sideSoot.mul(side).mul(wisp).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
+      // Jet hover: soot mixes through the column from just below the nozzle.
+      const inJet = smoothstep(0.3, 1.2, sRaw).mul(float(1.0).sub(smoothstep(R.mul(0.8), R.mul(1.6), r))).mul(float(1.0).sub(smoothstep(L.sub(0.3), L.add(0.3), sRaw)));
+      density.addAssign(u.coreSoot.mul(inJet).mul(wisp.mul(0.7).add(0.3)).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
       const land = P.add(A.mul(L));
       // A jet that ends in free air neither smokes nor steams the floor.
       const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
