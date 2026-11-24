@@ -18,7 +18,8 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [ ] Space rumble louder as the view closes in: Tom listens
 - [x] Ask Tom which tap layers stay; cut the rest (Tom kept the brass blast and the glow chord) (chimes cut 2026-11-23: no visible cause; rain drips cut, Tom)
 - [x] Tom hears the choir swell on the Sun: rejected; the original brass blast is back, exact (Tom: "the best")
-- [ ] Pulsar tick: Tom objects to the pop; proposal is a short, quiet burst of band-passed radio noise, no thump. Decide with Tom; the eggs session follows.
+- [x] Pulsar tick removed: sound, Dev row, the beam and egg triggers, the lab button (Tom, 2026-11-24)
+- [ ] Pulsar: a new sound for the beam sweep and the Vela voice egg; Tom picks it
 - [x] Wooshes: all cut (ede9215e). Rule: add no sound layer Tom has not asked for by name.
 - [ ] The hit: Tom heard an "attack sound" on a flare. Check what is left of the hit with Tom.
 - [ ] Eggs audio (branch claude/solarloop-eggs-3a554c, bean stimming-239r): telegraph() crackles (Tom may not want them), dim() chord, tick(at, lvl) on the audio clock for the Vela buzz.

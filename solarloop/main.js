@@ -334,7 +334,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (organ choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
-    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndTick', 'Pulsar tick'], ['sndTelegraph', 'Egg: telegraph'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
+    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndTelegraph', 'Egg: telegraph'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -747,29 +747,11 @@ function frame(now) {
     frameNo++;
     lively = zooming || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
-    if (STARS[shown].beam && (drifting > 0 || egg?.kind === 'voice')) pulse();
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
     if (again) schedule(lively ? 0 : t0 + 33 - performance.now()); else rest();
   }
-}
-// A pulsar ticks as each beam sweeps past the eye.
-let lastFace = 0, lastTurn = 0;
-// The point in a turn where the beam faces the eye.
-const FACE = (() => { let b = 0, bz = -2; for (let i = 0; i < 360; i++) { const z = magAxis(i / 360 * SPIN_PERIOD)[2]; if (z > bz) { bz = z; b = i / 360; } } return b; })();
-function pulse() {
-  const turn = st.spin / SPIN_PERIOD - FACE;
-  // Fast turns pass the eye between frames: count turns, one tick each.
-  if (egg?.kind === 'voice' && egg.rate > 1.5) {
-    const n = Math.min(2, Math.floor(turn) - Math.floor(lastTurn));
-    for (let i = 0; i < n; i++) snd.tick();
-  } else {
-    const face = toView(magAxis(st.spin))[2];
-    if (face > 0.95 && lastFace <= 0.95) snd.tick();
-    lastFace = face;
-  }
-  lastTurn = turn;
 }
 function rest() {
   snd.quiet();

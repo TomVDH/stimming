@@ -219,22 +219,6 @@ export function makeSound(kit, opt = () => undefined) {
     tapsOf(ac).glow({ t, root: keyOf(band) / 2, K, p: preset(band), pan, room: roomOf(ac, band) });
   }
 
-  // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
-  function tick() {
-    const ac = kit.live();
-    if (!ac || !kit.noise || !on('sndTick')) return;
-    const t = ac.currentTime + 0.003;
-    const c = voice(ac, 0);
-    env(c, t, 0.12, 0.001, 0.05);
-    noise(ac, t, 0.08, 1.4).connect(filt(ac, 'bandpass', 2400, 2)).connect(c);
-    const th = voice(ac, 0);
-    env(th, t, 0.16, 0.002, 0.14);
-    const o = osc(ac, 'sine', 120, t, 0.2);
-    o.frequency.exponentialRampToValueAtTime(50, t + 0.12);
-    o.connect(th);
-    send(ac, c, 0.3);
-  }
-
   // The Carrington storm reaches the earth: a far telegraph sounder clacks, its line sparks.
   // In 1859 operators sent messages on the storm's current alone.
   function telegraph() {
@@ -291,5 +275,5 @@ export function makeSound(kit, opt = () => undefined) {
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, tick, telegraph, dim, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, telegraph, dim, quiet, get busy() { return pending > 0; } };
 }
