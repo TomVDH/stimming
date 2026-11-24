@@ -39,6 +39,9 @@ All motion is in film frames at 30 fps, as in the intro. Every sequence stops wh
 - The choice opens a list: every option as a tile; a `group` on an option puts a heading across the list.
 - Settings: the main slider on a narrow stage, the toy's rows, Quality, the build link, Reset. A `group` on a row opens a labelled section.
 - A choice row with more than four options, or long names, steps one name at a time.
+- Dev (`?dev`) is a popover, not a sheet (Tom, 2026-11-23: the full sheet hid the toy). It docks at the right or left of the stage, below the monogram, and stops above the bar. It lays no glass: the stage stays in view and live. A stage press does not close it.
+- Dev rows: label, control, value. A slider shows its value. Each `group` is one line that opens its rows, one group at a time. One group shows its rows at once.
+- Dev keeps its side (`stimming.devdock`) and each toy's open group (`stimming.<id>.devgroup`). Under 640 px it is a drawer above the bar, at most half the stage. It scrolls inside itself.
 - How to play, behind (i): each input as a drawing (a mouse, touch points) or a hairline keycap, then what it does. A toy may pass `help: [[input, instruction], ...]`, one instruction per row with the verb first; without it the `keys` entries and the action keys make the list. Keycaps show only here.
 
 ## Top left
@@ -52,6 +55,7 @@ The toy's icon as a monogram: a white square with the toy's emblem cut out dark,
 - A disabled control shows at 40% and takes no input.
 - A toggle action shows its state: the toy sets `aria-pressed` on its Bar v2 chip, and the button holds the toy's ink.
 - While a sheet is open a key is the sheet's; the toy's own keys wait. Escape closes the sheet and does nothing else.
+- Dev takes a key only while focus is in it; otherwise the toy's keys act. Escape closes it. Dev rows are 32 px tall, 40 px under 640 px: builder tools only.
 - Only the pointer, keyboard focus or an open sheet keeps the bar. A mouse click does not.
 - If the module does not load or the draw fails, Bar v2 shows again.
 - After a mouse or touch press on the bar, focus returns to the stage, so the toy's keys act. A sheet closed by key returns focus to its button.
