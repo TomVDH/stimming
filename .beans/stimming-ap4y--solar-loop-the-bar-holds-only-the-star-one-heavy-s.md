@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T20:57:20Z
-updated_at: 2026-11-24T21:12:54Z
+updated_at: 2026-11-24T23:22:36Z
 parent: stimming-e35i
 ---
 
@@ -36,3 +36,8 @@ Picks: star picker only (Space and L stay as keys, Activity to Settings); the ch
 - [x] The farthest zoom pulls back 32 times (was 16); rail labels come from the pull-back
 - [x] Zooming in takes 1.4 times as long: 2.5 s against 1.7 s out, measured
 - [x] Tidy: the stored zoom was never read, so it goes; far is worked out once
+
+## Heavier, softer quarter-to-half (Tom, 2026-11-24, relayed: "zoom weight default at 2 -- also the transformations between half and quart cut -- weight, interpolation -- blending -- currently feels very snappy")
+
+- [x] Zoom weight defaults to 2 (a stored value stays)
+- [x] The camera path leaves the long lens and reaches x32 at rest: speed 0.05 at the long lens, was full

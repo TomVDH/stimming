@@ -183,9 +183,9 @@ function stops() {
 function pchip(ys, z) {
   const n = ys.length - 1, i = Math.min(n - 1, Math.floor(z)), t = z - i;
   const d = ys.slice(1).map((y, k) => y - ys[k]);
+  // The end stops are left and reached at rest, so the long lens never snaps away (Tom, 2026-11-24).
   const m = k => {
-    if (k === 0) return d[0];
-    if (k === n) return d[n - 1];
+    if (k === 0 || k === n) return 0;
     const a = d[k - 1], b = d[k];
     return a * b <= 0 ? 0 : 2 * a * b / (a + b);
   };
@@ -243,14 +243,14 @@ function follow(x, X, v, T, dt) {
   const c = x - X, tmp = (v + w * c) * dt;
   return [X + (c + tmp) * e, (v - w * tmp) * e];
 }
-// The zoom's weight: each follower's time constant; one stop settles in 1.8 s.
+// Each follower's time constant at Zoom weight 1; the house weight 2 settles a stop in about 3.5 s.
 const ZOOM_T = 0.35;
 // Zooming in is slower and heavier than zooming out (Tom, 2026-11-24).
 const ZOOM_IN = 1.4;
 // Steps both followers; true while the zoom moves.
 function stepZoom(dt) {
   if (!cam.moving) return false;
-  const T = ZOOM_T * gv('zoomWeight', 1) * (cam.to < cam.z ? ZOOM_IN : 1);
+  const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1);
   [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
   [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
   cam.z = clamp(cam.z, 0, Z_MAX);
@@ -359,7 +359,7 @@ const PICKS = [
   ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['j1407', 'V1400 Centauri', 'oklch(0.72 0.14 55)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
-  ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'],
+  ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
@@ -396,7 +396,8 @@ const ui = initPage({ id: ID, bar: {
     ...FX.map(([id, group, label, min, max, value, , hint]) => ({ type: 'slider', id, group, label, hint, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
-    { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', min: 0.3, max: 3, step: 0.05, value: 1, persist: true },
+    // Weight 2 is the house zoom: heavy, about 3.5 s a stop (Tom, 2026-11-24).
+    { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
@@ -681,7 +682,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
-  ring: new Float32Array(4), ring2: new Float32Array(4),
+  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
@@ -734,6 +735,9 @@ function makeFrame() {
     f.ring.set([rg.tau, rg.cx + 7 * Math.sin(st.time * 0.03), rg.cy + 2 * Math.cos(st.time * 0.021), rg.ratio]);
     f.ring2.set([rg.angle, rg.glow, 0, 0]);
   } else { f.ring.fill(0); f.ring2.fill(0); }
+  // A runaway: its bow shock or wake, in the view's frame.
+  const bw = star.bow;
+  if (bw) { f.bow.set([1, bw.heading, bw.size, bw.kind]); f.bowC.set(bw.col); } else { f.bow.fill(0); f.bowC.fill(0); }
   // A binary: the donor turns once per orbit, so its partner holds still in the star's frame.
   // The stream follows the path gravity traced from L1; the gas lives in the volume pass.
   const bn = star.bin;
