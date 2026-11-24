@@ -4,7 +4,7 @@
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
 import { TRI_VS, program, linked, target, free, bind, tri, to } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
-import { R, STRIDE, MAX_STRANDS, NR } from './sun.js';
+import { R, BCRIT, STRIDE, MAX_STRANDS, NR } from './sun.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
 import { FLARE } from '../shared/flare.js';
 
@@ -70,6 +70,12 @@ const LUTS = [
   // Arcturus: orange giant; rose prominences.
   [['000000', 0], ['0e0502', 0.1], ['341406', 0.26], ['7a320e', 0.44], ['c66222', 0.62], ['f49a4a', 0.78], ['ffcc94', 0.9], ['fff2e2', 1]],
   [['000000', 0], ['120406', 0.1], ['3e0e16', 0.3], ['862a34', 0.5], ['cc5e60', 0.68], ['f4a09a', 0.84], ['fff0ee', 1]],
+  // Sagittarius A*: ember to amber gold; the approaching side burns cream white.
+  [['000000', 0], ['0e0402', 0.1], ['3a1204', 0.26], ['8a3206', 0.44], ['d66a10', 0.62], ['ffa834', 0.78], ['ffd88a', 0.9], ['fff6e6', 1]],
+  [['000000', 0], ['0a0806', 0.12], ['2e2618', 0.3], ['70644a', 0.5], ['c0b08a', 0.68], ['f0e6cc', 0.84], ['ffffff', 1]],
+  // Cygnus X-1: X-ray hot, lilac steel; the approaching side ice blue.
+  [['000000', 0], ['06050c', 0.1], ['1a1836', 0.26], ['40467e', 0.44], ['7a88c8', 0.62], ['b8c4f2', 0.78], ['e8eeff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['04080e', 0.12], ['10263c', 0.3], ['2c6a96', 0.5], ['70b4e0', 0.68], ['c4e8ff', 0.84], ['ffffff', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -115,6 +121,143 @@ float cells(vec3 p) {
 }
 `;
 
+/* ---------- a black hole: Event horizon's trace, seen from far away ---------- */
+// Units: one Schwarzschild radius; the shadow's edge stands at R.
+// Each pixel traces one ray backward, parallel to the others: a far observer.
+// RK4 on x'' = -1.5 h^2 x / r^5, the bend of light near a Schwarzschild hole.
+// The disc lies in y = 0 of the hole's frame, from the ISCO to ROUT.
+const HOLE = `
+const float BCRIT = ${BCRIT.toFixed(3)}, RIN = 3.0, ROUT = 14.0, REXIT = 40.0, SKYD = 40.0, TAU = 6.2831853;
+// The view frame to the hole's frame: the star's turn, then the disc's tilt.
+vec3 hFrame(vec3 v) {
+  vec3 q = uToSun * v;
+  float c = cos(uHole.y), s = sin(uHole.y);
+  return vec3(q.x, c * q.y + s * q.z, -s * q.y + c * q.z);
+}
+vec3 vFrame(vec3 q) {
+  float c = cos(uHole.y), s = sin(uHole.y);
+  return transpose(uToSun) * vec3(q.x, c * q.y - s * q.z, s * q.y + c * q.z);
+}
+// Gas light where a ray crosses the disc: hot, cool, and the cover.
+// p: the crossing. v: the ray's backward direction.
+vec3 holeDisc(vec3 p, vec3 v, out float a) {
+  float r = length(p.xz);
+  float phi = atan(p.z, p.x);
+  // Kepler: the inner gas turns faster; streaks shear and reset unseen.
+  float om = sqrt(0.5 / (r * r * r));
+  float x = uTime * om / 1.5708;
+  float fa = fract(x), fb = fract(x + 0.5);
+  float wa = 1.0 - abs(2.0 * fa - 1.0);
+  float pa = phi - 1.5708 * fa + 2.3 * floor(x), pb = phi - 1.5708 * fb + 2.3 * floor(x + 0.5) + 1.7;
+  float lr = log(r) * 9.0;
+  // Noise round a circle has no seam where the angle wraps.
+  // Fine across the radius, long along the orbit: streaks.
+  float ta = fbm(vec3(cos(pa) * 2.2, sin(pa) * 2.2, lr));
+  float tb = fbm(vec3(cos(pb) * 2.2, sin(pb) * 2.2, lr + 5.3));
+  float tur = mix(tb, ta, wa);
+  float dens = mix(0.4, 1.45, smoothstep(0.3, 0.7, tur));
+  // Temperature after Novikov and Thorne, softened at the ISCO.
+  float q = RIN / r;
+  float f = pow(q, 0.75) * pow(max(1.0 - 0.94 * sqrt(q), 0.0), 0.25) / 0.52;
+  float I = pow(f, 3.2) * dens;
+  a = smoothstep(ROUT, ROUT - 5.0, r) * smoothstep(RIN - 0.35, RIN + 0.25, r) * clamp(0.5 + 0.55 * dens, 0.0, 0.97);
+  // The cool outer gas is thinner, so it never reads as dark blots.
+  a *= mix(0.4, 1.0, smoothstep(ROUT - 1.0, RIN + 4.0, r));
+  // The gas moves on circles; gravity and Doppler shift its light.
+  float beta = sqrt(0.5 / max(r - 1.0, 0.2));
+  vec3 ph = vec3(-p.z, 0.0, p.x) / r;
+  float g = sqrt(max(1.0 - 1.0 / r, 0.0)) * sqrt(max(1.0 - beta * beta, 0.0)) / (1.0 + beta * dot(ph, v));
+  float L = I * g * g * g * g * uHole.z;
+  // Hot, approaching gas takes the cool ramp: bluer and whiter.
+  float blue = smoothstep(0.7, 1.6, pow(f, 1.5) * g * uHole.w);
+  return vec3(L * (1.0 - blue), L * blue, 0.0);
+}
+// Point stars on a far plane behind the hole, in two scales that cross-fade with the zoom.
+// s: the plane point; fw: one pixel's footprint there, so a lensed star spreads and keeps its flux.
+vec2 holeStars(vec2 s, float fw) {
+  float px = uHoleSky.x;
+  float lev = log2(px * 40.0) * 0.5;
+  float k0 = floor(lev), wt = fract(lev);
+  float s0 = 0.7 * px, sw = max(s0, fw * 0.55), k = s0 * s0 / (sw * sw);
+  vec2 acc = vec2(0.0);
+  for (int l = 0; l < 2; l++) {
+    float kl = k0 + float(l);
+    float cell = exp2(2.0 * kl);
+    float fade = l == 0 ? 1.0 - wt : wt;
+    vec2 c0 = floor(s / cell - 0.5);
+    for (int i = 0; i < 4; i++) {
+      vec2 cc = c0 + vec2(float(i & 1), float(i >> 1));
+      if (h13(vec3(cc, kl)) > 0.3) continue;
+      vec2 sp = (cc + vec2(h13(vec3(cc, kl + 17.0)), h13(vec3(cc, kl + 31.0)))) * cell;
+      // Most stars are faint; a few are bright.
+      float br = 0.03 + 0.25 * pow(h13(vec3(cc, kl + 53.0)), 4.0) + 2.5 * pow(h13(vec3(cc, kl + 71.0)), 40.0);
+      vec2 d = s - sp;
+      float e = br * fade * k * exp(-dot(d, d) / (2.0 * sw * sw));
+      acc += vec2(e, e * h13(vec3(cc, kl + 89.0)));
+    }
+  }
+  return acc;
+}
+// hot, cool, starlight, the stars' warmth.
+vec4 holeTrace(vec2 P) {
+  vec2 b2 = P * BCRIT / R;
+  float b = length(b2);
+  vec3 v = hFrame(vec3(0.0, 0.0, -1.0));
+  // Inside the exit sphere the ray starts on it; outside it passes straight by.
+  vec3 x = hFrame(vec3(b2, b < REXIT ? sqrt(REXIT * REXIT - b * b) : 0.0));
+  // The bend from far away up to the start: the weak-field term.
+  vec3 pp = x - dot(x, v) * v;
+  float a0 = (1.0 + dot(normalize(x), v)) / max(b, 1e-3);
+  v = normalize(v * cos(a0) - normalize(pp + 1e-6) * sin(a0));
+  float hot = 0.0, cool = 0.0, tr = 1.0, gone = 0.0;
+  if (b < REXIT) {
+    vec3 hv = cross(x, v);
+    float h2 = dot(hv, hv);
+    for (int i = uZero; i < 300; i++) {
+      float r = length(x);
+      if (r < 1.0) { gone = 1.0; break; }
+      if (r > REXIT && dot(x, v) > 0.0) break;
+      // Small steps near the photon sphere; long ones far out.
+      float dt = clamp(0.045 * r * r, 0.025, min(0.3 * r, 2.4));
+      vec3 x0 = x, v0 = v;
+      vec3 k1 = v, a1 = -1.5 * h2 * x / pow(dot(x, x), 2.5);
+      vec3 xb = x + 0.5 * dt * k1;
+      vec3 k2 = v + 0.5 * dt * a1, a2 = -1.5 * h2 * xb / pow(dot(xb, xb), 2.5);
+      vec3 xc = x + 0.5 * dt * k2;
+      vec3 k3 = v + 0.5 * dt * a2, a3 = -1.5 * h2 * xc / pow(dot(xc, xc), 2.5);
+      vec3 xd = x + dt * k3;
+      vec3 k4 = v + dt * a3, a4 = -1.5 * h2 * xd / pow(dot(xd, xd), 2.5);
+      x += dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
+      v += dt / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
+      // Each crossing of the disc adds light; many crossings make the photon ring.
+      if (x0.y * x.y < 0.0) {
+        float t = x0.y / (x0.y - x.y);
+        vec3 p = mix(x0, x, t);
+        float rp = length(p.xz);
+        if (rp > RIN - 0.4 && rp < ROUT) {
+          float a;
+          vec3 c = holeDisc(p, normalize(mix(v0, v, t)), a);
+          hot += tr * c.x * a;
+          cool += tr * c.y * a;
+          tr *= 1.0 - a;
+          if (tr < 0.01) break;
+        }
+      }
+    }
+  }
+  // Past the exit sphere: the weak-field rest of the bend.
+  vec3 vn = normalize(v);
+  float bb = length(cross(x, vn));
+  float al = (1.0 - dot(normalize(x), vn)) / max(bb, 1e-3);
+  vec3 perp = x - dot(x, vn) * vn;
+  vec3 dir = vFrame(normalize(vn * cos(al) - normalize(perp + 1e-6) * sin(al)));
+  // The far plane: the lens equation, then a stereographic map for rays bent far round.
+  vec2 s = b2 + SKYD * 2.0 * dir.xy / max(1.0 - dir.z, 1e-3);
+  vec2 st = holeStars(s, length(fwidth(s))) * uHoleSky.y * tr * (1.0 - gone);
+  return vec4(hot, cool, st.x, st.y / max(st.x, 1e-6));
+}
+`;
+
 /* ---------- the disk and the corona ---------- */
 const SKY = `${HEAD}
 uniform vec4 uView;
@@ -131,12 +274,20 @@ uniform vec4 uReg[${NR}];
 uniform vec4 uSpot[${NR}];
 uniform vec4 uFl[2], uFlB[2];
 uniform vec4 uEgg[4], uDim[2];
+// A black hole: on, the disc's tilt toward the eye, disc light, disc heat.
+uniform vec4 uHole;
+// One pixel in Schwarzschild radii, and the lensed stars' gain.
+uniform vec2 uHoleSky;
+// A uniform zero keeps D3D from unrolling the trace.
+uniform int uZero;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
 ${NOISE}
+${HOLE}
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
+  if (uHole.x > 0.0) { o = holeTrace(P); return; }
   float r = length(P);
   float hot = 0.0, cool = 0.0;
   // The sunspots' shade, applied last so no later light fills them.
@@ -668,6 +819,8 @@ uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
 // The far lens's sway with the mouse, -1 to 1 on each axis.
 uniform vec2 uSway;
+// A black hole: on, and the lensed stars' gain.
+uniform vec2 uHoleF;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 in vec2 vUv;
@@ -799,6 +952,8 @@ vec3 starfield(vec2 fc) {
 }
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
+  // A black hole's shadow gives no light; its disc lights the glass through the bloom.
+  if (uHoleF.x > 0.0) return 0.0;
   float h = length(P) - R;
   return h < 0.0 ? 1.0 : exp(-h / 240.0) * 0.8 + 0.05;
 }
@@ -855,7 +1010,11 @@ void main() {
   float rp = R / uView.w * 0.5 * uRes.y;
   float dl = length(gl_FragCoord.xy - src);
   // Zoomed out, the stars come through behind the star; never over its disk.
-  if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
+  // Round a black hole the stars come from the trace, bent by its pull.
+  if (uHoleF.x > 0.0) {
+    vec4 hs = texture(uHdr, uv);
+    c += mix(vec3(0.72, 0.84, 1.0), vec3(1.0, 0.8, 0.62), clamp(hs.a, 0.0, 1.0)) * hs.b;
+  } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < 2; k++) {
@@ -873,13 +1032,15 @@ void main() {
   }
   // The far star: the disk shrinks to a hard core; the flare grows in round it.
   if (uCam.w > 0.0) {
+    // A black hole's glow stays off its shadow until the shadow is a few pixels wide.
+    float hm = uHoleF.x > 0.0 ? mix(smoothstep(rp * 0.9, rp * 1.6, dl), 1.0, smoothstep(24.0 * uSc, 6.0 * uSc, rp)) : 1.0;
     // A round, globular glow, the eye's bloom on a point of light.
-    fl += (gc * 0.8 * exp(-dl / (rp * 1.6 + 14.0 * uSc)) + gw * 0.5 * exp(-dl / (rp * 6.0 + 70.0 * uSc))) * uCam.w;
+    fl += hm * (gc * 0.8 * exp(-dl / (rp * 1.6 + 14.0 * uSc)) + gw * 0.5 * exp(-dl / (rp * 6.0 + 70.0 * uSc))) * uCam.w;
     // The orb spans about twice the disk.
     float fall = uRes.y / (rp * 2.2 + 10.0 * uSc);
     // The streak reaches farther as the disk grows on screen; it still ends inside the frame.
     float grow = min(0.35, rp / uRes.y * 0.9);
-    fl += lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w) * (1.0 + 2.0 * grow), 0.42 + 0.2 * uCam.w + grow);
+    fl += hm * lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w) * (1.0 + 2.0 * grow), 0.42 + 0.2 * uCam.w + grow);
   }
   // Screen blend: the flare washes the frame; light past white stays as it is.
   c += min(fl, vec3(1.0)) * max(1.0 - c, 0.0);
@@ -1001,6 +1162,9 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uFlB, v.flB);
     gl.uniform4fv(s.u.uEgg, v.egg);
     gl.uniform4fv(s.u.uDim, v.dim);
+    gl.uniform4fv(s.u.uHole, v.hole);
+    gl.uniform2fv(s.u.uHoleSky, v.holeSky);
+    gl.uniform1i(s.u.uZero, 0);
     tri(gl, hdr, empty);
 
     if (v.count > 0) {
@@ -1074,6 +1238,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
     gl.uniform2fv(f.u.uSway, v.sway);
+    gl.uniform2fv(f.u.uHoleF, v.holeF);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);

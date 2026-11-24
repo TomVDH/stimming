@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
+import { R, BCRIT, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
@@ -97,7 +97,7 @@ const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
 // The pull-back moves about as fast per step as the views before it.
 const VIEWS = ['long', 'wide', 'full'];
 const Z_MAX = 6;
-const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
+const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, longH: { cx: 0, cy: 0, hw: 280 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
 // Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
 const z0 = 0;
 // The zoom rides two critically damped followers: aim follows to, z follows aim.
@@ -150,6 +150,9 @@ function fitView(w, h, top = 0, bottom = 0) {
   // The limb stands a quarter of the frame in from its edge, along psi.
   const d = 0.5 * (hwL * Math.abs(nx) + hhL * Math.abs(ny));
   fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL };
+  // A black hole's long lens: the shadow's west edge at the equator, where the disc crosses it.
+  // The edge stands two fifths in from the left, as on the wide view.
+  fit.longH = { cx: R + 0.2 * hwL, cy: -(bottom - top) * hhL / h, hw: hwL };
   // The full star: the whole disk, its prominences and some sky round it.
   const free2 = Math.max(0.4 * h, h - top - bottom);
   // Pulled back, so the corona has room to stretch out.
@@ -162,7 +165,8 @@ function fitView(w, h, top = 0, bottom = 0) {
 // Past the full star only the width grows, so the centre holds.
 function stops() {
   return Array.from({ length: Z_MAX + 1 }, (_, i) => {
-    const f = fit[VIEWS[Math.min(2, i)]], hw = f.hw * pullBack(i);
+    // A black hole's full view stands farther back, so its whole disc fits.
+    const f = i === 0 && STARS[shown].hole ? fit.longH : fit[VIEWS[Math.min(2, i)]], hw = f.hw * pullBack(i) * (i >= 2 ? STARS[shown].reach : 1);
     return [Math.log(hw), f.cx / f.hw, f.cy / f.hw];
   });
 }
@@ -344,7 +348,8 @@ const PICKS = [
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
-  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'],
+  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
+  ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'],
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
 // The bar's label: the star with its swatch.
@@ -499,7 +504,8 @@ function eruptAt(p) {
 // Only the near side answers the hand: the visible disk and its rim (Tom, 2026-11-23).
 const near = u => toView(u)[2] >= 0;
 // Taps answer only from the full star inward; far out the star is too small (Tom, 2026-11-24).
-const canTap = () => cam.z <= NOTCH + 0.05;
+// A black hole has no regions to flare.
+const canTap = () => cam.z <= NOTCH + 0.05 && !STARS[shown].hole;
 function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   if (!canTap()) return { t: best, prom, d: bd };
@@ -634,6 +640,7 @@ const frameState = {
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
+  hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
 };
 function makeFrame() {
   const f = frameState;
@@ -669,7 +676,12 @@ function makeFrame() {
     const open = ease(clamp((act * 1.2 - rg.spot) / 0.25));
     f.spots.set([...toView(rg.e), star.spots * open * (0.4 + 0.6 * act)], k * 4);
   });
-  f.count = strands(sun, st.time, { star: shown, activity: act, spin: st.spin }, ren.data);
+  // A black hole: the trace replaces the disk; no loops, haze, corona or glare.
+  const hole = star.hole;
+  f.count = hole ? 0 : strands(sun, st.time, { star: shown, activity: act, spin: st.spin }, ren.data);
+  f.hole.set(hole ? [1, hole.tilt, hole.light, hole.heat] : [0, 0, 0, 0]);
+  f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
+  f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
@@ -715,17 +727,17 @@ function makeFrame() {
   const lift = 2 ** (2.2 * real * fxv('fxReal'));
   // Off-disk light keeps a quarter of its look against the lifted disk; far off it fades.
   f.off = (1 - 0.75 * real) / lift * (1 - 0.8 * far);
-  f.glare = real * fxv('fxGlare');
+  f.glare = hole ? 0 : real * fxv('fxGlare');
   f.lift = lift;
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
   // w: the star's dust, which keeps the haze over its disk.
   f.film.set([0.018, 0, 0.35, star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
-  f.volDens *= 1 - 0.95 * far;
+  f.volDens *= (1 - 0.95 * far) * (hole ? 0 : 1);
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight') * f.off;
   // The 3D corona shows in the full view; its light follows the star's own corona.
-  f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6 * f.off;
+  f.corona = hole ? 0 : weight('full') * fxv('fxCorona') * star.disk[3] * 6 * f.off;
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
@@ -735,8 +747,9 @@ function makeFrame() {
   eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   f.lens = weight('long');
-  f.full = weight('full');
-  f.shimmer = calm ? 0 : 2.2 * view.W / cssW;
+  // The full view's half exposure is for a bright disk; a black hole keeps its light.
+  f.full = hole ? 0 : weight('full');
+  f.shimmer = calm || hole ? 0 : 2.2 * view.W / cssW;
   return f;
 }
 function draw() {

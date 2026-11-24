@@ -1,9 +1,10 @@
 // Solar loop: the star tray, a size ladder that picks the star.
-// All seventeen stars stand on one line, smallest to largest (Tom, 2026-11-24).
+// Every star and black hole stands on one line, smallest to largest (Tom, 2026-11-24).
 // Each star is a swatch in its own colour, sized by its radius on a log scale.
 // The toy owns this sheet; it copies the Bar v3 sheet look.
 
 // Star data: the class or stage, and the surface temperature (K).
+// A black hole has no surface temperature: t is null.
 export const CHART = {
   zetaoph: { t: 34000, cls: 'O9.5 V' },
   regulus: { t: 12000, cls: 'B8 IV' },
@@ -22,6 +23,8 @@ export const CHART = {
   vycma: { t: 3490, cls: 'M5 Ia hypergiant' },
   siriusb: { t: 25000, cls: 'DA2 white dwarf' },
   neutron: { t: 700000, cls: 'neutron star' },
+  cygx1: { t: null, cls: 'stellar black hole' },
+  sgra: { t: null, cls: 'supermassive black hole' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.
@@ -29,12 +32,15 @@ const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 8));
 
 const fmtR = (rsun, value) => {
   if (value === 'neutron') return '24 km wide';
+  // A black hole's width is its event horizon's.
+  if (value === 'cygx1') return 'horizon 125 km wide';
+  if (value === 'sgra') return 'horizon 18 suns wide';
   if (rsun >= 10) return `${Math.round(rsun).toLocaleString('en').replace(/,/g, ' ')} suns wide`;
   if (rsun > 1) return `${+rsun.toFixed(1)} suns wide`;
   if (rsun === 1) return '1 sun wide';
   return `${rsun < 0.01 ? rsun.toFixed(4) : rsun} of the sun wide`;
 };
-const fmtT = t => `${t.toLocaleString('en').replace(/,/g, ' ')} K`;
+const fmtT = t => t == null ? null : `${t.toLocaleString('en').replace(/,/g, ' ')} K`;
 
 const h = (tag, cls, html) => {
   const el = document.createElement(tag);
@@ -75,7 +81,7 @@ export function makeChart(o) {
     b.style.setProperty('--c', s.colour);
     b.style.setProperty('--f', String(sizeOf(s.rsun)));
     b.innerHTML = `<span class="sl-well"><i class="sl-sw" aria-hidden="true"></i></span><span class="sl-name">${s.name}</span>`;
-    b.setAttribute('aria-label', `${s.name}, ${c.cls}, ${fmtT(c.t)}, ${fmtR(s.rsun, s.value)}`);
+    b.setAttribute('aria-label', [s.name, c.cls, fmtT(c.t), fmtR(s.rsun, s.value)].filter(Boolean).join(', '));
     b.addEventListener('click', async () => {
       o.onPick(s.value);
       sync();
@@ -95,7 +101,7 @@ export function makeChart(o) {
   function tell(s) {
     const cur = s || o.stars.find(x => x.value === o.get());
     const c = CHART[cur.value];
-    info.innerHTML = `<b>${cur.name}</b><span>${c.cls}</span><span>${fmtT(c.t)}</span><span>${fmtR(cur.rsun, cur.value)}</span>`;
+    info.innerHTML = `<b>${cur.name}</b><span>${c.cls}</span>${c.t == null ? '' : `<span>${fmtT(c.t)}</span>`}<span>${fmtR(cur.rsun, cur.value)}</span>`;
   }
   function sync() {
     for (const { b, s } of btns) b.setAttribute('aria-pressed', String(s.value === o.get()));

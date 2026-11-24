@@ -5,6 +5,8 @@
 // Each frame writes one strand per loop thread into a Float32Array.
 
 export const R = 696;
+// A black hole's shadow edge, in Schwarzschild radii; it stands at R.
+export const BCRIT = 2.598;
 // The toy runs each star's rotation this many times faster than life.
 export const SPIN_UP = 1e4;
 export const STRIDE = 16;
@@ -46,7 +48,9 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // yso: a young star's dust disk and jets: its axis in the star's frame, and weight.
 // day: the true rotation period in days; the toy runs it 10,000 times faster.
 // spots: sunspot strength; only stars with a convecting surface have them.
-const FLARE = { day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+// hole: a black hole's disc tilt toward the eye, disc light, disc heat, lensed star gain.
+// reach: how much farther the full view stands back.
+const FLARE = { hole: null, reach: 1, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -187,6 +191,25 @@ export const STARS = {
     hal: [0.9, 0.25, 0.1], streak: [1, 0.45, 0.28],
     disk: [1.9, 1.5, 0, 0.16], disk2: [140, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
     wide: 'none', long: 'none', root: 110,
+  },
+  // Cygnus X-1: a black hole of 21 suns, fed by a blue supergiant; an X-ray hot disc.
+  // A hole has no surface: the shadow's edge stands where a star's limb would.
+  cygx1: {
+    ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
+    hole: { tilt: 0.16, light: 0.9, heat: 1.2, stars: 1 }, reach: 3,
+    row: 18, rsun: 9.0e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [0.55, 0.7, 1], streak: [0.6, 0.75, 1],
+    disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    wide: 'none', long: 'none', root: 98,
+  },
+  // Sagittarius A*: the hole at the centre of our galaxy, 4.3 million suns.
+  sgra: {
+    ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
+    hole: { tilt: 0.18, light: 0.8, heat: 0.85, stars: 1.2 }, reach: 3,
+    row: 17, rsun: 18.3, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [1, 0.45, 0.15], streak: [1, 0.7, 0.4],
+    disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    wide: 'none', long: 'none', root: 82.41,
   },
 };
 // Every star weights its loops by one temperature response.
