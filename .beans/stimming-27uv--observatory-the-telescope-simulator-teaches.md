@@ -21,7 +21,7 @@ One branch, feature/stimming-27uv, merged by PR after /code-review. Tom signs of
 | stimming-6mng | The 1 m's monitor and sensor look real | after references |
 | stimming-p87w | Deep zoom stays crisp | after a short spike |
 | stimming-hjnt | A new UI for the analog refractor | draft: Tom's direction |
-| stimming-6u1r | Nebulae: image cards or procedural | draft: Tom picks |
+| stimming-6u1r | Nebulae: procedural (Tom's pick) | first pass in |
 
 ## Checklist
 
@@ -30,6 +30,7 @@ One branch, feature/stimming-27uv, merged by PR after /code-review. Tom signs of
 - [ ] stimming-6mng done
 - [ ] stimming-p87w done
 - [ ] stimming-hjnt: Tom's direction, then done
-- [ ] stimming-6u1r: Tom's pick, then done
+- [x] stimming-6u1r: Tom picks procedural
+- [ ] stimming-6u1r done
 - [ ] PR reviewed and merged
 - [ ] Tom signs off

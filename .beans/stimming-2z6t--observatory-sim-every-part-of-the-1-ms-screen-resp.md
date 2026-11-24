@@ -17,6 +17,6 @@ Tom, 2026-11-23: colour filters and other parts feel dead. The filter clicks wor
 - [x] Each filter tints the picture in its colour; L stays grey; Hα is dim deep red (rig.ts TINTS, camera.frag.glsl u_tint)
 - [x] A click on any readout opens its tip at once, even with tips off
 - [x] The focuser moves by hand: < and > beside POS, or the [ and ] keys
-- [ ] A colour picture built from R, G and B
-- [ ] Hα shows glowing gas, once nebulae exist (stimming-6u1r)
+- [x] A colour picture built from R, G and B: [RGB] takes R, G and B in turn, each into its own channel of the stack (u_chan)
+- [x] Hα shows glowing gas: the showpieces' line light (stimming-6u1r)
 - [ ] Tom tries it

@@ -40,7 +40,7 @@ export type Actions = {
   fit(): void; one(): void; zoom(f: number): void;
   goto(i: number): void; startStop(): void; exposure(dir: number): void; filter(f: Filter): void; reset(): void;
   autofocus(): void; guide(): void; night(): void; stars(): void; slewSelected(): void;
-  track(): void; cooler(dir: number): void; tips(): void; focusStep(dir: number): void; drizzle(): void;
+  track(): void; cooler(dir: number): void; tips(): void; focusStep(dir: number): void; drizzle(): void; rgb(): void; calib(): void;
 };
 // The help window's text width in cells.
 export const TIP_COLS = 44;
@@ -210,8 +210,10 @@ export class Screen {
 
   private imageBox(v: View, a: Actions): void {
     const g = this.g;
-    this.box(0, 1, 83, 32, `IMAGE · ${rig.filter} · ${rig.exposure} s · stack ${v.subs}`);
-    this.tip(0, 1, 40, 'image');
+    this.box(0, 1, 83, 32, `IMAGE · ${rig.rgb ? 'RGB' : rig.filter} · ${rig.exposure} s · stack ${v.subs}`);
+    this.tip(0, 1, 33, 'image');
+    // Calibration sits on the top border, after the title.
+    this.key(34, 1, '[Calib]', a.calib, rig.calib, V.white, 'calib');
     // Zoom and overlay keys on the top border, right side.
     let c = 42;
     c = this.key(c, 1, '[Fit]', a.fit, false, V.white, 'fit') + 1;
@@ -327,7 +329,9 @@ export class Screen {
     this.put(86, 12, 'FILTER', V.grey);
     this.tip(86, 12, 7, 'filter');
     let fc = 93;
-    for (const f of ['L', 'R', 'G', 'B', 'Hα'] as Filter[]) fc = this.key(fc, 12, f === 'Hα' ? ' Hα ' : ` ${f} `, () => a.filter(f), rig.filter === f, V.white, 'filter') + 1;
+    for (const f of ['L', 'R', 'G', 'B', 'Hα'] as Filter[]) fc = this.key(fc, 12, f === 'Hα' ? ' Hα ' : ` ${f} `, () => a.filter(f), !rig.rgb && rig.filter === f, V.white, 'filter') + 1;
+    // RGB: a colour picture from the three colour filters.
+    this.key(fc, 12, ' RGB ', a.rgb, rig.rgb, V.white, 'rgb');
     // The sensor's temperature, then the cooler's set point.
     this.put(86, 13, 'CCD', V.grey);
     this.put(90, 13, v.temp, V.yellow);

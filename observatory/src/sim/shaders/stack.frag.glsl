@@ -19,6 +19,10 @@ uniform vec3 u_filter;
 // The filter's weight on hydrogen-alpha line light, kept in the alpha channel.
 // Only the Hα filter reads it; the broad filters see that light in red.
 uniform float u_line;
+// The stack's colour channels this sub writes: all three, or one for a colour picture.
+uniform vec3 u_chan;
+// 1 when calibration subtracts the dark frame and divides out the flat.
+uniform float u_calib;
 // Dark current, a hot pixel and the amp glow, in e- per s.
 uniform float u_dark;
 uniform float u_hot;
@@ -116,33 +120,40 @@ void main() {
   float area = 1.0 / (u_k * u_k);
   // The sensor place of this screen pixel.
   vec2 sp = big ? cell + 0.5 : (px - u_origin) / u_k;
-  float fl = flatField(sp);
+  // A divided-out flat leaves the light as it fell.
+  float fl = u_calib > 0.5 ? 1.0 : flatField(sp);
   float e = skyAt(at, area) * fl;
   // The amp glows at the sensor's top right corner.
   float glow = u_amp * u_exp * exp(-length(sp - vec2(u_sensor.x, 0.0)) / (0.18 * u_sensor.x));
   // Fixed per column: a small offset, and one warm column.
-  float col = (hash2(vec2(floor(sp.x), 3.1)) - 0.5) * 1.6 + (floor(sp.x) == 4021.0 ? u_dark * u_exp * 3.0 : 0.0);
+  float col = (hash2(vec2(floor(sp.x), 3.1)) - 0.5) * 1.0 + (floor(sp.x) == 4021.0 ? u_dark * u_exp * 3.0 : 0.0);
   // New in each sub: a row's readout offset, faint stripes across.
   float row = normal(vec2(floor(sp.y), 7.0), u_seed) * 0.15 * u_read;
   float ray = rays(sp, big ? 0.0 : 0.5 / u_k) * u_noise;
   if (big) {
     // Work in one whole sensor pixel.
-    float es = e + u_dark * u_exp + glow + col + row;
+    // The dark signal: current, amp glow, column offsets and hot pixels.
+    float dk = u_dark * u_exp + glow + col;
     float h = hash2(cell * 1.7 + 0.5);
-    if (h > 0.9994) es += u_hot * u_exp * (h - 0.9994) / 0.0006;
+    if (h > 0.9994) dk += u_hot * u_exp * (h - 0.9994) / 0.0006;
+    float es = e + dk + row;
     es += normal(blocks ? cell : floor(px), u_seed) * sqrt(max(es, 0.0) + u_read * u_read) * u_noise;
+    // A dark frame takes the dark signal away; its noise stays.
+    es -= u_calib * dk;
     es = mix(es + ray, u_full, bleed(at, 1.0));
     e = clamp(es, 0.0, u_full) * area;
   } else {
     // This screen pixel sums many sensor pixels.
-    float es = e * area + (u_dark * u_exp + glow + col + row) * area;
+    float dk = (u_dark * u_exp + glow + col) * area;
     float h = hash2(floor(px) * 1.7 + 0.5);
-    if (h > 1.0 - 0.0006 * area) es += u_hot * u_exp;
+    if (h > 1.0 - 0.0006 * area) dk += u_hot * u_exp;
+    float es = e * area + dk + row * area;
     es += normal(px, u_seed) * sqrt(max(es, 0.0) + area * u_read * u_read) * u_noise;
+    es -= u_calib * dk;
     // A bleed fills its share of this pixel's sensor pixels to the brim.
     es = mix(es + ray, u_full * area, bleed(at, 1.0 / u_k));
     e = clamp(es, 0.0, u_full * area);
   }
   vec3 acc = texelFetch(u_acc, ip, 0).rgb;
-  o = vec4(mix(acc, vec3(e), u_mix), 1.0);
+  o = vec4(mix(acc, vec3(e), u_mix * u_chan), 1.0);
 }

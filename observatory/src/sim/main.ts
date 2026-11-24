@@ -116,6 +116,9 @@ let subClock = 0;
 let subs = 0;
 let restack: 'none' | 'reset' | 'reframe' = 'reset';
 let hfrNow = 0;
+// A colour picture's subs per channel: R, G, B.
+let chanSubs = [0, 0, 0];
+const RGB: Filter[] = ['R', 'G', 'B'];
 let stats = { mean: 0, med: 0, sd: 0, max: 0, hist: [] as number[] };
 // Seeing drifts on its own through the night, in arcsec at the zenith.
 let seeingZ = 2.2;
@@ -578,25 +581,36 @@ function cameraFrame(t: number, L: Layout, common: Record<string, number | numbe
   }
   restack = 'none';
   if (!hfrNow) hfrNow = hfrAt(rig.focus, fwhm());
-  if (fresh) {
-    r.stack({
-      ...common, u_mix: mix, u_noise: noiseK, u_exp: exp, u_egain: EGAIN, u_read: READ, u_full: FULL,
-      u_seed: random() * 100, u_filter: FILTERS[rig.filter], u_dark: darkRate(), u_hot: 300 * Math.pow(2, (rig.sensorTemp + 10) / 6),
-      u_amp: 0.6 * Math.pow(2, (rig.sensorTemp + 10) / 6), u_k: k,
-      u_origin: [L.cx - (SENSOR_W / 2) * k, L.cy - (SENSOR_H / 2) * k], u_sensor: [SENSOR_W, SENSOR_H],
-      u_bleeds: bleeds, u_nbleed: nBleed, u_drizzle: rig.drizzle ? 1 : 0,
-      u_line: rig.filter === 'Hα' ? 0.3 : 0,
-    });
+  // One sub through a filter, into the given channels.
+  const one = (f: Filter, m: number, nk: number, chan: number[]): void => r.stack({
+    ...common, u_mix: m, u_noise: nk, u_exp: exp, u_egain: EGAIN, u_read: READ, u_full: FULL,
+    u_seed: random() * 100, u_filter: FILTERS[f], u_dark: darkRate(), u_hot: 300 * Math.pow(2, (rig.sensorTemp + 10) / 6),
+    u_amp: 0.6 * Math.pow(2, (rig.sensorTemp + 10) / 6), u_k: k,
+    u_origin: [L.cx - (SENSOR_W / 2) * k, L.cy - (SENSOR_H / 2) * k], u_sensor: [SENSOR_W, SENSOR_H],
+    u_bleeds: bleeds, u_nbleed: nBleed, u_drizzle: rig.drizzle ? 1 : 0,
+    u_line: f === 'Hα' ? 0.3 : 0, u_chan: chan, u_calib: rig.calib ? 1 : 0,
+  });
+  if (fresh && !rig.rgb) one(rig.filter, mix, noiseK, [1, 1, 1]);
+  else if (fresh && mix === 1) {
+    // A new or moved colour stack: one sub per channel at once.
+    if (subs === 1) chanSubs = [1, 1, 1];
+    RGB.forEach((f, c) => one(f, 1, subs === 1 ? 1 : 1 / Math.sqrt(Math.max(1, chanSubs[c])), [c === 0 ? 1 : 0, c === 1 ? 1 : 0, c === 2 ? 1 : 0]));
+  } else if (fresh) {
+    // A colour picture takes R, G and B in turn; each sub joins its own channel.
+    const c = Math.max(0, RGB.indexOf(rig.filter));
+    chanSubs[c]++;
+    one(RGB[c], 1 / chanSubs[c], 1, [c === 0 ? 1 : 0, c === 1 ? 1 : 0, c === 2 ? 1 : 0]);
+    rig.filter = RGB[(c + 1) % 3];
   }
   // The stretch: sky level and noise per work pixel.
-  const w = FILTERS[rig.filter];
+  const w = FILTERS[rig.rgb ? 'G' : rig.filter];
   const area = 1 / (k * k);
   const skyE = (common.u_bg as number[])[1] * (w[0] + w[1] + w[2]) * (1 + 2.2 * 0.45 * Math.exp(-b / 8)) * exp * EGAIN + darkRate() * exp * area;
   const sub = k >= 1 ? Math.sqrt(skyE / area + READ * READ) * area : Math.sqrt(skyE + area * READ * READ);
   const sigma = sub / Math.sqrt(rig.liveStack ? Math.max(1, subs) : 1);
   const black = Math.max(0, skyE - 2 * sigma), soft = Math.max(1e-6, sigma * 4);
   const white = FULL * area;
-  r.camera({ ...common, u_rect: L.rect, u_black: black, u_soft: soft, u_white: white, u_tint: TINTS[rig.filter] });
+  r.camera({ ...common, u_rect: L.rect, u_black: black, u_soft: soft, u_white: white, u_tint: rig.rgb ? [1, 1, 1] : TINTS[rig.filter] });
   if (fresh && t - lastStats > 150) {
     lastStats = t;
     readStats(L, black, soft, white, area);
@@ -817,8 +831,17 @@ const actions = {
     log(`Exposure set to ${rig.exposure} s`);
     restack = 'reset';
   },
+  // A colour picture: the camera takes R, G and B in turn.
+  rgb: (): void => {
+    if (rig.rgb) return;
+    rig.rgb = true;
+    rig.filter = 'R';
+    log('Colour: red, green and blue exposures in turn, each in its own colour');
+    restack = 'reset';
+  },
   filter: (f: Filter): void => {
-    if (f === rig.filter) return;
+    if (f === rig.filter && !rig.rgb) return;
+    rig.rgb = false;
     log(`Filter ${f}: ${FILTER_SAYS[f]}`);
     rig.filter = f;
     restack = 'reset';
@@ -856,6 +879,11 @@ const actions = {
     rig.focus += dir * FOCUS_STEP;
     hfrNow = hfrAt(rig.focus, fwhm());
     log(`Focuser ${dir < 0 ? 'in' : 'out'} to ${Math.round(rig.focus).toLocaleString('en')}: stars ${hfrNow.toFixed(2)} px`);
+    restack = 'reset';
+  },
+  calib: (): void => {
+    rig.calib = !rig.calib;
+    log(rig.calib ? 'Calibration on: dark frame subtracted, flat field divided out' : 'Calibration off: the raw picture, flaws and all');
     restack = 'reset';
   },
   drizzle: (): void => {
@@ -1042,6 +1070,7 @@ stage.addEventListener('keydown', (e) => {
     else if (e.key === 't' || e.key === 'T') actions.track();
     else if (e.key === 'h' || e.key === 'H') actions.tips();
     else if (e.key === 'd' || e.key === 'D') actions.drizzle();
+    else if (e.key === 'c' || e.key === 'C') actions.calib();
     else if (e.key === '[') actions.focusStep(-1);
     else if (e.key === ']') actions.focusStep(1);
     else if (e.key.startsWith('Arrow')) {

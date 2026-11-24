@@ -21,5 +21,5 @@ Tom, 2026-11-23: noise, screen effects and artefacts as real as they can be. Sen
 - [x] Hot pixels, dark current and amp glow (were there)
 - [x] The monitor: patchy backlight, IPS corner glow on dark areas, LCD subpixel stripes when the panel is seen up close
 - [x] A [Flaws?] label on the log explains each flaw in plain words
-- [ ] Calibration: dark and flat frames that remove the flaws, as real software does
+- [x] Calibration: [Calib] or C subtracts the dark signal and divides out the flat; grain and cosmic rays stay, as in real data
 - [ ] Tom looks at it

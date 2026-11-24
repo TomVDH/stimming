@@ -54,6 +54,10 @@ export const rig = {
   overlay: { cross: true, stars: false, labels: false },
   // Past 1:1, drizzle draws detail finer than a sensor pixel.
   drizzle: true,
+  // A colour picture: R, G and B in turn, each into its own channel.
+  rgb: false,
+  // Calibration: dark and flat frames take the camera's flaws away.
+  calib: false,
   /* mount */
   tracking: true,
   jog: { n: 0, e: 0 },

@@ -175,12 +175,13 @@ void main() {
     if (kind < 0.5) {
       // An emission nebula: warped gas, a bright heart, dark dust lanes.
       vec2 w = n + 1.2 * vec2(fbm(n), fbm(n + 5.2));
-      float gas = pow(fbm(w * 1.3), 1.7) * 1.8;
-      float heart = exp(-r * 2.8) + 0.35 * exp(-r * 1.1);
-      float dust = smoothstep(0.42, 0.72, fbm(p * 5.0 + seed + 9.0)) * smoothstep(0.12, 0.5, r);
-      ha = heart * gas * (1.0 - 0.8 * dust);
-      oiii = 1.4 * exp(-r * 6.0) * gas * (1.0 - 0.8 * dust);
-      cont = 0.18 * heart * fbm(w * 2.0) * (1.0 - dust);
+      float gas = pow(fbm(w * 1.3), 2.4) * 2.8;
+      float heart = exp(-r * 5.0) * 1.4 + 0.22 * exp(-r * 1.6);
+      float dust = smoothstep(0.36, 0.62, fbm(p * 5.0 + seed + 9.0)) * smoothstep(0.08, 0.4, r);
+      ha = heart * gas * (1.0 - 0.92 * dust);
+      // Hot young stars at the heart ionise oxygen: a teal core.
+      oiii = 1.2 * exp(-r * 11.0) * gas * (1.0 - 0.92 * dust);
+      cont = 0.07 * heart * fbm(w * 2.0) * (1.0 - dust);
     } else if (kind < 1.5) {
       // A supernova remnant: red filaments over a blue-white glow.
       float shell = smoothstep(1.0, 0.55, r);

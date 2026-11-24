@@ -48,7 +48,7 @@ const PROGRAM: Record<string, (c: Ctx) => Tip> = {
   }),
   imageFlaws: () => ({
     title: 'Flaws in the picture',
-    text: 'Every real camera adds its own marks. White dots that never move are hot pixels. A short bright streak in one exposure is a cosmic ray, a particle from space hitting the chip. A bright line up and down from a very bright star is a bleed: the pixels overflowed and the charge spilled along the column. The faint dark rings are shadows of dust on the filter, and the corners are darker because less light reaches them.',
+    text: 'Every real camera adds its own marks. White dots that never move are hot pixels. A short bright streak in one exposure is a cosmic ray, a particle from space hitting the chip. A bright line up and down from a very bright star is a bleed: the pixels overflowed and the charge spilled along the column. The faint dark rings are shadows of dust on the filter, and the corners are darker because less light reaches them. Calibration removes most of these.',
     try: 'Zoom in on a bright star and look for its bleed line.',
   }),
   fit: () => ({
@@ -65,6 +65,11 @@ const PROGRAM: Record<string, (c: Ctx) => Tip> = {
     title: 'Zoom',
     text: 'Makes the picture bigger on the screen. It is a magnifying glass on what the camera already took: it cannot add detail the camera did not catch.',
     try: 'Scroll over the picture, or press + and -.',
+  }),
+  calib: () => ({
+    title: 'Calibration',
+    text: 'Astronomers never trust a raw picture. With the cover on, they take dark frames: they record only the camera\'s own false light and hot pixels. Pointed at an evenly lit screen, they take flat frames: they record dust shadows and dark corners. Subtracting the darks and dividing by the flats leaves only the sky. Grain and cosmic rays stay; stacking deals with those.',
+    try: 'Click to switch calibration on and off, or press C, and watch the dust rings and stripes vanish.',
   }),
   drizzle: (c) => ({
     title: 'Drizzle',
@@ -144,6 +149,11 @@ const PROGRAM: Record<string, (c: Ctx) => Tip> = {
     title: 'Colour filters',
     text: `An astronomy camera sees only brightness, not colour. For a colour picture it shoots through red (R), green (G) and blue (B) filters in turn, and a computer combines them. L lets all light through, for the faintest detail. Hα lets through only the glow of hydrogen gas, what nebulae are made of. Now: ${FILTER_SAYS[c.filter]}.`,
     try: 'Click a filter and watch the picture change.',
+  }),
+  rgb: () => ({
+    title: 'Colour picture',
+    text: 'The camera takes a red, a green and a blue exposure in turn. The software puts each one in its own colour, the way a screen mixes red, green and blue pixels, and you get a true-colour picture. Hubble and every big observatory make their colour images this way.',
+    try: 'Click RGB, then watch the colours fill in as each filter takes its turn.',
   }),
   ccd: (c) => ({
     title: 'Camera temperature',

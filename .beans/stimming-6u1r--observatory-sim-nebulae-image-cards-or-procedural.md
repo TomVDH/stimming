@@ -1,7 +1,7 @@
 ---
 # stimming-6u1r
 title: 'Observatory sim: nebulae, image cards or procedural'
-status: draft
+status: in-progress
 type: task
 created_at: 2026-11-23T23:34:22Z
 updated_at: 2026-11-23T23:34:22Z
@@ -19,4 +19,4 @@ Tom, 2026-11-23: flat card images for nebulae, or a procedural version. Image ca
 - [x] Hydrogen-alpha light in the light buffer's alpha: the Hα filter shows the gas and dims the stars
 - [x] At the eyepiece the dark-adapted eye sees them grey-green
 - [x] They head the TARGETS list when above 25°
-- [ ] Tom picks: keep procedural, or add image cards (each image needs his yes and its licence)
+- [x] Tom picks procedural, no image cards (Tom, 2026-11-23: "Keep procedural")
