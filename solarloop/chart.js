@@ -30,6 +30,7 @@ export const CHART = {
   tzo: { kind: 'tzo', t: 3500, cls: 'Thorne–Żytkow object, predicted' },
   j1407: { kind: 'ringed', t: null, cls: 'K5 young star, ringed eclipse' },
   betalyr: { kind: 'binary', t: 13300, cls: 'B7 II donor, interacting binary' },
+  s5hvs1: { t: null, cls: 'A-type hypervelocity star' },
   siriusb: { kind: 'dwarf', t: 25000, cls: 'DA2 white dwarf' },
   neutron: { kind: 'pulsar', t: 700000, cls: 'neutron star' },
   cygx1: { kind: 'hole', t: null, cls: 'stellar black hole' },

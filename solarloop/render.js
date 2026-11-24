@@ -1054,6 +1054,9 @@ uniform vec3 uHal, uStreak;
 uniform vec2 uSway;
 // A black hole: on, and the lensed stars' gain.
 uniform vec2 uHoleF;
+// A runaway: on, heading, size in R, kind (0 bow shock, 1 wake); and its colour.
+uniform vec4 uBow;
+uniform vec3 uBowC;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 // Device pixels per CSS pixel: screen-fixed effects keep their size in CSS pixels.
@@ -1188,6 +1191,29 @@ vec3 starfield(vec2 fc) {
   }
   return acc;
 }
+// A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.
+// The bow shock takes Wilkin's shape: r(t) = R0 sqrt(3 (1 - t cot t)) / sin t, t from the apex.
+vec3 runaway(vec2 P) {
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 q = vec2(dot(P, ax), ax.x * P.y - ax.y * P.x) / R;
+  float d = length(q);
+  if (uBow.w < 0.5) {
+    float t = acos(clamp(q.x / max(d, 1e-4), -1.0, 1.0));
+    float t2 = max(t, 0.02);
+    float rb = uBow.z * sqrt(max(3.0 * (1.0 - t2 / tan(t2)), 0.0)) / sin(t2);
+    float w = uBow.z * (0.05 + 0.08 * t);
+    float shell = exp(-pow((d - rb) / w, 2.0));
+    // Brightest at the apex; the wings fade as they sweep back. Filaments ripple it.
+    float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
+    return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
+  }
+  // A wake: a long faint trail behind, widening, its knots streaming away.
+  float back = -q.x;
+  float w = 0.35 + 0.035 * back;
+  float tail = exp(-pow(q.y / w, 2.0)) * smoothstep(0.8, 2.5, back) * exp(-back / uBow.z);
+  float kn = 0.5 + 0.9 * fbm(vec3(back * 0.15 - uTime * 0.5, q.y * 0.5, 4.0));
+  return uBowC * tail * kn;
+}
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
   // A black hole's shadow gives no light; its disc lights the glass through the bloom.
@@ -1253,6 +1279,8 @@ void main() {
     vec4 hs = texture(uHdr, uv);
     c += mix(vec3(0.72, 0.84, 1.0), vec3(1.0, 0.8, 0.62), clamp(hs.a, 0.0, 1.0)) * hs.b;
   } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
+  // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < 2; k++) {
@@ -1490,6 +1518,8 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(f.u.uCam, v.cam);
     gl.uniform2fv(f.u.uSway, v.sway);
     gl.uniform2fv(f.u.uHoleF, v.holeF);
+    gl.uniform4fv(f.u.uBow, v.bow);
+    gl.uniform3fv(f.u.uBowC, v.bowC);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);

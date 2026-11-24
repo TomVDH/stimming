@@ -7,6 +7,7 @@
 // status: what is known of an object that is only predicted. core: what hides inside.
 // V1400 Centauri: Mamajek et al. 2012; Kenworthy and Mamajek 2015 (the rings). rings: a ring system's size.
 // Beta Lyrae: Harmanec and Scholz 1993 (the period); Mennickent and Djurasevic 2013 (the disc). orbit: a binary's period.
+// S5-HVS1: Koposov et al. 2020. speed: a runaway's speed through the galaxy.
 // mag may be a range in words.
 // "about" marks an estimate or a value that sources dispute; null leaves the line out.
 // name: the card's name where it differs from the tray's short one.
@@ -17,6 +18,7 @@
 
 export const FACTS = {
   zetaoph: { type: 'blue main-sequence star · O9.5 V', latin: null, cat: 'HIP 81377', turn: 'about a day', mag: 2.57, wide: '9.1 suns', dist: '440 light years', age: 'about 3 to 6 million years' },
+  s5hvs1: { name: 'S5-HVS1', type: 'hypervelocity star · A-type main sequence', latin: null, cat: null, status: 'thrown out by Sagittarius A* 4.8 million years ago', mass: 'about 2.35 suns', speed: 'about 1,755 km/s, leaving the galaxy', turn: null, mag: null, wide: null, dist: 'about 29,000 light years', age: null },
   regulus: { type: 'blue-white subgiant · B8 IV', latin: 'Alpha Leonis', cat: 'HIP 49669', turn: '15.9 hours', mag: 1.4, wide: '4.2 suns', dist: '79 light years', age: 'at least a billion years' },
   vega: { type: 'white main-sequence star · A0 V', latin: 'Alpha Lyrae', cat: 'HIP 91262', turn: '16.3 hours', mag: 0.03, wide: '2.7 suns', dist: '25 light years', age: 'about 700 million years' },
   sirius: { type: 'white main-sequence star · A1 V', latin: 'Alpha Canis Majoris A', cat: 'HIP 32349', turn: 'about 2 to 5 days', mag: -1.46, wide: '1.7 suns', dist: '8.6 light years', age: '242 million years' },
@@ -57,7 +59,7 @@ export function cardLines(id, name) {
   const [kind, spec = null] = f.type.split(' · ');
   return {
     name: f.name ?? name, type: kind, latin: f.latin,
-    rows: [['spectral class', spec], ['status', f.status], ['catalogue', f.cat], ['mass', f.mass], ['core', f.core], ['rings', f.rings], ['orbit', f.orbit],
+    rows: [['spectral class', spec], ['status', f.status], ['catalogue', f.cat], ['mass', f.mass], ['core', f.core], ['rings', f.rings], ['orbit', f.orbit], ['speed', f.speed],
       ['rotation', f.turn], ['magnitude', mag], ['width', f.wide], ['distance', f.dist], ['age', f.age]].filter(([, v]) => v != null),
   };
 }

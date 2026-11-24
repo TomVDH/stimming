@@ -53,8 +53,9 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
 // core: a buried neutron star shown in cutaway through the disk.
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
+// bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -107,12 +108,24 @@ export const STARS = {
     wide: 'none', long: 'none', root: 261.63,
   },
   // Zeta Ophiuchi: an O star, eight suns wide, hot violet blue.
+  // It is a runaway: its bow shock glows ahead of it, seen as the view pulls back.
   zetaoph: {
     ...FLARE, day: 1.0, rain: 0.2, oblate: 0.15, grav: [0, 1, 0, 0.35],
+    bow: { kind: 0, heading: 2.35, size: 6, col: [1, 0.36, 0.3] },
     row: 8, rsun: 8, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0.5, prom: 0.45, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.5, 0.05, 0.45], disk2: [100, 0.25, 0.3, 0.08], tex: [80, 9, 0.08, 0.38],
     wide: 'none', long: 'none', root: 164.81,
+  },
+  // S5-HVS1: an A star that Sagittarius A* threw out of the galaxy's centre at 1,755 km/s.
+  // A long faint wake trails behind it; the wake is the toy's, not observed.
+  s5hvs1: {
+    ...FLARE, day: 1.0, rain: 0.3,
+    bow: { kind: 1, heading: 0.35, size: 40, col: [0.6, 0.76, 1] },
+    row: 10, rsun: 2, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.4, dust: 0, rays: 1,
+    hal: [0.8, 0.85, 1], streak: [0.75, 0.82, 1],
+    disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],
+    wide: 'none', long: 'none', root: 311.13,
   },
   // Regulus: a B star, four suns wide, spun almost to breaking.
   // Seen side-on: its equator is a third wider than its poles, and darker.
