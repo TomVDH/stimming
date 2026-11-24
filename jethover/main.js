@@ -10,6 +10,7 @@ import { HOURS, dayClock } from '../shared/daytime.js';
 import { buildScene, NOZ, NOZ_R, FAN, EYE, TIMES, plateReady } from './scene.js';
 import { makePlumes, makePost } from './fx.js';
 import { createFire } from './gas.js';
+import { createHeat2D } from './heat2d.js';
 import { jetSound } from './sound.js';
 mark('libs');
 
@@ -63,7 +64,7 @@ function toggleLens() {
 /* ---------- dev tuning (?dev) ---------- */
 // Each row scales one value; 1 keeps today's look. The values persist.
 const tune = {
-  bendK: 2, capK: 1.5, heatBlur: 1.5, shimSize: 0.5, shimSpeed: 1, heatK: 1,
+  bendK: 2, capK: 1.5, heatBlur: 1.5, heatK: 1,
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
 };
@@ -75,8 +76,6 @@ const DEV_ROWS = [
   slider('bendK', 'Heat haze', 'Bend strength', 0, 4, 0.05),
   slider('capK', 'Heat haze', 'Bend limit', 0.25, 6, 0.05),
   slider('heatBlur', 'Heat haze', 'Smoothing', 0, 4, 0.05),
-  slider('shimSize', 'Heat haze', 'Shimmer cell size (m)', 0.1, 2, 0.05),
-  slider('shimSpeed', 'Heat haze', 'Shimmer speed', 0, 3, 0.05),
   slider('heatK', 'Heat haze', 'Heat to shimmer', 0, 3, 0.05),
   slider('gasBlur', 'Gas', 'Smoothing', 0, 3, 0.05),
   slider('gasK', 'Gas', 'Brightness', 0, 2, 0.05),
@@ -122,8 +121,8 @@ const kit = audioKit({ keys: new Set([' ']), sleepMs: 1500 });
 const snd = jetSound(kit);
 
 /* ---------- three ---------- */
-let renderer = null, post = null, S = null, camera = null, P = null, gas = null, vol = null, gasF = null, volF = null;
-let volScene = null, heatScene = null, volLamps = null;
+let renderer = null, post = null, S = null, camera = null, P = null, gas = null, vol = null, gasF = null, volF = null, heat2 = null;
+let volScene = null, heatScene = null, planeScene = null, volLamps = null;
 // Ready once setup has finished; until then nothing draws.
 let ready = false;
 let cssW = 1, cssH = 1;
@@ -159,8 +158,9 @@ async function setup() {
   // The gas and its heat each draw in a scene of their own, at half size.
   volScene = new THREE.Scene();
   heatScene = new THREE.Scene();
+  planeScene = new THREE.Scene();
   volLamps = [0, 1, 2].map(() => { const l = new THREE.PointLight(0xff7a30, 0, 40, 2); volScene.add(l); return l; });
-  post = makePost({ renderer, scene: S.scene, camera, volScene, heatScene });
+  post = makePost({ renderer, scene: S.scene, camera, volScene, heatScene, planeScene });
   gas = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, grid: [112, 56, 112], size: BOX, center: CENTER, pressure: 12, emitMax: 1 });
   const u = gas.u;
   // No point emitters: the jets and the damp floor feed the gas.
@@ -213,10 +213,15 @@ async function setup() {
   volF = gasF.volume({ steps: 64, lift: 0, sceneZ: post.sceneZ });
   volScene.add(volF.mesh);
   heatScene.add(volF.heatMesh);
+  // The hot air: a 2D sim in the nozzle plane, after Schlieren candle.
+  // 18 x 15 m; 192 x 160 velocity cells, heat four times finer.
+  heat2 = createHeat2D({ THREE, TSL, renderer, size: [18, 15], origin: [-10.2, 0], z: NOZ_Z, grid: [192, 160] });
+  planeScene.add(heat2.mesh);
   // The volume model runs only with a light in the scene; this one gives none.
   heatScene.add(new THREE.PointLight(0x000000, 0, 1, 2));
   await gas.compile();
   await gasF.compile();
+  await heat2.compile();
   await plateReady;
 }
 
@@ -239,6 +244,7 @@ function frame3() {
   // The heat bend grows with the zoom; so does its cap.
   const zoom = wide / vfov;
   post.U.bend.value = 45 * Math.sqrt(zoom) * tune.bendK;
+  post.U.bendT.value = 40 * Math.sqrt(zoom) * tune.bendK * tune.heatK;
   post.U.cap.value = 3 * zoom ** 0.75 * tune.capK;
   post.U.tap.value = 3 * zoom;
   // The gas fills the tight frame, so it marches fewer steps there.
@@ -324,6 +330,7 @@ function step(dt) {
     gas.step(SIM_DT * gk);
     gasF.u.time.value = gasClock;
     gasF.step(SIM_DT * gk);
+    heat2.step(SIM_DT * gk);
     simAcc -= SIM_DT;
   }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
@@ -338,8 +345,8 @@ function applyTune() {
   U.vol.value = 0.32 * tune.gasK; U.occ.value = 0.6 * tune.occK;
   post.glow.strength.value = 0.55 * tune.bloom;
   for (const g of [gas, gasF]) {
-    g.u.heatGain.value = 5 * tune.heatK;
-    g.u.shimSize.value = tune.shimSize; g.u.shimSpeed.value = 3.2 * tune.shimSpeed;
+    // The 2D heat plane makes the shimmer; the volumes no longer do.
+    g.u.heatGain.value = 0;
   }
   gasF.u.emitDensity.value = 2000 * tune.exSmoke; gasF.u.emitTemperature.value = 330 * tune.exHeat;
   frame3();
@@ -389,6 +396,8 @@ function pose() {
     gasF.u.jetP[i].value.copy(j.n);
     gasF.u.jetA[i].value.copy(u.jetA[i].value);
     gasF.u.jetK[i].value.copy(u.jetK[i].value).setZ(0);
+    // The 2D heat plane takes the two hot jets.
+    if (i < 2) heat2.setJet(i, j.n, axis, len, u.jetK[i].value.x, (0.55 + 0.45 * thr) * flick);
     // The apron: a hot pool under each nozzle; the fan's pool is cold.
     const hot = i === 2 ? 0 : (0.25 + 1.5 * thr * thr) * clamp(1.4 - j.n.y / 10, 0.3, 1);
     S.U.hot[i].value.set(j.c.x, 0, j.c.z, hot);

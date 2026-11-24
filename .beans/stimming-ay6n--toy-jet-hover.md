@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-24T03:49:22Z
+updated_at: 2026-11-24T04:06:07Z
 parent: stimming-oh7b
 ---
 
@@ -65,3 +65,5 @@ Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 bloc
 
 - [x] Craft hidden; the emitter follows the pointer from 2 m to 14 m and stays put (Tom, 2026-11-23: "let's take the jet out for a bit -- and just have the emitter movable higher in the sky too")
 - [ ] Exhaust pass, docs/plans/jethover.md: guide flow, soot, dry ground, no background haze (Tom, 2026-11-23; first try rejected)
+
+- [x] Heat distortion from a 2D heat sim in the nozzle plane, after Schlieren candle (Tom, 2026-11-23: "heat distortion (kind of like the chemical candle toy)"): jethover/heat2d.js

@@ -89,7 +89,7 @@ export function makePlumes(count) {
 
 /* ---------- post: heat bend, the gas over the scene, bloom, the grade ---------- */
 // sceneZ is the scene's view z at a pixel; the gas volume uses it to hide behind the craft.
-export function makePost({ renderer, scene, camera, volScene, heatScene }) {
+export function makePost({ renderer, scene, camera, volScene, heatScene, planeScene }) {
   const pipe = new THREE.RenderPipeline(renderer);
   pipe.outputColorTransform = false;
   const scenePass = pass(scene, camera);
@@ -99,15 +99,18 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
   volPass.setResolutionScale(0.5);
   const heatPass = pass(heatScene, camera);
   heatPass.setResolutionScale(0.5);
+  // The 2D heat plane draws at full size, so its filaments stay sharp.
+  const planePass = pass(planeScene, camera);
   const U = {
     res: uniform(new THREE.Vector2(1, 1)), amp: uniform(1), bend: uniform(45), time: uniform(0),
     vol: uniform(0.32), seed: uniform(0), grain: uniform(1), asp: uniform(1.6), cap: uniform(3), tap: uniform(3), occ: uniform(0.6),
-    heatBlur: uniform(1.5), gasBlur: uniform(1.0),
+    heatBlur: uniform(1.5), gasBlur: uniform(1.0), bendT: uniform(12),
     key: uniform(new THREE.Color(0.8, 0.9, 1.06)), pull: uniform(0.3),
   };
   // The heat sum is blurred before its slope is taken.
   // The march dithers each pixel; a raw slope bends the frame pixel by pixel.
   const heat = gaussianBlur(heatPass, U.heatBlur, 4).getTextureNode();
+  const plane = gaussianBlur(planePass, U.heatBlur, 2).getTextureNode();
   const blurred = gaussianBlur(volPass, U.gasBlur, 3);
   // The hot gas bends the frame along the gradient of its summed shimmer.
   const bentUV = Fn(() => {
@@ -115,7 +118,10 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
     const px = vec2(U.tap).div(U.res);
     const hx = heat.sample(screenUV.add(vec2(px.x, 0.0))).r.sub(heat.sample(screenUV.sub(vec2(px.x, 0.0))).r);
     const hy = heat.sample(screenUV.add(vec2(0.0, px.y))).r.sub(heat.sample(screenUV.sub(vec2(0.0, px.y))).r);
-    const off = vec2(hx, hy).mul(U.bend).mul(U.amp).toVar();
+    // The 2D heat plane bends the frame along its own slope.
+    const tx = plane.sample(screenUV.add(vec2(px.x, 0.0))).r.sub(plane.sample(screenUV.sub(vec2(px.x, 0.0))).r);
+    const ty = plane.sample(screenUV.add(vec2(0.0, px.y))).r.sub(plane.sample(screenUV.sub(vec2(0.0, px.y))).r);
+    const off = vec2(hx, hy).mul(U.bend).add(vec2(tx, ty).mul(U.bendT)).mul(U.amp).toVar();
     // A long path through hot gas must not tear the frame: the bend caps at cap px.
     off.mulAssign(min(1.0, U.amp.mul(U.cap).div(max(off.length(), 1e-4))));
     return screenUV.add(off.div(U.res));
@@ -146,5 +152,5 @@ export function makePost({ renderer, scene, camera, volScene, heatScene }) {
     // Milky blacks: the print never reaches full black.
     return vec4(out.mul(0.985).add(vec3(0.008, 0.01, 0.014)), 1.0);
   })();
-  return { pipe, U, sceneZ, glow, volPass, heatPass };
+  return { pipe, U, sceneZ, glow, volPass, heatPass, planePass };
 }
