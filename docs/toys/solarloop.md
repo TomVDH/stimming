@@ -105,7 +105,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 
 ## Dev (`?dev`)
 
-The Dev button shows only with `?dev` in the address. Its rows are stored per browser; 1 is the house default; Reset puts every row back.
+The Dev button shows only with `?dev` in the address. Its rows are stored per browser; 1 is the house default; Reset puts every row back. Dev opens as a small popover at the right, with no dark glass over the stage, so the star stays in view while you tune (Tom, 2026-11-23). This is a toy-local style in `index.html`, until a shared Dev popover lands.
 
 | Group | Rows |
 |---|---|
