@@ -63,10 +63,10 @@ function toggleLens() {
 /* ---------- dev tuning (?dev) ---------- */
 // Each row scales one value; 1 keeps today's look. The values persist.
 const tune = {
-  bendK: 2, capK: 1.5, heatBlur: 0.5, heatK: 1, hSpeed: 1, shim: 1, shimSize: 1,
+  bendK: 2, capK: 1.5, heatBlur: 0.5, heatK: 1, hSpeed: 1, shim: 1, shimSize: 1, flute: 1, fluteW: 1, ripple: 1,
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
-  reach: 3, fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
+  reach: 3, feather: 0.5, fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
   sLife: 1, sDark: 1, sGlow: 1, viewHeat: false,
 };
 const slider = (id, group, label, min, max, step) => ({
@@ -81,6 +81,9 @@ const DEV_ROWS = [
   slider('hSpeed', 'Heat haze', 'Speed', 0.2, 4, 0.05),
   slider('shim', 'Heat haze', 'Flicker', 0, 3, 0.05),
   slider('shimSize', 'Heat haze', 'Flicker size', 0.2, 4, 0.05),
+  slider('flute', 'Heat haze', 'Flutes', 0, 4, 0.05),
+  slider('fluteW', 'Heat haze', 'Flute width', 0.3, 4, 0.05),
+  slider('ripple', 'Heat haze', 'Ripples', 0, 4, 0.05),
   slider('gasBlur', 'Gas', 'Smoothing', 0, 3, 0.05),
   slider('gasK', 'Gas', 'Brightness', 0, 2, 0.05),
   slider('occK', 'Gas', 'Smoke dimming', 0, 3, 0.05),
@@ -88,6 +91,7 @@ const DEV_ROWS = [
   slider('exHeat', 'Gas', 'Exhaust heat', 0, 3, 0.05),
   slider('speedK', 'Gas', 'Gas speed', 0.2, 2, 0.05),
   slider('reach', 'Fluid', 'Exhaust reach (m)', 1, 12, 0.1),
+  slider('feather', 'Fluid', 'Cone feather', 0, 1, 0.01),
   slider('fSwirl', 'Fluid', 'Swirl', 0, 3, 0.05),
   slider('fLift', 'Fluid', 'Lift', 0, 3, 0.05),
   slider('fCool', 'Fluid', 'Cooling', 0, 3, 0.05),
@@ -208,7 +212,7 @@ async function setup() {
   gasF.setEmitters(pts);
   // Fire's rates times 60: jet gas crosses a cell in a hundredth of a second.
   // Smoke outweighs heat, so the cooled exhaust stays as billows.
-  f.emitTemperature.value = 330; f.emitDensity.value = 2000; f.emitGain.value = 1;
+  f.emitTemperature.value = 330; f.emitDensity.value = 120; f.emitGain.value = 1;
   // The emitter feeds this sim; the jet cores add only a little heat.
   f.feed.value.set(0.05, 0);
   f.buoyancy.value = 0.6; f.weight.value = 0.05;
@@ -343,7 +347,8 @@ function step(dt) {
     gas.u.time.value = gasClock;
     gas.step(SIM_DT * gk);
     gasF.u.time.value = gasClock;
-    gasF.step(SIM_DT * gk);
+    // The soot rolls slower and heavier than the pad steam.
+    gasF.step(SIM_DT * gk * 0.6);
     // The hot air runs at real time: heat shimmer is fast.
     heat2.step(SIM_DT * tune.hSpeed);
     simAcc -= SIM_DT;
@@ -365,16 +370,20 @@ function applyTune() {
   }
   const h2 = heat2.u;
   h2.curlK.value = 6 * tune.fSwirl; h2.lift.value = 14 * tune.fLift; h2.cool.value = 0.5 * tune.fCool; h2.damp.value = 0.15 * tune.fDrag;
+  h2.flute.value = 0.12 * tune.flute; h2.fluteW.value = 0.14 * tune.fluteW; h2.ripple.value = 0.22 * tune.ripple;
   h2.shim.value = 0.6 * tune.shim; h2.shimSize.value = 0.25 * tune.shimSize; h2.shimSpeed.value = 9 * tune.hSpeed;
   U.viewHeat.value = tune.viewHeat ? 1 : 0;
+  for (const p of P) p.U.feather.value = tune.feather;
   // Soot: Fire's smoke in the exhaust gas, pale steam toward black.
   const sd = Math.min(1, 0.75 * tune.sDark);
   gasF.u.smokeTint.value.setRGB(0.9 + (0.05 - 0.9) * sd, 0.86 + (0.045 - 0.86) * sd, 0.8 + (0.04 - 0.8) * sd);
-  gasF.u.dissipation.value = 0.7 / tune.sLife;
+  gasF.u.dissipation.value = 0.3 / tune.sLife;
   gasF.u.glowGain.value = tune.sGlow;
   // Thick soot darkens what lies behind it, as Fire's shadow pass does.
-  gasF.u.occMin.value = 0.02; gasF.u.occGain.value = 6 * tune.sDark;
-  gasF.u.emitDensity.value = 2000 * tune.exSmoke; gasF.u.emitTemperature.value = 330 * tune.exHeat;
+  gasF.u.occFloor.value = 1; gasF.u.occMin.value = 0.02; gasF.u.occGain.value = 6 * tune.sDark;
+  // The nozzles put out only enough smoke to carry the flame; the soot forms at the tail.
+  gasF.u.emitDensity.value = 120; gasF.u.emitTemperature.value = 330 * tune.exHeat;
+  gasF.u.tailSoot.value = 1500 * tune.exSmoke;
   frame3();
   applyTime();
 }

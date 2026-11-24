@@ -236,6 +236,9 @@ export function createFire({
     tMax: uniform(12.0),
     // Jet hover: smoke under occMin does not darken the scene; occGain scales the rest.
     occMin: uniform(0.25), occGain: uniform(1.0),
+    // Jet hover: soot fed at the tail of each hot jet's reach, per second.
+    tailSoot: uniform(0.0),
+    occFloor: uniform(0.0),
   };
 
   /* ---------- storage 3D textures ---------- */
@@ -415,6 +418,12 @@ export function createFire({
       const R = K.w.add(s.mul(0.1));
       const core = float(1.0).sub(smoothstep(R.mul(0.35), R, r)).mul(smoothstep(-0.4, 0.1, sRaw)).mul(float(1.0).sub(smoothstep(L.sub(0.6), L.add(0.2), sRaw)));
       newVel.assign(mix(newVel, A.mul(K.x), core.mul(relax)));
+      // Jet hover: past its reach the jet breaks up; its push dies below.
+      const past = smoothstep(L.sub(0.3), L.add(0.5), sRaw).mul(float(1.0).sub(smoothstep(R.mul(1.5), R.mul(4.0), r)));
+      newVel.mulAssign(float(1.0).sub(past.mul(u.dt).mul(60.0)).max(0.0));
+      // The broken jet spills outward, so its soot peels off sideways.
+      const outDir = vec3(w.x, 0.0, w.z).sub(vec3(A.x, 0.0, A.z).mul(sRaw));
+      newVel.addAssign(outDir.div(outDir.length().add(0.2)).mul(K.x.mul(0.35)).mul(past).mul(u.dt).mul(30.0));
       const land = P.add(A.mul(L));
       // A jet that ends in free air makes no sheet on the floor.
       const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
@@ -509,6 +518,11 @@ export function createFire({
       const core = float(1.0).sub(smoothstep(R.mul(0.2), R, r)).mul(smoothstep(-0.2, 0.15, sRaw)).mul(float(1.0).sub(smoothstep(L.sub(0.3), L.add(0.3), sRaw)));
       temperature.addAssign(K.y.mul(core).mul(u.feed.x).mul(u.dt));
       density.addAssign(K.y.mul(core).mul(u.feed.y).mul(u.dt));
+      // The soot forms where the jet breaks up, at the tail of its reach.
+      const tail = smoothstep(L.sub(1.0), L.sub(0.2), sRaw).mul(float(1.0).sub(smoothstep(L.add(0.1), L.add(0.7), sRaw))).mul(smoothstep(R.mul(0.4), R.mul(0.9), r)).mul(float(1.0).sub(smoothstep(R.mul(1.2), R.mul(1.8), r)));
+      // Noise breaks the feed into wisps that peel off the jet's edge.
+      const wisp = smoothstep(0.5, 0.8, mx_noise_float(wp.mul(vec3(2.2, 0.8, 2.2)).add(vec3(u.time.mul(0.9), u.time.mul(-1.6), 0.0))).mul(0.5).add(0.5));
+      density.addAssign(u.tailSoot.mul(tail).mul(wisp).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
       const land = P.add(A.mul(L));
       // A jet that ends in free air neither smokes nor steams the floor.
       const reach = float(1.0).sub(smoothstep(0.5, 2.0, land.y.sub(floorY)));
@@ -728,7 +742,9 @@ export function createFire({
       const cellNoise = mx_noise_float(positionRay.mul(vec3(1.3, 0.8, 1.3).div(u.shimSize)).add(vec3(0.0, u.time.mul(u.shimSpeed).negate(), 0.0)));
       const edge = min(uvw, vec3(1).sub(uvw));
       // Thin haze in the box does not count; only real billows dim the scene.
-      const smoke = dye.r.mul(smoothstep(u.occMin, u.occMin.mul(3.8).add(0.25), dye.r)).mul(u.occGain).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))));
+      const smoke = dye.r.mul(smoothstep(u.occMin, u.occMin.mul(3.8).add(0.25), dye.r)).mul(u.occGain).mul(smoothstep(0.0, 0.22, min(edge.x, min(float(1).sub(uvw.y), edge.z))))
+        // Jet hover: with occFloor, smoke low in the box stops darkening, so no floor edge shows.
+        .mul(mix(float(1.0), smoothstep(0.01, 0.05, uvw.y), u.occFloor));
       return vec3(T.mul(cellNoise).mul(u.heatGain), T.mul(u.heatGain), smoke).mul(seen(positionRay));
     });
     const heatMesh = new THREE.Mesh(new THREE.BoxGeometry(SX, SY, SZ), heatMaterial);

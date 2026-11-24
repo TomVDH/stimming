@@ -41,7 +41,10 @@ function plumeMaterial(U) {
       .add(vec3(1.0, 0.32, 0.08).mul(exp(xn.mul(xn).mul(-0.1))).mul(0.05).mul(thr.add(0.3)).mul(exp(t.div(flame.mul(1.6)).negate())));
     // The cold lift-fan jet shows only as a faint grey sheet.
     const cold = vec3(0.05, 0.06, 0.08).mul(body).mul(thr.mul(0.7).add(0.3)).mul(0.25);
-    return mix(col, cold, U.cold).mul(edge).mul(U.gain).mul(float(1.0).sub(smoothstep(U.len.sub(0.7), U.len.add(0.05), t)));
+    // The cone's tail feathers out: a long fade, broken by the flow noise.
+    const fz = U.len.mul(U.feather).max(0.3);
+    const tail = float(1.0).sub(smoothstep(U.len.sub(fz), U.len, t.add(tb.sub(0.5).mul(fz).mul(0.8))));
+    return mix(col, cold, U.cold).mul(edge).mul(U.gain).mul(tail.mul(tail));
   })();
   return m;
 }
@@ -51,7 +54,7 @@ export function makePlumes(count) {
   const side = new THREE.Vector3(), P = new THREE.Vector3(), V = new THREE.Vector3();
   for (let i = 0; i < count; i++) {
     const U = {
-      len: uniform(4), r: uniform(0.4), spread: uniform(0.11), wide: uniform(4.5),
+      len: uniform(4), r: uniform(0.4), spread: uniform(0.11), wide: uniform(4.5), feather: uniform(0.5),
       thr: uniform(0.5), time: uniform(0), seed: uniform(i * 17.3), cold: uniform(0), gain: uniform(1),
     };
     const geo = new THREE.BufferGeometry();

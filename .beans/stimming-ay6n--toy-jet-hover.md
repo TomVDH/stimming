@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-17T22:24:06Z
-updated_at: 2026-11-24T04:49:46Z
+updated_at: 2026-11-24T05:06:33Z
 parent: stimming-oh7b
 ---
 
@@ -79,3 +79,5 @@ Headless Chromium, ANGLE GL, on Tom's PC. Captures in docs/qa/jethover/ (01 bloc
 - [x] Soot from Fire's smoke shader in the exhaust gas; the flat 2D soot is gone (Tom, 2026-11-23: "the soot should be the fire smoke shader")
 
 - [x] Thick black soot: the exhaust smoke darkens what lies behind it, as Fire's shadow pass does (Tom, 2026-11-23: "THE FIRE TOY HAS THICK SMOKE")
+
+- [x] Soot at the tail of the reach, slower and thicker; fluted-glass core and outward heat cells; flicker smooth at edges; feathered cone (Tom, 2026-11-23)

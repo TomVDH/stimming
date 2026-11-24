@@ -41,6 +41,10 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     // Fine shimmer over the heat: amount, cell size in metres, speed.
     shim: uniform(0.6), shimSize: uniform(0.25), shimSpeed: uniform(9.0),
     time: uniform(0),
+    // Fluted glass in the jet core: strength and flute width in metres.
+    flute: uniform(0.12), fluteW: uniform(0.14),
+    // Ripples outward from the core: strength.
+    ripple: uniform(0.22),
   };
 
   function tex2D(w, hh, name) {
@@ -237,8 +241,32 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     // Fast small cells break the heat into a flicker, not a gel.
     const q = world(uv()).div(u.shimSize);
     const n = mx_noise_float(vec3(q.x, q.y.add(u.time.mul(u.shimSpeed)), u.time.mul(u.shimSpeed).mul(0.37)));
-    // Red: heat with flicker, for the bend. Blue: plain heat.
-    return vec4(T.x.mul(n.mul(u.shim).add(1.0)), 0, T.x, 1);
+    // The jet core bends like fluted glass: upright flutes across it.
+    // Ripples run outward from the core.
+    const wp = world(e);
+    const glass = float(0).toVar();
+    for (let j = 0; j < 2; j++) {
+      const N = u.jetN[j], K = u.jetK[j];
+      const s0 = wp.sub(N.xy).dot(N.zw);
+      const across = wp.sub(N.xy).sub(N.zw.mul(s0));
+      const a = across.length();
+      const R = K.y.add(s0.max(0.0).mul(0.06));
+      const along = smoothstep(-0.1, 0.3, s0).mul(float(1.0).sub(smoothstep(K.x.sub(0.5), K.x.add(0.5), s0))).mul(smoothstep(0.0, 0.3, K.w));
+      const inCore = float(1.0).sub(smoothstep(R.mul(0.8), R.mul(1.15), a));
+      // The flutes waver a little down the jet, as hot glass does.
+      const fx = across.x.add(mx_noise_float(vec3(wp.y.mul(1.5), u.time.mul(3.0), float(j * 7))).mul(0.04));
+      const flute = fx.div(u.fluteW).mul(6.2832).sin().mul(inCore);
+      // Soft heat cells drift outward from the jet, not clean waves.
+      const out = a.sub(R).max(0.0);
+      const ripple = mx_noise_float(vec3(out.mul(1.1).sub(u.time.mul(3.5)), wp.y.mul(1.1).sub(u.time.mul(0.8)), float(j * 5))).mul(out.negate().div(3.0).exp()).mul(float(1.0).sub(inCore));
+      // The waves run from the nozzle to past the reach, and along the floor.
+      const band = smoothstep(-0.2, 0.6, s0).mul(float(1.0).sub(smoothstep(K.x.add(2.0), K.x.add(4.5), s0))).mul(smoothstep(0.0, 0.3, K.w));
+      glass.addAssign(flute.mul(u.flute).mul(along).add(ripple.mul(u.ripple).mul(band)));
+    }
+    // Red: heat with flicker and the glass, for the bend. Blue: plain heat.
+    // The flicker lives in the hot core; edges and the floor sheet stay smooth.
+    const fl = u.shim.mul(smoothstep(0.25, 0.75, T.x)).mul(smoothstep(0.6, 2.5, wp.y));
+    return vec4(T.x.mul(n.mul(fl).add(1.0)).add(glass), 0, T.x, 1);
   })();
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat);
   mesh.position.set(origin[0] + W / 2, origin[1] + H / 2, z);
