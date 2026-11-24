@@ -9,6 +9,7 @@ import { detail } from '../shared/detail.js';
 import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
+import { makeChart } from './chart.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -109,6 +110,7 @@ function zoomBy(k) {
   if (z === zoom) return;
   zoom = z;
   fitFull();
+  setLabel(labels.lens, lensLabel());
   poke();
 }
 // Eases between the framings; the width moves on a log scale, as a zoom does.
@@ -133,6 +135,7 @@ function toggleLens() {
   cam.t = !started || calm ? 1 : 0;
   store.set('lens', cam.mode);
   applyView();
+  setLabel(labels.lens, lensLabel());
   poke();
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
@@ -192,35 +195,37 @@ const FX = [
 const fxv = id => { const d = FX.find(f => f[0] === id)[5]; return ui?.setting?.(id)?.value ?? d; };
 
 /* ---------- bar ---------- */
+// The stars in pick order: main sequence by class, brown dwarfs, life stages.
+// Keys 1 to 0 pick the first ten; [ and ] step through all of them.
+const PICKS = [
+  ['zetaoph', 'Zeta Ophiuchi', 'oklch(0.7 0.16 275)'], ['regulus', 'Regulus', 'oklch(0.82 0.09 245)'],
+  ['vega', 'Vega', 'oklch(0.94 0.02 250)'], ['sirius', 'Sirius', 'oklch(0.9 0.04 250)'],
+  ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
+  ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
+  ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
+  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
+  ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
+  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
+  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'],
+].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
+const DIGITS = '1234567890';
+// The bar's labels: the star with its swatch, and the view with its zoom.
+const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
+const lensLabel = () => `Lens · ${cam.mode === 'full' && zoom > 1.01 ? `Full ×${zoom < 9.95 ? zoom.toFixed(1) : Math.round(zoom)}` : cam.mode}`;
+function pickStar(v) {
+  if (!STARS[v] || v === st.star) return;
+  st.star = v;
+  store.set('star', v);
+  applyView();
+  setLabel(labels.star, starLabel());
+  chart?.sync();
+  poke();
+}
 const ui = initPage({ id: ID, bar: {
-  choice: {
-    label: 'Star',
-    value: st.star,
-    // The pick sheet groups them: main sequence by class, brown dwarfs, life stages.
-    options: [
-      { value: 'zetaoph', label: 'Zeta Ophiuchi · O', dot: 'oklch(0.7 0.16 275)', key: '1', group: 'Main sequence' },
-      { value: 'regulus', label: 'Regulus · B', dot: 'oklch(0.82 0.09 245)', key: '2', group: 'Main sequence' },
-      { value: 'vega', label: 'Vega · A', dot: 'oklch(0.94 0.02 250)', key: '3', group: 'Main sequence' },
-      { value: 'sirius', label: 'Sirius · A', dot: 'oklch(0.9 0.04 250)', key: '4', group: 'Main sequence' },
-      { value: 'procyon', label: 'Procyon · F', dot: 'oklch(0.9 0.07 90)', key: '5', group: 'Main sequence' },
-      { value: 'sun', label: 'Sun · G', dot: 'oklch(0.82 0.15 80)', key: '6', group: 'Main sequence' },
-      { value: 'epseri', label: 'Epsilon Eridani · K', dot: 'oklch(0.7 0.17 50)', key: '7', group: 'Main sequence' },
-      { value: 'proxima', label: 'Proxima · M', dot: 'oklch(0.62 0.19 35)', key: '8', group: 'Main sequence' },
-      { value: 'luhman', label: 'Luhman 16 · L/T', dot: 'oklch(0.5 0.12 10)', key: '9', group: 'Brown dwarfs' },
-      { value: 'wise', label: 'WISE 0855 · Y', dot: 'oklch(0.4 0.04 10)', key: '0', group: 'Brown dwarfs' },
-      { value: 'ttauri', label: 'T Tauri · protostar', dot: 'oklch(0.72 0.15 60)', group: 'Life stages' },
-      { value: 'arcturus', label: 'Arcturus · red giant', dot: 'oklch(0.7 0.15 50)', group: 'Life stages' },
-      { value: 'rigel', label: 'Rigel · supergiant', dot: 'oklch(0.8 0.1 240)', group: 'Life stages' },
-      { value: 'betelgeuse', label: 'Betelgeuse · supergiant', dot: 'oklch(0.68 0.18 45)', group: 'Life stages' },
-      { value: 'vycma', label: 'VY CMa · hypergiant', dot: 'oklch(0.5 0.17 28)', group: 'Life stages' },
-      { value: 'siriusb', label: 'Sirius B · white dwarf', dot: 'oklch(0.88 0.06 210)', group: 'Life stages' },
-      { value: 'neutron', label: 'Pulsar · neutron star', dot: 'oklch(0.72 0.15 270)', group: 'Life stages' },
-    ],
-    onPick: v => { if (!STARS[v]) return; st.star = v; store.set('star', v); applyView(); poke(); },
-  },
   actions: [
+    { verb: 'star', label: starLabel(), onPress: () => chart?.toggle() },
     { verb: 'flare', key: 'Space', onPress: () => flareNext() },
-    { verb: 'lens', label: 'Lens', key: 'L', onPress: () => toggleLens() },
+    { verb: 'lens', label: lensLabel(), key: 'L', onPress: () => toggleLens() },
   ],
   slider: { label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } },
   quality: true,
@@ -234,8 +239,34 @@ const ui = initPage({ id: ID, bar: {
     ['click', 'Tap a region to flare it, or a prominence to lift it off'],
     ['drag', 'Drag to turn the star (the long lens holds still)'],
     ['L', 'Step through the long lens, the wide view and the full star'],
+    ['scroll', 'Zoom out and in on the full star'],
+    ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
+    ['[', 'Step to the previous star; ] steps to the next'],
   ],
 } });
+// The Bar v2 chips hold the labels; Bar v3 follows them.
+const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
+const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), lens: chipLabel(lensLabel()) };
+function setLabel(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
+const chart = makeChart({
+  frame: stage.closest('.stim-frame') || stage.parentElement,
+  focusBack: stage,
+  stars: PICKS,
+  get: () => st.star,
+  onPick: pickStar,
+  cover: () => ui.cover?.() || { top: 58, bottom: 56 },
+});
+addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented || chart.isOpen) return;
+  if (e.target.closest?.('input, textarea, select, .s2-sheet, .sg-sheet')) return;
+  const i = DIGITS.indexOf(e.key);
+  if (i >= 0) pickStar(PICKS[i].value);
+  else if (e.key === '[' || e.key === ']') {
+    const at = PICKS.findIndex(x => x.value === st.star);
+    pickStar(PICKS[(at + (e.key === ']' ? 1 : -1) + PICKS.length) % PICKS.length].value);
+  } else return;
+  e.preventDefault();
+});
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 3000 });
 const snd = makeSound(kit);

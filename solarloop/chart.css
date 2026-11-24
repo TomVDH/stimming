@@ -1,0 +1,83 @@
+/* Solar loop: the star chart sheet. It copies the Bar v3 sheet look:
+   no box, rows on a soft glass, slab caps with a dark edge. */
+.sl-glass {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 100%; z-index: 5; opacity: 0; pointer-events: none;
+  border-radius: 18px;
+  -webkit-backdrop-filter: blur(28px) brightness(0.34); backdrop-filter: blur(28px) brightness(0.34);
+  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent);
+  transition: opacity 0.1s steps(3, end);
+}
+.sl-glass[data-on] { opacity: 1; }
+.sl-chart {
+  --ink: oklch(0.05 0.01 275); --fg: oklch(0.97 0.005 275); --edge: 3px;
+  position: absolute; z-index: 5; box-sizing: border-box; left: 12px; right: 12px; margin-inline: auto;
+  bottom: calc(var(--foot, 56px) + 14px);
+  width: min(720px, calc(100% - 24px)); height: min(470px, calc(100% - var(--foot, 56px) - var(--head, 58px) - 22px));
+  display: flex; flex-direction: column;
+  font: 800 12px/1 "Iosevka Term Slab Nerd Font", "Iosevka Term Slab", ui-monospace, monospace;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg);
+  -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill;
+  transform-origin: 50% 100%;
+}
+.sl-chart[hidden] { display: none; }
+/* The sheet lands in five film frames and leaves in two. */
+.sl-chart.is-landing { animation: sl-land 0.167s steps(5, end); }
+.sl-chart.is-closing { opacity: 0; transition: opacity 0.067s steps(2, end); pointer-events: none; }
+@keyframes sl-land { from { opacity: 0; transform: translateY(10px) scaleY(0.9); } }
+.sl-hd { display: flex; align-items: center; height: 30px; padding: 0 10px; flex: none; font-size: 11px; letter-spacing: 0.2em; }
+.sl-hd em { margin-left: auto; font-style: normal; font-size: 10px; letter-spacing: 0.12em; opacity: 0.7; text-transform: none; }
+
+.sl-plot { position: relative; flex: 1; min-height: 0; margin: 0 10px 22px; }
+.sl-axes svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.sl-ms { fill: none; stroke: oklch(1 0 0 / 0.07); stroke-width: 22px; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.sl-break { stroke: oklch(1 0 0 / 0.22); stroke-width: 1px; stroke-dasharray: 3 4; vector-effect: non-scaling-stroke; }
+.sl-tick, .sl-zone { position: absolute; white-space: nowrap; font-size: 10px; letter-spacing: 0.1em; opacity: 0.5; pointer-events: none; -webkit-text-stroke: 0; }
+.sl-tick { top: 100%; margin-top: 8px; transform: translateX(-50%); font-size: 11px; opacity: 0.7; }
+.sl-zone { transform: translate(-50%, -50%); opacity: 0.34; }
+.sl-zone--r { transform: translate(-100%, -50%); }
+.sl-zone--up { transform: none; }
+
+/* A star: a swatch at its place, its name beside it. */
+.sl-star {
+  appearance: none; position: absolute; display: flex; align-items: center; gap: 6px;
+  min-width: 30px; min-height: 30px; margin: 0; padding: 0; border: 0; background: none; color: inherit;
+  font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer;
+  transform: translate(calc(var(--d) / -2 - 3px), -50%);
+}
+.sl-star--l { flex-direction: row-reverse; transform: translate(calc(-100% + var(--d) / 2 + 3px), -50%); }
+.sl-star--b { flex-direction: column; gap: 2px; transform: translate(-50%, calc(var(--d) / -2 - 3px)); }
+.sl-star--t { flex-direction: column-reverse; gap: 2px; transform: translate(-50%, calc(-100% + var(--d) / 2 + 3px)); }
+.sl-star:focus { outline: none; }
+.sl-sw {
+  flex: none; width: var(--d); height: var(--d); margin: 3px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, color-mix(in oklch, var(--c), white 45%) 0, var(--c) 55%, color-mix(in oklch, var(--c), black 45%) 100%);
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.14), 0 0 calc(var(--d) * 0.5) color-mix(in oklch, var(--c), transparent 55%);
+}
+.sl-name { opacity: 0.62; white-space: nowrap; }
+.sl-star:hover .sl-name, .sl-star:focus-visible .sl-name { opacity: 1; }
+/* Keyboard focus: an ink bar under the name, never a ring. */
+.sl-star:focus-visible .sl-name { text-decoration: underline 2px; text-underline-offset: 4px; }
+/* The current star: a white ring and a full-white name. */
+.sl-star[aria-pressed="true"] .sl-sw { box-shadow: 0 0 0 2px var(--ink), 0 0 0 3.5px var(--fg), 0 0 calc(var(--d) * 0.6) var(--c); }
+.sl-star[aria-pressed="true"] .sl-name { opacity: 1; }
+
+.sl-info { flex: none; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 6px 10px 0; min-height: 22px; font-size: 11px; }
+.sl-info b { font-size: 13px; }
+.sl-info span { opacity: 0.66; }
+
+/* A small stage: names show only for the current star and the one in hand. */
+@container stim (width < 560px) {
+  .sl-name { display: none; }
+  .sl-star[aria-pressed="true"] .sl-name, .sl-star:hover .sl-name, .sl-star:focus .sl-name { display: inline; }
+  .sl-zone { font-size: 9px; }
+}
+/* A short stage: the same, and the zone words leave. */
+@media (max-height: 560px) {
+  .sl-name, .sl-zone { display: none; }
+  .sl-star[aria-pressed="true"] .sl-name, .sl-star:hover .sl-name, .sl-star:focus .sl-name { display: inline; }
+  .sl-hd { height: 22px; }
+  .sl-plot { margin-bottom: 18px; }
+  .sl-tick { margin-top: 4px; }
+  .sl-info { padding-top: 2px; }
+}
+@media (prefers-reduced-motion: reduce) { .sl-glass { transition: none; } }
