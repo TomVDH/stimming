@@ -29,6 +29,8 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [x] Choir lab (solarloop/lab.html): wobble toggles, holds, synth, space and sci-fi filters, tap settings, Match loudness, preset copy
 - [x] Tap sounds per star: blast wave, glow wave, glow chord, levels
 - [ ] Tom listens to every star in the toy and tunes in the lab
+- [x] Taps no longer pile up: tap bus with one glow, one blast, a soft limiter; gentler glow fade (Tom: louder and louder)
+- [x] Lab restructured (Tom: overwhelmed): key and voices first, live updates, voice count, star JSON
 - [ ] Tom refines the tap sounds per star
 - [ ] Bring the side-branch sounds (eggs, micro) into the same voice
 - [ ] Doc Sound section true

@@ -1,5 +1,5 @@
 // Solar loop sound in Web Audio. Muted by default; the kit holds the context.
-import { choir, blast, glow, preset, renderBed, LOOP } from './choir.js';
+import { choir, tapBus, preset, keyed, renderBed, LOOP } from './choir.js';
 // Space is silent, so the sound is a sonification: each part has a visible cause.
 // A flare: the deep synth, then a slow glow chord. A lifting prominence: the synth only. A drag is silent.
 // Awake: a voice over a constant deep surround rumble.
@@ -97,17 +97,19 @@ export function makeSound(kit, opt = () => undefined) {
   }
 
   // The blast and glow come from choir.js, shaped by the star's preset.
-  // A far star sends them into its choir's reverb too.
-  function toRoom(ac, g, band, amt) {
-    const p = preset(band);
-    if (p.dist > 0 && drone && drone.ac === ac && drone.band === band) send(ac, g, amt * p.dist, drone.voice.cv);
+  // They share one tap bus, so repeated taps never pile up.
+  // The star's key, moved by its preset.
+  const keyOf = band => keyed(ROOT[band] || 220, preset(band));
+  let taps = null;
+  function tapsOf(ac) {
+    fxOf(ac);
+    if (!taps || taps.ac !== ac) taps = { ac, bus: tapBus(ac, { out: fxOf(ac).dry, hall: fxOf(ac).wet, track }) };
+    return taps.bus;
   }
-  // A voice starts shut; the blast and glow carry their own envelopes.
-  const open = g => { g.gain.value = 1; return g; };
+  // A far star sends its taps into its choir's reverb too.
+  const roomOf = (ac, band) => drone && drone.ac === ac && drone.band === band ? drone.voice.cv : null;
   function braam(ac, t, pan, band, K, len = 6) {
-    const g = blast(ac, { t, root: (ROOT[band] || 220) / 4, K, len, p: preset(band), out: open(voice(ac, pan * 0.3)), track });
-    send(ac, g, 0.7);
-    toRoom(ac, g, band, 0.5);
+    tapsOf(ac).blast({ t, root: keyOf(band) / 4, K, len, p: preset(band), pan, room: roomOf(ac, band) });
   }
 
   // The star's voice while the toy is awake, in two layers.
@@ -154,7 +156,7 @@ export function makeSound(kit, opt = () => undefined) {
       for (const x of [drone.g, drone.gc]) x.gain.setTargetAtTime(0, t, 1.2);
       for (const o of drone.os) { try { o.stop(t + 6); } catch { /* stopped */ } }
     }
-    const root = (ROOT[band] || 220) / 2;
+    const root = keyOf(band) / 2;
     const os = [];
     const g = ac.createGain();
     g.gain.setValueAtTime(0, t);
@@ -213,9 +215,7 @@ export function makeSound(kit, opt = () => undefined) {
     if (on('sndBlast')) braam(ac, t, pan, band, K * 0.7, 6);
     if (!on('sndGlow')) return;
     // The glow: a slow chord while the arcade shines.
-    const pad = glow(ac, { t, root: (ROOT[band] || 220) / 2, K, p: preset(band), out: open(voice(ac, pan * 0.5)), track });
-    send(ac, pad, 0.4);
-    toRoom(ac, pad, band, 0.8);
+    tapsOf(ac).glow({ t, root: keyOf(band) / 2, K, p: preset(band), pan, room: roomOf(ac, band) });
   }
 
   // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
