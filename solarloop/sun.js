@@ -559,7 +559,9 @@ function flareStrands(fl, B, out, n) {
   const sep = C.sep(t, rg);
   const len = rg.len * 0.9;
   // Two ribbons, one each side of the neutral line, parting as the flare runs.
-  const rib = C.ribbon(t) * B.ribbon * fl.k;
+  // Face-on, the ribbons stand against the bright disk, so they burn harder (Tom, 2026-11-24).
+  const face = fl.face || 0;
+  const rib = C.ribbon(t) * B.ribbon * fl.k * (1 + 2.5 * face);
   if (rib > 0.001) {
     for (const s of [-1, 1]) {
       // Five strands per ribbon: a bright core and a frayed edge.
@@ -591,7 +593,7 @@ function flareStrands(fl, B, out, n) {
     const lt = Math.log10(0.9e6 + 21e6 * Math.exp(-tau / 1.6));
     const em = sstep(0, 0.25, tau) * Math.exp(-tau / 30) * (1 - sstep(30, 40, tau));
     // Every band sees the snap; then each sees the loop at its own temperature.
-    const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k;
+    const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
     const drain = clamp((tau - 12) / 13);

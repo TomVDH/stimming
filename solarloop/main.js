@@ -673,11 +673,14 @@ function makeFrame() {
   f.fl.fill(0); f.flB.fill(0); f.sat.fill(0);
   sun.flares.forEach((fl, k) => {
     const fv = flareView(fl, shown);
+    // How directly the flare faces the eye: 0 at the limb, 1 at the disk's middle.
+    fl.face = clamp(toView(fl.rg.c)[2]);
     f.fl.set([...toView(fv.c), 0], k * 4);
     f.flB.set([fv.bubble[0], fv.bubble[1], fv.bubble[2], 0], k * 4);
     // The saturated core shows where the kernel is in view; behind the limb, the arcade top shines.
     let v = toView(fv.c.map(x => x * (R + fv.kernel[0])));
-    let S = fv.kernel[1];
+    // A face-on core stands against the bright disk, so it burns harder (Tom, 2026-11-24).
+    let S = fv.kernel[1] * (1 + 1.2 * fl.face);
     if (hidden(v)) { v = toView(fv.c.map(x => x * (R + fl.rg.span[1] * 0.8))); S *= hidden(v) ? 0 : 0.45; }
     const sx = ((v[0] - view.cx) / view.hw * 0.5 + 0.5) * view.W;
     const sy = ((v[1] - view.cy) / view.hh * 0.5 + 0.5) * view.H;

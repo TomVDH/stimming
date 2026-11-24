@@ -3,8 +3,9 @@
 title: 'Star catalog: tap anywhere on the near disk; slower flares scaled by size; a released star turns home'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-24T23:00:57Z
-updated_at: 2026-11-24T23:00:57Z
+updated_at: 2026-11-24T23:04:13Z
 parent: stimming-e35i
 ---
 
@@ -16,3 +17,5 @@ Tom, 2026-11-24: "the flare and tap interaction seems a bit buggy and it doesnt 
 - [x] A released star eases back home over about 3 s
 - [x] Checked in the pane: a tap on the disk starts a site flare, a tap on sky does nothing, the turn-back measured
 - [ ] Tom looks at it live
+
+- [x] Face-on flares burn harder against the bright disk: ribbons up to 3.5 times, arcade 2.5, core 2.2, by how directly they face the eye; limb flares unchanged (Tom: "Yes, brighter")
