@@ -178,7 +178,9 @@ heatMat.colorNode = Fn(() => {
     const wav = mx_noise_float(vec3(P.y.mul(1.3), U.flowT.mul(0.35), 3.1)).mul(0.25);
     const ph = P.x.sub(U.noz.x).div(R.mul(1.1)).mul(U.fluteW).mul(0.5).add(wav);
     const line = smoothstep(0.82, 1.0, sin(ph.mul(6.2832)).abs());
-    const fl = line.mul(exp(rr.mul(rr).mul(-12.0))).mul(2.0);
+    // The flutes taper off by halfway down the column.
+    const half = float(1.0).sub(smoothstep(U.len.mul(0.2), U.len.mul(0.5), s));
+    const fl = line.mul(exp(rr.mul(rr).mul(-12.0))).mul(half).mul(2.0);
     // A fine flicker races down with the flow.
     const fk = mx_noise_float(vec3(P.x.mul(7.0), P.y.mul(5.0).add(U.flowT.mul(2.0)), P.z.mul(7.0)));
     sum.addAssign(h.mul(fl.mul(U.flute).mul(0.5).add(1.0)).mul(fk.mul(U.flicker).mul(0.45).add(1.0)).mul(ds));
