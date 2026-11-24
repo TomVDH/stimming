@@ -345,7 +345,7 @@ const PICKS = [
   ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
   ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
-  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
+  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['j1407', 'V1400 Centauri', 'oklch(0.72 0.14 55)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
@@ -642,6 +642,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
+  ring: new Float32Array(4), ring2: new Float32Array(4),
 };
 function makeFrame() {
   const f = frameState;
@@ -684,6 +685,12 @@ function makeFrame() {
   f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
   f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
   f.jet = star.jet;
+  // A giant ring system drifts slowly across the star, so its bands sweep the disk.
+  const rg = star.ring;
+  if (rg) {
+    f.ring.set([rg.tau, rg.cx + 7 * Math.sin(st.time * 0.03), rg.cy + 2 * Math.cos(st.time * 0.021), rg.ratio]);
+    f.ring2.set([rg.angle, rg.glow, 0, 0]);
+  } else { f.ring.fill(0); f.ring2.fill(0); }
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;

@@ -24,6 +24,7 @@ export const CHART = {
   vycma: { t: 3490, cls: 'M5 Ia hypergiant' },
   wr124: { t: 44700, cls: 'WN8h Wolf-Rayet' },
   tzo: { t: 3500, cls: 'Thorne–Żytkow object, predicted' },
+  j1407: { t: null, cls: 'K5 young star, ringed eclipse' },
   siriusb: { t: 25000, cls: 'DA2 white dwarf' },
   neutron: { t: 700000, cls: 'neutron star' },
   cygx1: { t: null, cls: 'stellar black hole' },

@@ -85,6 +85,9 @@ const LUTS = [
   // The Thorne-Zytkow object: deep crimson to a peach white where the core shows.
   [['000000', 0], ['0e0302', 0.1], ['300a04', 0.27], ['6c1a08', 0.45], ['b23a10', 0.62], ['e8702a', 0.78], ['ffb884', 0.9], ['fff2e6', 1]],
   [['000000', 0], ['120204', 0.1], ['3c0810', 0.3], ['801620', 0.5], ['c8402c', 0.68], ['f4906a', 0.84], ['fff0e6', 1]],
+  // V1400 Centauri: a young orange K star; the ring dust backlit amber tan.
+  [['000000', 0], ['0e0502', 0.1], ['341404', 0.25], ['7c300a', 0.43], ['c85e16', 0.6], ['f4963c', 0.76], ['ffca8e', 0.89], ['fff2e4', 1]],
+  [['000000', 0], ['0a0704', 0.12], ['2a1e10', 0.3], ['6a5030', 0.5], ['b0905e', 0.68], ['e6cfa4', 0.84], ['fff6e8', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -314,6 +317,8 @@ uniform vec4 uEgg[4], uDim[2];
 uniform vec4 uWind;
 // A buried neutron star shown in cutaway through the disk.
 uniform float uCore;
+// A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
+uniform vec4 uRing, uRing2;
 // A black hole: on, the disc's tilt toward the eye, disc light, disc heat.
 uniform vec4 uHole;
 // One pixel in Schwarzschild radii, and the lensed stars' gain.
@@ -621,6 +626,32 @@ void main() {
     float neb = env * axis * uWind.z;
     cool += neb * (0.16 + 1.0 * kn * kn);
     hot += neb * 0.15 * kn;
+  }
+  // A giant ring system in front of the star: J1407b's, about 260 star widths across.
+  // Tilted, so an ellipse; dark bands and clear gaps; backlit dust glows near the star.
+  // It stands far off in space, so the star's turn and the drag leave it still.
+  if (uRing.x > 0.0) {
+    vec2 d = P / R - uRing.yz;
+    float ca = cos(uRing2.x), sa = sin(uRing2.x);
+    vec2 e = vec2(ca * d.x + sa * d.y, -sa * d.x + ca * d.y);
+    float rho = length(vec2(e.x, e.y / uRing.w));
+    // At least 37 rings from 0.2 to 0.6 AU: about 43 to 129 star radii.
+    float band = smoothstep(41.0, 46.0, rho) * smoothstep(131.0, 124.0, rho);
+    // Fine ringlets inside broader rings; sharp edges, as Saturn's show.
+    float fine = pow(0.5 + 0.5 * sin(rho * 5.3 + 4.0 * vn(vec3(rho * 0.5, 1.0, 2.0))), 3.0);
+    float rings = 0.55 * smoothstep(0.35, 0.6, vn(vec3(rho * 0.7, 4.0, 1.0))) + 0.45 * fine;
+    // Clear gaps; the widest near 0.4 AU, where a moon may sweep a lane.
+    float gaps = (1.0 - exp(-pow((rho - 86.0) / 2.2, 2.0))) * (1.0 - 0.8 * exp(-pow((rho - 61.0) / 1.2, 2.0))) * (1.0 - 0.7 * exp(-pow((rho - 104.0) / 1.5, 2.0)));
+    float tau = uRing.x * band * gaps * mix(0.08, 1.8, rings * rings);
+    float T = exp(-tau);
+    hot *= T; cool *= T;
+    // Starlight scatters forward through the dust: strongest near the star's line.
+    // Over the disk the rings only darken; off it they glow faintly.
+    // Far out a long exposure lifts their sheen, so the whole system shows.
+    float lit = (1.0 - T) * step(R, r) * (0.04 + 0.35 * exp(-(r - R) / (1.5 * R)) + 0.38 * uFar);
+    cool += uRing2.y * uDisk.x * lit;
+    // The ringed body at the centre: a dim speck.
+    hot += 0.4 * uDisk.x * exp(-dot(d, d) / 0.3);
   }
   hot *= shade;
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
@@ -1253,6 +1284,8 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uHole, v.hole);
     gl.uniform4fv(s.u.uWind, v.band.wind);
     gl.uniform1f(s.u.uCore, v.band.core);
+    gl.uniform4fv(s.u.uRing, v.ring);
+    gl.uniform4fv(s.u.uRing2, v.ring2);
     gl.uniform2fv(s.u.uHoleSky, v.holeSky);
     gl.uniform1f(s.u.uJet, v.jet);
     gl.uniform1i(s.u.uZero, 0);

@@ -52,7 +52,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // reach: how much farther the full view stands back. jet: a quasar's jet light.
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
 // core: a buried neutron star shown in cutaway through the disk.
-const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
+// ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
+const FLARE = { hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -179,6 +180,16 @@ export const STARS = {
     hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
     disk: [1.8, 0.8, 0.08, 0.4], disk2: [70, 1, 0.6, 0.16], tex: [90, 12, 0.18, 0.6],
     wide: 'none', long: 'none', root: 185,
+  },
+  // V1400 Centauri: a young K star that a giant ring system crossed in 2007.
+  // The rings, J1407b's, reach 0.6 AU: about 130 star radii from their centre.
+  j1407: {
+    ...FLARE, spots: 1.2, day: 3.2, ribbon: 1.8, sat: 1.1,
+    ring: { tau: 1, ratio: 0.32, angle: 0.5, glow: 0.7, cx: -40, cy: -28 },
+    row: 22, rsun: 1, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.35, dust: 0.1, rays: 0.8,
+    hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
+    disk: [1.8, 0.8, 0.1, 0.38], disk2: [50, 0.9, 0.55, 0.13], tex: [130, 13, 0.18, 0.62],
+    wide: 'none', long: 'none', root: 196,
   },
   // Arcturus: an orange giant, 25 suns wide.
   arcturus: {
