@@ -109,7 +109,7 @@ void main() {
   float back = pow(max(0.0, dot(v, uSun)), 3.0);
   float rim = smoothstep(-0.022, 0.0, d);
   vec3 coat = mix(vec3(0.004, 0.0038, 0.0036), vec3(0.012, 0.008, 0.006), vVar.w);
-  vec3 c = coat + uSky * 0.008 + uSunCol * rim * (0.03 + 0.35 * back);
+  vec3 c = coat + uSky * 0.008 + uSunCol * rim * (0.03 + 0.12 * back);
   float dist = length(vW - uCam);
   c = mix(c, uFog, 1.0 - exp(-uFogD * uFogD * dist * dist));
   gl_FragColor = vec4(c, a);

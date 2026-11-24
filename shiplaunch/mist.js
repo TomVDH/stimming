@@ -194,13 +194,39 @@ const MARCH = /* glsl */`
 uniform sampler2D tDye, tVel, tDepth;
 uniform mat4 uInvVP;
 uniform vec3 uCam, uFwd, uSun, uSunCol, uSky, uFog;
-uniform float uFogD, uNear, uFar, uT;
+uniform float uFogD, uNear, uFar, uT, uShaftK;
 in vec2 vUv;
 out vec4 o;
 ${SMOKE}
 ${smConsts()}
 // Fire's smoke light (shared/smoke.js) after three taps toward the sun.
 float dens(vec3 p) { vec4 s = S(tDye, (p - BMIN) / CELL); return s.r * 0.55 + s.g * 0.8; }
+// The density, and none outside the grid.
+float densIn(vec3 p) {
+  // Level 0 by hand: the loop's taps need no derivatives.
+  vec3 c = (p - BMIN) / CELL, m = step(BMIN, p) * step(p, BMAX);
+  vec2 xz = clamp(c.xz, vec2(0.5), NF.xz - 0.5);
+  float y = clamp(c.y - 0.5, 0.0, NF.y - 1.0), y0 = floor(y);
+  vec4 s = mix(textureLod(tDye, tuv(y0, xz), 0.0), textureLod(tDye, tuv(min(y0 + 1.0, NF.y - 1.0), xz), 0.0), y - y0);
+  return (s.r * 0.55 + s.g * 0.8) * m.x * m.y * m.z;
+}
+// Shadow shafts: the low air between the eye and the scene, shaded by the spray.
+// Returns how much of the haze's light the spray holds back, 0 to 1.
+float shafts(vec3 ro, vec3 rd, float tEnd, float j) {
+  float L = min(tEnd, 260.0);
+  if (rd.y > 1e-4) L = min(L, (26.0 - ro.y) / rd.y);
+  if (L <= 1.0 || uShaftK <= 0.0) return 0.0;
+  const int N = 10;
+  float ds = L / float(N), shade = 0.0;
+  for (int i = 0; i < N; i++) {
+    vec3 p = ro + rd * (ds * (float(i) + j));
+    float od = densIn(p + uSun * 3.0) * 4.0 + densIn(p + uSun * 9.0) * 8.0 + densIn(p + uSun * 20.0) * 14.0 + densIn(p + uSun * 38.0) * 22.0;
+    shade += (1.0 - exp(-od * smAbsorb * 0.3)) * ds;
+  }
+  // Shafts show toward the sun, where the haze scatters forward.
+  float ph = smPhase(dot(rd, uSun), 0.7) * 12.566;
+  return (1.0 - exp(-shade * 0.004 * uShaftK)) * clamp(ph * 0.3, 0.0, 0.8);
+}
 float lightT(vec3 p, vec3 L) {
   // The far tap stands for the rest of the way.
   float sum = dens(p + L * 1.5) * 1.5 + dens(p + L * 4.0) * 2.5 + dens(p + L * 9.0) * 5.0;
@@ -217,7 +243,10 @@ void main() {
   vec3 inv = 1.0 / rd, a = (BMIN - ro) * inv, b = (BMAX - ro) * inv;
   vec3 lo = min(a, b), hi = max(a, b);
   float t0 = max(max(lo.x, lo.y), max(lo.z, 0.0)), t1 = min(min(hi.x, min(hi.y, hi.z)), tEnd);
-  if (t1 <= t0) { o = vec4(0.0); return; }
+  float j0 = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  // The shafts darken the scene behind; they draw as alpha only.
+  float sh = shafts(ro, rd, tEnd, j0);
+  if (t1 <= t0) { o = vec4(0.0, 0.0, 0.0, sh); return; }
   const int N = 48;
   float ds = (t1 - t0) / float(N);
   float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
@@ -251,7 +280,7 @@ void main() {
   // The air between the eye and the mist.
   float fh = 1.0 - exp(-uFogD * uFogD * t0 * t0);
   col = mix(col, uFog * a2, fh);
-  o = vec4(col, a2);
+  o = vec4(col, 1.0 - (1.0 - a2) * (1.0 - sh));
 }`;
 
 export const COMPOSITE = {
@@ -307,7 +336,7 @@ export function makeMist(renderer) {
     tDye: { value: dye[0].texture }, tVel: { value: vel[0].texture }, tDepth: { value: depthRT.depthTexture },
     uInvVP: { value: new THREE.Matrix4() }, uCam: { value: new THREE.Vector3() }, uFwd: { value: new THREE.Vector3() },
     uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color() }, uSky: { value: new THREE.Color() },
-    uFog: { value: new THREE.Color() }, uFogD: { value: 0 }, uNear: { value: 0.5 }, uFar: { value: 4000 }, uT: U.uTime,
+    uFog: { value: new THREE.Color() }, uFogD: { value: 0 }, uNear: { value: 0.5 }, uFar: { value: 4000 }, uT: U.uTime, uShaftK: { value: 1 },
   };
 
   function step(dt) {

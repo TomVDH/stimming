@@ -9,6 +9,9 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { detail } from '../shared/detail.js';
+import { SKY, skyAt } from '../shared/sky.js';
+import { FLARE_BUOY, buoySlots, flarePass, flareEdge } from '../shared/flare.js';
+import { gradePass } from '../shared/grade.js';
 import { hullGeometry, topsides, yard, farLand, CANAL, PIER, HULL, START_Z, wayTop } from './yard.js';
 import { makeLaunch, reset as resetLaunch, release, step as stepLaunch, keel, moving, sectionWorld, WIRE_LEN } from './launch.js';
 import { makeChains, makeCrowd, makeBunting } from './props.js';
@@ -28,8 +31,10 @@ const dropSaved = Number(saved('drop'));
 let drop = saved('drop') != null && dropSaved >= 0.6 && dropSaved <= 2.4 ? dropSaved : DROP0;
 let frozen = reduced();
 
-// The low winter sun: behind the yard and to the left of the shot.
-const SUN = new THREE.Vector3(-0.78, 0.13, -0.61).normalize();
+// The low winter sun: low behind the yard, so the spray is backlit from the pier.
+const SUN = new THREE.Vector3(0.06, 0.125, -0.99).normalize();
+// Late on a winter afternoon: the shared sky's palette between day and last light.
+const PAL = skyAt(17.3);
 
 /* ---------- state ---------- */
 const L = makeLaunch();
@@ -59,24 +64,29 @@ const launchLabel = () => [...document.querySelectorAll('.s2-label')].find(e => 
 function setLabel(t) { const el = launchLabel(); if (el && el.textContent !== t) el.textContent = t; }
 
 /* ---------- three ---------- */
-let renderer = null, composer = null, bloom = null, scene = null, camera = null;
+let renderer = null, composer = null, bloom = null, scene = null, camera = null, flarePassS = null, grade = null;
+// One flare slot: the sun.
+const FL = buoySlots(1);
+const sunRay = new THREE.Raycaster();
+const sunUV = new THREE.Vector3();
+let sunCover = 1;
 let cssW = 1, cssH = 1;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 
 const SKY_VS = 'varying vec3 vDir; void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position.z = gl_Position.w; }';
 const SKY_FS = /* glsl */`
-  uniform vec3 uSun;
+  uniform vec3 uSun, uZen, uMid, uBand, uAnti, uLit, uShade, uGround;
   varying vec3 vDir;
+  ${SKY}
   void main() {
     vec3 d = normalize(vDir);
-    float h = max(d.y, 0.0);
     float mu = max(dot(d, uSun), 0.0);
-    // A pale winter zenith, a warm band low down, the glow round the sun.
-    vec3 zen = vec3(0.16, 0.25, 0.42), hor = vec3(0.86, 0.72, 0.58);
-    vec3 c = mix(hor, zen, pow(h, 0.45));
-    float side = 0.5 + 0.5 * dot(normalize(d.xz + 1e-4), normalize(uSun.xz));
-    c += vec3(1.0, 0.62, 0.32) * (0.35 * side * exp(-h * 9.0) + 0.9 * pow(mu, 12.0) + 8.0 * pow(mu, 900.0));
-    c = mix(c, vec3(0.42, 0.38, 0.36), smoothstep(0.0, -0.05, d.y));
+    // The shared sky, a thin drifting deck, and the sun's disc and glow.
+    vec3 c = skSky(d, uSun, uZen, uMid, uBand, uAnti, 0.0, 0.0);
+    vec4 cl = skClouds(d, uSun, 0.0, 0.32, uLit, uShade);
+    c = mix(c, cl.rgb, cl.a);
+    c += vec3(1.0, 0.66, 0.36) * (0.18 * pow(mu, 14.0) + 0.9 * pow(mu, 180.0)) + vec3(1.0, 0.85, 0.6) * 10.0 * pow(mu, 2400.0) * (1.0 - cl.a * 0.8);
+    c = mix(c, uGround, smoothstep(0.0, -0.05, d.y));
     gl_FragColor = vec4(c, 1.0);
   }`;
 
@@ -137,7 +147,7 @@ function setup() {
   camera = new THREE.PerspectiveCamera(44, 1.6, 0.5, 4000);
   M = mats();
   sky = new THREE.Mesh(new THREE.SphereGeometry(3000, 32, 16), new THREE.ShaderMaterial({
-    uniforms: { uSun: { value: SUN } }, vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { uSun: { value: SUN }, uZen: { value: new THREE.Vector3(...PAL.zen) }, uMid: { value: new THREE.Vector3(...PAL.mid) }, uBand: { value: new THREE.Vector3(...PAL.band) }, uAnti: { value: new THREE.Vector3(...PAL.anti) }, uLit: { value: new THREE.Vector3(...PAL.cloudLit) }, uShade: { value: new THREE.Vector3(...PAL.cloudShade) }, uGround: { value: new THREE.Vector3(0.42, 0.38, 0.36) } }, vertexShader: SKY_VS, fragmentShader: SKY_FS, side: THREE.BackSide, depthWrite: false, fog: false,
   }));
   sky.renderOrder = -1;
   scene.add(sky);
@@ -182,7 +192,7 @@ function setup() {
   scene.add(canal.group);
   spray = sprayMesh();
   spray.U.uSun.value.copy(SUN);
-  spray.U.uSunCol.value.setRGB(2.6, 1.75, 1.1);
+  spray.U.uSunCol.value.setRGB(1.3, 0.88, 0.55);
   spray.U.uSky.value.setRGB(0.55, 0.6, 0.68);
   spray.U.uFog.value.copy(scene.fog.color);
   spray.U.uFogD.value = scene.fog.density;
@@ -193,7 +203,8 @@ function setup() {
   composer.addPass(new RenderPass(scene, camera));
   mist = makeMist(renderer);
   mist.MU.uSun.value.copy(SUN);
-  mist.MU.uSunCol.value.setRGB(2.6, 1.75, 1.1);
+  // Into the sun the spray's forward scatter runs hot: a lower key than the hull's.
+  mist.MU.uSunCol.value.setRGB(0.75, 0.5, 0.3);
   mist.MU.uSky.value.setRGB(0.5, 0.56, 0.66);
   mist.MU.uFog.value.copy(scene.fog.color);
   mist.MU.uFogD.value = scene.fog.density;
@@ -201,8 +212,14 @@ function setup() {
   mistPass.uniforms.tMist.value = mist.texture;
   composer.addPass(mistPass);
   if (globalThis.__launch) globalThis.__mist = mist;
-  bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.5, 0.9);
+  // The sun's flare, before the bloom; hidden when the shed or the hull covers the sun.
+  flarePassS = new ShaderPass(flarePass({ slots: FL }));
+  composer.addPass(flarePassS);
+  bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.4, 0.5, 1.3);
   composer.addPass(bloom);
+  // The grade: a warm lift, a soft vignette and grain.
+  grade = new ShaderPass(gradePass({ tint: [0.006, 0.003, 0.0], vig: 0.42, vigIn: 0.5, grain: 0.022, res: [1, 1] }));
+  composer.addPass(grade);
   composer.addPass(new OutputPass());
   canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); halt(); });
   canvas.addEventListener('webglcontextrestored', () => wake());
@@ -307,6 +324,8 @@ function resize(force = false) {
   composer.setPixelRatio(dpr);
   composer.setSize(cssW, cssH);
   bloom.resolution.set(Math.round(w / 2), Math.round(h / 2));
+  flarePassS.uniforms.uAsp.value = cssW / cssH;
+  grade.uniforms.uRes.value = [w, h];
   frame3();
   // The ladder: pixel ratio first, then the mirror and the mist, then the counts.
   const fx = D.rung >= 2 ? 0.5 : 1;
@@ -430,7 +449,25 @@ function render() {
   canal.drawMirror(scene, camera);
   if (mistLive) { mist.draw(scene, camera, [spray.mesh, sky]); mistShown = true; }
   else if (mistShown) { mist.blank(); mistShown = false; }
+  sunFlare();
+  // The grain moves from frame to frame; under reduced motion it holds still.
+  if (!frozen) grade.uniforms.uSeed.value = (grade.uniforms.uSeed.value + 1) % 64;
   composer.render();
+}
+// The sun's place on the frame; a ray toward it finds the shed, the crane or the hull.
+function sunFlare() {
+  FL.clear();
+  sunUV.copy(camera.position).addScaledVector(SUN, 2000).project(camera);
+  const u = sunUV.x * 0.5 + 0.5, v = sunUV.y * 0.5 + 0.5;
+  const edge = sunUV.z < 1 ? flareEdge(u, v) : 0;
+  if (edge <= 0) return;
+  sunRay.set(camera.position, SUN);
+  sunRay.far = 1500;
+  const hit = sunRay.intersectObjects([shell, Y.grp], true).length > 0;
+  sunCover += ((hit ? 0 : 1) - sunCover) * 0.25;
+  // The sun preset, toned down: the low sun sits in the shot for most of the move.
+  const k = FLARE_BUOY.sun, g = 1.2 * edge * sunCover;
+  if (g > 0.01) FL.add(u, v, [1.0 * g, 0.72 * g, 0.42 * g], { orb: k.orb * 0.4, streak: k.streak * 0.6, ghost: k.ghost * 0.15, size: k.size * 0.5, warmth: 0.4 });
 }
 
 /* ---------- spray ---------- */
