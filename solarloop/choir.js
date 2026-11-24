@@ -52,6 +52,7 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // The tap: blastWave and glowWave are the sources; chord is the glow's notes.
 // glowStyle, arpGap, glowRise, glowHold, glowFade: the glow's shape. stack: old, unlimited taps.
 // blastMix, glowMix: a level per tap voice, set on the lab's tap bench.
+// swTurn: the swell keeps pace with the toy's Turn speed; swR is its speed at x10k.
 export const SUN = {
   wave: 'sawtooth', voice: 1, vowel: 1, metal: 0, bright: 1, det: 0, res: 0.5, fmot: 0, step: 8, swD: 0.2, swR: 0.12,
   dist: 0, rev: 7, mix: 1, width: 1, oct: [1, 0.5, 0.6], gain: 1, norm: 1, key: 0,
@@ -59,7 +60,7 @@ export const SUN = {
   aDrift: 0, chorus: 0, swellA: 3, swellAmt: 0,
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
   glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
-  blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1],
+  blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1], swTurn: false,
   fx: fx0(),
 };
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
@@ -97,7 +98,7 @@ export const VOICES = {
   s5hvs1: P({ ...song('rise'), ...ARP, wave: 'triangle', move: 'glide', voice: 0.5, vowel: 1.3, metal: 0.2, bright: 1.4, step: 5, dist: 0.6, rev: 12, mix: 1.5, width: 1.9, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.12, glowWave: 'sine', fx: { sweep: 0.25, echo: 0.55 }, gain: 1 }),
   // Beta Lyrae: a blue-white giant pours gas onto a partner hidden in a disc; they eclipse each 112 s.
   // Two chords trade places for the pair; notes and melody glide like the stream; the choir dims once per orbit.
-  betalyr: P({ ...song('lydian'), ...ARP, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 1 }),
+  betalyr: P({ ...song('lydian'), ...ARP, swTurn: true, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 1 }),
   // V1400 Centauri: a young orange K star deep in eclipse behind J1407b's giant rings.
   // A warm choir, dimmed; a phaser and a quicker swell for ringlets that sweep past; a little icy metal.
   j1407: P({ ...song('rise'), ...ARP, voice: 0.8, vowel: 0.85, metal: 0.15, bright: 0.75, step: 9, dist: 0.4, rev: 11, mix: 1.4, width: 1.8, oct: [1, 0.6, 0.6], swR: 0.15, swD: 0.3, fx: { sweep: 0.5, echo: 0.35 }, gain: 1 }),
@@ -345,6 +346,8 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   const lfo = (rate, depth, param) => { const o = ac.createOscillator(); o.frequency.value = rate; const g = G(depth); src(o, t).connect(g).connect(param); return { o, g }; };
   const n = { pans: [], layers: [], unison: [], leadG: [] };
   const layer = { low: 1, mid: 1, high: 1, melody: 1, fx: 1 };
+  // The Turn speed against x10k: 1 at x10k, 0.5 at x5k, 0.0001 in real time.
+  let turnK = 1;
   const echo = p.echo, useCv = echo !== 'hall';
 
   // Output: the distance lifts the level so a far star stays as loud.
@@ -542,7 +545,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
     if (n.mWet) set(n.mWet.gain, p.metal);
     if (n.fxWet) { set(n.fxWet.gain, layer.fx); set(n.fxDry.gain, Math.max(0, 1 - layer.fx)); }
     if (n.chorus) set(n.chorus.gain, p.chorus);
-    if (n.swell) { set(n.swell.o.frequency, p.swR); set(n.swell.g.gain, p.swD); }
+    if (n.swell) { set(n.swell.o.frequency, p.swR * (p.swTurn ? turnK : 1)); set(n.swell.g.gain, p.swD); }
     if (n.aDrift) for (const d2 of n.aDrift) set(d2.g.gain, p.aDrift);
     for (const { o, u } of n.unison) set(o.detune, u * p.det);
     for (const lg of n.leadG) set(lg.gain, layer.melody);
@@ -562,6 +565,8 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   apply(true);
   // Changes the live settings; a structural change needs a new choir.
   v.set = np => { Object.assign(p, np, { oct: [...np.oct] }); apply(false); };
+  // Sets the Turn speed as a factor of x10k; a swell with swTurn follows it.
+  v.setTurn = k => { if (Math.abs(k - turnK) > turnK * 0.01) { turnK = k; apply(false); } };
   // Sets the zoom layers: low, mid, high, melody and fx gains.
   v.setLayers = z => { Object.assign(layer, z); apply(false); };
   // A filter swell: the low pass dips, then opens over swellA s.

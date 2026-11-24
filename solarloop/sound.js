@@ -131,10 +131,15 @@ export function makeSound(kit, opt = () => undefined) {
   let drone = null;
   // Which layers sound: the Dev toggles set them.
   const layers = { hum: true, rumble: true, h: 1, lvl: 1, near: 0, z: zoomAt(0) };
+  // The toy's Turn speed against x10k: an orbit swell (swTurn) keeps pace with it.
+  let turnK = 1;
+  function setTurn(rate) { turnK = rate / 1e4; drone?.voice.setTurn(turnK); }
   // The zoom mix (choir.js ZOOM): choir and rumble levels and the layer gains by nearness.
   // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
   const dB = x => 10 ** (x / 20);
-  function mixLayers(hum, rumble, near = 0) {
+  // rate: the toy's eased Turn rate (1, 5000 or 10000), from main.js mixSound().
+  function mixLayers(hum, rumble, near = 0, rate) {
+    if (rate !== undefined) setTurn(rate);
     near = nearOf(near, drone?.band);
     const z = zoomAt(near);
     const h = hum ? lvl('sndHumLvl') * dB(z.choir) : 0;
@@ -189,6 +194,7 @@ export function makeSound(kit, opt = () => undefined) {
     humOn.connect(gc).connect(kit.out);
     const voice = choir(ac, { t, base: root * 4, p: preset(band), out: humOn, hall: hallOf(ac), os, track });
     voice.setLayers(layers.z);
+    voice.setTurn(turnK);
     voice.sing(t + 240);
 
     // The space rumble: a seamless rendered loop, added once it is ready.
@@ -262,5 +268,5 @@ export function makeSound(kit, opt = () => undefined) {
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, dim, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, dim, quiet, get busy() { return pending > 0; } };
 }

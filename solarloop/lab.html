@@ -147,6 +147,7 @@ textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-mo
   <div class="acts">
     <label class="zoom" title="Sets the zoom of the toy. The zoom mix below sets what each stop sounds like.">Zoom <input type="range" id="zoom" min="-1.75" max="1" step="0.01" value="0"><b id="o_zoom" style="font-weight:500;min-width:78px">full star</b></label>
     <span id="stops" class="acts"></span>
+    <label class="sw" title="The toy's Turn speed: how fast every star turns. A swell set to follow the turn keeps pace with it.">Turn <select id="turn"><option value="1">Real time</option><option value="5000">×5k</option><option value="10000" selected>×10k</option></select></label>
   </div>
 </div></header>
 
@@ -300,6 +301,7 @@ const SECS = [
   { title: 'Movement', intro: 'Sets the speed of the melody and the swell.', rows: [
     { k: 'step', label: 'Melody speed', help: 'Time between melody notes.', min: 3, max: 16, step: 0.5, ends: ['fast', 'slow'], show: v => 'every ' + v.toFixed(1) + ' s' },
     { k: 'swD', label: 'Swell depth', help: 'Size of the volume change.', min: 0, max: 0.5, step: 0.01, ends: ['none', 'large'], show: pct },
+    { k: 'swTurn', label: 'Swell follows the turn', help: 'On: the swell keeps pace with the Turn speed, as an orbit does. Its speed is the speed at ×10k.', check: 1 },
     { k: 'swR', label: 'Swell speed', help: 'Time for one swell. Slow ones can follow an orbit or a pulse.', min: 0.005, max: 0.6, step: 0.001, ends: ['slow', 'fast'], show: v => 'every ' + (1 / v).toFixed(1) + ' s' },
   ] },
   { title: 'Tap sound', intro: 'A tap plays a brass blast on the chord root, then a glow. Both are new voices on top of the choir. Changes reach the tap that sounds now.', rows: [
@@ -447,6 +449,7 @@ function build(id, quick) {
   const os = [], p = clone(P(id));
   const v = choir(ac, { t, base: rootOf(id) * 2, p, out: g, hall: hallIn, os, motion: motion(), live: true, onEvent: e => events.push(e) });
   v.sing(t + 4);
+  v.setTurn(+$('turn').value / 1e4);
   const c = { id, v, g, hum, os, p };
   mix(c);
   return c;
@@ -725,6 +728,7 @@ for (const s of ZK) {
   $('stops').append(b);
 }
 function setZoom(v) { near = v; $('zoom').value = v; $('o_zoom').textContent = zname(v); if (ac) mix(); else drawZoom(); }
+$('turn').onchange = () => cur?.v.setTurn(+$('turn').value / 1e4);
 $('zoom').oninput = e => setZoom(+e.target.value);
 $('rumOn').onchange = () => ac && mix();
 $('humOn').onchange = () => ac && mix();
@@ -820,7 +824,7 @@ const CMP = [['Song', p => p.prog ? (progName(p) === 'custom' ? 'custom' : PROGR
   ['Melody', p => p.melody], ['Voicing', p => p.voicing], ['Echo', p => p.echo], ['Instrument', p => WAVES[p.wave].split(' (')[0]], ['Singers per note', p => p.det > 0 ? `3, ${p.det} cents` : '1'],
   ['Octaves', p => p.oct.join(' / ')], ['Slowed choir', p => p.slowed ? 'on' : 'off'], ['Singing', p => p.voice], ['Vowel', p => p.vowel], ['Brightness', p => p.bright], ['Resonance', p => p.res], ['Filter sweep', p => p.fmot],
   ['Analog swell', p => p.swellAmt], ['Chorus', p => p.chorus], ['Voice drift', p => p.aDrift], ['Metal', p => p.metal], ['Distance', p => p.dist], ['Room', p => p.rev], ['Echo level', p => p.mix], ['Width', p => p.width],
-  ['Melody speed', p => p.step], ['Swell', p => `${p.swD} at ${p.swR} Hz`], ['Level', p => `norm ${(p.norm ?? 1) === 1 ? '0 dB' : db(p.norm ?? 1)}, yours ${db(p.gain)}`], ['Effects', p => FX.filter(([k]) => p.fx[k].on).map(([k, n]) => `${n} ${p.fx[k].amt}`).join(', ') || 'none'],
+  ['Melody speed', p => p.step], ['Swell', p => `${p.swD} at ${p.swR} Hz${p.swTurn ? ', follows the turn' : ''}`], ['Level', p => `norm ${(p.norm ?? 1) === 1 ? '0 dB' : db(p.norm ?? 1)}, yours ${db(p.gain)}`], ['Effects', p => FX.filter(([k]) => p.fx[k].on).map(([k, n]) => `${n} ${p.fx[k].amt}`).join(', ') || 'none'],
   ['Blast', p => `${p.blastWave}, ${p.blastLvl}`], ['Glow', p => `${p.glowWave}, ${p.chord}, ${p.glowStyle}, ${p.glowLvl}`], ['Glow shape', p => `${p.glowRise} / ${p.glowHold} / ${p.glowFade} s`], ['Stack taps', p => p.stack ? 'on' : 'off'], ['Blast voices', p => (p.blastMix || SUN.blastMix).join(' / ')], ['Glow voices', p => (p.glowMix || SUN.glowMix).join(' / ')]];
 function drawCompare() {
   if (!sel) return;

@@ -25,6 +25,8 @@ Each star gets its own song, shaped in the choir lab and played by the toy. Plan
 - [ ] Tom mixes taps against the choir on the bench: on VY Canis Majoris a tap sits about 20 dB over the choir
 - [x] Sound for the new bodies: cygx1, sgra and qso keys, presets and lab entries; the zoom mix corrects a hole's farther full view (2026-11-24)
 - [ ] Sound for each next body the objects session announces; snd.drop and snd.tear for a star falling into a hole (bean mhpz)
+- [x] Swell follows the Turn speed (swTurn, Beta Lyrae): setTurn in choir and sound, a Turn control in the lab (Tom, 2026-11-24)
+- [ ] main.js passes 10 ** turn.lr to snd.mixLayers as a fourth argument (visuals chat)
 - [ ] Tom listens before any push
 
 ## Findings, 2026-11-24
