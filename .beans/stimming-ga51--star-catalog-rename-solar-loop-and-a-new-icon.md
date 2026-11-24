@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T22:17:42Z
-updated_at: 2026-11-24T22:21:08Z
+updated_at: 2026-11-24T22:22:46Z
 parent: stimming-e35i
 ---
 
@@ -16,3 +16,7 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 - [x] Icon round 2 on the icon sheet: Current (round 1's A), A (an open star catalog, a star rising off its spine), D (the closed catalog as the block, the star over it)
 - [ ] Tom picks on the sheet; the pick goes live on the menu
 - [ ] Tom looks at it live
+
+## Round 3 (Tom, 2026-11-24: "take catalog a lil less literally ... a nice sun flared helios")
+
+- [x] Helios: A, a glossy gold sun with an anamorphic streak and two lens ghosts; D, the flared sun over a dark glass block; round 2's emblems take its number
