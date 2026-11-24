@@ -295,6 +295,7 @@ export function initPage({ id, silent = false, home = '../index.html', bar = nul
  * @property {string} label
  * @property {boolean} [persist] Stores the value and restores it on load.
  * @property {string} [group] A sheet heading; a new value starts a new section.
+ * @property {string} [hint] One line on what the row does; the row shows it as its tooltip.
  */
 /**
  * @typedef {RowBase & { type: 'slider', value: number, min?: number, max?: number, step?: number, onInput?: (value: number) => void }} SliderRow
@@ -593,6 +594,17 @@ function restore(row, key) {
  * @returns {{ el: HTMLElement, handle: ControlHandle }}
  */
 function makeRow(row, key, layer) {
+  const r = buildRow(row, key, layer);
+  if (row.hint) r.el.title = row.hint;
+  return r;
+}
+/**
+ * @param {SettingRow} row
+ * @param {string} key
+ * @param {HTMLElement} layer
+ * @returns {{ el: HTMLElement, handle: ControlHandle }}
+ */
+function buildRow(row, key, layer) {
   const save = v => { if (row.persist) store.set(key, row.type === 'toggle' ? (v ? '1' : '0') : String(v)); };
   // A link row opens another page; it holds no value.
   if (row.type === 'link') {
