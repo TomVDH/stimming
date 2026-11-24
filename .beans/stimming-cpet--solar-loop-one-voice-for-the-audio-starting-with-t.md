@@ -31,6 +31,8 @@ Own Solar loop's audio (solarloop/sound.js). Tom's asks: crisp angelic organ-cho
 - [ ] Tom listens to every star in the toy and tunes in the lab
 - [x] Taps no longer pile up: tap bus with one glow, one blast, a soft limiter; gentler glow fade (Tom: louder and louder)
 - [x] Lab restructured (Tom: overwhelmed): key and voices first, live updates, voice count, star JSON
+- [x] Lab: toy actions in a pinned bar, harmony switch, version menu (synth draft, first draft, organ choir), plain STE copy (Tom)
+- [ ] Tom decides the giants' level: the loudness match put them 8 to 11 dB down, under the rumble (Tom: they were rawer before)
 - [ ] Tom refines the tap sounds per star
 - [ ] Bring the side-branch sounds (eggs, micro) into the same voice
 - [ ] Doc Sound section true

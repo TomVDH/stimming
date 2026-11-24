@@ -9,250 +9,320 @@
 <title>Solar loop choir lab</title>
 <link rel="stylesheet" href="../shared/fonts/fonts.css">
 <style>
-/* Solar loop choir lab: tune each star's choir and tap live, over the space rumble. */
+/* Solar loop choir lab: hear each star as in the toy, then shape and save its sound. */
 :root {
-  --ink: oklch(0.94 0.01 260);
-  --dim: oklch(0.74 0.02 260);
-  --mute: oklch(0.58 0.02 260);
+  --ink: oklch(0.95 0.01 260);
+  --dim: oklch(0.76 0.02 260);
+  --mute: oklch(0.6 0.02 260);
+  --bg: oklch(0.13 0.01 260);
   --panel: oklch(0.17 0.015 260);
-  --hover: oklch(0.21 0.015 260);
-  --on: oklch(0.27 0.04 80);
+  --well: oklch(0.12 0.01 260);
+  --hover: oklch(0.22 0.015 260);
+  --on: oklch(0.28 0.05 80);
   --line: oklch(0.36 0.02 260 / 0.7);
   --accent: oklch(0.82 0.13 80);
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: oklch(0.13 0.01 260); color: var(--ink); font: 14px/1.4 Gabarito, system-ui, sans-serif; }
-main { max-width: 760px; margin: 0 auto; padding: 24px 16px 64px; position: relative; }
-h1 { font-size: 20px; font-weight: 500; margin: 0 0 4px; }
-.lede { color: var(--dim); margin: 0 0 16px; }
-button, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 Gabarito, system-ui, sans-serif; }
+button, select { font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer; }
 button:hover, select:hover { background: var(--hover); }
-button.big { padding: 8px 16px; border-color: var(--accent); }
-input[type=range] { width: 100%; accent-color: var(--accent); }
-input[type=checkbox] { accent-color: var(--accent); }
-.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.tg { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); padding: 3px 6px; border-radius: 8px; }
-.ctl { display: grid; grid-template-columns: 150px minmax(0, 1fr) 72px; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); margin: 2px 0; padding: 3px 6px; border-radius: 8px; }
-.ctl:hover, .tg:hover { background: var(--hover); }
-.ctl b { font-weight: 500; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; transition: color 0.4s; }
-.ctl b.flash { color: var(--accent); transition: none; }
-.ctl label { display: flex; align-items: center; gap: 6px; }
-.ctl.off input[type=range] { opacity: 0.3; }
-.re { color: var(--mute); font-size: 11px; margin-left: 4px; }
-.stars { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 6px; }
-.star { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; text-align: left; padding: 8px 10px; }
-.star.on { background: var(--on); border-color: var(--accent); }
-.star small { color: var(--mute); font-size: 12px; }
+button.go { border-color: var(--accent); }
+button.go.on { background: var(--on); }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
+h2 { font-size: 15px; font-weight: 500; margin: 0; }
+p { margin: 0; }
+.mute { color: var(--mute); }
+.dim { color: var(--dim); }
+
+/* The pinned bar: what plays now, and every action a toy visitor has. */
+.top { position: sticky; top: 0; z-index: 10; background: oklch(0.15 0.012 260 / 0.97); border-bottom: 1px solid var(--line); backdrop-filter: blur(6px); }
+.top .in { max-width: 1180px; margin: 0 auto; padding: 10px 16px; display: grid; gap: 8px; }
+.now { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.now b { font-weight: 500; font-size: 16px; }
+.now span { color: var(--dim); font-size: 13px; }
+.now span i { font-style: normal; color: var(--ink); }
+.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.acts .sep { width: 1px; height: 24px; background: var(--line); margin: 0 4px; }
+.zoom { display: flex; align-items: center; gap: 8px; min-width: 240px; flex: 1; font-size: 13px; color: var(--dim); }
+.zoom input { flex: 1; }
+.sw { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dim); padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.sw:hover { background: var(--hover); }
+#busy { color: var(--accent); font-size: 12px; visibility: hidden; }
+
+/* Two columns: pick on the left, shape on the right. */
+.page { max-width: 1180px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+.card + .card { margin-top: 12px; }
+.step { font-size: 11px; color: var(--accent); letter-spacing: 0.04em; margin-bottom: 2px; }
+.intro { color: var(--dim); font-size: 13px; margin: 4px 0 10px; }
 .grp { font-size: 12px; color: var(--mute); margin: 12px 0 4px; }
-.card { margin-top: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-.hear { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
-.hear div { background: oklch(0.13 0.01 260); border-radius: 8px; padding: 8px 10px; }
-.hear small { display: block; color: var(--mute); font-size: 11px; }
-.hear b { font-weight: 500; font-size: 15px; }
-details { border-top: 1px solid var(--line); padding: 8px 0 4px; }
-details:first-of-type { border-top: 0; }
-summary { cursor: pointer; font-weight: 500; padding: 4px 0; }
-summary small { color: var(--mute); font-weight: 400; margin-left: 6px; }
-#busy { font-size: 12px; color: var(--accent); visibility: hidden; margin-left: 8px; }
-#tip { position: absolute; left: 16px; right: 16px; z-index: 5; background: oklch(0.24 0.02 260); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.5; pointer-events: none; visibility: hidden; }
-textarea { width: 100%; min-height: 140px; margin-top: 8px; font: 12px/1.4 ui-monospace, monospace; color: var(--ink); background: oklch(0.11 0.01 260); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
-@media (max-width: 520px) { .ctl { grid-template-columns: 112px minmax(0, 1fr) 60px; } }
+.star { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; text-align: left; padding: 8px 10px; margin-bottom: 4px; }
+.star small { color: var(--mute); font-size: 12px; }
+.star .k { font-variant-numeric: tabular-nums; color: var(--dim); font-size: 12px; text-align: right; }
+.star.on { background: var(--on); border-color: var(--accent); }
+.mixrow { display: grid; grid-template-columns: 110px minmax(0, 1fr) 44px; align-items: center; gap: 8px; font-size: 13px; color: var(--dim); margin: 6px 0; }
+.mixrow b { font-weight: 500; color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* The shaping sections. */
+.head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: start; }
+.sum { font-size: 13px; color: var(--dim); margin-top: 4px; }
+.tag { display: inline-block; font-size: 11px; color: var(--accent); border: 1px solid oklch(0.82 0.13 80 / 0.5); border-radius: 6px; padding: 0 6px; margin-left: 6px; vertical-align: 2px; }
+.sec { border-top: 1px solid var(--line); padding: 12px 0 4px; }
+.sec:first-of-type { border-top: 0; }
+.sec > h2 { display: flex; align-items: baseline; gap: 8px; }
+.row { display: grid; grid-template-columns: 200px minmax(0, 1fr) 128px; align-items: center; gap: 6px 14px; padding: 7px 8px; border-radius: 8px; }
+.row:hover { background: var(--hover); }
+.row .l { font-size: 13px; }
+.row .l small { display: block; color: var(--mute); font-size: 12px; line-height: 1.35; }
+.row .ends { display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); margin-top: 2px; }
+.row .v { text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; background: none; border: 0; padding: 2px 0; cursor: default; color: var(--ink); }
+.row .v.mod { color: var(--accent); cursor: pointer; }
+.row .v.mod::after { content: ' ↺'; }
+.row.off .c { opacity: 0.35; }
+.chip { font-size: 10px; color: var(--mute); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; margin-left: 6px; vertical-align: 1px; white-space: nowrap; }
+.chip.all { color: oklch(0.8 0.08 220); border-color: oklch(0.6 0.08 220 / 0.6); }
+details.sec > summary { cursor: pointer; list-style: none; }
+details.sec > summary::before { content: '▸ '; color: var(--mute); }
+details.sec[open] > summary::before { content: '▾ '; }
+.legend { font-size: 12px; color: var(--mute); display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+textarea { width: 100%; min-height: 160px; margin-top: 8px; font: 12px/1.4 ui-monospace, monospace; color: var(--ink); background: var(--well); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+@media (max-width: 860px) {
+  .page { grid-template-columns: 1fr; }
+  .row { grid-template-columns: minmax(0, 1fr) 104px; }
+  .row .c { grid-column: 1 / -1; grid-row: 2; }
+}
 </style>
 </head>
 <body>
-<main id="wrap">
-<div id="tip"></div>
-<h1>Solar loop choir lab</h1>
-<p class="lede">Pick a star. Sliders change the sound as you move them. Settings marked ↻ restart the choir, in under a second.</p>
-<div class="bar">
-  <button id="stop">Stop</button>
-  <label class="tg" data-tip="chr"><input type="checkbox" id="chr" checked> Star character</label>
-</div>
-<div class="ctl" data-tip="vol">Volume <input type="range" id="vol" min="0" max="1.5" step="0.05" value="1"><b id="o_vol">1.00</b></div>
-<div class="ctl" data-tip="rum">Space rumble <input type="range" id="rum" min="0" max="2.5" step="0.05" value="1"><b id="o_rum">1.00</b></div>
-<div class="ctl" data-tip="glue">Rumble in reverb <input type="range" id="glue" min="0" max="1" step="0.05" value="0.3"><b id="o_glue">0.30</b></div>
-<div id="list"></div>
-
-<div class="card">
-  <div class="bar" style="justify-content:space-between"><b id="tname" style="font-weight:500">No star yet</b><span id="busy">Applying…</span></div>
-  <div class="hear" style="margin-top:8px">
-    <div data-tip="h_key"><small>Key</small><b id="h_key">–</b></div>
-    <div data-tip="h_scale"><small>Scale</small><b id="h_scale">–</b></div>
-    <div data-tip="h_lead"><small>Melody note</small><b id="h_lead">–</b></div>
-    <div data-tip="h_voices"><small>Choir voices</small><b id="h_voices">–</b></div>
-    <div data-tip="h_tap"><small>Tap voices</small><b>6 + 4</b></div>
+<header class="top"><div class="in">
+  <div class="now">
+    <b id="n_star">Select a star</b>
+    <span>Key <i id="n_key">–</i></span>
+    <span>Scale <i id="n_scale">–</i></span>
+    <span>Melody note <i id="n_lead">–</i></span>
+    <span>Choir voices <i id="n_voices">–</i></span>
+    <span id="busy">Restarting</span>
   </div>
-</div>
+  <div class="acts">
+    <button class="go" id="play" title="Starts and stops the choir and the space rumble of this star.">▶ Play</button>
+    <button class="go" id="tap" title="Plays a flare: a brass blast, then a glow chord. 10 new voices join the choir in its key.">Tap (flare)</button>
+    <button id="lift" title="Plays a prominence that lifts off: the brass blast only, longer.">Lift</button>
+    <span class="sep"></span>
+    <label class="sw" title="Sets the notes of the chord and the melody, for all stars. Alternating: the chord changes between Ionian and pentatonic every 10 to 12 s.">Harmony <select id="harm"><option value="cross">Ionian and pentatonic, alternating</option><option value="1">Pentatonic: 5 notes, open</option><option value="0">Ionian: major scale, bright</option><option value="2">Harmonic minor: raised 7th, dark</option><option value="3">Harmonic series: overtones, not tempered</option></select></label>
+    <span class="sep"></span>
+    <label class="zoom" title="Sets the zoom of the toy. Near makes the rumble louder. Far makes it quieter.">Zoom <span class="mute">far</span><input type="range" id="zoom" min="-1.4" max="1" step="0.05" value="0"><span class="mute">near</span><b id="o_zoom" style="font-weight:500;min-width:72px">full star</b></label>
+    <span class="sep"></span>
+    <label class="sw" title="Turns the choir on or off, as the Sound settings of the toy do."><input type="checkbox" id="humOn" checked> Choir</label>
+    <label class="sw" title="Turns the space rumble on or off, as the Sound settings of the toy do."><input type="checkbox" id="rumOn" checked> Rumble</label>
+    <span class="sep"></span>
+    <button id="tick" title="Plays one pulsar tick. The toy plays it when a beam of the neutron star passes.">Pulsar tick</button>
+    <button id="tele" title="Plays the Carrington storm of 1859: telegraph clicks and sparks.">Telegraph</button>
+    <button id="dim" title="Plays the Great Dimming of Betelgeuse: a chord that falls.">Dimming</button>
+  </div>
+</div></header>
 
-<div class="card">
-  <details open><summary>Key and voices <small>what notes, how many singers</small></summary>
-    <div class="ctl" data-tip="key">Key <span class="re">↻</span><input type="range" id="k_key" min="-12" max="12" step="1"><b id="o_key"></b></div>
-    <div class="ctl" data-tip="scale">Scale <span class="re">↻</span><select id="scale"><option value="cross">Crossfade Ionian and pentatonic</option><option value="1">Hold pentatonic</option><option value="0">Hold Ionian</option><option value="2">Hold harmonic minor</option><option value="3">Hold harmonic series</option></select><b></b></div>
-    <div class="ctl" data-tip="oct0">High voices <input type="range" id="k_oct0" min="0" max="1.2" step="0.05"><b id="o_oct0"></b></div>
-    <div class="ctl" data-tip="oct1">Middle voices <input type="range" id="k_oct1" min="0" max="1.2" step="0.05"><b id="o_oct1"></b></div>
-    <div class="ctl" data-tip="oct2">Low voices <input type="range" id="k_oct2" min="0" max="1.2" step="0.05"><b id="o_oct2"></b></div>
-    <div class="ctl" data-tip="uni">Voices per note <span class="re">↻</span><select id="uni"><option value="1">1, clean</option><option value="3">3, thick</option></select><b></b></div>
-    <div class="ctl" id="c_det" data-tip="det">Spread (cents) <input type="range" id="k_det" min="1" max="30" step="1"><b id="o_det"></b></div>
-  </details>
-  <details open><summary>Tone <small>what instrument, how bright</small></summary>
-    <div class="ctl" data-tip="wave">Sound <span class="re">↻</span><select id="k_wave"></select><b></b></div>
-    <div class="ctl" data-tip="voice">Choir or instrument <input type="range" id="k_voice" min="0" max="1" step="0.05"><b id="o_voice"></b></div>
-    <div class="ctl" data-tip="vowel">Vowel oo to ee <input type="range" id="k_vowel" min="0.55" max="1.6" step="0.05"><b id="o_vowel"></b></div>
-    <div class="ctl" data-tip="bright">Brightness <input type="range" id="k_bright" min="0.3" max="2" step="0.05"><b id="o_bright"></b></div>
-    <div class="ctl" data-tip="gain">Loudness trim <input type="range" id="k_gain" min="0.03" max="2" step="0.01"><b id="o_gain"></b></div>
-    <div class="bar" style="margin:4px 6px"><button id="match" data-tip="match">Match loudness to the Sun</button></div>
-  </details>
-  <details open><summary>Space <small>how near, how big the room</small></summary>
-    <div class="ctl" data-tip="dist">Distance <input type="range" id="k_dist" min="0" max="1" step="0.05"><b id="o_dist"></b></div>
-    <div class="ctl" data-tip="rev">Room size (s) <span class="re">↻</span><input type="range" id="k_rev" min="3" max="14" step="0.5"><b id="o_rev"></b></div>
-    <div class="ctl" data-tip="mix">Echo amount <input type="range" id="k_mix" min="0.3" max="2" step="0.05"><b id="o_mix"></b></div>
-    <div class="ctl" data-tip="width">Width <input type="range" id="k_width" min="0.5" max="2" step="0.05"><b id="o_width"></b></div>
-  </details>
-  <details open><summary>Movement <small>what moves, how fast</small></summary>
-    <div class="bar" style="margin:2px 0 4px">
-      <label class="tg" data-tip="melody"><input type="checkbox" id="melody" checked> Melody <span class="re">↻</span></label>
-      <label class="tg" data-tip="drift"><input type="checkbox" id="drift" checked> Pitch drift <span class="re">↻</span></label>
-      <label class="tg" data-tip="swell"><input type="checkbox" id="swell" checked> Level swell <span class="re">↻</span></label>
+<div class="page">
+  <aside>
+    <div class="card">
+      <div class="step">STEP 1</div>
+      <h2>Star</h2>
+      <p class="intro">The size of a star sets its key. A large star sings low. The tag shows the type of sound.</p>
+      <div id="list"></div>
     </div>
-    <div class="ctl" data-tip="step">Melody step (s) <input type="range" id="k_step" min="3" max="16" step="0.5"><b id="o_step"></b></div>
-    <div class="ctl" data-tip="swD">Swell depth <input type="range" id="k_swD" min="0" max="0.5" step="0.01"><b id="o_swD"></b></div>
-    <div class="ctl" data-tip="swR">Swell speed (Hz) <input type="range" id="k_swR" min="0.02" max="0.6" step="0.01"><b id="o_swR"></b></div>
-  </details>
-  <details open><summary>Tap <small>the flare's blast and glow</small></summary>
-    <div class="bar" style="margin:2px 6px 6px"><button class="big" id="tap" data-tip="tap">Tap (flare)</button><button id="lift" data-tip="lift">Lift</button></div>
-    <div class="ctl" data-tip="blastWave">Blast sound <select id="k_blastWave"></select><b></b></div>
-    <div class="ctl" data-tip="blastLvl">Blast level <input type="range" id="k_blastLvl" min="0" max="2" step="0.05"><b id="o_blastLvl"></b></div>
-    <div class="ctl" data-tip="glowWave">Glow sound <select id="k_glowWave"></select><b></b></div>
-    <div class="ctl" data-tip="chord">Glow chord <select id="k_chord"><option value="major">Major, bright</option><option value="minor">Minor, dark</option><option value="overtone">Overtones, otherworldly</option></select><b></b></div>
-    <div class="ctl" data-tip="glowLvl">Glow level <input type="range" id="k_glowLvl" min="0" max="2" step="0.05"><b id="o_glowLvl"></b></div>
-  </details>
-  <details><summary>Effects <small>metal, synth filter, sci-fi</small></summary>
-    <div class="ctl" data-tip="metal">Metal <input type="range" id="k_metal" min="0" max="1" step="0.05"><b id="o_metal"></b></div>
-    <div class="ctl" data-tip="res">Synth resonance <input type="range" id="k_res" min="0.5" max="12" step="0.5"><b id="o_res"></b></div>
-    <div class="ctl" data-tip="fmot">Synth filter motion <input type="range" id="k_fmot" min="0" max="1" step="0.05"><b id="o_fmot"></b></div>
-    <div id="fxrows"></div>
-  </details>
-  <div class="bar" style="margin-top:12px">
-    <button id="reset" data-tip="reset">Reset this star</button>
-    <button id="json" data-tip="json">Current star JSON</button>
-    <button id="copy" data-tip="copy">Copy tuned presets</button>
-  </div>
-  <textarea id="out" readonly placeholder="JSON and presets appear here."></textarea>
+    <div class="card">
+      <h2>Lab only</h2>
+      <p class="intro">These settings change the lab sound only. A preset does not keep them.</p>
+      <div class="mixrow" title="Sets the lab volume. 1 is the toy volume.">Volume <input type="range" id="vol" min="0" max="1.5" step="0.05" value="1"><b id="o_vol">1.00</b></div>
+      <div class="mixrow" title="Raises or lowers the rumble. 1 is the toy level.">Rumble level <input type="range" id="rum" min="0" max="2.5" step="0.05" value="1"><b id="o_rum">1.00</b></div>
+      <div class="mixrow" title="Sends rumble into the choir echo. Both then sound in one room. The toy uses 0.3.">Rumble in echo <input type="range" id="glue" min="0" max="1" step="0.05" value="0.3"><b id="o_glue">0.30</b></div>
+      <label class="sw" title="Off: all stars play the Sun sound in their own key."><input type="checkbox" id="chr" checked> Own sound per star</label>
+      <label class="sw" title="Plays the preset in choir.js. Your changes stay."><input type="checkbox" id="orig"> Saved preset, not my changes</label>
+    </div>
+  </aside>
+
+  <main>
+    <div class="card">
+      <div class="step">STEP 2</div>
+      <div class="head">
+        <div>
+          <h2 id="t_name">Sound</h2>
+          <p class="sum" id="t_sum">Select a star. Its settings show here.</p>
+        </div>
+        <div class="acts">
+          <label class="sw" title="Plays an older sound of this star. A change starts from the version you hear.">Version <select id="ver"><option value="now">Now: choir.js</option><option value="loud">Synth draft: no loudness match</option><option value="draft">First draft: no synths</option><option value="organ">Organ choir: before 24 November</option></select></label>
+          <button id="reset" title="Sets all settings of this star back to the saved preset.">Reset this star</button>
+        </div>
+      </div>
+      <p class="sum" id="verNote" style="color:var(--accent)"></p>
+      <div id="secs"></div>
+    </div>
+    <div class="card">
+      <div class="step">STEP 3</div>
+      <h2>Save</h2>
+      <p class="intro">Copy your changes. Paste them into VOICES in solarloop/choir.js, or give them to Claude.</p>
+      <div class="acts">
+        <button id="copy" title="Copies all changed stars as preset lines for choir.js.">Copy changed stars</button>
+        <button id="json" title="Shows all settings of the selected star as JSON.">This star as JSON</button>
+      </div>
+      <textarea id="out" readonly placeholder="Output shows here."></textarea>
+    </div>
+  </main>
 </div>
-</main>
+
 <script type="module">
-import { choir, tapBus, structural, keyed, VOICES, SUN, FX, WAVES, TAP_WAVES, renderBed, LOOP } from './choir.js';
-import { ROOT } from './sound.js';
+import { choir, blast, tapBus, structural, keyed, VOICES, SUN, FX, WAVES, TAP_WAVES, renderBed, LOOP } from './choir.js';
+import { ROOT, rumbleAt, makeSound } from './sound.js';
 import { CHART } from './chart.js';
 
 const NAMES = { zetaoph: 'Zeta Ophiuchi', regulus: 'Regulus', vega: 'Vega', sirius: 'Sirius', procyon: 'Procyon', sun: 'Sun', epseri: 'Epsilon Eridani', proxima: 'Proxima Centauri', luhman: 'Luhman 16', wise: 'WISE 0855', ttauri: 'T Tauri', arcturus: 'Arcturus', rigel: 'Rigel', betelgeuse: 'Betelgeuse', vycma: 'VY Canis Majoris', siriusb: 'Sirius B', neutron: 'Neutron star' };
 const GROUPS = [['Main sequence', ['zetaoph', 'regulus', 'vega', 'sirius', 'procyon', 'sun', 'epseri', 'proxima']], ['Brown dwarfs and young', ['luhman', 'wise', 'ttauri']], ['Giants', ['arcturus', 'rigel', 'betelgeuse', 'vycma']], ['Remnants', ['siriusb', 'neutron']]];
-const TIP = {
-  chr: 'On: each star has its own sound. Off: every star uses the Sun\'s sound, only in its own key.',
-  vol: 'Overall loudness of this lab. 1 matches the toy.',
-  rum: 'The deep, constant hum of space under the choir. 1 is the toy\'s level.',
-  glue: 'Sends some of the rumble into the choir\'s echo, so both sound like one place. The toy uses 0.3.',
-  h_key: 'The note the choir is built on. The star\'s size sets it: bigger stars sit lower.',
-  h_scale: 'The scale the chord and melody use right now.',
-  h_lead: 'The note the top voice sings right now.',
-  h_voices: 'How many voices sing at once: chord notes plus the melody, times the octaves, times voices per note.',
-  h_tap: 'A tap adds new voices on top of the choir: 6 in the brass blast, then 4 in the glow chord.',
-  key: 'Moves the whole star up or down in semitones: choir, tap and rumble together. 0 is the star\'s home key.',
-  scale: 'Which notes the chord and melody use. Crossfade: every 10 to 12 s the chord blends between Ionian (bright, resolved) and pentatonic (open, floaty). Hold keeps one: harmonic minor is dark and exotic; harmonic series is the natural overtones of one note, otherworldly.',
-  oct0: 'How loud the highest of the three octaves sings. 0 silences it.',
-  oct1: 'How loud the middle octave sings, one octave down.',
-  oct2: 'How loud the lowest octave sings, two octaves down. More gives weight.',
-  uni: 'How many singers share each note. 1: one clean voice. 3: three voices slightly apart, a big, thick pad.',
-  det: 'With 3 voices per note: how far apart they sit. Small: thick. Large: a slow, uneasy shimmer.',
-  wave: 'The raw sound. Saw: buzzy, voice-like. Organ: pipe organ. Reed: hollow, clarinet-like. Flute: soft, pure. Pulse: thin, nasal analog synth. FM: glassy, cold, metallic.',
-  voice: '1: a choir singing "ah". 0: the bare instrument. In between blends both.',
-  vowel: 'Moves the singing from a dark "oo" (left) through "ah" (1) to a bright "ee" (right).',
-  bright: 'Treble. Left: muffled. Right: crisp and airy.',
-  gain: 'This star\'s loudness. Match loudness sets it so the star sits as loud as the Sun.',
-  match: 'Renders this star and the Sun offline and sets the loudness trim so both sound equally loud. Takes a few seconds.',
-  dist: 'How far away it sounds. Higher: quieter direct sound, more echo, less treble.',
-  rev: 'How long the echo rings: the size of the room.',
-  mix: 'How much echo against direct sound.',
-  width: 'How wide the sound spreads left to right. 1 is as built.',
-  melody: 'The top voice that moves note to note. Off: the chord holds still.',
-  drift: 'A tiny, slow up-and-down in pitch, 3 cents. Off: dead steady pitch.',
-  swell: 'A slow breathing in loudness. Off: steady volume.',
-  step: 'Seconds between melody notes. Longer is calmer.',
-  swD: 'How much the loudness breathes in and out.',
-  swR: 'How fast the loudness breathes. 0.12 is one breath every 8 s.',
-  tap: 'Plays a flare: the brass blast, then the glow chord swelling for about 5 s. Same as tapping the star in the toy.',
-  lift: 'Plays a prominence lifting off: the blast alone, longer.',
-  blastWave: 'The blast\'s sound. Saw: brassy, a horn section. Square: hollow, harder. Triangle and sine: a softer, deeper boom.',
-  blastLvl: 'How loud the blast is on this star. Changes the next tap.',
-  glowWave: 'The glow chord\'s sound. Triangle: soft, warm. Sine: pure, glassy. Saw and square: richer, synth-like.',
-  chord: 'The glow chord\'s notes. Major: bright. Minor: darker. Overtones: from one note\'s natural overtones; otherworldly.',
-  glowLvl: 'How loud the glow chord is on this star. Changes the next tap.',
-  metal: 'Mixes in a clangy, bell-like copy. Higher sounds more robotic.',
-  res: 'A peak at the edge of the synth filter. Higher: a squelchy, whistling synth edge.',
-  fmot: 'The synth filter slowly opens and closes, once every 20 s.',
-  machine: 'A ringing resonance like sound in a metal pipe, or a robot voice.',
-  sweep: 'A slow swooshing sweep. The classic spaceship texture.',
-  screech: 'A thin, whistling high peak that slowly roams, like a far radio whistle.',
-  dark: 'Cuts the treble hard. The sound sinks into shadow.',
-  radio: 'Squeezes the sound into a narrow band, like a signal from far away.',
-  echo: 'Long repeats that bounce left and right and fade away.',
-  reset: 'Puts this star back to its preset in choir.js.',
-  json: 'Shows every setting of the selected star as JSON, tuned or not.',
-  copy: 'Writes every tuned star as a preset line for VOICES in choir.js, and copies it.',
-};
-const SLIDERS = ['key', 'oct0', 'oct1', 'oct2', 'det', 'voice', 'vowel', 'bright', 'gain', 'dist', 'rev', 'mix', 'width', 'step', 'swD', 'swR', 'blastLvl', 'glowLvl', 'metal', 'res', 'fmot'];
-const SELECTS = ['wave', 'blastWave', 'glowWave', 'chord'];
-const DIG = { key: 0, det: 0, step: 1, rev: 1, res: 1 };
 const $ = id => document.getElementById(id);
-const clone = p => ({ ...p, oct: [...p.oct], fx: JSON.parse(JSON.stringify(p.fx)) });
 const NN = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
 const note = f => { const n = Math.round(12 * Math.log2(f / 440) + 69); return NN[n % 12] + (Math.floor(n / 12) - 1); };
-const getK = (p, k) => k.startsWith('oct') ? p.oct[+k[3]] : p[k];
-const setK = (p, k, v) => { if (k.startsWith('oct')) p.oct[+k[3]] = v; else p[k] = v; };
+const pct = v => Math.round(v * 100) + '%';
+const db = v => v <= 0 ? 'off' : (v >= 1 ? '+' : '') + (20 * Math.log10(v)).toFixed(1) + ' dB';
+const clone = p => ({ ...p, oct: [...p.oct], fx: JSON.parse(JSON.stringify(p.fx)) });
 
-for (const [w, n] of Object.entries(WAVES)) $('k_wave').add(new Option(n, w));
-for (const id of ['k_blastWave', 'k_glowWave']) for (const [w, n] of Object.entries(TAP_WAVES)) $(id).add(new Option(n, w));
-for (const [k, n] of FX) {
-  const r = document.createElement('div');
-  r.className = 'ctl'; r.dataset.tip = k; r.id = 'c_' + k;
-  r.innerHTML = `<label><input type="checkbox" id="f_${k}"> ${n} <span class="re">↻</span></label><input type="range" id="a_${k}" min="0.05" max="1" step="0.05"><b id="q_${k}"></b>`;
-  $('fxrows').append(r);
+// Every control: where it lives, its words, its range and how its value reads.
+// `motion` rows apply to every star; `restart` rows rebuild the choir.
+const SECS = [
+  { title: 'Key and voices', intro: 'Sets the key and the number of singers. Harmony is in the top bar.', rows: [
+    { k: 'key', label: 'Key', help: 'Moves choir, tap and rumble up or down.', min: -12, max: 12, step: 1, ends: ['lower', 'higher'], restart: 1, show: (v, id) => `${note(rootOf(id))}  ${v ? (v > 0 ? '+' : '') + v : 'home'}` },
+    { k: 'oct0', label: 'High singers', help: 'The top octave.', min: 0, max: 1.2, step: 0.05, ends: ['off', 'full'], show: pct },
+    { k: 'oct1', label: 'Middle singers', help: 'One octave down.', min: 0, max: 1.2, step: 0.05, ends: ['off', 'full'], show: pct },
+    { k: 'oct2', label: 'Low singers', help: 'Two octaves down. Gives weight.', min: 0, max: 1.2, step: 0.05, ends: ['off', 'full'], show: pct },
+    { k: 'uni', label: 'Singers per note', help: 'Three voices per note make a thicker sound.', restart: 1, options: [['1', '1: clean'], ['3', '3: thick']] },
+    { k: 'det', label: 'Spread', help: 'Distance between the three voices.', min: 1, max: 30, step: 1, ends: ['tight', 'wide, beating'], show: v => v + ' cents', need: p => p.det > 0 },
+  ] },
+  { title: 'Tone', intro: 'Sets the instrument and its colour.', rows: [
+    { k: 'wave', label: 'Instrument', help: 'Source sound of the choir.', restart: 1, options: Object.entries(WAVES) },
+    { k: 'voice', label: 'Singing', help: 'How much vowel shape the sound has.', min: 0, max: 1, step: 0.05, ends: ['instrument', 'choir'], show: v => v >= 1 ? 'choir' : v <= 0 ? 'instrument' : pct(v) + ' choir' },
+    { k: 'vowel', label: 'Vowel', help: 'Shape of the vowel.', min: 0.55, max: 1.6, step: 0.05, ends: ['dark "oo"', 'bright "ee"'], show: v => (v < 0.85 ? '"oo"' : v < 1.15 ? '"ah"' : '"ee"') + '  ' + v.toFixed(2), need: p => p.voice > 0 },
+    { k: 'bright', label: 'Brightness', help: 'Amount of treble.', min: 0.3, max: 2, step: 0.05, ends: ['dull', 'bright'], show: v => '×' + v.toFixed(2) },
+  ] },
+  { title: 'Space', intro: 'Sets the distance of the star and the size of its room.', rows: [
+    { k: 'dist', label: 'Distance', help: 'Far: quieter, duller, more echo.', min: 0, max: 1, step: 0.05, ends: ['near', 'far'], show: v => v < 0.2 ? 'near' : v < 0.6 ? 'middle' : 'far' },
+    { k: 'rev', label: 'Room size', help: 'Length of the echo.', min: 3, max: 14, step: 0.5, ends: ['small', 'large'], restart: 1, show: v => v.toFixed(1) + ' s' },
+    { k: 'mix', label: 'Echo level', help: 'Echo against direct sound.', min: 0.3, max: 2, step: 0.05, ends: ['dry', 'wet'], show: v => '×' + v.toFixed(2) },
+    { k: 'width', label: 'Width', help: 'Stereo width.', min: 0.5, max: 2, step: 0.05, ends: ['narrow', 'wide'], show: v => '×' + v.toFixed(2) },
+  ] },
+  { title: 'Movement', intro: 'Sets what changes over time. The switches apply to all stars.', rows: [
+    { k: 'melody', label: 'Melody', help: 'A top voice moves from note to note.', motion: 1, restart: 1, check: 1 },
+    { k: 'drift', label: 'Pitch drift', help: 'Pitch moves up and down by 3 cents.', motion: 1, restart: 1, check: 1 },
+    { k: 'swell', label: 'Swell', help: 'Volume rises and falls slowly.', motion: 1, restart: 1, check: 1 },
+    { k: 'step', label: 'Melody speed', help: 'Time between melody notes.', min: 3, max: 16, step: 0.5, ends: ['fast', 'slow'], show: v => 'every ' + v.toFixed(1) + ' s' },
+    { k: 'swD', label: 'Swell depth', help: 'Size of the volume change.', min: 0, max: 0.5, step: 0.01, ends: ['none', 'large'], show: pct },
+    { k: 'swR', label: 'Swell speed', help: 'Time for one swell.', min: 0.02, max: 0.6, step: 0.01, ends: ['slow', 'fast'], show: v => 'every ' + (1 / v).toFixed(1) + ' s' },
+  ] },
+  { title: 'Tap sound', intro: 'A tap plays a brass blast, then a glow chord. Both add new voices in the key of the choir. Use Tap in the top bar to hear a change.', rows: [
+    { k: 'blastWave', label: 'Blast instrument', help: 'Source sound of the blast.', options: Object.entries(TAP_WAVES) },
+    { k: 'blastLvl', label: 'Blast level', help: 'Level against the Sun blast.', min: 0, max: 2, step: 0.05, ends: ['off', 'double'], show: db },
+    { k: 'glowWave', label: 'Glow instrument', help: 'Source sound of the glow chord.', options: Object.entries(TAP_WAVES) },
+    { k: 'chord', label: 'Glow chord', help: 'Notes of the glow chord.', options: [['major', 'Major: bright'], ['minor', 'Minor: dark'], ['overtone', 'Overtones: not tempered, strange']] },
+    { k: 'glowLvl', label: 'Glow level', help: 'Level against the Sun glow.', min: 0, max: 2, step: 0.05, ends: ['off', 'double'], show: db },
+  ] },
+  { title: 'Level', intro: 'Each star must be as loud as the Sun. Match sets the level for you.', rows: [
+    { k: 'gain', label: 'Level', help: 'Level of this star.', min: 0.03, max: 2, step: 0.01, ends: ['quieter', 'louder'], show: db, button: ['match', 'Match the Sun'] },
+  ] },
+  { title: 'Effects', intro: 'Adds colour to strange and far stars. The Sun has none.', fold: 1, rows: [
+    { k: 'metal', label: 'Metal', help: 'Adds a ringing, metallic copy.', min: 0, max: 1, step: 0.05, ends: ['off', 'full'], show: v => v ? pct(v) : 'off' },
+    { k: 'res', label: 'Resonance', help: 'Adds a sharp peak to the filter.', min: 0.5, max: 12, step: 0.5, ends: ['smooth', 'sharp'], show: v => v <= 0.5 ? 'off' : v.toFixed(1) },
+    { k: 'fmot', label: 'Filter sweep', help: 'The filter opens and closes every 20 s.', min: 0, max: 1, step: 0.05, ends: ['still', 'deep'], show: v => v ? pct(v) : 'off' },
+    ...FX.map(([k, n]) => ({ k: 'fx.' + k, label: n, help: { machine: 'A metal pipe or robot ring.', sweep: 'A slow phaser sweep.', screech: 'A thin high whistle that moves.', dark: 'Removes the treble.', radio: 'A narrow band, like a far radio.', echo: 'Long repeats that fade.' }[k], min: 0.05, max: 1, step: 0.05, ends: ['light', 'strong'], restart: 1, fx: 1, show: v => pct(v) })),
+  ] },
+];
+
+// Earlier versions, to compare against the presets in choir.js.
+const fxs = o => Object.fromEntries(FX.map(([k]) => [k, o && o[k] != null ? { on: true, amt: o[k] } : { on: false, amt: 0.5 }]));
+const D = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: fxs(o.fx) });
+// The first draft (2026-11-24, inline player): no synths, no loudness match.
+const DRAFT = {
+  sun: SUN,
+  zetaoph: D({ voice: 0.5, vowel: 1.3, metal: 0.3, bright: 1.4, step: 9, dist: 0.5, rev: 10, mix: 1.3, width: 1.5, oct: [1, 0.6, 0.6], swR: 0.07, swD: 0.12, fx: { sweep: 0.45, screech: 0.2 } }),
+  regulus: D({ wave: 'square', voice: 0.75, vowel: 1.2, metal: 0.1, bright: 1.3, step: 6, dist: 0.1, width: 1.4, swR: 0.18 }),
+  vega: D({ wave: 'triangle', voice: 0.55, vowel: 1.25, metal: 0.3, bright: 1.25, step: 7, dist: 0.15, width: 1.3, oct: [1, 0.5, 0.4], swD: 0.15 }),
+  sirius: D({ wave: 'organ', voice: 0.6, vowel: 1.2, metal: 0.08, bright: 1.25, step: 7, dist: 0.05, width: 1.2, oct: [1, 0.5, 0.5], swD: 0.15 }),
+  procyon: D({ voice: 0.85, vowel: 1.1, bright: 1.1, step: 7.5, oct: [1, 0.5, 0.55] }),
+  epseri: D({ voice: 0.9, vowel: 0.9, metal: 0.05, bright: 0.9, rev: 6.5, swR: 0.15, swD: 0.25, oct: [1, 0.5, 0.5] }),
+  proxima: D({ wave: 'square', voice: 0.8, vowel: 0.8, bright: 0.75, step: 9, rev: 6, dist: 0.2, oct: [1, 0.5, 0.4], swR: 0.1, swD: 0.25 }),
+  luhman: D({ wave: 'triangle', voice: 0.6, vowel: 0.7, metal: 0.2, bright: 0.6, step: 11, dist: 0.65, rev: 11, mix: 1.5, width: 1.6, oct: [0.8, 0.5, 0.5], swR: 0.05, swD: 0.1, fx: { dark: 0.45, sweep: 0.35 } }),
+  wise: D({ wave: 'triangle', voice: 0.45, vowel: 0.6, metal: 0.25, bright: 0.5, step: 13, dist: 0.85, rev: 13, mix: 1.7, width: 1.8, oct: [0.7, 0.5, 0.6], swR: 0.04, swD: 0.08, fx: { dark: 0.6, echo: 0.5, sweep: 0.3 } }),
+  ttauri: D({ voice: 0.7, vowel: 0.9, metal: 0.12, bright: 0.85, step: 9, dist: 0.55, rev: 10, mix: 1.4, width: 1.7, swR: 0.2, swD: 0.3, fx: { sweep: 0.3, echo: 0.35 } }),
+  arcturus: D({ wave: 'organ', voice: 0.7, vowel: 0.85, bright: 0.8, step: 10, rev: 10, width: 1.3, oct: [1, 0.6, 0.8], swR: 0.08 }),
+  rigel: D({ voice: 0.6, vowel: 1.3, metal: 0.18, bright: 1.3, step: 10, dist: 0.3, rev: 10, mix: 1.2, width: 1.6, oct: [1, 0.6, 0.8], swR: 0.08 }),
+  betelgeuse: D({ wave: 'organ', voice: 0.8, vowel: 0.75, metal: 0.05, bright: 0.7, step: 12, dist: 0.35, rev: 11, mix: 1.2, width: 1.6, oct: [0.9, 0.7, 1], swR: 0.05, swD: 0.3 }),
+  vycma: D({ wave: 'organ', voice: 0.7, vowel: 0.65, metal: 0.15, bright: 0.6, step: 14, dist: 0.7, rev: 12, mix: 1.5, width: 1.8, oct: [0.8, 0.7, 1], swR: 0.04, swD: 0.25, fx: { dark: 0.4, echo: 0.4 } }),
+  siriusb: D({ wave: 'triangle', voice: 0.3, vowel: 1.3, metal: 0.55, bright: 1.3, step: 9, dist: 0.6, rev: 10, mix: 1.5, width: 1.5, oct: [1, 0.4, 0.15], swR: 0.1, swD: 0.1, fx: { machine: 0.4, echo: 0.4 } }),
+  neutron: D({ wave: 'square', voice: 0.15, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 } }),
+};
+const VER_NOTE = {
+  now: '',
+  loud: 'Synth draft: the current settings without the loudness match. Giants and strange stars are 3 to 23 dB louder than the Sun. Taps use the old sound.',
+  draft: 'First draft: choirs, organs, reeds and flutes. No synths. No loudness match. Taps use the old sound.',
+  organ: 'Organ choir: the sound of all stars but the Sun before 24 November. Three organ voices per note and a pentatonic melody. It has no settings. Taps use the old sound.',
+};
+const ver = () => $('ver').value;
+const verP = id => ver() === 'loud' ? { ...VOICES[id], gain: 1 } : ver() === 'draft' ? DRAFT[id] : null;
+const tuned = {};
+const P = id => verP(id) || ($('orig').checked ? VOICES[id] : tuned[id] || ($('chr').checked ? VOICES[id] : { ...SUN }));
+const base = id => $('chr').checked ? VOICES[id] : { ...SUN };
+const rootOf = id => keyed(ROOT[id], P(id));
+const motion = { drift: true, swell: true, melody: true, scale: 'cross' };
+const kind = p => {
+  const synth = p.det > 0 || p.res > 2 || p.wave === 'pulse' || p.wave === 'fm';
+  const far = p.dist >= 0.5;
+  return (synth ? 'synth' : WAVES[p.wave].split(' ')[0].toLowerCase()) + (far ? ', far' : '');
+};
+const getV = (p, r) => r.k.startsWith('oct') ? p.oct[+r.k[3]] : r.fx ? p.fx[r.k.slice(3)].amt : r.k === 'uni' ? (p.det > 0 ? '3' : '1') : r.motion ? motion[r.k] : p[r.k];
+function setV(p, r, v) {
+  if (r.k.startsWith('oct')) p.oct[+r.k[3]] = v;
+  else if (r.fx) { p.fx[r.k.slice(3)].amt = v; p.fx[r.k.slice(3)].on = true; }
+  else if (r.k === 'uni') p.det = v === '3' ? (base(sel).det || 10) : 0;
+  else p[r.k] = v;
 }
 
-const tuned = {};
-const P = id => tuned[id] || ($('chr').checked ? VOICES[id] : { ...SUN });
-const rootOf = id => keyed(ROOT[id], P(id));
+// The star list.
 for (const [g, ids] of GROUPS) {
   const h = document.createElement('div');
   h.className = 'grp'; h.textContent = g;
-  const box = document.createElement('div');
-  box.className = 'stars';
+  $('list').append(h);
   for (const id of ids) {
     const b = document.createElement('button');
-    b.className = 'star'; b.id = 'r_' + id; b.title = CHART[id].cls;
-    b.innerHTML = `<span>${NAMES[id]}</span><small id="w_${id}">${note(rootOf(id))}</small>`;
-    b.onclick = () => play(id);
-    box.append(b);
+    b.className = 'star'; b.id = 'r_' + id;
+    b.innerHTML = `<span>${NAMES[id]}</span><span class="k" id="w_${id}"></span><small>${CHART[id].cls}</small><small class="k" id="t_${id}"></small>`;
+    b.onclick = () => pick(id);
+    $('list').append(b);
   }
-  $('list').append(h, box);
+}
+function listLabels() {
+  for (const id of Object.keys(NAMES)) { $('w_' + id).textContent = note(rootOf(id)); $('t_' + id).textContent = kind(P(id)) + (tuned[id] ? ' · changed' : ''); }
 }
 
-// Tooltips: hover or focus shows the plain words under the control.
-const wrap = $('wrap'), tip = $('tip');
-function showTip(el) {
-  tip.textContent = TIP[el.dataset.tip];
-  tip.style.visibility = 'visible';
-  const wr = wrap.getBoundingClientRect(), er = el.getBoundingClientRect();
-  tip.style.top = (er.bottom - wr.top + 4) + 'px';
-}
-for (const el of document.querySelectorAll('[data-tip]')) {
-  el.addEventListener('mouseenter', () => showTip(el));
-  el.addEventListener('mouseleave', () => { tip.style.visibility = 'hidden'; });
-  el.addEventListener('focusin', () => showTip(el));
-  el.addEventListener('focusout', () => { tip.style.visibility = 'hidden'; });
+// The sections, built from SECS.
+const rows = {};
+for (const s of SECS) {
+  const sec = document.createElement(s.fold ? 'details' : 'div');
+  sec.className = 'sec';
+  sec.innerHTML = s.fold ? `<summary><h2 style="display:inline">${s.title}</h2></summary><p class="intro">${s.intro}</p>` : `<h2>${s.title}</h2><p class="intro">${s.intro}</p>`;
+  for (const r of s.rows) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const chips = (r.restart ? '<span class="chip" title="A change restarts the choir.">↻</span>' : '') + (r.motion ? '<span class="chip all" title="Applies to all stars.">All stars</span>' : '');
+    let c;
+    if (r.options) c = `<select>${r.options.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select>`;
+    else if (r.check) c = `<label class="sw"><input type="checkbox"> on</label>`;
+    else c = `<input type="range" min="${r.min}" max="${r.max}" step="${r.step}"><div class="ends"><span>${r.ends[0]}</span><span>${r.ends[1]}</span></div>`;
+    if (r.fx) c = `<label class="sw" style="padding:0 0 4px"><input type="checkbox" class="fxon"> on</label>` + c;
+    if (r.button) c += `<button id="${r.button[0]}" style="margin-top:6px">${r.button[1]}</button>`;
+    row.innerHTML = `<div class="l">${r.label}${chips}<small>${r.help}</small></div><div class="c">${c}</div><button class="v" title="Changed. Click to undo."></button>`;
+    sec.append(row);
+    rows[r.k] = { r, row, input: row.querySelector('input:not(.fxon), select'), on: row.querySelector('.fxon'), v: row.querySelector('.v') };
+  }
+  $('secs').append(sec);
 }
 
-let ac, out, hallIn, taps, cur = null, sel = null, rum = null, events = [], mode = '', lead = '';
+let ac, out, hallIn, taps, toy, noise, cur = null, sel = null, rum = null, events = [], mode = '', lead = '', near = 0;
 // The toy's output chain: a 0.55 gain into a gentle compressor.
 function init() {
   if (ac) return;
@@ -274,22 +344,76 @@ function init() {
     lp.connect(dl).connect(gn).connect(pn).connect(out);
   }
   taps = tapBus(ac, { out, hall: hallIn });
+  // The toy's own sound for the pulsar, telegraph and dimming.
+  noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+  noise.getChannelData(0).forEach((_, i, a) => { a[i] = Math.random() * 2 - 1; });
+  toy = makeSound({ live: () => ac, out, noise });
   setInterval(tick, 200);
 }
-const motion = () => ({ drift: $('drift').checked, swell: $('swell').checked, melody: $('melody').checked, scale: $('scale').value === 'cross' ? 'cross' : +$('scale').value });
 // A new choir fades in; `quick` is a restart after a change.
 function build(id, quick) {
-  const t = ac.currentTime + 0.03, g = ac.createGain();
+  const t = ac.currentTime + 0.03, g = ac.createGain(), hum = ac.createGain();
+  hum.gain.value = $('humOn').checked ? 1 : 0;
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(1, t + (quick ? 0.5 : 2));
-  g.connect(out);
+  g.connect(hum).connect(out);
   events = [];
-  const os = [];
-  const p = clone(P(id));
-  const v = choir(ac, { t, base: rootOf(id) * 2, p, out: g, os, motion: motion(), live: true, onEvent: e => events.push(e) });
+  const os = [], p = clone(P(id));
+  if (ver() === 'organ' && id !== 'sun') return { id, v: organ(t, ROOT[id] / 2, g, os), g, hum, os, p };
+  const v = choir(ac, { t, base: rootOf(id) * 2, p, out: g, os, motion: { ...motion }, live: true, onEvent: e => events.push(e) });
   v.sing(t + 4);
-  return { id, v, g, os, p };
+  return { id, v, g, hum, os, p };
 }
+// The organ choir the toy sang until 2026-11-24, from git, for comparison.
+// Organ drawbars by harmonic: 8', 4', 2 2/3', 2', 1 3/5', 1 1/3', 1'.
+const BARS = { 1: 1, 2: 0.7, 3: 0.42, 4: 0.5, 5: 0.12, 6: 0.22, 8: 0.18 };
+// "Ah" formants: centre in Hz, width, weight.
+const AH = [[700, 130, 1], [1150, 160, 0.6], [2600, 260, 0.28], [3300, 300, 0.12]];
+const SING = [12, 14, 16, 19, 21, 24, 21, 19, 16, 14];
+function organWave(f) {
+  const N = Math.min(200, Math.max(8, Math.floor(11000 / f))), re = new Float32Array(N + 1), im = new Float32Array(N + 1);
+  for (let h = 1; h <= N; h++) {
+    let vow = 0;
+    for (const [c, w, a] of AH) vow += a * Math.exp(-(((h * f - c) / w) ** 2));
+    im[h] = 0.62 * (BARS[h] || 0) + 0.38 * vow / Math.pow(h, 0.35) + 0.2 / h;
+  }
+  return ac.createPeriodicWave(re, im);
+}
+function organ(t, root, dest, os) {
+  // It sang through the toy's echo hall.
+  const g = ac.createGain();
+  g.connect(dest);
+  const hs = ac.createGain(); hs.gain.value = 0.8;
+  g.connect(hs).connect(hallIn);
+  const ch = ac.createGain(); ch.gain.value = 0.022;
+  const air = ac.createBiquadFilter(); air.type = 'highshelf'; air.frequency.value = 3000; air.gain.value = 3;
+  const top = ac.createBiquadFilter(); top.frequency.value = 9000; top.Q.value = 0.5;
+  ch.connect(air).connect(top).connect(g);
+  const note = (f, amp) => {
+    const vo = ac.createGain(); vo.gain.value = amp; vo.connect(ch);
+    const w = organWave(f), set = [];
+    for (const c of [-7, 0, 7]) { const o = ac.createOscillator(); o.setPeriodicWave(w); o.frequency.value = f; o.detune.value = c; o.connect(vo); o.start(t); os.push(o); set.push(o); }
+    return set;
+  };
+  // A 16' bass, then root, fifth, octave and the major tenth.
+  for (const [m, a] of [[0.5, 0.55], [1, 1], [1.5, 0.7], [2, 0.6], [2.5198, 0.4]]) note(root * m, a);
+  const lead = note(root * 2, 0.5);
+  let step = 0, next = t + 9;
+  return {
+    cv: g, set() {}, voices: () => 18, until: t,
+    // The top voice glides along a pentatonic line, every 7 to 11 s.
+    sing(until) {
+      while (next < until) {
+        step = (step + (Math.random() < 0.7 ? 1 : SING.length - 1)) % SING.length;
+        const f = root * 2 ** (SING[step] / 12);
+        for (const o of lead) o.frequency.setTargetAtTime(f, next, 1.4);
+        events.push({ t: next, lead: f, mode: 'pentatonic' });
+        next += 7 + Math.random() * 4;
+      }
+    },
+  };
+}
+const rumLvl = () => $('rumOn').checked ? 0.12 * rumbleAt(near) * +$('rum').value : 0;
 const beds = {};
 async function rumbleFor(id) {
   const root = rootOf(id) / 2;
@@ -302,7 +426,7 @@ async function rumbleFor(id) {
   src.buffer = b; src.loop = true;
   const g = ac.createGain();
   g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(0.12 * +$('rum').value, t + 3);
+  g.gain.linearRampToValueAtTime(rumLvl(), t + 3);
   src.connect(g);
   g.connect(out);
   const hs = ac.createGain(); hs.gain.value = 0.8;
@@ -311,7 +435,7 @@ async function rumbleFor(id) {
   rum = { src, g, root };
   glue();
 }
-// The rumble feeds the playing choir's reverb.
+// The rumble feeds the playing choir's echo.
 function glue() {
   if (!rum || !cur) return;
   rum.gl?.disconnect();
@@ -328,17 +452,29 @@ function kill(c, len = 1.2) {
   for (const o of c.os) { try { o.stop(t + len + 0.1); } catch { /* stopped */ } }
   setTimeout(() => c.g.disconnect(), (len + 1) * 1000);
 }
-function play(id, quick = false) {
+function start(id, quick = false) {
   init();
   ac.resume();
   kill(cur, quick ? 0.5 : 1.2);
   cur = build(id, quick);
-  sel = id;
   rumbleFor(id);
-  for (const b of document.querySelectorAll('.star')) b.classList.toggle('on', b.id === 'r_' + id);
   $('busy').style.visibility = 'hidden';
-  showTune();
+  $('play').textContent = '■ Stop';
+  $('play').classList.add('on');
   tick();
+}
+function stop() {
+  if (ac) { kill(cur); if (rum) { rum.g.gain.setTargetAtTime(0, ac.currentTime, 0.6); rum.src.stop(ac.currentTime + 4); rum = null; } }
+  cur = null;
+  $('play').textContent = '▶ Play';
+  $('play').classList.remove('on');
+  $('n_scale').textContent = $('n_lead').textContent = $('n_voices').textContent = '–';
+}
+function pick(id) {
+  sel = id;
+  for (const b of document.querySelectorAll('.star')) b.classList.toggle('on', b.id === 'r_' + id);
+  start(id);
+  show();
 }
 function tick() {
   if (!cur) return;
@@ -346,80 +482,131 @@ function tick() {
   cur.v.sing(now + 4);
   events.sort((a, b) => a.t - b.t);
   while (events.length && events[0].t <= now) { const e = events.shift(); if (e.mode) mode = e.mode; if (e.lead) lead = note(e.lead); }
-  $('h_key').textContent = note(rootOf(cur.id));
-  $('h_scale').textContent = mode + ($('scale').value === 'cross' ? '' : ' (held)');
-  $('h_lead').textContent = $('melody').checked ? lead : 'off';
-  $('h_voices').textContent = cur.v.voices();
+  $('n_scale').textContent = mode + (motion.scale === 'cross' ? ', blending' : ', held');
+  $('n_lead').textContent = motion.melody ? lead : 'off';
+  $('n_voices').textContent = cur.v.voices();
 }
-function showTune() {
+// Shows the selected star's settings, value words and change marks.
+function show() {
   if (!sel) return;
-  const p = P(sel);
-  const k = p.key || 0;
-  $('tname').textContent = NAMES[sel] + ' · ' + CHART[sel].cls + (tuned[sel] ? ' · tuned' : '');
-  for (const s of SELECTS) $('k_' + s).value = p[s];
-  for (const s of SLIDERS) {
-    const v = getK(p, s);
-    if (document.activeElement !== $('k_' + s)) $('k_' + s).value = s === 'det' ? Math.max(1, v) : v;
-    $('o_' + s).textContent = s === 'key' ? `${note(rootOf(sel))} ${k > 0 ? '+' : ''}${k}` : (+v).toFixed(DIG[s] ?? 2);
+  const p = P(sel), b = base(sel);
+  $('n_star').textContent = NAMES[sel];
+  $('n_key').textContent = note(rootOf(sel));
+  $('t_name').innerHTML = `${NAMES[sel]} <span class="mute" style="font-weight:400">${CHART[sel].cls}</span>` + (tuned[sel] ? '<span class="tag">changed</span>' : '');
+  const fxOn = FX.filter(([k]) => p.fx[k].on).map(([, n]) => n.toLowerCase());
+  $('t_sum').textContent = `${WAVES[p.wave]}. ${p.det > 0 ? '3 singers' : '1 singer'} per note. ${p.dist < 0.2 ? 'Near' : p.dist < 0.6 ? 'Middle distance' : 'Far'}.` + (fxOn.length ? ` Effects: ${fxOn.join(', ')}.` : '') + ` Home key ${note(ROOT[sel])}.`;
+  for (const { r, row, input, on, v } of Object.values(rows)) {
+    const val = getV(p, r);
+    if (r.check) input.checked = val;
+    else if (document.activeElement !== input) input.value = r.k === 'det' ? Math.max(1, val) : val;
+    if (on) on.checked = p.fx[r.k.slice(3)].on;
+    const off = (r.need && !r.need(p)) || (on && !on.checked);
+    row.classList.toggle('off', !!off);
+    const ref = r.motion ? null : getV(b, r);
+    const mod = !r.motion && JSON.stringify(val) !== JSON.stringify(ref) || (on && on.checked !== b.fx[r.k.slice(3)].on);
+    v.classList.toggle('mod', !!mod && !!tuned[sel]);
+    v.textContent = r.options ? '' : r.check ? '' : r.show ? r.show(+val, sel) : String(val);
+    if (r.fx && on && !on.checked) v.textContent = 'off';
   }
-  $('uni').value = p.det > 0 ? '3' : '1';
-  $('c_det').classList.toggle('off', !(p.det > 0));
-  for (const [k] of FX) {
-    const f = p.fx[k];
-    $('f_' + k).checked = f.on; $('a_' + k).value = f.amt; $('q_' + k).textContent = f.amt.toFixed(2);
-    $('c_' + k).classList.toggle('off', !f.on);
-  }
-  $('w_' + sel).textContent = note(rootOf(sel));
+  listLabels();
 }
-const flash = id => { const b = $(id); if (!b) return; b.classList.add('flash'); setTimeout(() => b.classList.remove('flash'), 60); };
 let deb;
 // A change: live settings apply at once; structural ones restart the choir.
-function edit(fn, show) {
+function edit(fn) {
   if (!sel) return;
-  const p = clone(P(sel));
+  if ($('orig').checked) $('orig').checked = false;
+  if (ver() === 'organ') return;
+  if (verP(sel)) { tuned[sel] = clone(verP(sel)); $('ver').value = 'now'; verShow(); }
+  const p = clone(tuned[sel] || base(sel));
   fn(p);
   tuned[sel] = p;
-  showTune();
-  if (show) flash(show);
+  show();
   if (!cur || cur.id !== sel) return;
   if (structural(cur.p, p)) {
     $('busy').style.visibility = 'visible';
     clearTimeout(deb);
-    deb = setTimeout(() => play(sel, true), 200);
+    deb = setTimeout(() => start(sel, true), 200);
   } else {
     cur.p = clone(p);
     cur.v.set(p);
   }
 }
-for (const s of SLIDERS) $('k_' + s).addEventListener('input', e => edit(p => setK(p, s, +e.target.value), 'o_' + s));
-for (const s of SELECTS) $('k_' + s).onchange = e => edit(p => { p[s] = e.target.value; });
-$('uni').onchange = e => edit(p => { p.det = e.target.value === '3' ? Math.max(1, +$('k_det').value || 10) : 0; });
-for (const [k] of FX) {
-  $('f_' + k).onchange = e => edit(p => { p.fx[k].on = e.target.checked; });
-  $('a_' + k).addEventListener('input', e => edit(p => { p.fx[k].amt = +e.target.value; p.fx[k].on = true; }, 'q_' + k));
+const restart = () => { if (cur) { $('busy').style.visibility = 'visible'; start(cur.id, true); } };
+for (const { r, input, on, v } of Object.values(rows)) {
+  if (r.motion) {
+    input.addEventListener('change', () => { motion[r.k] = r.check ? input.checked : (input.value === 'cross' ? 'cross' : +input.value); restart(); });
+    continue;
+  }
+  input.addEventListener(r.options ? 'change' : 'input', () => edit(p => setV(p, r, r.options ? input.value : +input.value)));
+  on?.addEventListener('change', () => edit(p => { p.fx[r.k.slice(3)].on = on.checked; }));
+  // Click a changed value to put it back.
+  v.addEventListener('click', () => {
+    if (!v.classList.contains('mod')) return;
+    const b = base(sel);
+    edit(p => {
+      if (r.fx) p.fx[r.k.slice(3)] = { ...b.fx[r.k.slice(3)] };
+      else if (r.k === 'uni') p.det = b.det;
+      else setV(p, r, getV(b, r));
+    });
+  });
 }
-for (const id of ['scale', 'melody', 'drift', 'swell']) $(id).addEventListener('change', () => { if (cur) { $('busy').style.visibility = 'visible'; play(cur.id, true); } });
-$('reset').onclick = () => { if (!sel) return; delete tuned[sel]; play(sel, true); };
-$('stop').onclick = () => {
-  if (ac) { kill(cur); if (rum) { rum.g.gain.setTargetAtTime(0, ac.currentTime, 0.6); rum.src.stop(ac.currentTime + 4); rum = null; } }
-  cur = null;
-  for (const b of document.querySelectorAll('.star')) b.classList.remove('on');
-};
-$('vol').oninput = e => { $('o_vol').textContent = (+e.target.value).toFixed(2); out?.gain.setTargetAtTime(0.55 * +e.target.value, ac.currentTime, 0.05); };
-$('rum').oninput = e => { $('o_rum').textContent = (+e.target.value).toFixed(2); rum?.g.gain.setTargetAtTime(0.12 * +e.target.value, ac.currentTime, 0.05); };
-$('glue').oninput = e => { $('o_glue').textContent = (+e.target.value).toFixed(2); rum?.gl?.gain.setTargetAtTime(2 * +e.target.value, ac.currentTime, 0.05); };
-$('chr').onchange = () => { for (const id of Object.keys(NAMES)) $('w_' + id).textContent = note(rootOf(id)); if (sel) play(sel, true); };
 
-// A tap, as in the toy: the blast, then the glow, on the toy's tap bus.
+// The pinned bar: the toy's actions.
+$('play').onclick = () => { if (!sel) pick('sun'); else if (cur) stop(); else start(sel); };
+// A tap lands somewhere on the visible surface, so it pans like in the toy.
 function fire(len, K, withGlow) {
-  if (!sel) return;
-  if (!cur) play(sel);
-  const t = ac.currentTime + 0.01, p = P(cur.id), room = cur.v.cv;
-  taps.blast({ t, root: rootOf(cur.id) / 4, K: K * (withGlow ? 0.7 : 1), len, p, room });
-  if (withGlow) taps.glow({ t, root: rootOf(cur.id) / 2, K, p, room });
+  if (!sel) pick('sun');
+  if (!cur) start(sel);
+  const t = ac.currentTime + 0.01, p = P(cur.id), room = cur.v.cv, pan = (Math.random() * 2 - 1) * 0.7;
+  if (ver() !== 'now') return oldTap(t, ROOT[cur.id], K, len, withGlow, pan);
+  taps.blast({ t, root: rootOf(cur.id) / 4, K: K * (withGlow ? 0.7 : 1), len, p, pan, room });
+  if (withGlow) taps.glow({ t, root: rootOf(cur.id) / 2, K, p, pan, room });
+}
+// The tap until 2026-11-24: every tap adds a blast and a 34 s glow, with no cap.
+function oldTap(t, root, K, len, withGlow, pan) {
+  const into = (g, amt, pn) => { const p = ac.createStereoPanner(); p.pan.value = pn; g.connect(p).connect(out); const h = ac.createGain(); h.gain.value = amt; g.connect(h).connect(hallIn); };
+  const bl = ac.createGain();
+  blast(ac, { t, root: root / 4, K: K * (withGlow ? 0.7 : 1), len, p: SUN, out: bl });
+  into(bl, 0.7, pan * 0.3);
+  if (!withGlow) return;
+  const pad = ac.createGain();
+  pad.gain.setValueAtTime(0, t + 1.5);
+  pad.gain.linearRampToValueAtTime(0.05 * K, t + 8);
+  pad.gain.setValueAtTime(0.05 * K, t + 16);
+  pad.gain.exponentialRampToValueAtTime(0.0002, t + 34);
+  const lp = ac.createBiquadFilter(); lp.frequency.value = 900; lp.Q.value = 0.5;
+  lp.connect(pad);
+  for (const m of [1, 1.4983, 2, 2.9966]) {
+    const o = ac.createOscillator(); o.type = 'triangle';
+    o.frequency.value = root / 2 * m * (1 + (Math.random() * 2 - 1) * 0.004);
+    o.detune.value = (Math.random() - 0.5) * 12;
+    o.connect(lp); o.start(t + 1.5); o.stop(t + 34.5);
+  }
+  into(pad, 0.4, pan * 0.5);
 }
 $('tap').onclick = () => fire(6, 1, true);
-$('lift').onclick = () => fire(9, 0.8, false);
+$('lift').onclick = () => fire(9, 1, false);
+$('tick').onclick = () => { init(); ac.resume(); toy.tick(); };
+$('tele').onclick = () => { init(); ac.resume(); toy.telegraph(); };
+$('dim').onclick = () => { init(); ac.resume(); toy.dim(sel || 'betelgeuse'); };
+const ZOOM = v => v >= 0.85 ? 'long lens' : v >= 0.5 ? 'wide view' : v > -0.3 ? 'full star' : v > -0.9 ? 'zoomed out' : 'far out';
+$('zoom').oninput = e => { near = +e.target.value; $('o_zoom').textContent = ZOOM(near); rum?.g.gain.setTargetAtTime(rumLvl(), ac.currentTime, 0.1); };
+$('rumOn').onchange = () => rum?.g.gain.setTargetAtTime(rumLvl(), ac.currentTime, 0.3);
+$('humOn').onchange = () => cur?.hum.gain.setTargetAtTime($('humOn').checked ? 1 : 0, ac.currentTime, 0.3);
+
+// Lab listening.
+$('vol').oninput = e => { $('o_vol').textContent = (+e.target.value).toFixed(2); out?.gain.setTargetAtTime(0.55 * +e.target.value, ac.currentTime, 0.05); };
+$('rum').oninput = e => { $('o_rum').textContent = (+e.target.value).toFixed(2); rum?.g.gain.setTargetAtTime(rumLvl(), ac.currentTime, 0.05); };
+$('glue').oninput = e => { $('o_glue').textContent = (+e.target.value).toFixed(2); rum?.gl?.gain.setTargetAtTime(2 * +e.target.value, ac.currentTime, 0.05); };
+$('chr').onchange = () => { show(); if (cur) start(cur.id, true); };
+$('orig').onchange = () => { show(); if (cur) start(cur.id, true); };
+$('harm').onchange = () => { motion.scale = $('harm').value === 'cross' ? 'cross' : +$('harm').value; restart(); };
+function verShow() {
+  $('verNote').textContent = VER_NOTE[ver()];
+  document.getElementById('secs').style.opacity = ver() === 'organ' ? 0.35 : 1;
+}
+$('ver').onchange = () => { verShow(); show(); if (cur) start(cur.id, true); };
+$('reset').onclick = () => { if (!sel) return; delete tuned[sel]; show(); if (cur) start(sel, true); };
 
 // Loudness: an offline render through a rough ear weighting, after the fade-in.
 async function loudness(id, p) {
@@ -437,18 +624,19 @@ $('match').onclick = async () => {
   if (!sel) return;
   $('match').textContent = 'Measuring…';
   const [sun, me] = await Promise.all([loudness('sun', VOICES.sun), loudness(sel, P(sel))]);
-  $('match').textContent = 'Match loudness to the Sun';
-  edit(p => { p.gain = Math.round(100 * sun / me) / 100; }, 'o_gain');
+  $('match').textContent = 'Match the Sun';
+  edit(p => { p.gain = Math.round(100 * sun / me) / 100; });
 };
+
+// Save.
 const r2 = x => Math.round(x * 100) / 100;
 $('json').onclick = () => {
-  if (!sel) { $('out').value = 'Pick a star first.'; return; }
-  const p = P(sel);
-  $('out').value = JSON.stringify({ star: sel, name: NAMES[sel], homeKey: note(ROOT[sel]), key: note(rootOf(sel)), tuned: !!tuned[sel], motion: motion(), preset: p }, (k, v) => typeof v === 'number' ? r2(v) : v, 2);
+  if (!sel) { $('out').value = 'Select a star first.'; return; }
+  $('out').value = JSON.stringify({ star: sel, name: NAMES[sel], homeKey: note(ROOT[sel]), key: note(rootOf(sel)), changed: !!tuned[sel], motion, preset: P(sel) }, (k, v) => typeof v === 'number' ? r2(v) : v, 2);
 };
 $('copy').onclick = () => {
   const ids = Object.keys(tuned);
-  if (!ids.length) { $('out').value = 'Tune a star first: move a slider.'; return; }
+  if (!ids.length) { $('out').value = 'No star has changes.'; return; }
   $('out').value = ids.map(id => {
     const p = tuned[id], o = {};
     for (const k of Object.keys(SUN)) if (k !== 'fx' && k !== 'oct' && p[k] !== SUN[k]) o[k] = typeof p[k] === 'number' ? r2(p[k]) : p[k];
@@ -456,9 +644,10 @@ $('copy').onclick = () => {
     const f = Object.fromEntries(FX.filter(([k]) => p.fx[k].on).map(([k]) => [k, r2(p.fx[k].amt)]));
     if (Object.keys(f).length) o.fx = f;
     return `  ${id}: P(${JSON.stringify(o).replace(/"(\w+)":/g, '$1: ').replace(/"/g, "'").replace(/,/g, ', ')}),`;
-  }).join('\n') + `\n// Motion: ${JSON.stringify(motion())}; rumble ${$('rum').value}, rumble in reverb ${$('glue').value}`;
+  }).join('\n') + `\n// Movement for all stars: ${JSON.stringify(motion)}`;
   navigator.clipboard?.writeText($('out').value).catch(() => {});
 };
+listLabels();
 </script>
 </body>
 </html>

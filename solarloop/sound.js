@@ -11,6 +11,19 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // The Sun sits in A sharp (Tom, 2026-11-24), set by ear with its choir.
 export const ROOT = { neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110 };
 
+// `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
+// The rumble grows as the view closes in on the star (Tom).
+// Level in dB by closeness, against the old fixed level (Tom).
+// Long lens +2.3, wide view +1, full star 0; it fades only far out.
+const RUMBLE = [[-1.4, -9], [-0.7, 0], [0, 0], [0.69, 1], [1, 2.3]];
+export function rumbleAt(near) {
+  const P = RUMBLE, x = clamp(near, P[0][0], P[P.length - 1][0]);
+  let i = 1;
+  while (i < P.length - 1 && x > P[i][0]) i++;
+  const [x0, y0] = P[i - 1], [x1, y1] = P[i];
+  return Math.pow(10, (y0 + (y1 - y0) * (x - x0) / (x1 - x0)) / 20);
+}
+
 // `opt(id)` reads a Dev row; a missing row means on, at level 1.
 export function makeSound(kit, opt = () => undefined) {
   const on = id => opt(id) ?? true;
@@ -121,18 +134,6 @@ export function makeSound(kit, opt = () => undefined) {
   let drone = null;
   // Which layers sound: the Dev toggles set them.
   const layers = { hum: true, rumble: true, h: 1, lvl: 1 };
-  // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
-  // The rumble grows as the view closes in on the star (Tom).
-  // Level in dB by closeness, against the old fixed level (Tom).
-  // Long lens +2.3, wide view +1, full star 0; it fades only far out.
-  const RUMBLE = [[-1.4, -9], [-0.7, 0], [0, 0], [0.69, 1], [1, 2.3]];
-  function rumbleAt(near) {
-    const P = RUMBLE, x = clamp(near, P[0][0], P[P.length - 1][0]);
-    let i = 1;
-    while (i < P.length - 1 && x > P[i][0]) i++;
-    const [x0, y0] = P[i - 1], [x1, y1] = P[i];
-    return Math.pow(10, (y0 + (y1 - y0) * (x - x0) / (x1 - x0)) / 20);
-  }
   function mixLayers(hum, rumble, near = 0) {
     const h = hum ? lvl('sndHumLvl') : 0;
     const r = rumble ? rumbleAt(near) * lvl('sndRumbleLvl') : 0;
