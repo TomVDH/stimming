@@ -936,7 +936,8 @@ function schedule(delay = 0) {
 // The Dev toggles turn the hum and the rumble on and off.
 // Closeness for the mix: 1 on the long lens, 0 on the full star, below 0 zoomed out.
 const nearness = () => Math.log(fit.full.hw / view.hw) / Math.log(fit.full.hw / fit.long.hw);
-function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness()); }
+// The eased turn rate goes along, so Beta Lyrae's swell keeps time with its orbit (Tom, 2026-11-24).
+function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness(), 10 ** turn.lr); }
 function poke() {
   lastInput = performance.now();
   if (!raf && !timer) last = performance.now();
