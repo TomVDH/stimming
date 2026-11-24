@@ -50,8 +50,10 @@ vec3 skyAt(vec3 ro, vec3 rd, float camH) {
   float hMin = (b < 0.0 ? length(oc - rd * b) : length(oc)) - R;
   if (hMin > 0.0) {
     float lit = 0.6 + 0.4 * max(dot(normalize(oc - rd * b), SUN), 0.0);
-    float lm = exp(-hMin / 26.0) + 0.25 * exp(-pow(abs(hMin - 120.0) / 7.0, 2.0));
-    c += HAZE_C * lm * 0.55 * lit;
+    // A thick glowing band over the deck's horizon gives the limb its depth.
+    // The haze over the deck tops has a 40 km scale height: a glowing band that fades into space.
+    float lm = exp(-max(hMin - 18.0, 0.0) / 40.0) * 1.8 + 0.14 * exp(-pow(abs(hMin - 120.0) / 7.0, 2.0));
+    c += HAZE_C * lm * lit;
   }
   // Inside the air, the sky fills with haze light and the rings fade.
   float inAir = 1.0 - smoothstep(10.0, 80.0, camH);

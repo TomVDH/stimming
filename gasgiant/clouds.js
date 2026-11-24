@@ -372,17 +372,28 @@ float dens(vec3 p, float lod, float fine, float full) {
       gOpen = clamp(1.0 - (top - h) / 6.0, 0.0, 1.0) * ao;
       // Folds and troughs between the arms go dark; the crests keep the light.
       gFold = clamp(smoothstep(1.5, -6.0, big + 0.6 * rel) * 0.6 + 0.6 * (1.0 - smoothstep(0.2, 0.9, gFace)), 0.0, 1.0);
-      // Thunderheads: a few 90 km cells in the zones punch up to 30 to 38 km.
-      // Cauliflower sides widen upward; the anvil spreads in the top fifth.
+      // Thunderheads: one 90 km cell in fifteen in the zones punches up to 32 to 40 km.
+      // A lumpy tower with a domed top; a thin anvil spreads downwind in the top fifth.
       vec2 tc = floor(p.xz / 90.0);
       vec3 tr = th3(tc + 71.0);
-      if (tr.z > 0.985 - 0.05 * m.r) {
-        float H = 30.0 + 8.0 * tr.x;
+      if (tr.z > 0.965 - 0.05 * m.r) {
+        float H = 32.0 + 8.0 * tr.x;
         float g = clamp(h / H, 0.0, 1.0);
-        float rad = (6.0 + 6.0 * tr.y) * (0.75 + 0.35 * g) * (1.0 + 1.1 * smoothstep(0.82, 0.97, g));
-        float edge = rad * (0.7 + 0.6 * n2.b) - length(p.xz - (tc + 0.2 + 0.6 * tr.xy) * 90.0);
-        float cap = H + 2.0 * (n2.b - 0.5) - h;
+        vec2 tq = p.xz - (tc + 0.2 + 0.6 * tr.xy) * 90.0;
+        float rc = (5.0 + 5.0 * tr.y) * (0.6 + 0.5 * g);
+        float dist = length(tq);
+        // Cauliflower sides: two sizes of lumps bite the tower's edge.
+        float edge = rc * (0.6 + 0.7 * n2.b) + rc * 0.5 * (n1.r - 0.5) - dist;
+        // The overshooting dome: the top falls away from the axis.
+        float kd = dist / (rc * 1.4);
+        float cap = H - 5.0 * kd * kd + 3.0 * (n2.b - 0.5) - h;
         float th = smoothstep(0.0, 0.8 + lod, min(edge, cap * 2.0)) * (0.7 + 0.3 * n1.b);
+        // The anvil: a thin sheet three to five times the tower's width, pushed downwind, ragged at its rim.
+        float ra = rc * (3.0 + 2.0 * tr.x);
+        float ae = ra * (0.55 + 0.7 * n2.r) - length(tq - vec2(0.6, 0.2) * ra * 0.7);
+        float at = min(h - (H * 0.84 - 1.0 * n1.r), H + 1.5 * (n2.b - 0.5) - h);
+        // The anvil's rim frays over several km, so it never reads as a hard disc.
+        th = max(th, smoothstep(0.0, 4.0 + lod, min(ae * 0.5, at * 2.0)) * 0.4 * smoothstep(0.35, 0.75, n2.r + 0.3 * (n1.b - 0.5)));
         if (th > d) {
           d = th;
           gAlb = mix(vec3(0.9, 0.94, 0.92), pal(m.g + 0.1 * (n1.a - 0.5)), 0.45);
@@ -394,7 +405,9 @@ float dens(vec3 p, float lod, float fine, float full) {
       if (full > 0.5 && h > 20.0) {
         vec3 hid;
         // Near the eye the sheets read as veils; far off they stay faint, so the horizon stays clear.
-        float hz = sheets(h, 22.0, 5.5, 0.6, nb, nc.a - 0.05, lod, hid) * mix(0.07, 0.012, smoothstep(0.1, 1.5, lod)) * band(h, 22.0, 40.0, 2.0);
+        float hz = sheets(h, 22.0, 5.5, 0.6, nb, nc.a - 0.05, lod, hid) * mix(0.07, 0.0, smoothstep(0.1, 2.0, lod)) * band(h, 22.0, 40.0, 2.0);
+        // The wind combs each sheet into thin streaks, 60 km long and 3 km wide.
+        hz *= smoothstep(0.45, 0.8, textureLod(uVol, vec3(qr.x / 60.0, h / 9.0, qr.z / 3.0) + vec3(0.13, 0.0, 0.41), 0.0).a);
         if (hz > d) { d = hz; gAlb = mix(pal(0.45), vec3(0.9), 0.5); gOpen = 1.0; }
       }
     } else
@@ -597,10 +610,12 @@ float topDens(vec3 q) {
   float d = smoothstep(0.0, 1.5, top - h) * 0.8;
   vec2 tc = floor(q.xz / 90.0);
   vec3 tr = th3(tc + 71.0);
-  if (tr.z > 0.985 - 0.05 * m.r) {
-    float H = 30.0 + 8.0 * tr.x, g = clamp(h / H, 0.0, 1.0);
-    float rad = (6.0 + 6.0 * tr.y) * (0.75 + 0.35 * g) * (1.0 + 1.1 * smoothstep(0.82, 0.97, g));
-    d = max(d, smoothstep(0.0, 1.5, min(rad - length(q.xz - (tc + 0.2 + 0.6 * tr.xy) * 90.0), (H - h) * 2.0)) * 0.8);
+  if (tr.z > 0.965 - 0.05 * m.r) {
+    float H = 32.0 + 8.0 * tr.x, g = clamp(h / H, 0.0, 1.0);
+    vec2 tq = q.xz - (tc + 0.2 + 0.6 * tr.xy) * 90.0;
+    float rc = (5.0 + 5.0 * tr.y) * (0.6 + 0.5 * g) * 0.95, ra = rc * (3.0 + 2.0 * tr.x);
+    d = max(d, smoothstep(0.0, 1.5, min(rc - length(tq), (H - h) * 2.0)) * 0.8);
+    d = max(d, smoothstep(0.0, 1.5, min(ra * 0.9 - length(tq - vec2(0.6, 0.2) * ra * 0.7), min(h - H * 0.84, H - h) * 2.0)) * 0.45);
   }
   return d;
 }
@@ -791,12 +806,16 @@ void main() {
       T = 0.0;
     }
     float al = 1.0 - T;
-    // Haze over the deck seen from above.
+    // Aerial perspective over the deck: far bands fade into the limb's teal, brightest toward the sun.
+    // The colour matches the sky's limb haze in sky.js, so the far deck melts into the horizon.
     if (!inWin && tHit > 0.0) {
-      float hz = 1.0 - exp(-(tHit - t0) / 2600.0);
-      col = mix(col, vec3(0.3, 0.55, 0.6) * 0.6 * al, hz * 0.45);
+      float hz = 1.0 - exp(-(tHit - t0) / 1100.0);
+      vec3 hzC = vec3(0.38, 0.66, 0.68) * 0.5 * (0.7 + 0.5 * min(clPhase(dot(rd, SUN)), 3.0));
+      col = mix(col, hzC * al, hz * 0.85);
     }
     res = vec4(col, al);
+    // ?qa view 6: red the cover, green a hit, blue what passes.
+    if (uDbg > 5.5 && uDbg < 6.5) res = vec4(al * 0.3, tHit > 0.0 ? 0.3 : 0.0, T * 0.3, 1.0);
   }
   o = res;
 }`;

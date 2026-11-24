@@ -20,7 +20,7 @@ Tom, 2026-11-24: "lets add a dev flag to take off the capsule window frame altge
 - [x] Tom, 2026-11-24: twisters take Tornado alley's funnel light (form and motion stay)
 - [x] Tom, 2026-11-24: a few swirls set in cloud bands, not a field of pinwheels
 - [x] Tom, 2026-11-24: only the visible layer renders: a tops zone, rays stop at the zone floor, cheap far sun taps
-- [ ] Grandeur: limb, aerial perspective, anvil shadows across the swirls
+- [x] Grandeur: limb glow, aerial perspective, thunderheads with domes and frayed anvils, streaked haze lid
 - [ ] Height field bake for the top deck (frame time is 1.8 to 3 ms now; held until a larger screen needs it)
 - [x] Toy doc and plan lines
 
@@ -38,3 +38,9 @@ Tom, 2026-11-24: "lets add a dev flag to take off the capsule window frame altge
 - Zones: tops (over 12 km, the top deck only), top, mid, deep; rays stop at the zone floor; far sun taps on the top deck read bands and swirls only.
 - Frame time at 992 x 720 (pane, noisy, shared GPU): clouds at full size 200 km 3.1 ms (was 5.3), 60 km 5.4 (6.5), 30 km 5.4 (5.7); at half size 1.7 to 2.6 ms.
 - Cold first link 3.9 s in the pane (was 12 to 22 s).
+
+## Grandeur pass, 2026-11-24
+
+- The dark stripe over the horizon was open sky: the limb glow faded within 22 km of height, under the deck tops. Now a 40 km scale height from 18 km.
+- Frame time at 992 x 720, clouds at half size: 120 km 2.0 ms, 60 km 2.9, 30 km 2.5, 12 km 2.1.
+- ?qa view 6 shows the march's cover, hit and pass-through.
