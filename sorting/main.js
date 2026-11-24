@@ -4,7 +4,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { ALGOS, NAMES, shuffled, isSorted } from './algos.js';
+import { ALGOS, LIST, shuffled, isSorted } from './algos.js';
 import { makeRenderer, ROD_FLOATS } from './render.js';
 import { makeSound, noteOf } from './sound.js';
 mark('libs');
@@ -19,10 +19,17 @@ const store = {
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
 /* ---------- state ---------- */
-// The slider runs 0 to 1; the rate is 3 to 1200 steps a second.
-const toRate = v => 3 * 400 ** clamp(v, 0, 1);
-const savedV = Number(store.get('speed'));
-let speedV = store.get('speed') != null && Number.isFinite(savedV) ? clamp(savedV, 0, 1) : 0.5;
+// The slider runs 0 to 1; the rate is 3 to 12000 steps a second.
+// The top speed sorts 256 rods by Cycle sort in about 8 s.
+const toRate = v => 3 * 4000 ** clamp(v, 0, 1);
+// The old speed key held a shorter scale, so the key is new.
+const savedV = Number(store.get('pace'));
+let speedV = store.get('pace') != null && Number.isFinite(savedV) ? clamp(savedV, 0, 1) : Math.log(20) / Math.log(4000);
+// Rod counts in Settings; a narrow stage holds at most 128.
+const RODS = [16, 32, 48, 64, 96, 128, 192, 256];
+const savedRods = Number(store.get('rods'));
+let rodsPick = RODS.includes(savedRods) ? savedRods : 0;
+const rodsFor = w => Math.min(rodsPick || (w < 640 ? 32 : 48), w < 640 ? 128 : 256);
 let algo = ALGOS[store.get('algo')] ? store.get('algo') : 'quick';
 // The sweep runs the row in this many seconds.
 const SWEEP = 1.7;
@@ -44,14 +51,17 @@ const ui = initPage({ id: ID, bar: {
   choice: {
     label: 'Algorithm',
     value: algo,
-    options: Object.keys(ALGOS).map((k, i) => ({ value: k, label: NAMES[k], key: String(i + 1) })),
+    options: LIST.map(([value, label, group, key]) => ({ value, label, group, ...(key ? { key } : {}) })),
     onPick: v => pick(v),
   },
   actions: [
     { verb: 'sort', key: 'Space', onPress: () => sortPress() },
     { verb: 'shuffle', key: 'S', onPress: () => shuffle(false) },
   ],
-  slider: { label: 'Speed', min: 0, max: 1, step: 0.001, value: speedV, onInput: v => { speedV = v; store.set('speed', v); } },
+  slider: { label: 'Speed', min: 0, max: 1, step: 0.001, value: speedV, onInput: v => { speedV = v; store.set('pace', v); } },
+  settings: [
+    { type: 'choice', id: 'rods', label: 'Rods', value: String(rodsFor(innerWidth)), options: RODS.map(n => ({ value: String(n), label: String(n) })), persist: true, onPick: v => setRods(Number(v)) },
+  ],
   quality: true,
   keys: [['click', 'sort'], ['drag', 'play']],
   help: [
@@ -92,7 +102,8 @@ function fit() {
   const floor = top + freeH * (narrow ? 0.7 : 0.73);
   view = {
     x0: (cssW - rowW) / 2, pitch, floor,
-    maxH: freeH * (narrow ? 0.56 : 0.6), drop: freeH * 0.3, hw: pitch * 0.29,
+    // A thin rod keeps at least one device pixel of body.
+    maxH: freeH * (narrow ? 0.56 : 0.6), drop: freeH * 0.3, hw: Math.max(pitch * 0.29, 0.5 / dpr),
   };
 }
 let sizeKey = '';
@@ -100,9 +111,8 @@ function resize(force = false) {
   if (!gl || !R) return;
   const r = stage.getBoundingClientRect();
   cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
-  // A narrow stage holds fewer rods.
-  const want = cssW < 640 ? 32 : 48;
-  if (want !== N) build(want);
+  const want = rodsFor(cssW);
+  if (want !== N) rebuild(want);
   dpr = D.dpr(cssW, cssH);
   const c = ui.cover?.() || { top: 0, bottom: 0 };
   const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0].map(v => Math.round(v * 100)).join();
@@ -123,6 +133,20 @@ function build(n) {
   ramp(N);
   gen = null; running = false; markV = -1; sweepT = -1; sheenTo = 0;
   syncBar();
+}
+// A new row of n rods; a running sort starts again on it.
+function rebuild(n) {
+  const was = running || !!gen;
+  build(n);
+  fit();
+  if (was && started) start();
+}
+function setRods(n) {
+  if (!RODS.includes(n)) return;
+  rodsPick = n;
+  if (!gl || !R) return;
+  const want = rodsFor(cssW);
+  if (want !== N) { rebuild(want); draw(); poke(); }
 }
 const xOf = s => (view.x0 + (s + 0.5) * view.pitch) / cssW * 2 - 1;
 const slotAt = x => Math.floor((x - view.x0) / view.pitch);
@@ -383,10 +407,12 @@ onContextLoss(canvas, {
 
 // The first frame is a picture: the sort a third of the way in, its wake still warm.
 function prewarm() {
-  build(cssW < 640 ? 32 : 48);
+  build(rodsFor(cssW));
   gen = ALGOS[algo](a);
   const steps = [];
-  for (let k = 0; k < 120; k++) { const s = next(); if (!s) break; steps.push(s); }
+  // About a third of a quick sort, at any rod count.
+  const count = Math.round(120 * (N / 48) * Math.log2(N) / Math.log2(48));
+  for (let k = 0; k < count; k++) { const s = next(); if (!s) break; steps.push(s); }
   // Only the last steps keep their glow.
   steps.forEach((s, k) => {
     apply(s, 0);

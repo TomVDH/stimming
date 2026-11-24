@@ -74,3 +74,17 @@ What this toy does instead: bars are physical rods that glide and never copy; th
 - [x] Icons, intro emblem, favicon, Lab tile, toys.json
 - [x] QA Q1 to Q10, toy doc
 - [x] Main shelf (Tom, 2026-11-23): number 74, series maths, a still; bean `stimming-l7t5`
+
+## Round 2 (2026-11-23)
+
+Tom: "no alpha -- we want a couple more visual refinements here, asome more replayability -- and a loooooot more different sorting algos -- also let's allow us to increase the amount of bars up until 256". Bean `stimming-vafv`.
+
+| Part | How |
+|---|---|
+| Alpha | `toys.json` stage is null; the tile has no mark |
+| Algorithms | 29 in nine groups in the picker list; keys 1 to 6 stay on the first six |
+| Rods | A Settings stepper: 16 to 256, default 48; a narrow stage holds at most 128 |
+| Speed | 3 to 12000 steps a second, so 256 rods by Cycle sort take about 8 s |
+| Thin rods | At least one device pixel of body |
+| Visual refinements | Wait on Tom |
+| Replayability | Wait on Tom |
