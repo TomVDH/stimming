@@ -246,6 +246,8 @@ export function createFire({
     entrain: uniform(0.0),
     // Jet hover: soot mixed through the jet column, per second.
     coreSoot: uniform(0.0),
+    // Jet hover: where coreSoot forms, in metres down the jet: start, end.
+    sootWin: uniform(new THREE.Vector2(1, 3)),
     occFloor: uniform(0.0),
   };
 
@@ -539,9 +541,9 @@ export function createFire({
       const side = smoothstep(L.mul(0.15), L.mul(0.4), sRaw).mul(float(1.0).sub(smoothstep(L.sub(1.0), L.sub(0.2), sRaw))).mul(smoothstep(R.mul(0.7), R.mul(1.1), r)).mul(float(1.0).sub(smoothstep(R.mul(1.4), R.mul(2.0), r)));
       density.addAssign(u.sideSoot.mul(side).mul(wisp).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
       // Jet hover: soot forms low in the jet, as it rushes down: none near the nozzle.
-      // It forms inside the column, from 60 per cent of the drive to past its end.
+      // sootWin holds where it starts and ends, in metres down the jet.
       const rIn = w.sub(A.mul(sRaw.max(0.0))).length();
-      const inJet = smoothstep(L.mul(0.6), L.mul(0.9), sRaw).mul(float(1.0).sub(smoothstep(L.mul(1.5), L.mul(2.0), sRaw))).mul(float(1.0).sub(smoothstep(K.w.mul(0.8), K.w.mul(1.6).add(sRaw.mul(0.08)), rIn)));
+      const inJet = smoothstep(u.sootWin.x, u.sootWin.x.add(0.6), sRaw).mul(float(1.0).sub(smoothstep(u.sootWin.y.sub(0.5), u.sootWin.y.add(0.5), sRaw))).mul(float(1.0).sub(smoothstep(K.w.mul(0.8), K.w.mul(1.6).add(sRaw.mul(0.08)), rIn)));
       density.addAssign(u.coreSoot.mul(inJet).mul(wisp.mul(0.7).add(0.3)).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
       const land = P.add(A.mul(L));
       // A jet that ends in free air neither smokes nor steams the floor.

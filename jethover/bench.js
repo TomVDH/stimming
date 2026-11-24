@@ -236,7 +236,7 @@ async function buildSoot(level) {
   // No emitter at the nozzle: no smoke comes out of it.
   gu.emitTemperature.value = 0; gu.emitDensity.value = 0; gu.emitGain.value = 0;
   // The jet core carries a little heat down its drive.
-  gu.feed.value.set(0.1, 0);
+  gu.feed.value.set(0.03, 0);
   // Little lift: the soot rushes down with the jet, not up its sides.
   gu.buoyancy.value = 0.3; gu.weight.value = 0.05;
   // The jet runs free past its drive and pulls the still air in.
@@ -254,8 +254,8 @@ async function buildSoot(level) {
   // Layer 2 makes the heat bend; the gas gives only the smoke sum.
   gu.heatGain.value = 0;
   // The soot darkens what lies behind it, as Fire's shadow pass does.
-  // Thin haze does not darken; only denser clouds read.
-  gu.occMin.value = 0.15; gu.occFloor.value = 1;
+  // Only the faintest haze does not darken.
+  gu.occMin.value = 0.06; gu.occFloor.value = 1;
   // Only the main jet drives the gas; the other two slots stay off.
   for (let j = 1; j < 3; j++) { gu.jetP[j].value.set(0, -100, 0); gu.jetK[j].value.set(0, 0, 0, 0.4); }
   vol = gas.volume({ steps, lift: 0 });
@@ -272,9 +272,11 @@ function stepSoot(dt) {
   // A rebuild in progress skips the gas.
   if (building) return;
   const n = U.noz.value, L = U.len.value, thr = U.thr.value;
-  // The nozzle drives only the jet's first metres; momentum carries it on.
+  // The nozzle drives the jet through most of the flame; momentum carries it on.
   gu.jetP[0].value.copy(n);
-  gu.jetA[0].value.set(0, -1, 0, Math.min(1.2 + 2.5 * thr, n.y));
+  gu.jetA[0].value.set(0, -1, 0, Math.min(L * 0.8, n.y));
+  // Soot forms in the lower half of the flame and just past it.
+  gu.sootWin.value.set(L * 0.5, L * 1.2);
   gu.jetK[0].value.set(16 * (0.35 + 0.75 * thr), 6 + 26 * thr, 0, U.r0.value);
   gu.sourcePosition.value.copy(n);
   gu.emitMatrix.value.copy(emitM.makeTranslation(n.x, n.y, n.z));
@@ -282,7 +284,8 @@ function stepSoot(dt) {
   sootLamp.position.copy(gu.lightPos.value);
   sootLamp.intensity = 3 + 12 * thr;
   // The gas steps on a fixed clock, two steps a frame at most.
-  gasAcc = Math.min(gasAcc + dt * 0.55 * U.sSpeed.value, 2 * GAS_DT);
+  // It runs at real time, so the soot rushes with the jet.
+  gasAcc = Math.min(gasAcc + dt * U.sSpeed.value, 2 * GAS_DT);
   while (gasAcc >= GAS_DT) {
     gasAcc -= GAS_DT;
     gasClock = (gasClock + GAS_DT) % 1000;
@@ -313,10 +316,10 @@ function apply() {
   U.soot.value = tune.soot ? 1 : 0; U.sLit.value = tune.sLit; U.sSpeed.value = tune.sSpeed;
   // Soot forms low in the jet column; none at the nozzle, none dumped at one spot.
   gu.tailSoot.value = 0; gu.sideSoot.value = 0;
-  gu.coreSoot.value = tune.soot ? 1400 * tune.sAmount : 0;
-  // The clouds fade in about 1.7 s, so they do not linger.
-  gu.dissipation.value = 0.6 / tune.sLife;
-  gu.occGain.value = 4 * tune.sDark;
+  gu.coreSoot.value = tune.soot ? 1100 * tune.sAmount : 0;
+  // The clouds fade in about 0.9 s, so they never fill the box.
+  gu.dissipation.value = 1.1 / tune.sLife;
+  gu.occGain.value = 7 * tune.sDark;
   const [fq, sp, tb] = MOTIONS[tune.motion] || MOTIONS.fast;
   goal.freq = fq; goal.speed = sp * tune.speed; goal.turb = tb * tune.turb;
   U.board.value = tune.board === 'dark' ? 1 : tune.board === 'sky' ? 2 : 0;
