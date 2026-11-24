@@ -359,7 +359,11 @@ function ropeRest(rg, time) {
  * Writes every strand for the given clock into out.
  * @returns {number} The strand count.
  */
-export function strands(sun, time, { star, activity }, out) {
+// The hand lights a region or prominence: lit runs from 0 to 1.
+export const LIT_GAIN = 0.15;
+const glow = o => 1 + LIT_GAIN * (o.lit || 0);
+// spin: the pulsar's own clock, which an egg can speed up.
+export function strands(sun, time, { star, activity, spin = time }, out) {
   const B = STARS[star];
   let n = 0;
   const act = clamp(activity);
@@ -382,7 +386,7 @@ export function strands(sun, time, { star, activity }, out) {
       const sh = b.shear + (j(3) - 0.5) * 10;
       const tilt = b.tilt + (j(4) - 0.5) * 0.35;
       const lt = b.lt + (j(5) - 0.5) * 0.18;
-      const I0 = resp(lt) * B.loop * L.vis * alive * amb * (0.55 + 0.45 * act) * (0.6 + 0.8 * j(6) * j(6)) * (b.faint || 1);
+      const I0 = resp(lt) * B.loop * L.vis * alive * amb * (0.55 + 0.45 * act) * (0.6 + 0.8 * j(6) * j(6)) * (b.faint || 1) * glow(rg);
       const h = a * rg.hk * b.tall * L.rise;
       for (let k = 0; k < b.threads; k++) {
         const q = m => hash(b.id * 7 + k, cyc, m + 10);
@@ -405,7 +409,7 @@ export function strands(sun, time, { star, activity }, out) {
     }
   }
   for (const p of sun.proms) n = promStrands(p, B, time, out, n);
-  if (B.field) n = fieldStrands(time, B, out, n);
+  if (B.field) n = fieldStrands(spin, B, out, n);
   for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
   return n;
 }
@@ -445,7 +449,7 @@ export function promPhase(p) {
 function promStrands(p, B, time, out, n) {
   const { grow, fade, kind } = promPhase(p);
   if (fade <= 0.002) return n;
-  const I0 = B.prom * fade;
+  const I0 = B.prom * fade * glow(p);
   const fp = (de, df) => foot(p, de, df);
   for (let i = 0; i < p.n; i++) {
     const q = m => hash(p.id * 131 + i, m, 5);

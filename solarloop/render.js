@@ -123,6 +123,7 @@ uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
+uniform vec4 uEgg[4], uDim[2];
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -131,7 +132,6 @@ void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
   float hot = 0.0, cool = 0.0;
-  float ang = atan(P.x, P.y);
   float tb = uTime * 0.02;
   if (r < R) {
     float mu = sqrt(max(1.0 - r * r / (R * R), 0.0));
@@ -178,6 +178,22 @@ void main() {
     float dark = pow(max(mu, 0.02), uTex.w);
     float bright = 1.0 + 0.6 * (inversesqrt(max(mu, 0.04)) - 1.0);
     hot = uDisk.x * max(tex, 0.08) * mix(dark, bright, uDisk.z);
+    // An egg's sunspots: a dark umbra in a ragged penumbra.
+    for (int k = 0; k < 2; k++) {
+      if (uEgg[k].w <= 0.0) continue;
+      float a = acos(clamp(dot(n, uEgg[k].xyz), -1.0, 1.0));
+      float sz = 0.4 + 0.6 * uEgg[k].w;
+      float rag = vn((n - uEgg[k].xyz) * 900.0 + 4.0);
+      float pen = smoothstep(0.042 * sz * (0.8 + 0.4 * rag), 0.03 * sz, a);
+      float umb = smoothstep(0.019 * sz, 0.013 * sz, a);
+      hot *= 1.0 - min(uEgg[k].w, 1.0) * (0.62 * pen + 0.35 * umb);
+    }
+    // An egg's white-light kernels: they burn through to white.
+    for (int k = 2; k < 4; k++) {
+      if (uEgg[k].w <= 0.0) continue;
+      float a = acos(clamp(dot(n, uEgg[k].xyz), -1.0, 1.0));
+      hot += uEgg[k].w * uDisk.x * (14.0 * exp(-pow(a / 0.0045, 2.0)) + 0.8 * exp(-a / 0.008));
+    }
     for (int k = 0; k < ${NR}; k++) {
       float dd = 2.0 - 2.0 * dot(n, uReg[k].xyz);
       float m = exp(-dd / 0.006) * uReg[k].w;
@@ -202,24 +218,47 @@ void main() {
     cool += uDisk2.y * 0.5 * smoothstep(0.2, 0.0, mu);
     // Dust in front of the disk dims it in slow patches.
     hot *= 1.0 - uDust * 0.55 * smoothstep(0.4, 0.75, fbm(q * 4.2 + vec3(5.0, 0.0, tb * 0.05)));
+    // The Great Dimming: a cool patch spreads over the south, then dust veils it.
+    if (uDim[0].w + uDim[1].x > 0.0) {
+      float s = dot(n, uDim[0].xyz);
+      // The noise lives on the star, so the veil turns with it.
+      float rag = fbm(q * 2.8 + 2.0) - 0.5;
+      hot *= 1.0 - 0.4 * uDim[1].x * smoothstep(-0.1, 0.6, s + 0.5 * rag);
+      float veil = smoothstep(-0.25, 0.45, s + 0.7 * rag) * (0.75 + 0.5 * fbm(q * 6.3 + 6.0));
+      hot *= (1.0 - 0.85 * uDim[0].w * veil) * (1.0 - 0.15 * uDim[0].w);
+      cool += 0.08 * uDim[0].w * veil * uDisk2.y;
+    }
   } else {
     float h = r - R;
+    // The direction of this point in the star's frame: the sky turns with the star.
+    // Noise on a 3D direction has no seam where a 2D angle would wrap.
+    vec3 sp = uToSun * vec3(P, 0.0);
+    vec3 u = sp / max(length(sp), 1.0);
     // Streamers: broad rays in the corona, and fine ones.
-    float st = fbm(vec3(ang * 7.0, h * 0.002 - tb * 0.1, 1.3));
-    float fine = fbm(vec3(ang * 48.0, h * 0.006 - tb * 0.3, 4.1));
+    float st = fbm(u * 1.1 + vec3(0.0, 0.0, h * 0.002 - tb * 0.1 + 1.3));
+    float fine = fbm(u * 7.6 + vec3(0.0, 0.0, h * 0.006 - tb * 0.3 + 4.1));
     hot = uDisk.w * (exp(-h / uDisk2.x) * (0.6 + 0.8 * fine) + 0.3 * exp(-h / 360.0) * (0.4 + 1.2 * st * st));
     // The chromosphere: a thin bright rim, and a ragged fringe of spicules.
-    float sh = 3.0 + 9.0 * pow(vn(vec3(ang * 300.0, uTime * 0.05, 0.5)), 2.0);
-    cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(vec3(ang * 900.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
+    float sh = 3.0 + 9.0 * pow(vn(u * 48.0 + vec3(0.0, 0.0, uTime * 0.05 + 0.5)), 2.0);
+    cool += uDisk2.y * (exp(-h / sh) * (0.6 + 0.6 * vn(u * 143.0 + vec3(0.0, 2.0, uTime * 0.08))) + 0.8 * exp(-h / 2.5));
     if (uDust > 0.0) {
       // The envelope: arcs and knots of ejected dust, lit by the star.
-      float warp = fbm(vec3(P * 0.006, 1.0));
-      float arcs = fbm(vec3(ang * 5.0, h * 0.006, 7.0) + 0.6 * warp);
-      float knots = pow(fbm(vec3(P * 0.012, 3.0 + tb * 0.05)), 3.0);
+      float warp = fbm(sp * 0.006 + vec3(0.0, 0.0, 1.0));
+      float arcs = fbm(u * 0.8 + vec3(0.0, 0.0, h * 0.006 + 7.0) + 0.6 * warp);
+      float knots = pow(fbm(sp * 0.012 + vec3(0.0, 0.0, 3.0 + tb * 0.05)), 3.0);
       float env = exp(-h / 260.0);
       cool += uDust * env * (0.15 * smoothstep(0.45, 0.8, arcs) + 0.3 * knots);
       hot += uDust * 0.1 * exp(-h / 500.0) * (0.5 + warp);
     }
+  }
+  // The dimming's dust cloud reaches past the southern limb.
+  if (uDim[0].w > 0.0 && r >= R) {
+    float s = dot(P / r, normalize(uDim[0].xy + 1e-5));
+    // The cloud's noise lives in the star's frame, so it turns with the star.
+    vec3 cq = uToSun * vec3(P / R, 0.0);
+    float cloud = smoothstep(0.0, 0.7, s + 0.6 * (fbm(cq * 3.5 + 3.0) - 0.5)) * exp(-(r - R) / 420.0);
+    hot *= 1.0 - 0.7 * uDim[0].w * cloud;
+    cool += 0.18 * uDim[0].w * cloud * fbm(cq * 8.4 + 8.0);
   }
   // A haze over each region: unresolved loops.
   for (int k = 0; k < ${NR}; k++) {
@@ -598,6 +637,7 @@ function noiseVolume(n) {
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
+uniform vec4 uRip;
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3;
 uniform vec2 uBodyK;
 uniform vec3 uHal, uStreak;
@@ -616,6 +656,13 @@ float kern(vec2 fc) {
     if (S <= 0.0) continue;
     vec2 d = (fc - uSat[k].xy) / uSc;
     s += S * (6.0 * exp(-dot(d, d) / 90.0) + 1.2 * exp(-dot(d, d) / 2400.0));
+  }
+  // A tap on empty sky: a faint ring of light spreads through the haze.
+  if (uRip.w > 0.0) {
+    vec2 e = fc - uRip.xy;
+    float w = 0.09 * uRip.z + 4.0 * uSc;
+    float x = (length(e) - uRip.z) / w;
+    s += uRip.w * exp(-x * x) * (0.55 + 0.9 * vn(vec3(e / uSc * 0.012, uRip.z * 0.004)));
   }
   return s;
 }
@@ -817,6 +864,8 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);
     gl.uniform4fv(s.u.uFlB, v.flB);
+    gl.uniform4fv(s.u.uEgg, v.egg);
+    gl.uniform4fv(s.u.uDim, v.dim);
     tri(gl, hdr, empty);
 
     if (v.count > 0) {
@@ -881,6 +930,7 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, f, 'uVol', 4, volA);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
+    gl.uniform4fv(f.u.uRip, v.rip);
     gl.uniform4fv(f.u.uView, v.view);
     gl.uniform4f(f.u.uMix, B.rays, B.hotW, B.coolW, v.shimmer);
     gl.uniform4fv(f.u.uBodyA, v.bodyA);
