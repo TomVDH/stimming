@@ -1,15 +1,17 @@
 // Jet hover exhaust bench: one jet over a lined board.
 // Layer 1: a round hot core and a feathered cone, marched as a volume.
+// Layer 2: the heat inside the column bends the board behind it.
 import * as THREE from 'three/webgpu';
 import {
   Fn, vec2, vec3, vec4, float, uniform, uv, pass, positionWorld, cameraPosition, normalize, Loop,
-  smoothstep, exp, max, min, abs, fract, mix, mx_noise_float, interleavedGradientNoise, screenCoordinate, renderOutput,
+  smoothstep, exp, max, min, abs, fract, mix, sin, mx_noise_float, interleavedGradientNoise, screenCoordinate, screenUV, renderOutput,
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { devPanel } from './devpanel.js';
 
 /* ---------- controls ---------- */
-const tune = { thr: 0.5, shape: 'column', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines' };
+const tune = { thr: 0.5, shape: 'column', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines',
+  bend: 1, fluteW: 1, flute: 1, flicker: 1, showHeat: false };
 // Shape presets: length and spread; Custom takes the sliders.
 const SHAPES = { stubby: [1.8, 0.12], column: [5, 0.04] };
 // Motion presets: noise size (per metre), speed and strength.
@@ -33,6 +35,11 @@ const ROWS = [
   slider('dia', 'Cone', 'Diamonds', 0, 2, 0.05),
   slider('turb', 'Cone', 'Turbulence', 0, 2, 0.05),
   slider('speed', 'Cone', 'Flow speed', 0, 3, 0.05),
+  slider('bend', 'Heat', 'Bend strength', 0, 3, 0.05),
+  slider('flute', 'Heat', 'Flutes', 0, 3, 0.05),
+  slider('fluteW', 'Heat', 'Flute width', 0.3, 3, 0.05),
+  slider('flicker', 'Heat', 'Flicker', 0, 3, 0.05),
+  { type: 'toggle', id: 'showHeat', group: 'Heat', label: 'Show heat', value: false, onToggle: v => { tune.showHeat = v; apply(); } },
   { type: 'choice', id: 'board', group: 'Board', label: 'Backdrop', value: 'lines', options: [
     { value: 'lines', label: 'Lines' }, { value: 'dark', label: 'Dark' }, { value: 'sky', label: 'Sky' },
   ], onPick: v => { tune.board = v; apply(); } },
@@ -55,6 +62,8 @@ const U = {
   time: uniform(0), flowT: uniform(0), thr: uniform(0.5), len: uniform(5), r0: uniform(0.4), spread: uniform(0.08),
   feather: uniform(0.5), bright: uniform(1), dia: uniform(1), turb: uniform(1), speed: uniform(1), freq: uniform(3.5),
   board: uniform(0),
+  bend: uniform(1), flute: uniform(1), fluteW: uniform(1), flicker: uniform(1), showHeat: uniform(0),
+  res: uniform(new THREE.Vector2(1, 1)),
   // The nozzle sits here and points straight down.
   noz: uniform(new THREE.Vector3(0, 6, 0)),
   bmin: uniform(new THREE.Vector3()), bmax: uniform(new THREE.Vector3()),
@@ -137,6 +146,47 @@ const cone = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), coneMat);
 cone.frustumCulled = false;
 scene.add(cone);
 
+/* ---------- layer 2: the heat in the column ---------- */
+// The same box marches the heat alone, into its own pass.
+// Heat lives only where the jet is: nothing spreads sideways.
+const HSTEPS = 24;
+const heatMat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+heatMat.colorNode = Fn(() => {
+  const p0 = positionWorld;
+  const d = normalize(p0.sub(cameraPosition));
+  const inv = vec3(1.0).div(d.add(vec3(1e-6)));
+  const tf = max(U.bmin.sub(p0).mul(inv), U.bmax.sub(p0).mul(inv));
+  const tFar = min(min(tf.x, tf.y), tf.z).max(0.0);
+  const ds = tFar.div(HSTEPS);
+  const jit = interleavedGradientNoise(screenCoordinate.xy);
+  const sum = float(0).toVar();
+  Loop(HSTEPS, ({ i }) => {
+    const P = p0.add(d.mul(float(i).add(jit).mul(ds)));
+    const s = U.noz.y.sub(P.y);
+    const r = P.xz.sub(U.noz.xz).length();
+    const flow = vec3(P.x.mul(U.freq), P.y.mul(U.freq.mul(0.6)).add(U.flowT), P.z.mul(U.freq));
+    const tn = mx_noise_float(flow).mul(0.5).add(0.5);
+    const R = U.r0.add(s.max(0.0).mul(U.spread));
+    const rr = r.add(tn.sub(0.5).mul(R).mul(0.5).mul(U.turb)).div(R);
+    // The heat ends with the cone's feather.
+    const fz = U.len.mul(U.feather).max(0.2);
+    const tail = float(1.0).sub(smoothstep(U.len.sub(fz), U.len, s.add(tn.sub(0.5).mul(fz).mul(0.9).mul(U.turb))));
+    const live = smoothstep(-0.05, 0.1, s).mul(tail).mul(smoothstep(0.0, 0.05, P.y));
+    const h = exp(rr.mul(rr).mul(-1.6)).mul(live).mul(U.thr.mul(0.7).add(0.3));
+    // The core is fluted glass: upright flutes that waver down the jet.
+    const wav = mx_noise_float(vec3(P.y.mul(1.3), U.flowT.mul(0.35), 3.1)).mul(1.6);
+    const fl = sin(P.x.sub(U.noz.x).div(U.fluteW.mul(0.14)).mul(6.2832).add(wav)).mul(exp(rr.mul(rr).mul(-4.0)));
+    // A fine flicker races down with the flow.
+    const fk = mx_noise_float(vec3(P.x.mul(7.0), P.y.mul(5.0).add(U.flowT.mul(2.0)), P.z.mul(7.0)));
+    sum.addAssign(h.mul(fl.mul(U.flute).mul(0.5).add(1.0)).mul(fk.mul(U.flicker).mul(0.45).add(1.0)).mul(ds));
+  });
+  return vec4(sum, 0, 0, 1);
+})();
+const heatScene = new THREE.Scene();
+const heatBox = new THREE.Mesh(cone.geometry, heatMat);
+heatBox.frustumCulled = false;
+heatScene.add(heatBox);
+
 // The box holds the whole cone.
 function placeCone() {
   const n = U.noz.value, L = U.len.value;
@@ -145,13 +195,16 @@ function placeCone() {
   U.bmax.value.set(n.x + w, n.y + 0.2, n.z + w);
   cone.position.set(n.x, n.y - (L + 0.4) / 2, n.z);
   cone.scale.set(2 * w, L + 0.8, 2 * w);
+  heatBox.position.copy(cone.position);
+  heatBox.scale.copy(cone.scale);
 }
 
 // Targets: every value eases toward these each frame.
 const goal = {};
-const EASED = ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed', 'freq'];
+const EASED = ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed', 'freq', 'bend', 'flute', 'fluteW', 'flicker'];
 function apply() {
-  for (const k of ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed']) goal[k] = tune[k];
+  for (const k of ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed', 'bend', 'flute', 'fluteW', 'flicker']) goal[k] = tune[k];
+  U.showHeat.value = tune.showHeat ? 1 : 0;
   const sh = SHAPES[tune.shape];
   if (sh) { goal.len = sh[0]; goal.spread = sh[1]; }
   const [fq, sp, tb] = MOTIONS[tune.motion] || MOTIONS.fast;
@@ -180,8 +233,20 @@ function ease(dt) {
 /* ---------- post: bloom, tone ---------- */
 const pipe = new THREE.RenderPipeline(renderer);
 const sp = pass(scene, camera);
-const col = sp.getTextureNode();
-pipe.outputNode = renderOutput(col.add(bloom(col, 0.5, 0.5, 0.8)));
+const hp = pass(heatScene, camera);
+const heat = hp.getTextureNode();
+// The board bends along the slope of the summed heat, capped at 10 px.
+const bentUV = Fn(() => {
+  const px = vec2(1.5).div(U.res);
+  const gx = heat.sample(screenUV.add(vec2(px.x, 0))).r.sub(heat.sample(screenUV.sub(vec2(px.x, 0))).r);
+  const gy = heat.sample(screenUV.add(vec2(0, px.y))).r.sub(heat.sample(screenUV.sub(vec2(0, px.y))).r);
+  const off = vec2(gx, gy).mul(U.bend).mul(90.0).toVar();
+  off.mulAssign(min(1.0, float(10.0).div(off.length().add(1e-4))));
+  return screenUV.add(off.div(U.res));
+})();
+const col = sp.getTextureNode().sample(bentUV);
+const view = vec3(heat.sample(screenUV).r.mul(1.5).mul(U.showHeat), 0, 0);
+pipe.outputNode = renderOutput(col.add(bloom(col, 0.5, 0.5, 0.8)).add(view));
 pipe.outputColorTransform = false;
 
 /* ---------- drag: the jet follows the pointer ---------- */
@@ -203,8 +268,11 @@ cv.addEventListener('pointermove', e => { if (dragging) moveTo(e); });
 cv.addEventListener('pointerup', () => { dragging = false; cv.style.cursor = 'grab'; });
 
 /* ---------- loop ---------- */
+function sizeRes() { renderer.getDrawingBufferSize(U.res.value); }
+sizeRes();
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
+  sizeRes();
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
 });
