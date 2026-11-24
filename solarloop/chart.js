@@ -1,5 +1,6 @@
-// Solar loop: the star tray, a size ladder that picks the star.
-// Every star and black hole stands on one line, smallest to largest (Tom, 2026-11-24).
+// Star catalog: the star tray, a size ladder that picks the star.
+// Every object stands on one ribbon, smallest to largest (Tom, 2026-11-24).
+// The ribbon scrolls and pages when it holds more than fit; it never crowds.
 // Each star is a swatch in its own colour, sized by its radius on a log scale.
 // The toy owns this sheet; it copies the Bar v3 sheet look.
 
@@ -21,6 +22,7 @@ export const CHART = {
   rigel: { t: 12100, cls: 'B8 Ia supergiant' },
   betelgeuse: { t: 3600, cls: 'M1 Ia supergiant' },
   vycma: { t: 3490, cls: 'M5 Ia hypergiant' },
+  wr124: { t: 44700, cls: 'WN8h Wolf-Rayet' },
   siriusb: { t: 25000, cls: 'DA2 white dwarf' },
   neutron: { t: 700000, cls: 'neutron star' },
   cygx1: { t: null, cls: 'stellar black hole' },
@@ -70,7 +72,17 @@ export function makeChart(o) {
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Star chart');
   el.append(h('div', 'sl-hd', '<span>Star</span><em class="sl-hint"></em>'));
+  const ribbon = h('div', 'sl-ribbon');
   const ladder = h('div', 'sl-ladder');
+  // Page arrows at the ends; each shows only when more lies that way.
+  const prev = h('button', 'sl-page sl-page--prev', '‹'), next = h('button', 'sl-page sl-page--next', '›');
+  for (const [b, dir, label] of [[prev, -1, 'Earlier stars'], [next, 1, 'Later stars']]) {
+    b.type = 'button';
+    b.setAttribute('aria-label', label);
+    b.tabIndex = -1;
+    b.addEventListener('click', () => ladder.scrollBy({ left: dir * ladder.clientWidth * 0.8, behavior: RM.matches ? 'auto' : 'smooth' }));
+  }
+  ribbon.append(prev, ladder, next);
   const info = h('div', 'sl-info');
   info.setAttribute('aria-live', 'polite');
   // The ladder runs smallest to largest; a tie keeps the pick order.
@@ -91,13 +103,35 @@ export function makeChart(o) {
       open(false);
     });
     b.addEventListener('pointerenter', () => tell(s));
-    b.addEventListener('focus', () => tell(s));
+    b.addEventListener('focus', () => { tell(s); centre(b); });
     b.addEventListener('pointerleave', () => tell());
     ladder.append(b);
     return { b, s, c };
   });
-  el.append(ladder, info);
+  el.append(ribbon, info);
   o.frame.append(glass, el);
+
+  // The focused star glides to the ribbon's middle.
+  function centre(b, smooth = !RM.matches) {
+    const left = b.offsetLeft + b.offsetWidth / 2 - ladder.clientWidth / 2;
+    ladder.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+  }
+  // The arrows and the edge fades show only where more lies.
+  function edges() {
+    const max = ladder.scrollWidth - ladder.clientWidth;
+    const atStart = ladder.scrollLeft <= 2, atEnd = ladder.scrollLeft >= max - 2;
+    prev.hidden = atStart; next.hidden = atEnd;
+    ribbon.classList.toggle('more-left', !atStart);
+    ribbon.classList.toggle('more-right', !atEnd);
+  }
+  ladder.addEventListener('scroll', edges, { passive: true });
+  // A vertical wheel or trackpad scrolls the ribbon sideways.
+  ladder.addEventListener('wheel', e => {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+    e.preventDefault();
+    ladder.scrollLeft += e.deltaY;
+  }, { passive: false });
+  new ResizeObserver(edges).observe(ladder);
 
   // The foot line names the star in hand: pointed, focused, or the current one.
   function tell(s) {
@@ -125,7 +159,10 @@ export function makeChart(o) {
       glass.dataset.on = '';
       el.classList.remove('is-closing');
       el.classList.toggle('is-landing', !RM.matches);
-      btns.find(x => x.s.value === o.get())?.b.focus({ preventScroll: true });
+      const cur = btns.find(x => x.s.value === o.get())?.b;
+      cur?.focus({ preventScroll: true });
+      if (cur) centre(cur, false);
+      edges();
       o.onOpen?.(true);
       if (!RM.matches) { await fr(5); if (me === run) el.classList.remove('is-landing'); }
     } else {

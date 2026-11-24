@@ -1,4 +1,4 @@
-/* Solar loop: the star tray, a size ladder. It copies the Bar v3 sheet look:
+/* Star catalog: the star tray, a size ladder on a ribbon that scrolls. It copies the Bar v3 sheet look:
    no box, rows on a soft glass, slab caps with a dark edge. */
 .sl-glass {
   position: absolute; left: 0; right: 0; bottom: 0; height: 100%; z-index: 5; opacity: 0; pointer-events: none;
@@ -27,13 +27,30 @@
 .sl-hd { display: flex; align-items: center; height: 30px; padding: 0 10px; flex: none; font-size: 11px; letter-spacing: 0.2em; }
 .sl-hd em { margin-left: auto; font-style: normal; font-size: 10px; letter-spacing: 0.12em; opacity: 0.7; text-transform: none; }
 
-/* The ladder: seventeen columns, the swatches standing on one line. */
+/* The ribbon: one column per object at a fixed width; it scrolls and snaps, never crowds. */
+.sl-ribbon { --col: clamp(44px, 6.4cqw, 62px); --big: calc(var(--col) - 6px); position: relative; }
 .sl-ladder {
-  --col: calc((100cqw - 20px) / 17); --big: min(58px, calc(var(--col) - 6px));
-  display: grid; grid-template-columns: repeat(17, 1fr); align-items: start; padding: 4px 10px 0;
+  display: flex; align-items: flex-start; padding: 4px 10px 0;
+  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none;
 }
+.sl-ladder::-webkit-scrollbar { display: none; }
+/* The edges fade where more lies past them. */
+.sl-ribbon.more-left .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 48px); mask-image: linear-gradient(to right, transparent, #000 48px); }
+.sl-ribbon.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to left, transparent, #000 48px); mask-image: linear-gradient(to left, transparent, #000 48px); }
+.sl-ribbon.more-left.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+/* The page arrows sit over the faded ends, level with the swatches. */
+.sl-page {
+  appearance: none; position: absolute; z-index: 1; top: 4px; width: 32px; height: calc(var(--big) + 10px);
+  margin: 0; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer;
+  font: 800 26px/1 "Iosevka Term Slab Nerd Font", "Iosevka Term Slab", ui-monospace, monospace;
+  -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill;
+}
+.sl-page[hidden] { display: none; }
+.sl-page--prev { left: 0; } .sl-page--next { right: 0; }
+.sl-page:hover, .sl-page:focus-visible { outline: none; transform: scale(1.12); }
 .sl-star {
-  appearance: none; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0;
+  appearance: none; display: flex; flex: 0 0 var(--col); flex-direction: column; align-items: center; gap: 8px; min-width: 0;
+  scroll-snap-align: center;
   margin: 0; padding: 0 0 4px; border: 0; background: none; color: inherit;
   font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer;
 }
