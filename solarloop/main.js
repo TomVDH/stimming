@@ -347,11 +347,11 @@ const TONES = [['0', 'Film'], ['1', 'ACES'], ['2', 'AgX']];
 const LOOKS = [['0', 'None'], ['1', 'Furnace'], ['2', 'Viewing glass'], ['3', 'Bleach'], ['4', 'Gold haze']];
 const GRADE = [['fxContrast', 'Contrast', 0.3, 2, 1], ['fxSat', 'Saturation', 0, 2, 1], ['fxWarm', 'Warmth', -1, 1, 0]];
 const gradeRows = () => [
-  { type: 'choice', id: 'fxTone', group: 'Grade', label: 'Tone map', value: '0', options: TONES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => poke() },
+  { type: 'choice', id: 'fxTone', group: 'Grade', label: 'Tone map', value: '1', options: TONES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => poke() },
   { type: 'choice', id: 'fxLook', group: 'Grade', label: 'Look', value: '0', display: 'stepper', options: LOOKS.map(([value, label]) => ({ value, label })), persist: true, onPick: () => poke() },
   ...GRADE.map(([id, label, min, max, value]) => ({ type: 'slider', id, group: 'Grade', label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
   { type: 'button', id: 'gradeReset', group: 'Grade', label: 'Defaults', text: 'Reset', onClick: () => {
-    ui.setting?.('fxTone')?.set('0', true); ui.setting?.('fxLook')?.set('0', true);
+    ui.setting?.('fxTone')?.set('1', true); ui.setting?.('fxLook')?.set('0', true);
     for (const [id, , , , d] of GRADE) ui.setting?.(id)?.set(d, true);
     poke();
   } },
@@ -864,7 +864,7 @@ function makeFrame() {
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), f.lift]);
-  f.fx4.set([Number(gv('fxTone', '0')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
+  f.fx4.set([Number(gv('fxTone', '1')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
   f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), f.glare]);
   eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;

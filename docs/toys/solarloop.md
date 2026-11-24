@@ -208,7 +208,7 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 | Volume | Haze density, Haze light, Corona (full view), Corona bend |
 | Flare | Orb, Streak, Ghosts |
 | Real light | Exposure lift, Glare |
-| Grade | Tone map: Film (the house curve), ACES (Narkowicz fit) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
+| Grade | Tone map: ACES (the house curve since 2026-11-24, Tom: the Narkowicz fit, its exposure 0.4 and gamma 1.4 fitted to Film's shadows and mids, so the look holds while the brightest highlights roll off instead of clipping), Film (the old curve) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
 | Zoom | Zoom weight: the followers' time; the house value is 2, about 3.5 s a stop |
 | Card | Card style: Intro (the house style), Stamp or Caption. Star card, Show: plays the card now at any zoom, with the Sun's outline at the current scale (Tom, 2026-11-24) |
 | Sound | Hum (the star's choir) and Space rumble: each on or off |

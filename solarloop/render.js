@@ -1129,7 +1129,9 @@ vec2 sig(vec2 uv, float kx) {
 }
 // Tone curves on the scene light x; each returns a place on the ramp, 0 to 1.
 // ACES: the Narkowicz fit, then display gamma.
-float toneAces(float x) { x *= 0.6; return pow(clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0), 1.0 / 2.2); }
+// ACES, the house curve (Tom, 2026-11-24): its exposure and gamma are fitted to Film's shadows and mids.
+// The colour ramps carry the display response, so the gamma is 1.4, not 2.2; the highlights keep ACES's roll-off.
+float toneAces(float x) { x *= 0.4; return pow(clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0), 1.0 / 1.4); }
 // AgX: a log2 encoding, then its default contrast curve.
 float toneAgx(float x) {
   float e = clamp((log2(max(x, 1e-6)) + 12.47393) / 16.5, 0.0, 1.0);
