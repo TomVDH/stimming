@@ -53,9 +53,11 @@ const fmtMag = m => `${m < 0 ? '−' : ''}${Math.abs(m)}`;
 export function cardLines(id, name) {
   const f = FACTS[id];
   const mag = f.mag == null ? null : typeof f.mag === 'string' ? f.mag : fmtMag(f.mag);
+  // The type carries the spectral class after a dot; the card shows it as its own row (Tom, 2026-11-24).
+  const [kind, spec = null] = f.type.split(' · ');
   return {
-    name: f.name ?? name, type: f.type, latin: f.latin,
-    rows: [['status', f.status], ['catalogue', f.cat], ['mass', f.mass], ['core', f.core], ['rings', f.rings], ['orbit', f.orbit],
+    name: f.name ?? name, type: kind, latin: f.latin,
+    rows: [['spectral class', spec], ['status', f.status], ['catalogue', f.cat], ['mass', f.mass], ['core', f.core], ['rings', f.rings], ['orbit', f.orbit],
       ['rotation', f.turn], ['magnitude', mag], ['width', f.wide], ['distance', f.dist], ['age', f.age]].filter(([, v]) => v != null),
   };
 }

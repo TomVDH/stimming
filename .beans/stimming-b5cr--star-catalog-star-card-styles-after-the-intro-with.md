@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T23:12:15Z
-updated_at: 2026-11-24T23:16:54Z
+updated_at: 2026-11-24T23:25:47Z
 parent: stimming-e35i
 ---
 
@@ -22,3 +22,5 @@ Tom, 2026-11-24: "lets actually redo some styles for the info callout (we also w
 - [x] Tom keeps Intro as the card style
 - [x] A star switch fades fully to black (the whole frame, glare, stars and grain too)
 - [x] The new card waits until 1.75 s after the light returns; measured 1.76 s
+
+- [x] A spectral class row first on the card; the type line keeps the plain words (Tom: "in the intro we'd like a spectral class readout as well")
