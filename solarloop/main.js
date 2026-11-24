@@ -133,6 +133,7 @@ function toggleLens() {
   cam.t = !started || calm ? 1 : 0;
   store.set('lens', cam.mode);
   applyView();
+  readHover();
   poke();
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
@@ -294,7 +295,8 @@ function eruptAt(p) {
   snd.rise(clamp(toCss(toView(promApex(p)))[0] / cssW * 2 - 1, -1, 1), st.star, calm ? 0.7 : 1);
   poke();
 }
-function flareNear(x, y) {
+// The target under a stage point: a region or a prominence, and its distance.
+function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   for (const rg of sun.regions) {
     const [px, py] = toCss(regionPoint(rg).v);
@@ -309,7 +311,24 @@ function flareNear(x, y) {
     const d = Math.hypot(px - x, py - y) * 0.6;
     if (d < bd) { bd = d; best = p; prom = true; }
   }
-  if (prom) eruptAt(best); else flareAt(best);
+  return { t: best, prom, d: bd };
+}
+// A target counts as under the hand within this many CSS pixels.
+const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
+function flareNear(x, y) {
+  const { t, prom } = pickAt(x, y);
+  if (prom) eruptAt(t); else flareAt(t);
+}
+
+/* ---------- hover: the cursor reads the region under it ---------- */
+// The mouse over the stage, or null; touch and pen never hover.
+let hoverAt = null, cursor = '';
+function readHover() {
+  let c = 'default';
+  if (pointer.drag && cam.mode !== 'long') c = 'grabbing';
+  else if (hoverAt && pointer.id === null && pickAt(hoverAt[0], hoverAt[1]).d < reach()) c = 'pointer';
+  else if (cam.mode !== 'long') c = 'grab';
+  if (c !== cursor) { cursor = c; stage.style.cursor = c; }
 }
 
 /* ---------- frame state for the renderer ---------- */
@@ -466,6 +485,8 @@ function frame(now) {
       }
     }
     for (const fl of sun.flares) cueArcade(fl);
+    // The star turns under a still mouse.
+    if (hoverAt) readHover();
     draw();
     D.frame(dt);
     frameNo++;
@@ -530,7 +551,7 @@ stage.addEventListener('pointermove', e => {
   const now = performance.now();
   const speed = Math.hypot(x - pointer.x, y - pointer.y) / Math.max(1, now - pointer.at) * 1000;
   pointer.x = x; pointer.y = y; pointer.at = now;
-  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) pointer.drag = true;
+  if (!pointer.drag && Math.hypot(x - pointer.x0, y - pointer.y0) > 8) { pointer.drag = true; readHover(); }
   if (!pointer.drag) return;
   snd.turn(speed);
   // The surface follows the hand, like a ball rolled under it.
@@ -548,9 +569,16 @@ function endPointer(e) {
   if (pointer.drag) snd.endTurn();
   pointer.id = null; pointer.drag = false;
   if (tap) flareNear(pointer.x, pointer.y);
+  readHover();
   poke();
 }
 ['pointerup', 'pointercancel', 'lostpointercapture'].forEach(t => stage.addEventListener(t, endPointer));
+stage.addEventListener('pointermove', e => {
+  if (e.pointerType !== 'mouse') return;
+  hoverAt = e.target === canvas || e.target === stage ? local(e) : null;
+  readHover();
+});
+stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); });
 // Zoom in the full view: the wheel, a two-finger pinch, the - and = keys.
 stage.addEventListener('wheel', e => {
   if (cam.mode !== 'full') return;
