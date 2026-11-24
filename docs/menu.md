@@ -24,6 +24,7 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 ### Deal
 - The Clock deals twelve toys from a shuffled line. No toy comes back before every other toy had a turn.
 - The last three hands are kept in `stimming.seen`, across loads. A new line puts their toys last.
+- Trial (Tom, 2026-11-23): `?dial=24` shows a 24-hour face. 24 toys stand at 15° steps, even hours on an outer ring (42%), odd hours on an inner ring (30%). The toys are 14% wide and the middle is smaller. The comet runs between the rings. The phone grid keeps twelve. Capture: `docs/qa/clock/01-dial24.jpg`.
 - Re-roll (key R) shows after 5 s, inside the clock: low in the middle, under the motto, over the six o'clock toy. It scales with the clock. It sends the old dozen back into blur in the comet's order, then runs the comet.
 - The Clock has no link to `?all` or `?lab`. Both are flags.
 

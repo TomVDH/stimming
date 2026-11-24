@@ -1,6 +1,6 @@
 // The Clock: the menu's default view. Twelve toys stand on a dial.
 // A Re-roll deals twelve more. ?all shows the whole shelf instead.
-const HOURS = 12;
+let HOURS = 12;
 // The toys that have a moving loop in shared/loops/; index.json there names them.
 let loops = new Set(['fire']);
 const root = document.documentElement;
@@ -21,6 +21,13 @@ function start() {
   // A phone in portrait shows the dozen as a grid, with no dial, comet or tube (Tom, 2026-11-17).
   const flatQ = matchMedia('(max-width: 640px) and (orientation: portrait)');
   const flat = () => flatQ.matches;
+  // A trial (Tom, 2026-11-23): ?dial=24 deals 24 toys on a 24-hour face.
+  // Even hours stand on the outer ring, odd hours on the inner ring.
+  const DAY = new URLSearchParams(location.search).get('dial') === '24' && !flat() && pool.length >= 24;
+  if (DAY) { HOURS = 24; root.dataset.dial = '24'; }
+  // The bearing of an hour, in degrees, and its ring as a share of the 40.5% track.
+  const deg = i => i * 360 / HOURS;
+  const ring = i => DAY ? (i % 2 ? 0.3 : 0.42) / 0.405 : 1;
   // No motion with reduced motion, without GSAP, in a hidden tab, or in the grid.
   const calm = () => !gsap || still.matches || document.visibilityState !== 'visible' || flat();
 
@@ -89,8 +96,9 @@ function start() {
     pool.forEach(li => li.setAttribute('data-out', ''));
     hand.forEach((li, i) => {
       li.removeAttribute('data-out');
-      li.style.setProperty('--x', Math.sin(i * Math.PI / 6).toFixed(4));
-      li.style.setProperty('--y', (-Math.cos(i * Math.PI / 6)).toFixed(4));
+      const a = deg(i) * Math.PI / 180;
+      li.style.setProperty('--x', (Math.sin(a) * ring(i)).toFixed(4));
+      li.style.setProperty('--y', (-Math.cos(a) * ring(i)).toFixed(4));
       // A dealt toy is held from the start, so it never shows before the comet drops it off.
       hold(li, !calm());
     });
@@ -139,7 +147,7 @@ function start() {
 
   // The tube masks its picture away in a soft wedge toward the pointer's bearing from the middle.
   const aim = (deg, snap = false) => bg?.aim(deg, snap);
-  const hour = li => dozen().indexOf(li) * 30;
+  const hour = li => deg(dozen().indexOf(li));
   // The toy's list item under an event's target, or null.
   const tile = node => /** @type {Element | null} */ (node)?.closest?.('main > .shelf > li') ?? null;
   // The toys take no hover and no focus while the intro plays (Tom); `shy` holds them.
@@ -203,7 +211,8 @@ function start() {
     if (fade <= 0) return;
     const at = t => {
       // The path is the toys' track, 40.5% of the face from the middle, from start to end.
-      const r = W * 0.405, ang = t * Math.PI * 2;
+      // On the 24-hour face it runs between the two rings.
+      const r = W * (DAY ? 0.36 : 0.405), ang = t * Math.PI * 2;
       return [W / 2 + Math.sin(ang) * r, W / 2 - Math.cos(ang) * r];
     };
     pen.globalCompositeOperation = 'lighter';
@@ -347,7 +356,7 @@ function start() {
     if (document.visibilityState !== 'visible' || busy) return;
     if (beats++ >= HOURS * LAPS) return sleep();
     at = (at + 1) % HOURS;
-    aim(at * 30);
+    aim(deg(at));
     live(true);
     show(dozen()[at]);
   }
