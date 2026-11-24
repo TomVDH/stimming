@@ -201,7 +201,7 @@ void main() {
     // The chromosphere glows red at the very edge.
     cool += uDisk2.y * 0.5 * smoothstep(0.2, 0.0, mu);
     // Dust in front of the disk dims it in slow patches.
-    hot *= 1.0 - uDust * 0.55 * smoothstep(0.4, 0.75, fbm(vec3(P * 0.006, 5.0 + tb * 0.05)));
+    hot *= 1.0 - uDust * 0.55 * smoothstep(0.4, 0.75, fbm(q * 4.2 + vec3(5.0, 0.0, tb * 0.05)));
   } else {
     float h = r - R;
     // Streamers: broad rays in the corona, and fine ones.
@@ -477,7 +477,8 @@ float dens(vec3 p, bool lite) {
   float r = length(p);
   if (r < R) return 0.0;
   // One noise cell is about 90 units; the texture repeats every 64 cells.
-  vec3 q = p / 5800.0 + vec3(uTime * 0.00012, 0.0, uTime * 0.00006);
+  // The haze sits in the star's frame, so it turns with the star.
+  vec3 q = (uToSun * p) / 5800.0 + vec3(uTime * 0.00012, 0.0, uTime * 0.00006);
   vec3 w = vec3(nz(q * 0.6), nz(q * 0.6 + 0.37), nz(q * 0.6 + 0.71)) - 0.5;
   float f = lite ? nz(q + w * 0.6) * 0.7 + nz(q * 2.03 + w + 0.31) * 0.3 : fbm3(q + w * 0.6);
   float h = r - R;
@@ -507,7 +508,8 @@ float corona(vec3 p) {
   // Fine rays: noise on the direction alone, so it holds along each radius.
   float rays = fbm3(u * 0.45 + 0.5);
   rays = 0.15 + 2.6 * rays * rays * rays;
-  float lumps = 0.45 + 1.1 * nz(vec3(phi * 0.12, 0.3, 0.7));
+  // Sample round a circle, so the lumps wrap with no seam at phi = pi.
+  float lumps = 0.45 + 1.1 * nz(vec3(cos(phi) * 0.12, sin(phi) * 0.12, 0.7));
   float polar = smoothstep(0.72, 0.95, abs(u.y)) * rays;
   return pow(R / r, 2.2) * (sheet * lumps * (0.5 + 0.7 * rays) + 0.1 * rays + 0.3 * polar);
 }
@@ -539,8 +541,8 @@ void main() {
   float z0 = reach;
   const int N = 32;
   float dt = (z0 - z1) / float(N);
-  // Interleaved gradient noise, fixed in place; the blur hides it.
-  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  // Interleaved gradient noise, stepped each frame so no pattern holds still.
+  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
   float T = 1.0;
   float acc = 0.0;
   for (int i = 0; i < N; i++) {
