@@ -9,12 +9,22 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { devPanel } from './devpanel.js';
 
 /* ---------- controls ---------- */
-const tune = { thr: 0.5, len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines' };
+const tune = { thr: 0.5, shape: 'stubby', motion: 'fast', len: 5, r0: 0.4, spread: 0.08, feather: 0.5, bright: 1, dia: 1, turb: 1, speed: 1, board: 'lines' };
+// Shape presets: length and spread; Custom takes the sliders.
+const SHAPES = { stubby: [1.8, 0.12], column: [5, 0.04] };
+// Motion presets: noise size (per metre), speed and strength.
+const MOTIONS = { fast: [3.5, 2.0, 1.0], slow: [1.0, 0.45, 1.3], steady: [1.5, 0.3, 0.2] };
 const slider = (id, group, label, min, max, step) => ({
   type: 'slider', id, group, label, min, max, step, value: tune[id], onInput: v => { tune[id] = v; apply(); },
 });
 const ROWS = [
   slider('thr', 'Jet', 'Throttle', 0, 1, 0.01),
+  { type: 'choice', id: 'shape', group: 'Jet', label: 'Shape', value: 'stubby', options: [
+    { value: 'stubby', label: 'Stubby' }, { value: 'column', label: 'Column' }, { value: 'custom', label: 'Custom' },
+  ], onPick: v => { tune.shape = v; apply(); } },
+  { type: 'choice', id: 'motion', group: 'Jet', label: 'Motion', value: 'fast', options: [
+    { value: 'fast', label: 'Fast' }, { value: 'slow', label: 'Slow' }, { value: 'steady', label: 'Steady' },
+  ], onPick: v => { tune.motion = v; apply(); } },
   slider('len', 'Cone', 'Length (m)', 1, 10, 0.1),
   slider('r0', 'Cone', 'Nozzle radius', 0.15, 0.8, 0.01),
   slider('spread', 'Cone', 'Spread', 0, 0.3, 0.005),
@@ -43,7 +53,7 @@ camera.lookAt(0, 3, 0);
 
 const U = {
   time: uniform(0), thr: uniform(0.5), len: uniform(5), r0: uniform(0.4), spread: uniform(0.08),
-  feather: uniform(0.5), bright: uniform(1), dia: uniform(1), turb: uniform(1), speed: uniform(1),
+  feather: uniform(0.5), bright: uniform(1), dia: uniform(1), turb: uniform(1), speed: uniform(1), freq: uniform(3.5),
   board: uniform(0),
   // The nozzle sits here and points straight down.
   noz: uniform(new THREE.Vector3(0, 6, 0)),
@@ -92,7 +102,7 @@ coneMat.colorNode = Fn(() => {
     const s = U.noz.y.sub(P.y);
     const r = P.xz.sub(U.noz.xz).length();
     // Flow noise rides down the jet; it breaks the edges and the tail.
-    const flow = vec3(P.x.mul(2.2), P.y.mul(1.3).add(t.mul(U.speed).mul(thr.mul(6.0).add(3.0))), P.z.mul(2.2));
+    const flow = vec3(P.x.mul(U.freq), P.y.mul(U.freq.mul(0.6)).add(t.mul(U.speed).mul(thr.mul(6.0).add(3.0))), P.z.mul(U.freq));
     const n = mx_noise_float(flow).mul(0.5).add(0.5);
     const n2 = mx_noise_float(flow.mul(2.3).add(7.1)).mul(0.5).add(0.5);
     const tn = n.mul(0.65).add(n2.mul(0.35));
@@ -104,17 +114,19 @@ coneMat.colorNode = Fn(() => {
     // Nothing shows under the floor.
     const live = smoothstep(-0.05, 0.08, s).mul(tail).mul(tail).mul(smoothstep(0.0, 0.05, P.y));
     // The hot core: narrow, white-yellow, strongest near the nozzle.
-    const core = exp(rr.mul(rr).mul(-9.0)).mul(exp(s.div(thr.mul(2.0).add(0.8)).negate()));
+    const core = exp(rr.mul(rr).mul(-7.0)).mul(exp(s.div(thr.mul(1.2).add(0.6).mul(U.len.mul(0.4))).negate()));
     // The sheath: orange near the nozzle, violet blue further down.
     const sheath = exp(rr.mul(rr).mul(-2.2)).mul(tn.mul(0.8).add(0.5)).mul(exp(s.div(U.len.mul(0.7)).negate()));
-    const cSheath = mix(vec3(1.0, 0.42, 0.12), vec3(0.4, 0.3, 1.0), smoothstep(0.3, 2.5, s));
+    // Orange sheath; only a hint of violet far down.
+    const cSheath = mix(vec3(1.0, 0.45, 0.12), vec3(0.75, 0.35, 0.55), smoothstep(0.6, 3.5, s));
     // Shock diamonds: bright cells on the axis, each dimmer than the last.
     const S = U.r0.mul(2.2).mul(thr.mul(0.6).add(0.7));
     const k = s.div(S).sub(0.5);
     const f = abs(fract(k).sub(0.5)).mul(2.0);
     const cell = float(1.0).sub(f.mul(1.6)).sub(rr.mul(2.4)).max(0.0);
-    const dia = cell.mul(exp(k.max(0.0).mul(-0.6))).mul(smoothstep(0.15, 0.6, thr)).mul(U.dia);
-    const e = vec3(1.0, 0.85, 0.6).mul(core).mul(6.0)
+    // Faint hints, only at high throttle.
+    const dia = cell.mul(exp(k.max(0.0).mul(-0.6))).mul(smoothstep(0.55, 0.9, thr)).mul(U.dia).mul(0.3);
+    const e = vec3(1.0, 0.9, 0.65).mul(core).mul(9.0)
       .add(cSheath.mul(sheath).mul(1.6))
       .add(vec3(1.0, 0.7, 0.45).mul(dia).mul(4.0));
     col.addAssign(e.mul(live).mul(ds).mul(thr.mul(1.2).add(0.4)).mul(U.bright));
@@ -127,8 +139,8 @@ scene.add(cone);
 
 // The box holds the whole cone.
 function placeCone() {
-  const n = U.noz.value, L = tune.len;
-  const w = tune.r0 + tune.spread * L + 1.0;
+  const n = U.noz.value, L = U.len.value;
+  const w = U.r0.value + U.spread.value * L + 1.0;
   U.bmin.value.set(n.x - w, n.y - L - 0.6, n.z - w);
   U.bmax.value.set(n.x + w, n.y + 0.2, n.z + w);
   cone.position.set(n.x, n.y - (L + 0.4) / 2, n.z);
@@ -137,6 +149,10 @@ function placeCone() {
 
 function apply() {
   for (const k of ['thr', 'len', 'r0', 'spread', 'feather', 'bright', 'dia', 'turb', 'speed']) U[k].value = tune[k];
+  const sh = SHAPES[tune.shape];
+  if (sh) { U.len.value = sh[0]; U.spread.value = sh[1]; }
+  const [fq, sp, tb] = MOTIONS[tune.motion] || MOTIONS.fast;
+  U.freq.value = fq; U.speed.value = sp * tune.speed; U.turb.value = tb * tune.turb;
   U.board.value = tune.board === 'dark' ? 1 : tune.board === 'sky' ? 2 : 0;
   placeCone();
 }
