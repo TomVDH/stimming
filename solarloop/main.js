@@ -283,30 +283,32 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
+// id, group, label, min, max, default, reach, hint.
+// reach stretches the range above 1, so a subtle effect shows at the top; 1 stays the house look.
 const FX = [
-  ['fxExpo', 'Post', 'Exposure', 0.3, 2, 1],
-  ['fxBloom', 'Post', 'Bloom', 0, 3, 1],
-  ['fxRays', 'Post', 'Light rays', 0, 3, 1],
-  ['fxHal', 'Post', 'Halation', 0, 3, 1],
-  ['fxSplit', 'Post', 'Colour split', 0, 4, 1],
-  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1],
-  ['fxDirt', 'Post', 'Lens dirt', 0, 4, 1],
-  ['fxRoll', 'Post', 'Highlight roll-off', 0, 2, 1],
-  ['fxVig', 'Post', 'Vignette', 0, 2, 1],
-  ['fxGrain', 'Post', 'Grain', 0, 5, 1],
-  ['fxVol', 'Volume', 'Haze density', 0, 4, 1],
-  ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1],
-  ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1],
-  ['fxBend', 'Volume', 'Corona bend', 0, 3, 1],
-  ['fxOrb', 'Flare', 'Orb', 0, 3, 1],
-  ['fxStreak', 'Flare', 'Streak', 0, 3, 1],
-  ['fxGhost', 'Flare', 'Ghosts', 0, 3, 1],
-  ['fxReal', 'Real light', 'Exposure lift', 0, 2, 1],
-  ['fxGlare', 'Real light', 'Glare', 0, 3, 1],
+  ['fxExpo', 'Post', 'Exposure', 0.3, 2, 1, 1, 'Overall brightness, before the tone curve.'],
+  ['fxBloom', 'Post', 'Bloom', 0, 3, 1, 6, 'The soft glow bright light spills into its surroundings.'],
+  ['fxRays', 'Post', 'Light rays', 0, 3, 1, 2, 'Shafts of light streaming out from the star.'],
+  ['fxHal', 'Post', 'Halation', 0, 3, 1, 1, 'The red glow film gives round bright light.'],
+  ['fxSplit', 'Post', 'Colour split', 0, 4, 1, 3, 'Red and blue fringes toward the frame\'s edge, as a lens splits colour.'],
+  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1, 3, 'Hot air above the limb bends what lies behind it.'],
+  ['fxDirt', 'Post', 'Lens dirt', 0, 4, 1, 4, 'Smudges on the glass that catch the star\'s light.'],
+  ['fxRoll', 'Post', 'Highlight roll-off', 0, 2, 1, 1, 'The brightest parts fade to warm white, as on film.'],
+  ['fxVig', 'Post', 'Vignette', 0, 2, 1, 1, 'The frame darkens toward its corners.'],
+  ['fxGrain', 'Post', 'Grain', 0, 5, 1, 1, 'Film grain, strongest in the mid tones, still while the toy sleeps.'],
+  ['fxVol', 'Volume', 'Haze density', 0, 4, 1, 2, 'How thick the haze and dust round the star are.'],
+  ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1, 1, 'How much starlight the haze scatters.'],
+  ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1, 1, 'The star\'s outer atmosphere, seen on the full view.'],
+  ['fxBend', 'Volume', 'Corona bend', 0, 3, 1, 3, 'How much the corona\'s streamers curve on the full view.'],
+  ['fxOrb', 'Flare', 'Orb', 0, 3, 1, 1, 'The soft round glow of the lens flare.'],
+  ['fxStreak', 'Flare', 'Streak', 0, 3, 1, 1, 'The thin horizontal anamorphic streak.'],
+  ['fxGhost', 'Flare', 'Ghosts', 0, 3, 1, 1, 'The rimmed discs a bright light throws across the frame.'],
+  ['fxReal', 'Real light', 'Exposure lift', 0, 2, 1, 1, 'How much brighter the star burns as you zoom out.'],
+  ['fxGlare', 'Real light', 'Glare', 0, 3, 1, 1, 'The glare that spreads past the star\'s edge when far out.'],
 ];
 // The grade rows: a tone curve, a sun-glare look, and three sliders.
 const TONES = [['0', 'Film'], ['1', 'ACES'], ['2', 'AgX']];
@@ -324,7 +326,11 @@ const gradeRows = () => [
 ];
 const gv = (id, d) => ui?.setting?.(id)?.value ?? d;
 // A knob's value: its Dev row, else the default.
-const fxv = id => { const d = FX.find(f => f[0] === id)[5]; return ui?.setting?.(id)?.value ?? d; };
+const fxv = id => {
+  const [, , , , , d, reach] = FX.find(f => f[0] === id);
+  const v = ui?.setting?.(id)?.value ?? d;
+  return v <= 1 ? v : 1 + (v - 1) * reach;
+};
 
 /* ---------- bar ---------- */
 // The stars in pick order: main sequence by class, brown dwarfs, life stages.
@@ -363,7 +369,7 @@ const ui = initPage({ id: ID, bar: {
   quality: true,
   // Tuning for the people who build the toy; the Dev button shows with ?dev.
   dev: [
-    ...FX.map(([id, group, label, min, max, value]) => ({ type: 'slider', id, group, label, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
+    ...FX.map(([id, group, label, min, max, value, , hint]) => ({ type: 'slider', id, group, label, hint, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', min: 0.3, max: 3, step: 0.05, value: 1, persist: true },

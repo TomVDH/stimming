@@ -889,23 +889,30 @@ void main() {
   c = body(c, fc, uBodyB, uBodyK.y);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
-  // Lens dirt: smudges on the glass that glow where bright light falls.
-  float dirt = smoothstep(0.55, 0.85, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
-             + smoothstep(0.8, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
-  // No dirt over the disk: it sat in the same place on every star.
-  dirt *= smoothstep(R * 1.0, R * 1.15, r);
-  c += hc * dirt * (1.0 - exp(-bll * 0.6)) * 0.35 * uFilm.z * uFx2.y;
+  // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
+  float dirt = smoothstep(0.5, 0.8, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
+             + smoothstep(0.78, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
+  // Over the disk the smudges stay faint: they sat in the same place on every star.
+  dirt *= 0.25 + 0.75 * smoothstep(R * 1.0, R * 1.15, r);
+  c += hc * dirt * (1.0 - exp(-(bll * 0.6 + sl * 0.8))) * 0.35 * uFilm.z * uFx2.y;
   // Highlights roll off to white, as on film.
   float lum = dot(c, vec3(0.3, 0.55, 0.15));
-  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.85, 1.05, lum) * 0.35 * uFx2.z);
+  c = mix(c, vec3(1.0, 0.98, 0.94), smoothstep(0.75, 1.02, lum) * 0.35 * uFx2.z);
   vec2 v = vUv - 0.5;
   c *= clamp(1.0 - (0.6 + 0.25 * uLens) * uFx2.w * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
   c = look(c);
-  // Fine film grain, strongest in the mid tones: a light touch.
+  // Film grain: soft clumps about 1.4 CSS pixels wide, a new frame of it 24 times a second.
+  // It sits in the mid tones and stays out of black space; it holds still while the toy sleeps.
   float l = dot(c, vec3(0.3, 0.55, 0.15));
-  vec2 g2 = floor(gl_FragCoord.xy / max(1.0, uRes.y / 900.0));
-  float gr = hash(g2 + uFrame * 17.0) + hash(g2 * 1.7 + uFrame * 5.0) - 1.0;
-  c += gr * uFilm.x * uFx3.x * (0.3 + 3.0 * l * (1.0 - l));
+  vec2 gp = gl_FragCoord.xy / (1.4 * max(1.0, uRes.y / 900.0));
+  // The frame count wraps, so the hash keeps its precision.
+  float gf = mod(floor(uTime * 24.0), 64.0);
+  vec2 gi = floor(gp), gt = fract(gp);
+  gt = gt * gt * (3.0 - 2.0 * gt);
+  float g00 = hash(gi + gf * 17.0), g10 = hash(gi + vec2(1.0, 0.0) + gf * 17.0);
+  float g01 = hash(gi + vec2(0.0, 1.0) + gf * 17.0), g11 = hash(gi + vec2(1.0, 1.0) + gf * 17.0);
+  float gr = (mix(mix(g00, g10, gt.x), mix(g01, g11, gt.x), gt.y) - 0.5) * 2.0;
+  c += gr * uFilm.x * 1.6 * uFx3.x * smoothstep(0.02, 0.15, l) * (0.35 + 2.6 * l * (1.0 - l));
   o = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
 

@@ -1,0 +1,19 @@
+---
+# stimming-fe73
+title: 'Solar loop: every post row works; clean grain'
+status: in-progress
+type: task
+created_at: 2026-11-24T21:56:43Z
+updated_at: 2026-11-24T21:56:43Z
+parent: stimming-e35i
+---
+
+Tom, 2026-11-24: "can we please get proper post fx settings, grain cleaned up and have them all work please -- a tooltip as to what they do would be nice".
+
+- [x] Measure every post row: one frame drawn twice, each row at its top
+- [x] Lens dirt was dead: it now catches the star's light
+- [x] Weak rows reach further above 1 (bloom, rays, split, shimmer, haze, bend, dirt); 1 and below unchanged
+- [x] Grain: soft clumps, 24 frames a second, out of black space, still asleep
+- [x] One-line hints on each post row (shown once the shell's hint field lands)
+- [ ] Tooltips: the shell's hint field (shared change, its own bean and PR)
+- [ ] Tom looks at it live
