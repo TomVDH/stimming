@@ -21,7 +21,7 @@ Idea 370, group C (Tom, 2026-11-23): an "ant farm view of the steelworks", a pro
 - One side slice, ore at the left, coils at the right. Every building is cut open in the same plane. The ground is cut open too: pits and tunnels show under grade.
 - The line is about four screens wide (690 m). The view pans: a drag moves it; on its own it drifts along at 2.2 m/s.
 - Hot metal is the key light. The second light is cool: floodlights on masts, high-bay lamps under each roof.
-- Tiny workers walk the floors and gantries, about 6 px tall at 1280. The plan's 2 to 3 px read as dust.
+- Tiny workers walk the floors, stairs and ladders, about 5 px tall at 1280, with white hats. The plan's 2 to 3 px read as dust.
 - No real mill, company or plant names, and no markings (hard rule 11).
 
 ## The line
@@ -38,7 +38,8 @@ Idea 370, group C (Tom, 2026-11-23): an "ant farm view of the steelworks", a pro
 
 - Each step runs, waits on its input, or backs up behind a full output (`status()` in `line.js`).
 - A lamp over each door: green runs, red blinks while it backs up, dim amber while it waits. A waiting step's high-bay lamps dim.
-- A rush (a tap on a building) runs that step at double pace for 20 s, calls five more workers in, lights its lamps and flashes a rush lamp over its door.
+- A rush (a tap on a building) runs that step at double pace for 20 s, calls the floaters to its posts (`call` in K7), lights its lamps and flashes a rush lamp over its door.
+- A step short of hands runs slower, down to 0.7 of its pace.
 
 ## Controls
 
@@ -61,10 +62,11 @@ Bar v3, from the `bar` spec in `initPage()`.
 ## The model
 
 - `works.js`: the layout in metres, ground at 0, and the static shapes. Twelve floats a vertex: position, pattern uv, material, normal mode, colour and glow. One buffer.
-- `line.js`: the machines of each step, their timing and the stocks between them. Cranes run a queue of waypoints. Torpedo cars use parallel tracks and pass. The shift: about five minutes of night, dawn, a short day and dusk.
-- `crew.js`: workers on walkways; a busy step keeps them moving; a rush hires extra hands who leave when it ends.
+- `k7.js`: K7, the production-line kit, copied whole from Ant farm (`antfarm/k7.js`); never imported across toys.
+- `line.js`: the machines of each step and their timing. The stocks between steps (ore, coke, slabs, coils) are K7 stores with the line's caps. Cranes run a queue of waypoints. Torpedo cars use parallel tracks and pass. The shift: about five minutes of night, dawn, a short day and dusk.
+- `crew.js`: the K7 side. Every floor is a road, with stairs and ladders between floors and one ground road along the whole line. Each floor and ground stretch has a post with a tend step (two hands, its step's job). Each step keeps its own workers; eight floaters take any job and answer a rush.
+- Growth, by K7 milestones: after the third heat each step hires one more worker; after sixteen coils shipped the coil yard stacks a third row (cap 15).
 - `show.js`: per frame, the sprites (goods, workers, sparks), the lights (24 at most, culled to the view, strongest first) and the plumes.
-- K7, the production-line kit from Ant farm, is not wired in yet. See Known.
 
 ## Passes
 
@@ -76,7 +78,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 ## Sound
 
-Web Audio, muted by default. Each building has a noise bed, panned by its place and loudest where the view is: the belt's rattle, the furnace roar (up at a tap), the blow, the caster's hiss, the mill. Beats: the wagon dump, the push, the quench hiss, skip clanks, the tap's thump, the charge, the blow, the steel tap, the torch, the mill's bites, the strip's whine, coil clanks, the train horn. A rush rings two notes. The beds stop when the loop sleeps.
+Web Audio, muted by default. Each building has a noise bed, panned by its place and loudest where the view is: the belt's rattle, the furnace roar (up at a tap), the blow, the caster's hiss, the mill. Beats: the wagon dump, the push, the quench hiss, skip clanks, the tap's thump, the charge, the blow, the steel tap, the torch, the mill's bites, the strip's whine, coil clanks, the train horn. A rush rings two notes. A growth milestone sounds a long horn and a bell from anywhere on the line. The beds stop when the loop sleeps.
 
 ## Frame loop
 
@@ -98,6 +100,6 @@ Captures in `docs/qa/steelline/`, Edge headless on D3D11 (RTX 3070).
 
 ## Known
 
-- K7 is not in yet. Ant farm builds it; it was not on origin at this build. `line.js` holds the step machines and their stocks, and `crew.js` the workers. Next: copy `antfarm/k7.js` whole, and move the stocks, the workers and the rush (`line.call`) onto it.
-- Growth (a second converter, a longer mill, another coil-yard track) waits for K7's milestones.
+- `k7.js` is a copy of Ant farm's file from the shared checkout, before Ant farm pushed it. Copy it again whole once it is on origin.
+- Growth is small so far: a bigger crew and a third coil row. A second converter, a longer mill and another coil-yard track need new static shapes.
 - The tunnel belt's lumps are hard to see at night.

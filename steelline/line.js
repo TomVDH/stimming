@@ -31,6 +31,8 @@ export function makeLine() {
     rush: { yard: 0, furnace: 0, converter: 0, caster: 0, mill: 0 },
     status: { yard: 'run', furnace: 'run', converter: 'run', caster: 'run', mill: 'run' },
     busy: { yard: 0.7, furnace: 0.7, converter: 0.7, caster: 0.7, mill: 0.7 },
+    // Workers at work per step, from K7; heats tapped and coils shipped; growth.
+    hands: {}, heats: 0, shipped: 0, grow: { coilRows: 2 },
     // The beat each step last made; the sound and the camera read it.
     events: [],
     yard: { trainX: -200, wagons: [], dumping: 0, beltLoad: 0, ovens: [], quenchX: P.ovenX0 + 4, cake: 0, steam: 0 },
@@ -54,7 +56,11 @@ export function makeLine() {
   for (let i = 0; i < st.stock.coils; i++) { const [x, y] = stackAt(i); st.coils.push({ x, y, heat: 0.1 }); }
   for (let i = 0; i < 3; i++) st.slabs.push({ x: P.reheatX0 + 4 + i * 9, heat: 0.75 + i * 0.05, id: slabId++, mode: 'reheat' });
   const emit = (kind, x, k = 1) => st.events.push({ kind, x, k });
-  const speed = step => 1 + (st.rush[step] > 0 ? 1 : 0);
+  // A rush doubles a step; short hands slow it to 0.7.
+  const EXPECT = { yard: 2.5, furnace: 3, converter: 2.5, caster: 2, mill: 2.5 };
+  const speed = step => (1 + (st.rush[step] > 0 ? 1 : 0)) * (st.hands[step] === undefined ? 1 : 0.7 + 0.3 * Math.min(1, st.hands[step] / EXPECT[step]));
+  // The coil yard holds five coils a row.
+  const coilCap = () => st.grow.coilRows * 5;
 
   /* ---------- step 1: ore yard and coke ovens ---------- */
   const yard = st.yard;
@@ -266,7 +272,7 @@ export function makeLine() {
         cv.tilt = toward(cv.tilt, -1.75, 0.35 * k, dt);
         cv.tapOut = cv.tilt < -1.6 ? 1 : 0;
         if (cv.tapOut && l) { const f = Math.min(cv.fill, dt * k / 10); cv.fill -= f; l.fill = Math.min(1, l.fill + f / 0.85); l.heat = 0.97; }
-        if (cv.tapOut && !cv.tapped) { cv.tapped = true; emit('steelTap', P.convX); }
+        if (cv.tapOut && !cv.tapped) { cv.tapped = true; st.heats++; emit('steelTap', P.convX); }
         if (cv.fill <= 0.01) { cv.fill = 0; cv.tapOut = 0; cv.tapped = false; if (l) l.mode = 'go'; go('right'); }
         break;
       }
@@ -342,7 +348,7 @@ export function makeLine() {
     });
     mT += dt * k;
     const go = m => { ml.mode = m; mT = 0; };
-    const coilRoom = st.coils.length < CAPS.coils + 2;
+    const coilRoom = st.coils.length < coilCap() + 2;
     switch (ml.mode) {
       case 'idle': {
         const s = inF[0];
@@ -394,7 +400,7 @@ export function makeLine() {
         // The yard crane lifts the coil out of the pit onto the stack.
         const cr = ml.crane, moved = drive(cr, dt * k, 8, 8);
         if (!ml.slot) {
-          ml.slot = stackAt(st.coils.length % (CAPS.coils + 2));
+          ml.slot = stackAt(st.coils.length % (coilCap() + 2));
           cr.q = [[P.coilerX, 10], [P.coilerX, -4]];
         } else if (moved && ml.coil > 0) {
           ml.coil = 0; ml.carry = { heat: ml.coilHeat };
@@ -425,8 +431,8 @@ export function makeLine() {
       if (ot.x === P.trainX) { ot.mode = 'load'; oT = 0; }
     } else if (ot.mode === 'load') {
       // A coil a second, top of the stack first.
-      if (oT > 1.1 && st.coils.length && ot.coils < 8) { st.coils.pop(); ot.coils++; oT = 0; emit('load', P.trainX); }
-      if (ot.coils >= 8 || (!st.coils.length && oT > 2)) { ot.mode = 'out'; emit('horn', P.trainX); emit('milestone', P.trainX); }
+      if (oT > 1.1 && st.coils.length && ot.coils < 8) { st.coils.pop(); ot.coils++; st.shipped++; oT = 0; emit('load', P.trainX); }
+      if (ot.coils >= 8 || (!st.coils.length && oT > 2)) { ot.mode = 'out'; emit('horn', P.trainX); }
     } else if (ot.mode === 'out') {
       ot.x += dt * 8 * k;
       if (ot.x > 780) { ot.mode = 'away'; ot.coils = 0; }
@@ -441,7 +447,7 @@ export function makeLine() {
     s.furnace = st.bfStore < 0.05 || st.stock.coke < 0.05 ? 'starved' : bf.hearth > 0.97 && tapT <= 0 ? 'backed' : 'run';
     s.converter = cMode === 'tapWait' ? 'backed' : cMode === 'idle' && cv.pit.fill < 0.5 ? 'starved' : 'run';
     s.caster = cs.run < 0.5 && cs.tundish > 0.05 ? 'backed' : cs.tundish < 0.05 ? 'starved' : 'run';
-    s.mill = st.coils.length >= CAPS.coils ? 'backed' : ml.mode === 'idle' && !st.slabs.some(q => q.mode === 'reheat') ? 'starved' : 'run';
+    s.mill = st.coils.length >= coilCap() ? 'backed' : ml.mode === 'idle' && !st.slabs.some(q => q.mode === 'reheat') ? 'starved' : 'run';
     for (const k of STEPS) st.busy[k] = s[k] === 'run' ? (st.rush[k] > 0 ? 1 : 0.7) : 0.15;
   }
   // A shift: about five minutes of night, dawn, a short day and dusk.

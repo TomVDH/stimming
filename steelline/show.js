@@ -243,10 +243,12 @@ export function makeShow() {
   }
 
   // Workers: tiny figures on the floors and gantries.
+  // K7 workers: x, y at the feet; walk is the distance walked; state says if they move.
   function workers(crew) {
     for (const w of crew) {
       if (w.x < vx0 - 2 || w.x > vx1 + 2) continue;
-      put(w.x, w.y + 0.55, 0.27 * w.dir, 0.55, 0, K.WORKER, 0, w.step_, w.vest[0], w.vest[1], w.vest[2], w.walking);
+      const moving = w.path && w.state !== 'work' ? 1 : 0, dir = Math.cos(w.ang) >= 0 ? 1 : -1, v = w.data.vest;
+      put(w.x, w.y + 0.55, 0.27 * dir, 0.55, 0, K.WORKER, 0, w.walk * 5.2, v[0], v[1], v[2], moving);
     }
   }
 

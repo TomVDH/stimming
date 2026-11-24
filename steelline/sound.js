@@ -103,7 +103,7 @@ export function makeSound(kit) {
     const ac = kit.live();
     if (!ac || !kit.noise) return;
     const { pan, g } = place(e.x, view);
-    if (g < 0.03) return;
+    if (g < 0.03 && e.kind !== 'milestone') return;
     const t = ac.currentTime + Math.random() * 0.01;
     switch (e.kind) {
       case 'dump': burst(ac, t, { f: 220, q: 0.6, type: 'lowpass', level: 0.3 * g, a: 0.3, len: 2.2, pan }); break;
@@ -126,6 +126,8 @@ export function makeSound(kit) {
       case 'load': clank(ac, t, { f: 105 * jit(0.1), level: 0.12 * g, len: 0.9, pan }); break;
       case 'train': horn(ac, t, { level: 0.05, pan: -0.8, len: 0.8 }); break;
       case 'horn': horn(ac, t, { level: 0.07 * Math.max(g, 0.4), pan, len: 1.2 }); break;
+      // Growth: a long horn under a two-note bell, heard from anywhere.
+      case 'milestone': horn(ac, t, { level: 0.06, pan, len: 1.8 }); clank(ac, t + 0.2, { f: 660, level: 0.06, len: 1 }); clank(ac, t + 0.45, { f: 880, level: 0.05, len: 1.2 }); break;
     }
   }
   // A tap on a building: a short two-note bell, so the rush reads.

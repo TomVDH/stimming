@@ -30,7 +30,7 @@ let cssW = 1, cssH = 1, dpr = 1, started = false, lastInput = 0, frozen = false,
 let cx = 262, vel = 0, drift = 1, driftDir = 1, held = 0;
 let view = { x: 0, y: 0, w: 160, h: 100 };
 let line = makeLine();
-let crew = makeCrew();
+let crew = makeCrew(line.st);
 const show = makeShow();
 const works = buildWorks();
 // The steps, by their span on the line.
@@ -57,9 +57,9 @@ const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 1500 });
 const snd = makeSound(kit);
 
-function resetWorks() { line = makeLine(); crew = makeCrew(); warm(); poke(); }
+function resetWorks() { line = makeLine(); crew = makeCrew(line.st); warm(); poke(); }
 // The first frame shows a works in full swing.
-function warm() { for (let i = 0; i < 1200; i++) line.step(0.1); line.takeEvents(); }
+function warm() { for (let i = 0; i < 1200; i++) { line.step(0.1); crew.step(0.1); } line.takeEvents(); }
 warm();
 
 /* ---------- GL ---------- */
@@ -121,7 +121,7 @@ function frame(now) {
     drift = idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     const sdt = dt * pace * drift;
     line.step(sdt);
-    crew.step(sdt, line.st.busy, line.st.rush);
+    crew.step(sdt);
     show.step(sdt, line.st, calm);
     for (const e of line.takeEvents()) snd.event(e, view);
     // The view: inertia after a drag, then a slow drift along the line.
@@ -207,7 +207,7 @@ function endPointer(e) {
   if (tap) {
     const [wx] = toWorld(pointer.x0, pointer.y0);
     const s = stepAt(wx);
-    if (s) { line.st.rush[s] = 20; snd.rush(s, view); }
+    if (s) { line.st.rush[s] = 20; crew.rush(s); snd.rush(s, view); }
   }
   if (!pointer.drag || calm) vel = 0;
   if (performance.now() - pointer.lastT > 80) vel = 0;
@@ -234,11 +234,11 @@ ui.onCover?.(() => { fitView(); draw(); });
 
 // ?qa hands the state to a test script.
 if (qa) globalThis.__steel = {
-  get busy() { return !!(raf || timer); }, get view() { return { ...view, cssW, cssH }; }, get line() { return line; },
+  get busy() { return !!(raf || timer); }, get view() { return { ...view, cssW, cssH }; }, get line() { return line; }, get crew() { return crew; },
   at(x) { cx = x; pointer.upAt = performance.now() + 1e9; fitView(); draw(); },
-  run(sec, step = 0.05) { for (let t = 0; t < sec; t += step) { line.step(step); crew.step(step, line.st.busy, line.st.rush); show.step(step, line.st, false); } line.takeEvents(); draw(); },
+  run(sec, step = 0.05) { for (let t = 0; t < sec; t += step) { line.step(step); crew.step(step); show.step(step, line.st, false); } line.takeEvents(); draw(); },
   // Runs the works until pred(state) holds, at most max seconds.
-  until(pred, max = 400, step = 0.05) { for (let t = 0; t < max && !pred(line.st); t += step) { line.step(step); crew.step(step, line.st.busy, line.st.rush); show.step(step, line.st, false); } line.takeEvents(); draw(); return line.st.t; },
+  until(pred, max = 400, step = 0.05) { for (let t = 0; t < max && !pred(line.st); t += step) { line.step(step); crew.step(step); show.step(step, line.st, false); } line.takeEvents(); draw(); return line.st.t; },
   over(o) { qaOver = o; draw(); }, freeze(on) { frozen = on; if (!on) poke(); }, get rung() { return D.rung; }, steps: STEPS,
 };
 

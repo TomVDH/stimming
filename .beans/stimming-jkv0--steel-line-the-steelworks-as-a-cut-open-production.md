@@ -22,6 +22,8 @@ Idea 370 (Tom, 2026-11-23: "start ant farm and steel line"). Plan: `docs/plans/s
 - [x] Bar v3, pan, sound, frame loop
 - [x] Icon round steelline-1, emblems, intro emblem, favicon, Lab tile and hook, toys.json
 - [x] QA at 1280, 375 x 812, 812 x 375; toy doc
-- [ ] K7: copy antfarm/k7.js once on origin; stocks, workers and rush on it
-- [ ] Growth: milestones add a second converter, a longer mill, a coil-yard track
+- [x] K7: copied whole from antfarm/k7.js (shared checkout); stocks, workers and rush on it
+- [ ] K7: copy again from origin once Ant farm pushes it
+- [x] Growth, small: a bigger crew after three heats, a third coil row after sixteen coils
+- [ ] Growth, large: a second converter, a longer mill, a coil-yard track
 - [ ] Tom's look

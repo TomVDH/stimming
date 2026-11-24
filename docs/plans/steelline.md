@@ -1,6 +1,6 @@
 # Steel line (`steelline`) plan
 
-Status: active; Lab MVP built 2026-11-23, K7 not yet wired · Bean: `stimming-jkv0` · Toy doc: [steelline.md](../toys/steelline.md)
+Status: active; Lab MVP built 2026-11-23, K7 wired (crew, stocks, two milestones) · Bean: `stimming-jkv0` · Toy doc: [steelline.md](../toys/steelline.md)
 
 Idea 370, group C. Tom, 2026-11-23: an "ant farm view of the steelworks", like a production building in a city builder, cut open.
 A whole works in one side slice: ore comes in at the left, coils leave at the right, and every step between is open to view.
