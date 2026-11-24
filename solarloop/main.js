@@ -12,7 +12,7 @@ import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
-import { makeCard } from './card.js';
+import { makeCard, CARD_STYLES } from './card.js';
 import { cardLines } from './facts.js';
 mark('libs');
 
@@ -380,6 +380,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', min: 0.3, max: 3, step: 0.05, value: 1, persist: true },
+    { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
     { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
     ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
@@ -424,7 +425,13 @@ let cardStar = null;
 function arrive() {
   if (!started || cam.to !== NOTCH || (cam.from > NOTCH - 0.05 && cardStar === st.star)) return;
   cardStar = st.star;
-  card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name));
+  card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'));
+}
+// A new card style plays at once when the view rests on the full star.
+function replayCard() {
+  if (cam.to !== NOTCH || cam.moving) return;
+  cardStar = null;
+  arrive();
 }
 addEventListener('keydown', e => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.repeat || e.defaultPrevented || chart.isOpen) return;

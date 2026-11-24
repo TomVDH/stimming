@@ -10,54 +10,52 @@
 // mag may be a range in words.
 // "about" marks an estimate or a value that sources dispute; null leaves the line out.
 // name: the card's name where it differs from the tray's short one.
+// type: what kind of object it is, in plain words, then its class.
 // latin: the formal name; it is left out where it equals the common name.
 // turn: one rotation. mag: apparent visual magnitude. wide: diameter in suns.
 // mass: a black hole's mass; a star leaves it out.
 
 export const FACTS = {
-  zetaoph: { latin: null, cat: 'HIP 81377', turn: 'about a day', mag: 2.57, wide: '9.1 suns', dist: '440 light years', age: 'about 3 to 6 million years' },
-  regulus: { latin: 'Alpha Leonis', cat: 'HIP 49669', turn: '15.9 hours', mag: 1.4, wide: '4.2 suns', dist: '79 light years', age: 'at least a billion years' },
-  vega: { latin: 'Alpha Lyrae', cat: 'HIP 91262', turn: '16.3 hours', mag: 0.03, wide: '2.7 suns', dist: '25 light years', age: 'about 700 million years' },
-  sirius: { latin: 'Alpha Canis Majoris A', cat: 'HIP 32349', turn: 'about 2 to 5 days', mag: -1.46, wide: '1.7 suns', dist: '8.6 light years', age: '242 million years' },
-  procyon: { latin: 'Alpha Canis Minoris A', cat: 'HIP 37279', turn: 'about 23 days', mag: 0.34, wide: '2 suns', dist: '11.5 light years', age: '1.9 billion years' },
-  sun: { name: 'The Sun', latin: 'Sol', cat: null, turn: '25 days at the equator', mag: -26.74, wide: '1 sun', dist: '8.3 light minutes', age: '4.6 billion years' },
-  epseri: { latin: null, cat: 'HIP 16537', turn: '11.6 days', mag: 3.73, wide: '0.74 of the sun', dist: '10.5 light years', age: 'about 1.1 billion years' },
-  proxima: { name: 'Proxima Centauri', latin: 'Alpha Centauri C', cat: 'HIP 70890', turn: 'about 85 days', mag: 11.1, wide: '0.16 of the sun', dist: '4.25 light years', age: 'about 4.85 billion years' },
-  luhman: { latin: null, cat: 'WISE J104915.57−531906.1', turn: '5.3 and 6.9 hours, a pair', mag: null, wide: '0.1 of the sun', dist: '6.5 light years', age: 'about 510 million years' },
-  wise: { name: 'WISE 0855−0714', latin: null, cat: 'WISE J085510.83−071442.5', turn: 'about 10 to 14 hours', mag: null, wide: '0.11 of the sun', dist: '7.4 light years', age: 'about 1 to 10 billion years' },
-  ttauri: { latin: null, cat: 'HIP 20390', turn: 'about 2.8 days', mag: 10.1, wide: '2.9 suns', dist: '471 light years', age: 'about a million years' },
-  arcturus: { latin: 'Alpha Boötis', cat: 'HIP 69673', turn: 'about 2 years', mag: -0.05, wide: '25 suns', dist: '36.7 light years', age: 'about 7.1 billion years' },
-  rigel: { latin: 'Beta Orionis A', cat: 'HIP 24436', turn: 'about 100 days', mag: 0.13, wide: '74 suns', dist: 'about 850 light years', age: 'about 8 million years' },
-  betelgeuse: { latin: 'Alpha Orionis', cat: 'HIP 27989', turn: 'about 36 years', mag: 0.5, wide: 'about 760 suns', dist: 'about 550 light years', age: 'about 8 to 14 million years' },
-  vycma: { name: 'VY Canis Majoris', latin: null, cat: 'HIP 35793', turn: null, mag: 7.95, wide: 'about 1,420 suns', dist: 'about 3,800 light years', age: 'about 8 million years' },
-  wr124: { name: 'WR 124', latin: 'QR Sagittae', cat: null, turn: null, mag: 11.2, wide: 'about 12 suns', dist: 'about 21,000 light years', age: 'about 8.6 million years' },
-  tzo: { name: 'Thorne–Żytkow object', latin: null, cat: null, status: 'predicted in 1977, not yet found', core: 'a neutron star about 20 km wide', turn: null, mag: null, wide: 'about 1,000 suns, a model', dist: null, age: null },
-  j1407: { latin: null, cat: 'J1407', status: 'eclipsed by rings for 56 days in 2007; not seen since', rings: 'at least 37, out to 0.6 AU', turn: 'about 3.2 days', mag: 12.2, wide: null, dist: 'about 450 light years', age: 'about 16 million years' },
-  betalyr: { latin: 'Sheliak', cat: 'HIP 92420', orbit: '12.94 days, 19 seconds longer each year', turn: null, mag: '3.3 to 4.4', wide: null, dist: 'about 1,000 light years', age: null },
-  siriusb: { latin: 'Alpha Canis Majoris B', cat: 'WD 0642−166', turn: null, mag: 8.44, wide: '0.008 of the sun', dist: '8.6 light years', age: 'about 228 million years' },
-  cygx1: { latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years' },
-  sgra: { latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null },
-  qso: { latin: null, cat: 'HIP 60936', mass: 'about 260 million suns', turn: null, mag: 12.9, wide: 'its horizon, about 1,100 suns', dist: 'about 2.4 billion light years', age: null },
-  neutron: { name: 'The Vela pulsar', latin: 'PSR B0833−45', cat: 'PSR J0835−4510', turn: '0.089 seconds', mag: 23.6, wide: '24 km', dist: 'about 940 light years', age: 'about 11,000 years' },
+  zetaoph: { type: 'blue main-sequence star · O9.5 V', latin: null, cat: 'HIP 81377', turn: 'about a day', mag: 2.57, wide: '9.1 suns', dist: '440 light years', age: 'about 3 to 6 million years' },
+  regulus: { type: 'blue-white subgiant · B8 IV', latin: 'Alpha Leonis', cat: 'HIP 49669', turn: '15.9 hours', mag: 1.4, wide: '4.2 suns', dist: '79 light years', age: 'at least a billion years' },
+  vega: { type: 'white main-sequence star · A0 V', latin: 'Alpha Lyrae', cat: 'HIP 91262', turn: '16.3 hours', mag: 0.03, wide: '2.7 suns', dist: '25 light years', age: 'about 700 million years' },
+  sirius: { type: 'white main-sequence star · A1 V', latin: 'Alpha Canis Majoris A', cat: 'HIP 32349', turn: 'about 2 to 5 days', mag: -1.46, wide: '1.7 suns', dist: '8.6 light years', age: '242 million years' },
+  procyon: { type: 'yellow-white subgiant · F5 IV', latin: 'Alpha Canis Minoris A', cat: 'HIP 37279', turn: 'about 23 days', mag: 0.34, wide: '2 suns', dist: '11.5 light years', age: '1.9 billion years' },
+  sun: { type: 'yellow dwarf · G2 V', name: 'The Sun', latin: 'Sol', cat: null, turn: '25 days at the equator', mag: -26.74, wide: '1 sun', dist: '8.3 light minutes', age: '4.6 billion years' },
+  epseri: { type: 'orange dwarf · K2 V', latin: null, cat: 'HIP 16537', turn: '11.6 days', mag: 3.73, wide: '0.74 of the sun', dist: '10.5 light years', age: 'about 1.1 billion years' },
+  proxima: { type: 'red dwarf, a flare star · M5.5 V', name: 'Proxima Centauri', latin: 'Alpha Centauri C', cat: 'HIP 70890', turn: 'about 85 days', mag: 11.1, wide: '0.16 of the sun', dist: '4.25 light years', age: 'about 4.85 billion years' },
+  luhman: { type: 'a pair of brown dwarfs · L7.5 + T0.5', latin: null, cat: 'WISE J104915.57−531906.1', turn: '5.3 and 6.9 hours, a pair', mag: null, wide: '0.1 of the sun', dist: '6.5 light years', age: 'about 510 million years' },
+  wise: { type: 'brown dwarf · Y4', name: 'WISE 0855−0714', latin: null, cat: 'WISE J085510.83−071442.5', turn: 'about 10 to 14 hours', mag: null, wide: '0.11 of the sun', dist: '7.4 light years', age: 'about 1 to 10 billion years' },
+  ttauri: { type: 'protostar · K0', latin: null, cat: 'HIP 20390', turn: 'about 2.8 days', mag: 10.1, wide: '2.9 suns', dist: '471 light years', age: 'about a million years' },
+  arcturus: { type: 'red giant · K1.5 III', latin: 'Alpha Boötis', cat: 'HIP 69673', turn: 'about 2 years', mag: -0.05, wide: '25 suns', dist: '36.7 light years', age: 'about 7.1 billion years' },
+  rigel: { type: 'blue supergiant · B8 Ia', latin: 'Beta Orionis A', cat: 'HIP 24436', turn: 'about 100 days', mag: 0.13, wide: '74 suns', dist: 'about 850 light years', age: 'about 8 million years' },
+  betelgeuse: { type: 'red supergiant · M1 Ia', latin: 'Alpha Orionis', cat: 'HIP 27989', turn: 'about 36 years', mag: 0.5, wide: 'about 760 suns', dist: 'about 550 light years', age: 'about 8 to 14 million years' },
+  vycma: { type: 'red hypergiant · M5 Ia', name: 'VY Canis Majoris', latin: null, cat: 'HIP 35793', turn: null, mag: 7.95, wide: 'about 1,420 suns', dist: 'about 3,800 light years', age: 'about 8 million years' },
+  wr124: { type: 'Wolf-Rayet star · WN8h', name: 'WR 124', latin: 'QR Sagittae', cat: null, turn: null, mag: 11.2, wide: 'about 12 suns', dist: 'about 21,000 light years', age: 'about 8.6 million years' },
+  tzo: { type: 'Thorne–Żytkow object, a model', name: 'Thorne–Żytkow object', latin: null, cat: null, status: 'predicted in 1977, not yet found', core: 'a neutron star about 20 km wide', turn: null, mag: null, wide: 'about 1,000 suns, a model', dist: null, age: null },
+  j1407: { type: 'young star with a ringed companion · K5', latin: null, cat: 'J1407', status: 'eclipsed by rings for 56 days in 2007; not seen since', rings: 'at least 37, out to 0.6 AU', turn: 'about 3.2 days', mag: 12.2, wide: null, dist: 'about 450 light years', age: 'about 16 million years' },
+  betalyr: { type: 'interacting binary · B7 II donor', latin: 'Sheliak', cat: 'HIP 92420', orbit: '12.94 days, 19 seconds longer each year', turn: null, mag: '3.3 to 4.4', wide: null, dist: 'about 1,000 light years', age: null },
+  siriusb: { type: 'white dwarf · DA2', latin: 'Alpha Canis Majoris B', cat: 'WD 0642−166', turn: null, mag: 8.44, wide: '0.008 of the sun', dist: '8.6 light years', age: 'about 228 million years' },
+  cygx1: { type: 'stellar black hole', latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years' },
+  sgra: { type: 'supermassive black hole', latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null },
+  qso: { type: 'quasar', latin: null, cat: 'HIP 60936', mass: 'about 260 million suns', turn: null, mag: 12.9, wide: 'its horizon, about 1,100 suns', dist: 'about 2.4 billion light years', age: null },
+  neutron: { type: 'pulsar, a spinning neutron star', name: 'The Vela pulsar', latin: 'PSR B0833−45', cat: 'PSR J0835−4510', turn: '0.089 seconds', mag: 23.6, wide: '24 km', dist: 'about 940 light years', age: 'about 11,000 years' },
 };
 
 // A magnitude with a true minus sign.
 const fmtMag = m => `${m < 0 ? '−' : ''}${Math.abs(m)}`;
-// Labels pad to one width, so the values line up in the monospace face.
-const row = (label, value) => value == null ? null : `${label.padEnd(11)}${value}`;
 
 /**
- * The card for a star: its name and formal name, then one fact per row.
- * @param {string} id The star's id. @param {string} name Its common name.
- * @returns {{ head: string[], rows: string[] }}
+ * The card for an object: its name, its type and formal name, then one fact per row.
+ * @param {string} id The object's id. @param {string} name Its common name.
+ * @returns {{ name: string, type: string, latin: string | null, rows: [string, string][] }}
  */
 export function cardLines(id, name) {
   const f = FACTS[id];
+  const mag = f.mag == null ? null : typeof f.mag === 'string' ? f.mag : fmtMag(f.mag);
   return {
-    head: [f.name ?? name, f.latin].filter(Boolean),
-    rows: [
-      row('status', f.status), row('catalogue', f.cat), row('mass', f.mass), row('core', f.core), row('rings', f.rings), row('orbit', f.orbit), row('rotation', f.turn), row('magnitude', f.mag == null ? null : typeof f.mag === 'string' ? f.mag : fmtMag(f.mag)),
-      row('width', f.wide), row('distance', f.dist), row('age', f.age),
-    ].filter(Boolean),
+    name: f.name ?? name, type: f.type, latin: f.latin,
+    rows: [['status', f.status], ['catalogue', f.cat], ['mass', f.mass], ['core', f.core], ['rings', f.rings], ['orbit', f.orbit],
+      ['rotation', f.turn], ['magnitude', mag], ['width', f.wide], ['distance', f.dist], ['age', f.age]].filter(([, v]) => v != null),
   };
 }
