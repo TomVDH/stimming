@@ -570,7 +570,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
+  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
 };
@@ -641,15 +641,19 @@ function makeFrame() {
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
-  f.cam.set([st.yaw, st.pitch, star.lensing, 0]);
+  // Past the full star the view pulls back; far runs 0 to 1 by x16.
+  const far = ease(clamp((cam.z - 2) / 2));
+  f.far = far;
+  f.cam.set([st.yaw, st.pitch, star.lensing, far]);
   // Film: fine grain, no weave, faint lens dirt, no flicker: a vista, not a feed.
   // w: the star's dust, which keeps the haze over its disk.
   f.film.set([0.018, 0, 0.35, star.dust]);
   // The volume: denser on the long lens and round the dusty giants; lit by the star.
   f.volDens = (1.3 + 0.6 * weight('long')) * (1 + 0.3 * star.dust) * fxv('fxVol');
+  f.volDens *= 1 - 0.95 * ease(clamp((cam.z - 2) / 2));
   f.volLight = 1.3 * star.disk[0] / (1 + star.dust) * fxv('fxVolLight');
   // The 3D corona shows in the full view; its light follows the star's own corona.
-  f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6;
+  f.corona = weight('full') * fxv('fxCorona') * star.disk[3] * 6 * (1 - far);
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);

@@ -120,6 +120,8 @@ uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
+// far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
+uniform float uFar;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlB[2];
@@ -174,6 +176,8 @@ void main() {
       float deck = 0.6 + 0.42 * band + 0.75 * (fine - 0.5) - 0.4 * storm;
       tex = mix(tex, deck, uCloud.x);
     }
+    // From far away the surface detail melts into one even glow.
+    tex = mix(tex, 1.0, 0.85 * uFar);
     // The photosphere darkens to the limb; the corona brightens.
     float dark = pow(max(mu, 0.02), uTex.w);
     float bright = 1.0 + 0.6 * (inversesqrt(max(mu, 0.04)) - 1.0);
@@ -352,6 +356,8 @@ void main() {
     hot *= 1.0 - 0.6 * min(uFlB[k].z, 1.0) * vis * smoothstep(1.0, 0.55, d);
     hot += uFlB[k].z * shell * vis;
   }
+  // From far away the corona and everything round the disk fade out.
+  if (r >= R) { hot *= 1.0 - 0.97 * uFar; cool *= 1.0 - 0.97 * uFar; }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
 
@@ -672,6 +678,8 @@ vec3 grade(vec2 s) {
   float I = s.x + s.y;
   // The full view shows the whole bright disk, so it takes less exposure.
   float x = I * uExpo * uFx3.y * (1.0 - 0.15 * uLens) * (1.0 - 0.5 * uFull);
+  // Far away the star burns brighter, as a point source does to the eye.
+  x *= 1.0 + 3.0 * uCam.w;
   // uFx4.x picks the curve: 0 film, 1 ACES, 2 AgX.
   float t = uFx4.x < 0.5 ? 1.0 - exp(-x) : uFx4.x < 1.5 ? toneAces(x) : toneAgx(x);
   // The long lens presses the tones: a slightly darker, harder curve.
@@ -784,6 +792,17 @@ void main() {
       c += tint * disc * 0.05 * S * uFx2.x;
     }
   }
+  // The eye's glare on a far star: a round bloom and four streaks.
+  if (uCam.w > 0.0) {
+    vec2 d = gl_FragCoord.xy - uC * uRes;
+    float rp = R / uView.w * 0.5 * uRes.y;
+    float dl = length(d);
+    float glob = exp(-dl / (rp * 1.6 + 14.0 * uSc)) * 0.9 + exp(-dl / (rp * 6.0 + 70.0 * uSc)) * 0.3;
+    float w = (1.2 + rp * 0.06) * uSc, len = (rp * 9.0 + 220.0 * uSc) * (0.4 + 0.6 * uCam.w);
+    float spikes = exp(-abs(d.y) / w) * exp(-abs(d.x) / len) + exp(-abs(d.x) / w) * exp(-abs(d.y) / len);
+    vec3 gc = grade(vec2(3.0, 0.2));
+    c += gc * uCam.w * (glob + 0.8 * spikes);
+  }
   // The scale bodies.
   vec2 fc = uv * uRes;
   c = body(c, fc, uBodyA, uBodyK.x);
@@ -887,6 +906,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
+    gl.uniform1f(s.u.uFar, v.far);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlB, v.flB);
@@ -902,7 +922,7 @@ export async function makeRender(gl, opts = {}) {
       gl.uniform2f(p.u.uRes, W, H);
       gl.uniform1f(p.u.uTime, v.time % 4000);
       gl.uniform1f(p.u.uRain, v.band.rain);
-      gl.uniform1f(p.u.uGain, 1 + 0.9 * v.lens);
+      gl.uniform1f(p.u.uGain, (1 + 0.9 * v.lens) * (1 - v.far));
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
       gl.bufferSubData(gl.ARRAY_BUFFER, 0, v.data, 0, v.count * STRIDE);
       gl.enable(gl.BLEND);
