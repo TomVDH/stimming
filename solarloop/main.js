@@ -737,7 +737,9 @@ function schedule(delay = 0) {
   else raf = requestAnimationFrame(frame);
 }
 // The Dev toggles turn the hum and the rumble on and off.
-function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true); }
+// Closeness for the mix: 1 on the long lens, 0 on the full star, below 0 zoomed out.
+const nearness = () => Math.log(fullBase.hw / view.hw) / Math.log(fullBase.hw / fit.long.hw);
+function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness()); }
 function poke() {
   lastInput = performance.now();
   if (!raf && !timer) last = performance.now();

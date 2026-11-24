@@ -257,15 +257,20 @@ export function makeSound(kit) {
   let bed = null;
   let drone = null;
   // Which layers sound: the Dev toggles set them.
-  const layers = { hum: true, rumble: true };
-  function mixLayers(hum, rumble) {
-    if (layers.hum === hum && layers.rumble === rumble) return;
-    layers.hum = hum; layers.rumble = rumble;
+  const layers = { hum: true, rumble: true, lvl: 1 };
+  // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
+  // The rumble grows as the view closes in on the star (Tom).
+  const rumbleAt = near => Math.pow(10, clamp(6 * near, -9, 6) / 20);
+  function mixLayers(hum, rumble, near = 0) {
+    const lvl = rumble ? rumbleAt(near) : 0;
+    if (layers.hum === hum && Math.abs(layers.lvl - lvl) < 0.01) return;
+    layers.hum = hum; layers.rumble = rumble; layers.lvl = lvl;
     if (!drone) return;
     const t = drone.ac.currentTime;
     drone.humOn.gain.setTargetAtTime(hum ? 1 : 0, t, 0.4);
-    drone.rumOn.gain.setTargetAtTime(rumble ? 1 : 0, t, 0.4);
+    drone.rumOn.gain.setTargetAtTime(lvl, t, 0.4);
   }
+
   // Queues the top voice's next notes: one every 7 to 11 s, gliding between them.
   function singOn(d, from) {
     const ac = d.ac;
@@ -300,7 +305,7 @@ export function makeSound(kit) {
 
     // The space rumble: a seamless rendered loop, added once it is ready.
     const rumOn = ac.createGain();
-    rumOn.gain.value = layers.rumble ? 1 : 0;
+    rumOn.gain.value = layers.rumble ? layers.lvl : 0;
     rumOn.connect(g);
     const me = { ac, band };
     const bedP = bed && bed.ac === ac && bed.root === root ? Promise.resolve(bed.b) : renderBed(ac, root).then(b => (bed = { ac, root, b }).b);
