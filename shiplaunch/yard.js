@@ -2,6 +2,7 @@
 // Metres. x runs along the basin, z across it, y up; still water is y = 0.
 // Shapes follow the Westerbroek and Hoogezand side-launch photos on Wikimedia Commons.
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /* ---------- the site ---------- */
 // The port basin: 200 m wide, 6 m deep. The yard is on its south side.
@@ -82,31 +83,80 @@ export function hullGeometry() {
   return g;
 }
 
-/** The deck, the hatch coaming, the forecastle, the house, the mast and the funnel. */
+/**
+ * The deck, the bulwark, the forecastle, the hold and its covers, the house, the funnel, the masts.
+ * Shapes follow the Westerbroek coaster photo; one merged mesh per material.
+ */
 export function topsides(mats) {
   const grp = new THREE.Group();
-  const box = (w, h, d, x, y, z, m) => {
-    const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
-    b.position.set(x, y, z); b.castShadow = b.receiveShadow = true; grp.add(b); return b;
-  };
+  const parts = new Map();
+  const put = (g, m) => { if (!parts.has(m)) parts.set(m, []); parts.get(m).push(g.toNonIndexed()); };
+  const box = (w, h, d, x, y, z, m) => put(new THREE.BoxGeometry(w, h, d).translate(x, y, z), m);
+  const cyl = (r0, r1, h, x, y, z, m, seg = 10) => put(new THREE.CylinderGeometry(r0, r1, h, seg).translate(x, y, z), m);
   const { D } = HULL;
-  // The deck plate: a flat lid inside the sheer line.
-  box(80, 0.3, 12.6, 2, D - 0.1, 0, mats.deck);
+  const hbAt = x => halfBreadth(x, deckY(x) - keelY(x));
+  // The main deck, and the forecastle deck that rides the sheer forward.
+  box(78, 0.3, 12.6, 3, D - 0.1, 0, mats.deck);
+  for (let x = -43; x < -32; x += 1.5) box(1.6, 0.3, Math.max(0.4, 2 * hbAt(x) - 0.3), x + 0.75, deckY(x + 0.75) - 0.15, 0, mats.deck);
+  // The bulwark along both deck edges, taller round the bow.
+  for (let x = -43; x < 40; x += 2) {
+    const xc = x + 1, h = xc < -30 ? 1.5 : 1.0, hb = hbAt(xc);
+    for (const sd of [-1, 1]) box(2.04, h, 0.14, xc, deckY(xc) + h / 2, sd * (hb - 0.07), mats.green);
+  }
+  // The breakwater behind the forecastle, and the windlass on it.
+  box(0.3, 1.7, 10.4, -32.5, deckY(-32.5) + 0.85, 0, mats.green);
+  for (const sd of [-1, 1]) {
+    cyl(0.55, 0.55, 1.2, -39, deckY(-39) + 0.75, sd * 1.6, mats.dark, 12);
+    // The anchor in its pocket on the bow.
+    box(1.5, 1.1, 0.25, -40.5, deckY(-40.5) - 1.6, sd * (hbAt(-40.5) + 0.08), mats.dark);
+  }
+  // The hold: the coaming and seven pontoon covers with their ribs.
   box(52, 1.5, 10.6, -2, D + 0.75, 0, mats.coaming);
-  // The forecastle deck rises with the sheer.
-  box(9, 2.2, 9.5, -38.5, D + 1.4, 0, mats.green);
-  // The house aft: four tiers and the bridge with its wings.
-  box(12, 2.7, 12.2, 33, D + 1.35, 0, mats.white);
-  box(10.5, 2.6, 11, 33.6, D + 4.0, 0, mats.white);
-  box(9, 2.6, 9.6, 34, D + 6.6, 0, mats.white);
-  box(7.4, 2.5, 15.2, 33.4, D + 9.15, 0, mats.white);
-  box(7.6, 0.25, 15.4, 33.4, D + 10.5, 0, mats.dark);
-  // Bridge windows: one dark band round the front.
-  box(0.2, 1.1, 13, 29.6, D + 9.5, 0, mats.glass);
-  box(2.2, 4.2, 2.2, 37.6, D + 12.4, 0, mats.green);
-  // Masts: one on the forecastle, one on the bridge top.
-  box(0.45, 11, 0.45, -37, D + 2.5 + 5.5, 0, mats.white);
-  box(0.3, 6, 0.3, 33.5, D + 10.6 + 3, 0, mats.white);
+  for (let i = 0; i < 7; i++) {
+    const xc = -24.6 + i * 7.25;
+    box(7.0, 0.5, 10.9, xc, D + 1.75, 0, mats.hatch);
+    for (const dx of [-2.3, 0, 2.3]) box(0.22, 0.22, 10.9, xc + dx, D + 2.1, 0, mats.hatch);
+  }
+  // The house aft: four tiers, each with a row of windows.
+  const tiers = [[12, 2.7, 12.2, 33, D + 1.35], [10.5, 2.6, 11, 33.6, D + 4.0], [9, 2.6, 9.6, 34, D + 6.6]];
+  for (const [w, h, d, x, y] of tiers) {
+    box(w, h, d, x, y, 0, mats.white);
+    // Windows on the front and both sides.
+    const fx = x - w / 2 - 0.03;
+    for (let z = -d / 2 + 1.1; z <= d / 2 - 1.0; z += 1.7) box(0.08, 0.75, 0.9, fx, y + 0.25, z, mats.glass);
+    for (let xx = x - w / 2 + 1.2; xx <= x + w / 2 - 1.0; xx += 1.8) for (const sd of [-1, 1]) box(0.9, 0.75, 0.08, xx, y + 0.25, sd * (d / 2 + 0.03), mats.glass);
+    // A rail round the tier's top.
+    for (const sd of [-1, 1]) box(w, 0.07, 0.07, x, y + h / 2 + 1.0, sd * (d / 2 - 0.05), mats.white);
+    box(0.07, 0.07, d, x - w / 2 + 0.05, y + h / 2 + 1.0, 0, mats.white);
+  }
+  // The wheelhouse, its window band all round, the wings and their bulwarks.
+  box(7.4, 2.5, 10.2, 33.4, D + 9.15, 0, mats.white);
+  box(7.8, 0.3, 10.6, 33.4, D + 10.5, 0, mats.dark);
+  box(0.12, 1.15, 9.6, 29.66, D + 9.45, 0, mats.glass);
+  for (const sd of [-1, 1]) {
+    box(6.6, 1.15, 0.12, 33.6, D + 9.45, sd * 5.16, mats.glass);
+    box(2.6, 0.25, 2.8, 31.0, D + 7.95, sd * 6.4, mats.white);
+    box(2.6, 1.1, 0.12, 31.0, D + 8.6, sd * 7.75, mats.white);
+  }
+  // The funnel: a tapered stack with a black top.
+  cyl(1.0, 1.25, 4.4, 37.6, D + 12.6, 0, mats.green, 14);
+  cyl(1.02, 1.02, 0.8, 37.6, D + 15.2, 0, mats.dark, 14);
+  // Masts: a light mast on the forecastle, a radar mast on the wheelhouse.
+  cyl(0.16, 0.22, 11, -37, deckY(-37) + 5.5, 0, mats.white, 8);
+  box(0.12, 0.12, 2.4, -37, deckY(-37) + 8.5, 0, mats.white);
+  cyl(0.14, 0.18, 6.5, 33.5, D + 10.65 + 3.25, 0, mats.white, 8);
+  box(0.25, 0.25, 4.6, 33.5, D + 13.4, 0, mats.white);
+  box(0.12, 0.3, 3.6, 33.0, D + 14.2, 0, mats.dark);
+  box(0.12, 0.3, 2.6, 34.0, D + 11.7, 0, mats.dark);
+  // The rescue boat in its davit on the outboard side.
+  put(new THREE.CapsuleGeometry(0.85, 3.6, 4, 10).rotateZ(Math.PI / 2).translate(38.4, D + 4.2, 6.6), mats.orange);
+  box(0.25, 3.2, 0.25, 36.3, D + 4.6, 6.4, mats.white);
+  box(0.25, 3.2, 0.25, 40.5, D + 4.6, 6.4, mats.white);
+  for (const [m, list] of parts) {
+    const mesh = new THREE.Mesh(mergeGeometries(list), m);
+    mesh.castShadow = mesh.receiveShadow = true;
+    grp.add(mesh);
+  }
   return grp;
 }
 
@@ -114,7 +164,7 @@ export function topsides(mats) {
 export function buntingLine() {
   const D = HULL.D;
   return [
-    [-44, D + 2.6, 0], [-37, D + 13.4, 0], [33.5, D + 16.4, 0], [44, D + 1.4, 0],
+    [-44, D + 3.1, 0], [-37, D + 12.4, 0], [33.5, D + 16.6, 0], [44, D + 1.4, 0],
   ];
 }
 

@@ -99,6 +99,7 @@ function mats() {
     ground: std(0x6d6a5f, 0.95), grass: std(0x4f5a34, 1), shed: std(0x7d8a92, 0.7, 0.2), roof: std(0x50585e, 0.6, 0.3),
     paving: std(0x76665a, 0.95), bed: std(0x2a2a1e, 1), tree: std(0x2c3322, 1),
     wire: std(0x2a2522, 0.6, 0.7), rust: std(0x6b3a22, 0.95, 0.3), flag: std(0xffffff, 0.8),
+    hatch: std(0x5a2a1e, 0.6), orange: std(0xd8641e, 0.5),
   };
 }
 
@@ -121,6 +122,12 @@ function hullMaterial() {
         float bx = abs(fract(vL.x / 2.6) - 0.5) * 2.6, sy = abs(fract(vL.y / 2.0) - 0.5) * 2.0;
         float seam = max(smoothstep(0.035, 0.0, abs(bx - 1.3)), smoothstep(0.03, 0.0, abs(sy - 1.0)));
         paint *= 1.0 - 0.18 * seam;
+        // Draft marks near the bow and the stern: white bars every 0.4 m.
+        float mk = step(abs(abs(vL.x) - 41.2), 0.25) * step(0.6, vL.y) * step(vL.y, 5.2) * step(0.5, fract(vL.y / 0.4));
+        paint = mix(paint, vec3(0.7), mk * 0.9);
+        // Rust streaks run down from the deck edge.
+        float st = fract(sin(floor(vL.x / 0.9) * 91.3) * 437.5);
+        paint *= 1.0 - 0.22 * step(0.82, st) * smoothstep(${HULL.D.toFixed(1)} - 3.5, ${HULL.D.toFixed(1)}, vL.y) * step(${HULL.boot.toFixed(2)}, vL.y);
         // Water runs down the outboard topsides after the hit.
         float wet = uWet * smoothstep(6.8, 3.5, vL.y) * step(0.0, vL.z);
         paint *= 1.0 - 0.38 * wet;
@@ -467,7 +474,7 @@ function sunFlare() {
   sunCover += ((hit ? 0 : 1) - sunCover) * 0.25;
   // The sun preset, toned down: the low sun sits in the shot for most of the move.
   const k = FLARE_BUOY.sun, g = 1.2 * edge * sunCover;
-  if (g > 0.01) FL.add(u, v, [1.0 * g, 0.72 * g, 0.42 * g], { orb: k.orb * 0.4, streak: k.streak * 0.6, ghost: k.ghost * 0.15, size: k.size * 0.5, warmth: 0.4 });
+  if (g > 0.01) FL.add(u, v, [1.0 * g, 0.72 * g, 0.42 * g], { orb: k.orb * 0.4, streak: k.streak * 0.6, ghost: 0, size: k.size * 0.5, warmth: 0.4 });
 }
 
 /* ---------- spray ---------- */

@@ -14,7 +14,7 @@ Tom (2026-11-23): "Would like more faraway POV", "I'd maybe want it to be releas
 - [x] Wave wall: impact source, sink, shoal before the pier, the pier moved in front of her (crest spray across the basin left for the light stage)
 - [x] Camera sweep: waiting wide, crane down, pier, wave, pull back; reduced-motion cuts; tall lenses per shot
 - [x] Light: shared sky and clouds, shadow shafts from the spray (own march: clShaftLook keeps its bands off the horizon), flare, grade, the sun moved into the shot
-- [ ] Detail: hull, crane and shed, yard, harbour, water
+- [ ] Detail: hull (done, waits on Tom's look), crane and shed, yard, harbour, water
 - [ ] QA Q1 to Q10, docs, captures
 
 ## Paused (2026-11-23, Tom: "lets pause this for now with all notes")
@@ -42,3 +42,4 @@ Next, in plan order: finish the wave wall (crest spray, QA, commit), then the ca
 - QA (headless Edge, D3D11): console clean, phone console clean; 8.1 ms mean, 9.3 ms p95 through the hit; drifting 33 rAF a second, none after 62 s idle, none hidden, none at rest under reduced motion; the audio context suspends at the end.
 - Sweep committed. Crowd retreat capped at 3.5 m, the pier eye 13 m back from the head, so no figure walks into the lens. QA: console clean (desk and phone); 8.1 ms mean, 8.9 ms p95 through the hit; drifting 33, asleep 0, hidden 0, reduced at rest 0; the audio context suspends.
 - Light committed. The sun moved to just over the shed (0.06, 0.125, -0.99), so the hit is backlit. Into the sun the mist and spray keys are lower than the hull's. QA: console clean; 8.3 ms mean, 9.2 ms p95; sleeps; suspends.
+- Hull detail committed from the Westerbroek and Brosen references (Commons). Flare ghosts off (they crossed the hull). QA: console clean; 8.1 ms mean, 8.9 ms p95. Per the plan, Tom judges the hull before the crane, shed, yard and harbour.
