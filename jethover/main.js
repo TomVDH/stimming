@@ -12,6 +12,7 @@ import { makePlumes, makePost } from './fx.js';
 import { createFire } from './gas.js';
 import { createHeat2D } from './heat2d.js';
 import { jetSound } from './sound.js';
+import { devPanel } from './devpanel.js';
 mark('libs');
 
 const ID = 'jethover';
@@ -64,14 +65,14 @@ function toggleLens() {
 /* ---------- dev tuning (?dev) ---------- */
 // Each row scales one value; 1 keeps today's look. The values persist.
 const tune = {
-  bendK: 2, capK: 1.5, heatBlur: 1.5, heatK: 1,
+  bendK: 2, capK: 1.5, heatBlur: 0.5, heatK: 1, hSpeed: 1, shim: 1, shimSize: 1,
   gasBlur: 1, gasK: 1, occK: 1, exSmoke: 1, exHeat: 1, speedK: 1,
   expo: 1, bloom: 1, grain: 1,
   fSwirl: 1, fLift: 1, fCool: 1, fDrag: 1, fJet: 1, fHeat: 1,
   sAmount: 1, sLife: 1, sDark: 1, sGlow: 1, sootOn: true, view: 'off',
 };
 const slider = (id, group, label, min, max, step) => ({
-  type: 'slider', id, group, label, min, max, step, value: tune[id], persist: true,
+  type: 'slider', id, group, label, min, max, step, value: tune[id],
   onInput: v => { tune[id] = v; applyTune(); touch(); },
 });
 const DEV_ROWS = [
@@ -79,6 +80,9 @@ const DEV_ROWS = [
   slider('capK', 'Heat haze', 'Bend limit', 0.25, 6, 0.05),
   slider('heatBlur', 'Heat haze', 'Smoothing', 0, 4, 0.05),
   slider('heatK', 'Heat haze', 'Heat to shimmer', 0, 3, 0.05),
+  slider('hSpeed', 'Heat haze', 'Speed', 0.2, 4, 0.05),
+  slider('shim', 'Heat haze', 'Flicker', 0, 3, 0.05),
+  slider('shimSize', 'Heat haze', 'Flicker size', 0.2, 4, 0.05),
   slider('gasBlur', 'Gas', 'Smoothing', 0, 3, 0.05),
   slider('gasK', 'Gas', 'Brightness', 0, 2, 0.05),
   slider('occK', 'Gas', 'Smoke dimming', 0, 3, 0.05),
@@ -91,12 +95,12 @@ const DEV_ROWS = [
   slider('fDrag', 'Fluid', 'Drag', 0, 5, 0.05),
   slider('fJet', 'Fluid', 'Jet speed', 0.2, 2, 0.05),
   slider('fHeat', 'Fluid', 'Jet heat', 0, 2, 0.05),
-  { type: 'toggle', id: 'sootOn', group: 'Soot', label: 'Soot', value: true, persist: true, onToggle: v => { tune.sootOn = v; applyTune(); touch(); } },
+  { type: 'toggle', id: 'sootOn', group: 'Soot', label: 'Soot', value: true, onToggle: v => { tune.sootOn = v; applyTune(); touch(); } },
   slider('sAmount', 'Soot', 'Amount', 0, 3, 0.05),
   slider('sLife', 'Soot', 'Lifetime', 0.2, 4, 0.05),
   slider('sDark', 'Soot', 'Darkness', 0, 3, 0.05),
   slider('sGlow', 'Soot', 'Hot glow', 0, 3, 0.05),
-  { type: 'choice', id: 'view', group: 'View', label: 'Show layer', value: 'off', persist: true, options: [
+  { type: 'choice', id: 'view', group: 'View', label: 'Show layer', value: 'off', options: [
     { value: 'off', label: 'Off' }, { value: 'heat', label: 'Heat' }, { value: 'soot', label: 'Soot' }, { value: 'both', label: 'Both' },
   ], onPick: v => { tune.view = v; applyTune(); touch(); } },
   slider('expo', 'Look', 'Exposure', 0.5, 1.6, 0.01),
@@ -106,7 +110,6 @@ const DEV_ROWS = [
 
 /* ---------- bar ---------- */
 const ui = initPage({ id: ID, bar: {
-  dev: DEV_ROWS,
   choice: { label: 'Time of day', value: time0, options: [
     { value: 'dawn', label: 'Dawn', key: '1' },
     { value: 'day', label: 'Day', key: '2' },
@@ -130,8 +133,8 @@ const ui = initPage({ id: ID, bar: {
     ['L', 'Switch between the wide shot and a tight lens on the plumes'],
   ],
 } });
-// Stored Dev values replace the defaults.
-for (const r of DEV_ROWS) { const v = ui.setting?.(r.id)?.value; if (Number.isFinite(v) || typeof v === 'boolean' || typeof v === 'string') tune[r.id] = v; }
+// The Dev panel shows only with ?dev; stored values replace the defaults.
+Object.assign(tune, devPanel(DEV_ROWS));
 const introDone = playIntro({ ready: pageReady() });
 const kit = audioKit({ keys: new Set([' ']), sleepMs: 1500 });
 const snd = jetSound(kit);
@@ -346,7 +349,8 @@ function step(dt) {
     gas.step(SIM_DT * gk);
     gasF.u.time.value = gasClock;
     gasF.step(SIM_DT * gk);
-    heat2.step(SIM_DT * gk);
+    // The hot air runs at real time: heat shimmer is fast.
+    heat2.step(SIM_DT * tune.hSpeed);
     simAcc -= SIM_DT;
   }
   snd.update(eng.rpm, clamp(craft.x / 8, -1, 1), dt, eng.hand || eng.key || eng.blip > 0);
@@ -366,6 +370,7 @@ function applyTune() {
   }
   const h2 = heat2.u;
   h2.curlK.value = 6 * tune.fSwirl; h2.lift.value = 14 * tune.fLift; h2.cool.value = 0.5 * tune.fCool; h2.damp.value = 0.15 * tune.fDrag;
+  h2.shim.value = 0.6 * tune.shim; h2.shimSize.value = 0.25 * tune.shimSize; h2.shimSpeed.value = 9 * tune.hSpeed;
   h2.sootFeed.value = 3 * tune.sAmount; h2.sootFade.value = 0.4 / tune.sLife;
   U.soot.value = tune.sootOn ? 1 : 0; U.sootDark.value = 1.6 * tune.sDark; U.sootGlow.value = 1.2 * tune.sGlow;
   U.viewHeat.value = tune.view === 'heat' || tune.view === 'both' ? 1 : 0;

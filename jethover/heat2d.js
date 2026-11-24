@@ -19,7 +19,7 @@
 export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine = 4, iters = 24 }) {
   const {
     Fn, vec2, vec4, float, uvec2, uniform, texture, textureStore, instanceIndex,
-    smoothstep, mix, min, max, abs, exp, floor, If, uv,
+    smoothstep, mix, min, max, abs, exp, floor, If, uv, vec3, mx_noise_float,
   } = TSL;
   const [W, H] = size, [VX, VY] = grid, TX = VX * fine, TY = VY * fine;
   // Cell size in metres; cells are square.
@@ -43,6 +43,9 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     sootFeed: uniform(3.0),
     // How fast soot thins, per second.
     sootFade: uniform(0.4),
+    // Fine shimmer over the heat: amount, cell size in metres, speed.
+    shim: uniform(0.6), shimSize: uniform(0.25), shimSpeed: uniform(9.0),
+    time: uniform(0),
   };
 
   function tex2D(w, hh, name) {
@@ -220,9 +223,15 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
   })().compute(TX * TY);
   passes.push(copyV, copyT);
 
-  // The plane shows heat in red and soot in green to the post chain.
   const mat = new THREE.MeshBasicNodeMaterial({ fog: false, depthWrite: false, depthTest: false });
-  mat.colorNode = Fn(() => vec4(texture(heat[0], uv()).xy, 0, 1))();
+  mat.colorNode = Fn(() => {
+    const T = texture(heat[0], uv()).xy;
+    // Fast small cells break the heat into a flicker, not a gel.
+    const q = world(uv()).div(u.shimSize);
+    const n = mx_noise_float(vec3(q.x, q.y.add(u.time.mul(u.shimSpeed)), u.time.mul(u.shimSpeed).mul(0.37)));
+    // Red: heat with flicker, for the bend. Green: soot. Blue: plain heat.
+    return vec4(T.x.mul(n.mul(u.shim).add(1.0)), T.y, T.x, 1);
+  })();
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat);
   mesh.position.set(origin[0] + W / 2, origin[1] + H / 2, z);
   mesh.frustumCulled = false;
@@ -231,7 +240,7 @@ export function createHeat2D({ THREE, TSL, renderer, size, origin, z, grid, fine
     u,
     mesh,
     async compile() { await renderer.compileComputeAsync(passes); },
-    step(dt) { u.dt.value = dt; renderer.compute(passes); },
+    step(dt) { u.dt.value = dt; u.time.value += dt; renderer.compute(passes); },
     /**
      * Sets one jet from world nozzle place and axis.
      * @param {number} j @param {{x:number,y:number}} n @param {{x:number,y:number}} a
