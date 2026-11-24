@@ -75,7 +75,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 
 - The disk pass: boiling granules, swirls of noise bent by noise, a faint supergranule network, dark filaments, limb darkening to a power set per star, a dust envelope on the giants (arcs, knots, dim patches over the disk), moss under each region, a haze over each region, the corona with streamers and a long tail, a red chromosphere rim and a spicule fringe. During a flare: the wave front over the disk and the dimming behind it, the bubble's shell and cavity.
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
-- Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light, then slow angular shafts break it into rays.
+- Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light: a smooth glow. No screen-fixed spokes (Tom, 2026-11-23: they read as a static starburst); the corona and haze volumes carry the structure.
 - The final pass: bent light round a neutron star, heat shimmer at the limb, the volume over the light, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, faint lens dirt, highlights that roll off to white, a vignette and fine grain. Reduced motion stills the grain.
 
 ## Dev (`?dev`)

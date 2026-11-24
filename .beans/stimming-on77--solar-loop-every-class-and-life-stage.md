@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-24T04:58:48Z
-updated_at: 2026-11-24T05:12:57Z
+updated_at: 2026-11-24T05:15:42Z
 parent: stimming-oh7b
 ---
 
@@ -20,3 +20,5 @@ Tom, 2026-11-23: redo Solar loop's stars (follows stimming-e35i). Planets out (o
 - [ ] 6. Brown dwarfs: Luhman 16, WISE 0855
 - [ ] 7. Stages: T Tauri, Arcturus
 - [ ] 8. Supernova on Rigel, Betelgeuse, VY CMa
+
+- [x] Starburst out: the light ray pass loses its screen-fixed spokes (Tom, 2026-11-23)

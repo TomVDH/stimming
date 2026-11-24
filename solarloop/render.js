@@ -375,10 +375,9 @@ void main() {
 const RAYS = `${HEAD}
 uniform sampler2D uSrc;
 uniform vec2 uC;
-uniform float uThr, uAsp, uTime;
+uniform float uThr;
 in vec2 vUv;
 out vec4 o;
-${NOISE}
 void main() {
   vec2 dir = uC - vUv;
   float len = min(length(dir) * 0.5, 0.45);
@@ -392,12 +391,9 @@ void main() {
     w *= 0.955;
     uv += d;
   }
-  // Shafts: the light streams out in rays that turn very slowly.
-  vec2 a = (vUv - uC) * vec2(uAsp, 1.0);
-  float th = atan(a.x, a.y);
-  float sh = fbm(vec3(th * 26.0, uTime * 0.01, 2.0));
-  sh = 0.25 + 2.2 * pow(sh, 2.5) + 0.6 * pow(vn(vec3(th * 90.0, 1.0, uTime * 0.02)), 4.0);
-  o = vec4(s / float(${RAY_N}) * sh, 1.0);
+  // A smooth glow only: no screen-fixed spokes; the volumes carry the structure.
+  // 0.7 holds the mean light the spokes gave.
+  o = vec4(s / float(${RAY_N}) * 0.7, 1.0);
 }`;
 
 /* ---------- volume: raymarched dust and haze round the star ---------- */
@@ -790,8 +786,6 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, r, 'uSrc', 0, hdr);
     gl.uniform2fv(r.u.uC, v.centre);
     gl.uniform1f(r.u.uThr, 0.45);
-    gl.uniform1f(r.u.uAsp, W / H);
-    gl.uniform1f(r.u.uTime, v.time % 4000);
     tri(gl, rays, empty);
 
     const vp = P.vol;
