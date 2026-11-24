@@ -55,7 +55,7 @@ Two runaway stars (Tom, 2026-11-24: both).
 
 - Zeta Ophiuchi, already on the main sequence row, is a runaway: as the view pulls back, its bow shock grows in ahead of it, a red arc of hydrogen and dust swept up by its wind, as Spitzer pictured it. The arc takes Wilkin's shape, r = R0 sqrt(3 (1 - t cot t)) / sin t, six radii out at its apex, brightest at the apex and rippled with filaments. It is not to scale: the true arc stands millions of radii out.
 - S5-HVS1, a new object: an A star of about 2.35 suns that Sagittarius A* threw out of the galaxy's centre 4.8 million years ago; it moves at about 1,755 km/s and will not come back (Koposov et al. 2020). A long, faint, pale blue wake trails behind it, its knots streaming away; the wake is the toy's, not observed. Its surface takes Vega's look and ramps.
-- The arc and the wake are drawn in the final pass in their own colours, after the grade, and never over the disk.
+- The arc and the wake are drawn in the final pass in their own colours, after the grade, and never over the disk. Their heading hangs in space, so a drag turns them with the camera (Tom, 2026-11-24).
 
 ## The interacting binary (bean `stimming-t76h`)
 
@@ -72,7 +72,7 @@ Beta Lyrae (Sheliak), about 1,000 light years away (Tom, 2026-11-24): a blue-whi
 
 V1400 Centauri (J1407), a young K star about 450 light years away, and the ring system that crossed it in 2007 (Tom, 2026-11-24). For 56 days a ringed body, J1407b, passed in front of the star and dimmed it by up to 95 percent. Its rings, at least 37 of them, reach 0.6 AU from their centre: about 130 star radii. The eclipse has not come again, and the ringed body has not been seen since.
 
-- The rings stand far off in space in front of the star, tilted, so they draw as an ellipse whose centre lies about 50 star radii to the lower left. The star's turn and the drag leave them still. They drift slowly across the star, so their bands sweep the disk.
+- The rings stand far off in space in front of the star, tilted, so they draw as an ellipse whose centre lies about 50 star radii to the lower left. They hang in space: the star's turn leaves them still, and a drag turns them with the camera (Tom, 2026-11-24). They drift slowly across the star, so their bands sweep the disk.
 - Over the disk the rings only darken: fine ringlets with sharp edges inside broader rings, and clear gaps; the widest gap sits near 0.4 AU, where a moon may sweep a lane. Off the disk, dust lit from behind glows faintly near the star.
 - Far out a long exposure lifts the rings' sheen, so dozens of ringlets sweep past the star; even at x32 the system is wider than the frame. The ringed body is a dim speck at the centre.
 - The disk is an orange K star with spots; its loops and prominences are dim, as the rings cannot dim them in their own pass. The ring dust takes the cool ramp, amber tan.
@@ -82,7 +82,7 @@ V1400 Centauri (J1407), a young K star about 450 light years away, and the ring 
 WR 124 in its nebula M1-67 (Tom, 2026-11-24): a hot, stripped star of 44,700 K, twelve suns wide, a runaway at about 200 km/s.
 
 - Its own dense wind hides its surface: no granules, loops, prominences or spots. Clumps drift outward across the disk's face, and outside the limb the wind is a thick glow that falls as the radius to the power 2.5. Its clumps stream out as radial streaks, about 700 km/s.
-- The nebula shows as the view pulls back: knots of shed gas in a shell about 9 radii out, crowded along one axis as in the JWST picture, glowing hydrogen pink. It is not to scale: the true nebula is about 45 million times the star's width.
+- The nebula shows as the view pulls back: knots of shed gas in a shell about 9 radii out, crowded along one axis as in the JWST picture, glowing hydrogen pink. It is not to scale: the true nebula is about 45 million times the star's width. It hangs in space, so a drag turns it with the camera (Tom, 2026-11-24).
 - The disk glows violet blue to white; the nebula takes the cool ramp, hydrogen pink.
 
 ## The Thorne–Żytkow object (bean `stimming-ye4c`)

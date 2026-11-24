@@ -275,11 +275,14 @@ function stepZoom(dt) {
 const mul = (A, B) => A.map(row => [0, 1, 2].map(c => row[0] * B[0][c] + row[1] * B[1][c] + row[2] * B[2][c]));
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+// The camera's own turn (the drag), without the star's spin: far things hang in it.
+let CAM = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
 function setRot() {
   const cp = Math.cos(st.pitch), sp = Math.sin(st.pitch), cy = Math.cos(st.yaw), sy = Math.sin(st.yaw);
   const rx = [[1, 0, 0], [0, cp, -sp], [0, sp, cp]];
   const ry = [[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]];
   const TP = mul(rx, ry);
+  CAM = TP;
   // The star turns on its own axis at its true rate, sped up.
   const B = STARS[shown];
   const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.turn / (B.day * 86400)) % 1)) : null;
@@ -298,6 +301,8 @@ function axisTurn(u, a) {
     [t * x * y + s * z, t * y * y + c, t * y * z - s * x],
     [t * x * z - s * y, t * y * z + s * x, t * z * z + c]];
 }
+// A point in the camera's frame to the view, without the star's spin.
+const camView = p => [0, 1, 2].map(r => CAM[r][0] * p[0] + CAM[r][1] * p[1] + CAM[r][2] * p[2]);
 const toView = p => [0, 1, 2].map(r => M[r][0] * p[0] + M[r][1] * p[1] + M[r][2] * p[2]);
 // A view point to stage CSS pixels, y down.
 const toCss = v => [((v[0] - view.cx) / view.hw * 0.5 + 0.5) * cssW, (0.5 - (v[1] - view.cy) / view.hh * 0.5) * cssH];
@@ -702,7 +707,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
-  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3),
+  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
@@ -752,12 +757,21 @@ function makeFrame() {
   // A giant ring system drifts slowly across the star, so its bands sweep the disk.
   const rg = star.ring;
   if (rg) {
-    f.ring.set([rg.tau, rg.cx + 7 * Math.sin(st.time * 0.03), rg.cy + 2 * Math.cos(st.time * 0.021), rg.ratio]);
-    f.ring2.set([rg.angle, rg.glow, 0, 0]);
+    // The rings hang in space: the camera's turn carries their centre and their tilt.
+    const c = camView([rg.cx + 7 * Math.sin(st.time * 0.03), rg.cy + 2 * Math.cos(st.time * 0.021), 0]);
+    const e = camView([Math.cos(rg.angle), Math.sin(rg.angle), 0]);
+    f.ring.set([rg.tau, c[0], c[1], rg.ratio]);
+    f.ring2.set([Math.atan2(e[1], e[0]), rg.glow, 0, 0]);
   } else { f.ring.fill(0); f.ring2.fill(0); }
   // A runaway: its bow shock or wake, in the view's frame.
   const bw = star.bow;
-  if (bw) { f.bow.set([1, bw.heading, bw.size, bw.kind]); f.bowC.set(bw.col); } else { f.bow.fill(0); f.bowC.fill(0); }
+  // The heading turns with the camera, so the arc or the wake keeps its place round the star.
+  if (bw) {
+    const h = camView([Math.cos(bw.heading), Math.sin(bw.heading), 0]);
+    f.bow.set([1, Math.atan2(h[1], h[0]), bw.size, bw.kind]); f.bowC.set(bw.col);
+  } else { f.bow.fill(0); f.bowC.fill(0); }
+  // The camera's turn, column-major and transposed: the shaders take view points back into it.
+  f.camM.set([CAM[0][0], CAM[0][1], CAM[0][2], CAM[1][0], CAM[1][1], CAM[1][2], CAM[2][0], CAM[2][1], CAM[2][2]]);
   // A binary: the donor turns once per orbit, so its partner holds still in the star's frame.
   // The stream follows the path gravity traced from L1; the gas lives in the volume pass.
   const bn = star.bin;

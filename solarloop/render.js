@@ -318,6 +318,8 @@ uniform vec4 uFl[2], uFlB[2];
 uniform vec4 uEgg[4], uDim[2];
 // A Wolf-Rayet wind: its glow, its clumps, the nebula's light, the nebula's radius in R.
 uniform vec4 uWind;
+// The camera's turn, from the view back to the frame far things hang in.
+uniform mat3 uCamM;
 // A buried neutron star shown in cutaway through the disk.
 uniform float uCore;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
@@ -621,11 +623,13 @@ void main() {
   // M1-67: knots of shed gas round a Wolf-Rayet star, not to scale.
   // The true nebula is 45 million times the star's width; it shows as the view pulls back.
   if (uWind.z > 0.0 && r > R) {
-    float rr = r / (R * uWind.w);
+    // The nebula hangs in space: a drag turns it with the camera.
+    vec2 Pc = (uCamM * vec3(P, 0.0)).xy;
+    float rr = length(Pc) / (R * uWind.w);
     // The knots crowd along one axis, as in the JWST picture.
-    float ang = atan(P.y, P.x);
+    float ang = atan(Pc.y, Pc.x);
     float axis = 0.45 + 0.55 * pow(cos(ang - 0.9), 2.0);
-    vec3 nq = vec3(P / (R * uWind.w) * 2.6, 1.3 + uTime * 0.002);
+    vec3 nq = vec3(Pc / (R * uWind.w) * 2.6, 1.3 + uTime * 0.002);
     vec3 nw = vec3(fbm(nq * 0.7 + 3.0), fbm(nq * 0.7 + 7.0), 0.0);
     float kn = smoothstep(0.42, 0.72, fbm(nq + 0.7 * nw));
     float env = smoothstep(0.2, 0.65, rr) * exp(-pow(max(rr - 0.85, 0.0) / 0.4, 2.0));
@@ -1430,6 +1434,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uDim, v.dim);
     gl.uniform4fv(s.u.uHole, v.hole);
     gl.uniform4fv(s.u.uWind, v.band.wind);
+    gl.uniformMatrix3fv(s.u.uCamM, false, v.camM);
     gl.uniform1f(s.u.uCore, v.band.core);
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
