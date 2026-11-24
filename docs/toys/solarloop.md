@@ -38,8 +38,8 @@ The model runs in star units: the star's radius is always 696, so on our sun one
 | Sun (default) | 1 | Gold furnace: ember, amber, gold, white; redder prominences | None beside it; Mercury in transit, 4.9 units |
 | Epsilon Eridani (K) | 0.74 | Deep orange, red orange prominences; young and active, so flares hit hard | None |
 | Proxima | 0.154 | Deep orange, crimson prominences; a flare star, so flares hit harder | None |
-| Luhman 16 (L/T brown dwarf) | 0.1 | Magenta brown and dim; no loops or prominences | None |
-| WISE 0855 (Y brown dwarf) | 0.1 | Dark maroon and slate, the coldest; no loops or prominences | None |
+| Luhman 16 (L/T brown dwarf) | 0.1 | Magenta brown and dim; no loops or prominences. A cloud deck in six uneven bands round its spin axis: neighbour bands drift opposite ways, eddies curl their edges, dark storm ovals ride them | None |
+| WISE 0855 (Y brown dwarf) | 0.1 | Dark maroon and slate, the coldest; no loops or prominences. Four slow bands of water ice cloud, calmer than Luhman 16's | None |
 | T Tauri (protostar) | 3 | Amber in a dusty envelope, red prominences, hard flares | Our sun; none in transit |
 | Arcturus (red giant) | 25.4 | Orange, rose prominences, large granules, light dust | Our sun, beside it and in transit |
 | Rigel | 78.9 | Cold blue steel to white, lilac prominences, strong rays | Our sun, 17.7 units, a glowing bead |
@@ -77,7 +77,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 - The strands: each thread is a camera-facing ribbon of 56 samples, drawn instanced with additive blending, as optically thin plasma adds up. A thread seen along its length is brighter (a longer path). The star hides what stands behind it, and the chromosphere dims the feet. Threads thinner than 1.5 px keep their total light.
 - Light rays: at half size, each pixel marches 40 steps toward the star's centre through the bright light: a smooth glow. No screen-fixed spokes (Tom, 2026-11-23: they read as a static starburst); the corona and haze volumes carry the structure.
 - Fast spinners: the view stretches an oblate star's equator across the screen, so the disk, the loops and the volumes all take the same shape. Gravity darkening dims the disk toward the spin equator.
-- The final pass: bent light round a neutron star, heat shimmer at the limb, the volume over the light, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, faint lens dirt, highlights that roll off to white, a vignette and fine grain. Reduced motion stills the grain.
+- The final pass: bent light round a neutron star, heat shimmer at the limb, the volume over the light, colour split toward the edges, the grade (three times, one per colour), halation, the lens streak and ghosts, the scale bodies, faint lens dirt (round the star only, never over its disk: Tom, 2026-11-23), highlights that roll off to white, a vignette and fine grain. Reduced motion stills the grain.
 
 ## Dev (`?dev`)
 

@@ -40,7 +40,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // field, beam, lensing: a neutron star's field lines, pulsar beams and bent light.
 // oblate: how much wider the equator is than the poles, seen side-on.
 // grav: the spin axis in the star's frame, and the gravity darkening at its equator.
-const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0] };
+// clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
+const FLARE = { rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, wave: 0.5, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -126,7 +127,7 @@ export const STARS = {
   },
   // Luhman 16: an L/T brown dwarf, Jupiter's width, magenta brown.
   luhman: {
-    ...FLARE, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, wave: 0.3,
+    ...FLARE, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, wave: 0.3, clouds: [1, 6, 1.6, 1],
     row: 13, rsun: 0.1, expo: 0.9, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.4,
     hal: [0.8, 0.25, 0.3], streak: [0.9, 0.4, 0.45],
     disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.7],
@@ -134,7 +135,7 @@ export const STARS = {
   },
   // WISE 0855: a Y brown dwarf, the coldest known; dark, with water ice clouds.
   wise: {
-    ...FLARE, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, wave: 0.2,
+    ...FLARE, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, wave: 0.2, clouds: [1, 4, 1.2, 0.6],
     row: 14, rsun: 0.1, expo: 0.85, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.25,
     hal: [0.5, 0.25, 0.3], streak: [0.6, 0.4, 0.45],
     disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.75],

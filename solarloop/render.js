@@ -119,7 +119,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav;
+uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud;
 uniform float uDust;
 uniform vec4 uReg[${NR}];
 uniform vec4 uFl[2], uFlW[2], uFlB[2];
@@ -150,6 +150,27 @@ void main() {
     // Filaments: dark sinuous lanes of cool plasma seen from above.
     float fil = smoothstep(0.035, 0.0, abs(fbm(q * 5.0 + 3.1) - 0.5)) * smoothstep(0.45, 0.65, fbm(q * 3.0 + 8.0));
     float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
+    // A brown dwarf: a cloud deck in bands round its spin axis, no granules.
+    if (uCloud.x > 0.0) {
+      float lat = q.y;
+      float lon = atan(q.z, q.x);
+      // Neighbour bands run opposite ways, so the edges between them shear.
+      float spd = sin(lat * uCloud.y * 3.14159 + 0.7);
+      float lo = lon + uTime * 0.012 * uCloud.w * spd;
+      vec3 cq = vec3(cos(lo), lat * 2.2, sin(lo));
+      // Eddies curl the band edges.
+      vec3 ew = vec3(fbm(cq * 3.0 + 1.0), fbm(cq * 3.0 + 4.0), fbm(cq * 3.0 + 7.0));
+      // Uneven band widths: the latitude itself is warped.
+      float wl = lat + 0.18 * (vn(vec3(lat * 2.6, 1.0, 3.0)) - 0.5);
+      float edge = wl + uCloud.z * 0.14 * (fbm(cq * 4.0 + ew * 2.5) - 0.5);
+      float band = 0.5 + 0.5 * sin(edge * uCloud.y * 3.14159);
+      band = mix(band, smoothstep(0.2, 0.8, band), 0.5);
+      float fine = fbm(vec3(cq.x * 7.0, cq.y * 16.0, cq.z * 7.0) + ew * 1.6);
+      // A few dark storm ovals ride the bands.
+      float storm = smoothstep(0.78, 0.9, fbm(cq * 2.2 + 11.0));
+      float deck = 0.6 + 0.42 * band + 0.75 * (fine - 0.5) - 0.4 * storm;
+      tex = mix(tex, deck, uCloud.x);
+    }
     // The photosphere darkens to the limb; the corona brightens.
     float dark = pow(max(mu, 0.02), uTex.w);
     float bright = 1.0 + 0.6 * (inversesqrt(max(mu, 0.04)) - 1.0);
@@ -666,6 +687,8 @@ void main() {
   // Lens dirt: smudges on the glass that glow where bright light falls.
   float dirt = smoothstep(0.55, 0.85, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
              + smoothstep(0.8, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
+  // No dirt over the disk: it sat in the same place on every star.
+  dirt *= smoothstep(R * 1.0, R * 1.15, r);
   c += hc * dirt * (1.0 - exp(-bll * 0.6)) * 0.35 * uFilm.z * uFx2.y;
   // Highlights roll off to white, as on film.
   float lum = dot(c, vec3(0.3, 0.55, 0.15));
@@ -755,6 +778,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uBeam, v.beam);
     gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
+    gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uReg, v.regs);
     gl.uniform4fv(s.u.uFl, v.fl);
     gl.uniform4fv(s.u.uFlW, v.flW);
