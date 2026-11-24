@@ -324,20 +324,11 @@ export function makeSound(kit) {
     }
   }
 
-  // The Great Dimming: a low dusty swell, and a chord that falls and muffles.
+  // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
-    if (!ac || !kit.noise) return;
+    if (!ac) return;
     const t = ac.currentTime + 0.01;
-    const d = voice(ac, 0);
-    d.gain.setValueAtTime(0, t);
-    d.gain.linearRampToValueAtTime(0.08, t + 4);
-    d.gain.setTargetAtTime(0.0001, t + 14, 5);
-    const lp = filt(ac, 'lowpass', 600, 0.8);
-    lp.frequency.setValueAtTime(600, t);
-    lp.frequency.exponentialRampToValueAtTime(90, t + 8);
-    noise(ac, t, 30, 0.35).connect(lp).connect(d);
-    send(ac, d, 0.6);
     const root = (ROOT[band] || 220) / 2;
     const pad = voice(ac, 0);
     pad.gain.setValueAtTime(0, t);

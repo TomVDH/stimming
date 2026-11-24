@@ -222,9 +222,10 @@ void main() {
     // The Great Dimming: a cool patch spreads over the south, then dust veils it.
     if (uDim[0].w + uDim[1].x > 0.0) {
       float s = dot(n, uDim[0].xyz);
-      float rag = fbm(vec3(P * 0.004, 2.0)) - 0.5;
+      // The noise lives on the star, so the veil turns with it.
+      float rag = fbm(q * 2.8 + 2.0) - 0.5;
       hot *= 1.0 - 0.4 * uDim[1].x * smoothstep(-0.1, 0.6, s + 0.5 * rag);
-      float veil = smoothstep(-0.25, 0.45, s + 0.7 * rag) * (0.75 + 0.5 * fbm(vec3(P * 0.009, 6.0)));
+      float veil = smoothstep(-0.25, 0.45, s + 0.7 * rag) * (0.75 + 0.5 * fbm(q * 6.3 + 6.0));
       hot *= (1.0 - 0.85 * uDim[0].w * veil) * (1.0 - 0.15 * uDim[0].w);
       cool += 0.08 * uDim[0].w * veil * uDisk2.y;
     }
@@ -250,9 +251,11 @@ void main() {
   // The dimming's dust cloud reaches past the southern limb.
   if (uDim[0].w > 0.0 && r >= R) {
     float s = dot(P / r, normalize(uDim[0].xy + 1e-5));
-    float cloud = smoothstep(0.0, 0.7, s + 0.6 * (fbm(vec3(P * 0.005, 3.0)) - 0.5)) * exp(-(r - R) / 420.0);
+    // The cloud's noise lives in the star's frame, so it turns with the star.
+    vec3 cq = uToSun * vec3(P / R, 0.0);
+    float cloud = smoothstep(0.0, 0.7, s + 0.6 * (fbm(cq * 3.5 + 3.0) - 0.5)) * exp(-(r - R) / 420.0);
     hot *= 1.0 - 0.7 * uDim[0].w * cloud;
-    cool += 0.18 * uDim[0].w * cloud * fbm(vec3(P * 0.012, 8.0));
+    cool += 0.18 * uDim[0].w * cloud * fbm(cq * 8.4 + 8.0);
   }
   // A haze over each region: unresolved loops.
   for (int k = 0; k < ${NR}; k++) {
