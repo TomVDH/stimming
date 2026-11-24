@@ -82,6 +82,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 | Drag | Looks round: 25 degrees each way, 15 up and down; the head moves a little |
 | Hover (mouse) | The head sways up to 2 cm with the pointer, as in Window seat; the aim follows a third of the way. Still under reduced motion |
 | Scroll | Leans to the glass or back into the seat, as in Window seat; leaning in turns the angled view straight out through the port |
+| Pinch (two fingers) | Leans, as the scroll does; a pinch never dives |
 | Click | A short sink |
 | Space (hold) | The same as a hold |
 

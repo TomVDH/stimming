@@ -547,6 +547,10 @@ function touch() { lastInput = performance.now(); timeK = 1; wake(); }
 // A press turns into a drag after 8 px, a hold after 260 ms; a release that is neither is a tap.
 // A hold dives; a drag looks; a hold that moves does both.
 let down = false, pid = null, mode = '', px = 0, py = 0, holdT = 0;
+// Two fingers pinch to lean, as the wheel does; a pinch never dives.
+const touches = new Map();
+let pinch0 = 0, lean0 = 0;
+const spread = () => { const [a, b] = [...touches.values()]; return Math.hypot(a[0] - b[0], a[1] - b[1]); };
 const holders = new Set();
 function press(who) {
   if (who === 'key') keyDown = true;
@@ -562,6 +566,14 @@ function release(who) {
 }
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !P || (e.target !== canvas && e.target !== stage)) return;
+  if (e.pointerType === 'touch') touches.set(e.pointerId, [e.clientX, e.clientY]);
+  if (touches.size === 2) {
+    clearTimeout(holdT);
+    if (mode === 'hold') release('pointer');
+    mode = 'pinch'; pinch0 = spread(); lean0 = S.leanT;
+    try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
+    return;
+  }
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   pid = e.pointerId; down = true; mode = 'press'; px = e.clientX; py = e.clientY;
   // The first frame answers: the eye tips a little toward the fall.
@@ -578,6 +590,11 @@ stage.addEventListener('pointermove', e => {
     S.thy = -clamp((e.clientY - r.top) / r.height * 2 - 1, -1, 1);
     wake();
   }
+  if (mode === 'pinch' && touches.has(e.pointerId)) {
+    touches.set(e.pointerId, [e.clientX, e.clientY]);
+    if (touches.size === 2) { S.leanT = clamp(lean0 + (spread() - pinch0) / Math.max(1, Math.min(cssW, cssH)) * 1.5, 0, 1); touch(); }
+    return;
+  }
   if (!down || e.pointerId !== pid) return;
   const dx = e.clientX - px, dy = e.clientY - py;
   if (mode === 'press' && Math.hypot(dx, dy) > 8) { mode = 'drag'; clearTimeout(holdT); }
@@ -590,6 +607,8 @@ stage.addEventListener('pointermove', e => {
   }
 });
 function end(e) {
+  if (e && e.pointerType === 'touch') touches.delete(e.pointerId);
+  if (mode === 'pinch') { if (touches.size < 2) { mode = ''; down = false; pid = null; } return; }
   if (!down || (e && e.pointerId !== pid)) return;
   down = false; pid = null; clearTimeout(holdT);
   // A tap sinks the eye a little.
