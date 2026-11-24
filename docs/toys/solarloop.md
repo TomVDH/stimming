@@ -130,7 +130,7 @@ The Dev button shows only with `?dev` in the address. Its rows are stored per br
 |---|---|
 | Post | Exposure, Bloom, Light rays, Halation, Colour split, Heat shimmer, Flare streak and ghosts, Lens dirt, Highlight roll-off, Vignette, Grain |
 | Volume | Haze density, Haze light, Corona (full view), Corona bend |
-| Grade | Tone map: Film (the house curve), ACES (Narkowicz fit) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
+| Grade | Tone map: Film (the house curve), ACES (Narkowicz fit) or AgX (log2 and its default contrast curve); each feeds the star's own colour ramps, so the palettes stay. Look: None (the house default), Furnace, Viewing glass, Bleach, Gold haze, sun-glare looks after the film's style (Tom, 2026-11-24). Lens flare: Anamorphic (the house streak and three ghosts; four streaks on a far star), Ghost chain (seven hexagonal aperture ghosts in shifting hues on the line through the frame's centre, a halo ring and a veiling glare), Iris starburst (six diffraction spikes from a six-blade aperture and a thin rainbow ring); each applies to flare cores and to the far star's glare (Tom, 2026-11-24). Contrast, Saturation, Warmth. Reset puts the grade back |
 | Sound | Hum (organ choir) and Space rumble: each on or off |
 
 ## Fluid probe (`?fluid`, spike `stimming-8gez`)

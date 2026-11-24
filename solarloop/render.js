@@ -720,6 +720,50 @@ vec3 look(vec3 c) {
   c *= vec3(1.0 + 0.12 * warm, 1.0 + 0.02 * warm, 1.0 - 0.16 * warm);
   return c;
 }
+// Lens flares. uFx5.y picks one: 0 anamorphic, 1 ghost chain, 2 iris starburst.
+// A soft palette that walks round the hues, for chromatic ghosts and rings.
+vec3 hue(float t) { return 0.55 + 0.45 * cos(6.2832 * (t + vec3(0.0, 0.33, 0.67))); }
+// Ghost chain: hexagonal aperture ghosts on the line through the frame's centre, and a halo ring.
+vec3 ghostChain(vec2 fc, vec2 src, float S) {
+  vec2 cs = uRes * 0.5;
+  vec3 acc = vec3(0.0);
+  // A source near the centre still throws its ghosts a little off axis, as a real lens does.
+  vec2 off = src - cs;
+  off = mix(vec2(0.16, 0.1) * uRes.y, off, smoothstep(0.0, 0.15 * uRes.y, length(off)));
+  for (int i = 0; i < 7; i++) {
+    float fi = float(i);
+    float m = i == 0 ? -0.22 : i == 1 ? -0.48 : i == 2 ? -0.75 : i == 3 ? -1.05 : i == 4 ? -1.4 : i == 5 ? 0.35 : 0.62;
+    float rad = (i == 1 ? 46.0 : i == 3 ? 70.0 : i == 4 ? 22.0 : i == 6 ? 30.0 : 14.0) * uSc;
+    vec2 p = (fc - (cs + off * m)) / rad;
+    vec2 a = abs(p);
+    float h = max(a.x * 0.866 + a.y * 0.5, a.y);
+    float disc = smoothstep(1.0, 0.88, h) * (0.45 + 0.55 * smoothstep(0.2, 1.0, h));
+    acc += hue(fi * 0.14 + 0.05) * disc * 0.07;
+  }
+  // The halo: a faint chromatic ring round the frame's centre, bright toward the source.
+  vec2 q = fc - cs;
+  float rr = 0.42 * uRes.y;
+  float ring = exp(-pow((length(q) - rr) / (7.0 * uSc), 2.0));
+  float face = pow(max(dot(normalize(q + 1e-4), normalize(off)), 0.0), 3.0);
+  acc += hue(length(q) / rr * 0.6) * ring * face * 0.05;
+  // Veiling glare: a broad, low wash round the source.
+  acc += vec3(1.0, 0.92, 0.8) * exp(-length(fc - src) / (150.0 * uSc)) * 0.12;
+  return acc * S;
+}
+// Iris starburst: six diffraction spikes from a six-blade aperture, and a thin rainbow ring.
+vec3 starburst(vec2 fc, vec2 src, float S, float size) {
+  vec2 d = fc - src;
+  float dl = length(d);
+  float sp = 0.0;
+  for (int i = 0; i < 3; i++) {
+    float a = float(i) * 1.0472 + 0.28;
+    vec2 dir = vec2(cos(a), sin(a));
+    float across = abs(d.x * dir.y - d.y * dir.x);
+    sp += exp(-across / (0.9 * uSc + size * 0.012)) * exp(-abs(dot(d, dir)) / size);
+  }
+  float ring = exp(-pow((dl - 0.55 * size) / (3.5 * uSc), 2.0));
+  return S * (vec3(1.0, 0.95, 0.88) * sp + hue(dl / size) * ring * 0.18);
+}
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
   float h = length(P) - R;
@@ -773,35 +817,53 @@ void main() {
   float bll = bl.r * uMix.y + bl.g * uMix.z;
   // Halation: the film's red glow round bright light.
   c += uHal * (1.0 - exp(-bll * 0.8)) * 0.45 * uFx1.w;
-  // The lens: an anamorphic streak and ghosts from each saturated core.
+  // The lens: flares from each saturated core, in the style Dev picks.
   vec2 cs = uRes * 0.5;
+  float mode = uFx5.y;
   for (int k = 0; k < 2; k++) {
     float S = uSat[k].z;
     if (S <= 0.0) continue;
-    vec2 d = (gl_FragCoord.xy - uSat[k].xy) / uSc;
-    float st = exp(-d.y * d.y / 10.0) * exp(-abs(d.x) / (260.0 * (0.4 + S))) * 0.9
-             + exp(-d.y * d.y / 160.0) * exp(-abs(d.x) / 500.0) * 0.25;
-    c += uStreak * st * min(S, 1.5) * uFx2.x;
-    for (int g = 0; g < 3; g++) {
-      float m = g == 0 ? -0.45 : g == 1 ? -0.95 : -1.6;
-      float rad = (g == 0 ? 18.0 : g == 1 ? 42.0 : 10.0) * uSc;
-      vec2 gp = cs + (uSat[k].xy - cs) * m;
-      float dist = length(gl_FragCoord.xy - gp);
-      float disc = smoothstep(rad, rad * 0.75, dist) * (0.6 + 0.4 * smoothstep(rad * 0.5, rad, dist));
-      vec3 tint = g == 1 ? uStreak.bgr : uStreak;
-      c += tint * disc * 0.05 * S * uFx2.x;
+    if (mode < 0.5) {
+      // Anamorphic: a long horizontal streak and three ghosts.
+      vec2 d = (gl_FragCoord.xy - uSat[k].xy) / uSc;
+      float st = exp(-d.y * d.y / 10.0) * exp(-abs(d.x) / (260.0 * (0.4 + S))) * 0.9
+               + exp(-d.y * d.y / 160.0) * exp(-abs(d.x) / 500.0) * 0.25;
+      c += uStreak * st * min(S, 1.5) * uFx2.x;
+      for (int g = 0; g < 3; g++) {
+        float m = g == 0 ? -0.45 : g == 1 ? -0.95 : -1.6;
+        float rad = (g == 0 ? 18.0 : g == 1 ? 42.0 : 10.0) * uSc;
+        vec2 gp = cs + (uSat[k].xy - cs) * m;
+        float dist = length(gl_FragCoord.xy - gp);
+        float disc = smoothstep(rad, rad * 0.75, dist) * (0.6 + 0.4 * smoothstep(rad * 0.5, rad, dist));
+        vec3 tint = g == 1 ? uStreak.bgr : uStreak;
+        c += tint * disc * 0.05 * S * uFx2.x;
+      }
+    } else if (mode < 1.5) {
+      c += ghostChain(gl_FragCoord.xy, uSat[k].xy, min(S, 1.5) * uFx2.x);
+    } else {
+      c += starburst(gl_FragCoord.xy, uSat[k].xy, min(S, 1.5) * 0.6 * uFx2.x, 150.0 * uSc * (0.5 + S));
     }
   }
-  // The eye's glare on a far star: a round bloom and four streaks.
+  // The eye's glare on a far star: a round bloom, then the flare Dev picks.
   if (uCam.w > 0.0) {
-    vec2 d = gl_FragCoord.xy - uC * uRes;
+    vec2 src = uC * uRes;
+    vec2 d = gl_FragCoord.xy - src;
     float rp = R / uView.w * 0.5 * uRes.y;
     float dl = length(d);
     float glob = exp(-dl / (rp * 1.6 + 14.0 * uSc)) * 0.9 + exp(-dl / (rp * 6.0 + 70.0 * uSc)) * 0.3;
-    float w = (1.2 + rp * 0.06) * uSc, len = (rp * 9.0 + 220.0 * uSc) * (0.4 + 0.6 * uCam.w);
-    float spikes = exp(-abs(d.y) / w) * exp(-abs(d.x) / len) + exp(-abs(d.x) / w) * exp(-abs(d.y) / len);
+    float len = (rp * 9.0 + 220.0 * uSc) * (0.4 + 0.6 * uCam.w);
     vec3 gc = grade(vec2(3.0, 0.2));
-    c += gc * uCam.w * (glob + 0.8 * spikes);
+    c += gc * uCam.w * glob;
+    if (mode < 0.5) {
+      // Four streaks, as the eye's lashes and the lens scatter a point of light.
+      float w = (1.2 + rp * 0.06) * uSc;
+      float spikes = exp(-abs(d.y) / w) * exp(-abs(d.x) / len) + exp(-abs(d.x) / w) * exp(-abs(d.y) / len);
+      c += gc * uCam.w * 0.8 * spikes;
+    } else if (mode < 1.5) {
+      c += ghostChain(gl_FragCoord.xy, src, uCam.w * 1.4 * uFx2.x);
+    } else {
+      c += gc * starburst(gl_FragCoord.xy, src, uCam.w * uFx2.x, len);
+    }
   }
   // The scale bodies.
   vec2 fc = uv * uRes;
