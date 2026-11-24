@@ -99,6 +99,8 @@ const z0 = 0;
 // cam glides z from one value to the next; t runs from 0 to 1 over dur seconds.
 const cam = {
   z: z0, from: z0, to: z0, t: 1, dur: 0,
+  // The wheel's spring: on while it runs, and its speed.
+  spring: false, v: 0,
   // The nearest stop names the framing.
   get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
 };
@@ -158,6 +160,7 @@ function applyView() {
 function glideTo(z, dur) {
   z = clamp(z, 0, Z_MAX);
   cam.from = cam.z; cam.to = z; cam.t = 0;
+  cam.spring = false; cam.v = 0;
   cam.dur = !started || calm ? 0 : dur;
   if (!cam.dur) { cam.z = z; cam.t = 1; }
   store.set('lensZ', z.toFixed(3));
@@ -176,12 +179,37 @@ function toggleLens() {
 let settle = 0;
 function zoomBy(dz) {
   if (chart?.isOpen) return;
-  glideTo(cam.to + dz, 0.25);
+  springTo(cam.to + dz);
   clearTimeout(settle);
   settle = setTimeout(() => {
     const s = Math.round(cam.to);
-    if (s <= 2 && Math.abs(cam.to - s) > 0.001 && Math.abs(cam.to - s) < 0.15) glideTo(s, 0.4);
+    if (s <= 2 && Math.abs(cam.to - s) > 0.001 && Math.abs(cam.to - s) < 0.15) springTo(s);
   }, 350);
+}
+// The wheel's zoom follows its target on a heavy spring (Tom, 2026-11-23).
+function springTo(z) {
+  z = clamp(z, 0, Z_MAX);
+  // Reduced motion and the first frame jump straight to the target.
+  if (!started || calm) { glideTo(z, 0); return; }
+  if (cam.t < 1) cam.t = 1;
+  cam.to = z; cam.spring = true;
+  store.set('lensZ', z.toFixed(3));
+  setLabel(labels.lens, lensLabel());
+  rail?.show(cam.z, cam.to);
+  poke();
+}
+// The spring reaches its target in about 1.4 s, a few percent past.
+function stepSpring(dt) {
+  const x = cam.z, X = cam.to;
+  if (Math.abs(X - x) < 1e-4 && Math.abs(cam.v) < 1e-3) cam.spring = false;
+  if (cam.spring) {
+    const w = 2.4, damp = 0.72;
+    cam.v += (w * w * (X - x) - 2 * damp * w * cam.v) * dt;
+    cam.z = clamp(x + cam.v * dt, 0, Z_MAX);
+  } else { cam.z = X; cam.v = 0; }
+  applyView();
+  rail.show(cam.z, cam.to);
+  return cam.spring;
 }
 // Rotation, star frame to view frame: a pitch about x after a yaw about y.
 let M = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
@@ -653,8 +681,9 @@ function frame(now) {
     st.time += dt * drifting;
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     // The zoom glides: a lens step over two seconds, the wheel in a quarter second.
-    const zooming = cam.t < 1;
-    if (zooming) {
+    let zooming = cam.t < 1;
+    if (cam.spring) zooming = stepSpring(dt);
+    else if (zooming) {
       cam.t = Math.min(1, cam.t + dt / cam.dur);
       const k = cam.dur >= 1 ? ease(cam.t) : 1 - (1 - cam.t) ** 3;
       cam.z = cam.from + (cam.to - cam.from) * k;
