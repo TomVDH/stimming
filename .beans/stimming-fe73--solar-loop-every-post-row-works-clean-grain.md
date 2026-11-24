@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T21:56:43Z
-updated_at: 2026-11-24T22:26:25Z
+updated_at: 2026-11-24T23:33:58Z
 parent: stimming-e35i
 ---
 
@@ -20,3 +20,5 @@ Tom, 2026-11-24: "can we please get proper post fx settings, grain cleaned up an
 - [ ] Tom looks at it live
 
 - [x] Grain keeps 1.4 CSS pixels when the detail ladder drops the resolution mid-zoom (Tom: "the noise doesn't seem to be at uniform scale")
+
+- [x] The heat shimmer's ripples keep one screen size (about 22 CSS px) and fade far out; before, they were tied to the star and aliased to a seethe as the view pulled back (measured: correlation at 1 px went to -0.6 at x32). Grain measured uniform at every zoom (Tom: "the noise effect does not seem uniform")

@@ -1260,8 +1260,11 @@ void main() {
   // Heat bends the air above the limb.
   float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
-  vec2 wob = vec2(vn(vec3(P * 0.05, uTime * 0.3)), vn(vec3(P * 0.05 + 7.7, uTime * 0.3))) - 0.5;
-  uv += wob * hz * uMix.w * uFx3.z / uRes;
+  // Its ripples keep one size on the screen, about 22 CSS pixels, so they never shrink to a seethe.
+  // Far out the shimmer fades: heat haze has no place at that scale (Tom, 2026-11-24).
+  vec2 sp = gl_FragCoord.xy / (22.0 * uDpr);
+  vec2 wob = vec2(vn(vec3(sp, uTime * 0.3)), vn(vec3(sp + 7.7, uTime * 0.3))) - 0.5;
+  uv += wob * hz * uMix.w * uFx3.z * (1.0 - uCam.w) / uRes;
   // The lens splits colour toward the frame's edge.
   vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens) * uFx1.z;
   float kx = kern(gl_FragCoord.xy);
