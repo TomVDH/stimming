@@ -233,14 +233,16 @@ async function buildSoot(level) {
   gas = createFire({ THREE, TSL, curl: { snoise, snoiseVec3 }, renderer, grid: size.map(m => Math.round(m / cell)), size, center: [0, 5.5, 0], pressure: 10, emitMax: 240 });
   gu = gas.u;
   gas.setEmitters(pts);
-  gu.emitTemperature.value = 330; gu.emitDensity.value = 120; gu.emitGain.value = 1;
-  // The jet core carries heat down its drive.
-  gu.feed.value.set(0.4, 0);
-  // The hot exhaust is light: it goes down only so far, then rises back up.
-  gu.buoyancy.value = 1.6; gu.weight.value = 0.05;
+  // No emitter at the nozzle: no smoke comes out of it.
+  gu.emitTemperature.value = 0; gu.emitDensity.value = 0; gu.emitGain.value = 0;
+  // The jet core carries a little heat down its drive.
+  gu.feed.value.set(0.1, 0);
+  // Little lift: the soot rushes down with the jet, not up its sides.
+  gu.buoyancy.value = 0.3; gu.weight.value = 0.05;
   // The jet runs free past its drive and pulls the still air in.
   gu.freeJet.value = 1; gu.entrain.value = 2.0;
-  gu.turbulence.value = 4.0; gu.turbFrequency.value = 10.0; gu.vorticity.value = 8.0;
+  // Less stir: the soot holds together with the jet.
+  gu.turbulence.value = 1.5; gu.turbFrequency.value = 10.0; gu.vorticity.value = 4.0;
   gu.velDamping.value = 0.25; gu.cooling.value = 1.3;
   gu.skyShadow.value = 1.2;
   gu.tMax.value = 3;
@@ -276,7 +278,6 @@ function stepSoot(dt) {
   gu.jetK[0].value.set(16 * (0.35 + 0.75 * thr), 6 + 26 * thr, 0, U.r0.value);
   gu.sourcePosition.value.copy(n);
   gu.emitMatrix.value.copy(emitM.makeTranslation(n.x, n.y, n.z));
-  gu.emitGain.value = 0.5 + 0.6 * thr;
   gu.lightPos.value.set(n.x, n.y - L * 0.5, n.z + 0.5);
   sootLamp.position.copy(gu.lightPos.value);
   sootLamp.intensity = 3 + 12 * thr;
@@ -310,9 +311,9 @@ function apply() {
   U.showHeat.value = tune.showHeat ? 1 : 0;
   // Soot: a feed at the tail of the cone, its darkening, its fade.
   U.soot.value = tune.soot ? 1 : 0; U.sLit.value = tune.sLit; U.sSpeed.value = tune.sSpeed;
-  // Soot mixes through the jet column; none is dumped at one spot.
+  // Soot forms low in the jet column; none at the nozzle, none dumped at one spot.
   gu.tailSoot.value = 0; gu.sideSoot.value = 0;
-  gu.coreSoot.value = tune.soot ? 900 * tune.sAmount : 0;
+  gu.coreSoot.value = tune.soot ? 1400 * tune.sAmount : 0;
   // The clouds fade in about 1.7 s, so they do not linger.
   gu.dissipation.value = 0.6 / tune.sLife;
   gu.occGain.value = 4 * tune.sDark;

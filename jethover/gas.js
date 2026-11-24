@@ -538,8 +538,10 @@ export function createFire({
       // Jet hover: a lighter feed along the column's edge, so some soot rides beside the jet.
       const side = smoothstep(L.mul(0.15), L.mul(0.4), sRaw).mul(float(1.0).sub(smoothstep(L.sub(1.0), L.sub(0.2), sRaw))).mul(smoothstep(R.mul(0.7), R.mul(1.1), r)).mul(float(1.0).sub(smoothstep(R.mul(1.4), R.mul(2.0), r)));
       density.addAssign(u.sideSoot.mul(side).mul(wisp).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
-      // Jet hover: soot mixes through the column from just below the nozzle.
-      const inJet = smoothstep(0.3, 1.2, sRaw).mul(float(1.0).sub(smoothstep(R.mul(0.8), R.mul(1.6), r))).mul(float(1.0).sub(smoothstep(L.sub(0.3), L.add(0.3), sRaw)));
+      // Jet hover: soot forms low in the jet, as it rushes down: none near the nozzle.
+      // It forms inside the column, from 60 per cent of the drive to past its end.
+      const rIn = w.sub(A.mul(sRaw.max(0.0))).length();
+      const inJet = smoothstep(L.mul(0.6), L.mul(0.9), sRaw).mul(float(1.0).sub(smoothstep(L.mul(1.5), L.mul(2.0), sRaw))).mul(float(1.0).sub(smoothstep(K.w.mul(0.8), K.w.mul(1.6).add(sRaw.mul(0.08)), rIn)));
       density.addAssign(u.coreSoot.mul(inJet).mul(wisp.mul(0.7).add(0.3)).mul(smoothstep(0.0, 1.0, K.y)).mul(u.dt));
       const land = P.add(A.mul(L));
       // A jet that ends in free air neither smokes nor steams the floor.
