@@ -3,7 +3,6 @@
 // A flare: the brass blast, a rush as the rope lifts, a low roar,
 // a slow chord while the arcade glows, then soft drips as the rain drains.
 // A drag: a low wind that follows the speed of the turn.
-// A tap on empty sky: a soft low note.
 // Awake: a soft angelic organ choir over a constant deep surround rumble; flares land on a low brass blast.
 
 const jit = (k = 0.1) => 1 + (Math.random() * 2 - 1) * k;
@@ -414,20 +413,7 @@ export function makeSound(kit) {
     wind = null;
   }
 
-  // A tap on empty sky: a soft low note, an octave under the star's key.
-  function hush(pan, band) {
-    const ac = kit.live();
-    if (!ac) return;
-    const t = ac.currentTime + 0.004;
-    const f = (ROOT[band] || 220) * 0.5 * jit(0.004);
-    const g = voice(ac, pan);
-    env(g, t, 0.05, 0.08, 1.8);
-    osc(ac, 'sine', f, t, 2).connect(g);
-    const h = ac.createGain();
-    h.gain.value = 0.2;
-    osc(ac, 'triangle', f * 1.5, t, 1.4).connect(h).connect(g);
-    send(ac, g, 0.8);
-  }
+
 
   // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
   function tick() {
@@ -502,5 +488,5 @@ export function makeSound(kit) {
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, hush, tick, telegraph, dim, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, tick, telegraph, dim, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }

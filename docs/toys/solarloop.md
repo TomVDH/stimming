@@ -148,7 +148,6 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 - The glow: a slow chord while the arcade shines.
 - The rain: soft drips, each a falling note, from 12 s.
 - A drag is silent (Tom, 2026-11-23: no woosh).
-- A tap on empty sky: a soft low note, an octave under the star's key.
 - A wide hall: three long echoes.
 
 ## QA (headless Edge, D3D11, RTX 3070), 2026-11-23
