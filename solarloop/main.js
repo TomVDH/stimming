@@ -10,6 +10,7 @@ import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -30,6 +31,8 @@ const st = {
   // The ambient clock: it runs while the toy drifts and stops asleep.
   time: 34,
   pitch: 0, yaw: 0,
+  // The pulsar's own clock: a voice egg runs it faster.
+  spin: 34,
   next: 0,
 };
 const sun = makeSun();
@@ -213,7 +216,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; }, get shown() { return [shown, dip?.t ?? -1]; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get rip() { return rip; }, get zoom() { return [zoom, zoomTo]; }, get egg() { return egg; }, get shown() { return [shown, dip?.t ?? -1]; } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -258,6 +261,7 @@ const lensLabel = () => `Lens · ${cam.mode === 'full' && zoomTo > 1.01 ? `Full 
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
   st.star = v;
+  egg = null;
   store.set('star', v);
   applyView();
   setLabel(labels.star, starLabel());
@@ -435,6 +439,76 @@ function stepLit(dt) {
   return moving;
 }
 
+/* ---------- eggs: a long hold on a star plays its real famous event ---------- */
+// The egg in play, or null. Its clock t reaches 0 at the end of the hold.
+let egg = null;
+// A view point under the stage point x, y, as a unit vector in the star's frame.
+function surfaceAt(x, y) {
+  let vx = view.cx + (x / cssW * 2 - 1) * view.hw, vy = view.cy + (1 - y / cssH * 2) * view.hh;
+  // A point off the disk moves in onto it.
+  const r = Math.hypot(vx, vy), lim = 0.9 * R;
+  if (r > lim) { vx *= lim / r; vy *= lim / r; }
+  const v = [vx, vy, Math.sqrt(Math.max(0, R * R - vx * vx - vy * vy))];
+  return [0, 1, 2].map(c => (M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]) / R);
+}
+function startEgg(x, y) {
+  const kind = EGGS[st.star];
+  // The star turns during the hold: the flash lands under the finger.
+  const now = st.time;
+  st.time += HOLD - CUE;
+  setRot();
+  const c = surfaceAt(x, y);
+  st.time = now;
+  setRot();
+  if (kind === 'carrington') egg = makeCarrington(c);
+  else if (kind === 'dimming') egg = makeDimming();
+  else if (kind === 'voice') egg = makeVoice();
+  return !!egg;
+}
+// One step of the egg's clock; a hold let go early runs it back out.
+function stepEgg(dt, holding) {
+  if (!egg) return;
+  if (egg.kind === 'voice') {
+    egg.t += dt;
+    // Reduced motion: the spin rises only four times.
+    stepVoice(egg, dt, holding, SPIN_PERIOD, calm ? 4 : Infinity);
+    if (egg.done) egg = null;
+    return;
+  }
+  if (egg.t < 0 && !holding && !egg.rare) {
+    egg.t -= dt * 2;
+    if (egg.t <= CUE - HOLD) egg = null;
+    return;
+  }
+  egg.t += dt;
+  if (egg.kind === 'carrington') {
+    if (egg.t >= 0 && !egg.fired) {
+      egg.fired = true;
+      const fl = startFlare(sun, egg.rg, st.time, calm ? 1.1 : 1.6);
+      fl.snapped = 0;
+      snd.flare(clamp(toCss(toView(egg.rg.c.map(x => x * R)))[0] / cssW * 2 - 1, -1, 1), st.star, 1);
+    }
+    // The storm reaches the earth: its telegraph lines spark.
+    if (egg.t >= CARR_STORM && !egg.storm) { egg.storm = true; snd.telegraph(); }
+    if (egg.t >= CARR_END) egg = null;
+  } else if (egg.kind === 'dimming') {
+    if (egg.t >= 0 && !egg.fired) { egg.fired = true; snd.dim(st.star); }
+    if (egg.t >= DIM_END) egg = null;
+  }
+}
+// The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
+// The dimming: south in the view frame and the veil, then the cool patch.
+function eggFrame(out, dim) {
+  out.fill(0); dim.fill(0);
+  if (egg?.kind === 'carrington') {
+    const c = carrington(egg);
+    [...c.spots, ...c.kernels].forEach(([p, w], k) => out.set([...toView(p), calm ? w * 0.7 : w], k * 4));
+  } else if (egg?.kind === 'dimming') {
+    const d = dimming(egg);
+    dim.set([...toView(SOUTH), d.veil, d.cool, 0, 0, 0]);
+  }
+}
+
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
@@ -443,6 +517,7 @@ const frameState = {
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), rip: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4),
+  egg: new Float32Array(16), dim: new Float32Array(8),
 };
 function makeFrame() {
   const f = frameState;
@@ -474,7 +549,7 @@ function makeFrame() {
   f.time = st.time;
   const star = STARS[shown];
   f.band = star;
-  f.count = strands(sun, st.time, { star: shown, activity: act }, ren.data);
+  f.count = strands(sun, st.time, { star: shown, activity: act, spin: st.spin }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
@@ -505,7 +580,7 @@ function makeFrame() {
   f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, (1 - weight('wide')) * on]);
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
   // The pulsar's magnetic axis, in the view frame.
-  if (star.beam) f.beam.set([...toView(magAxis(st.time)), star.beam]); else f.beam.fill(0);
+  if (star.beam) f.beam.set([...toView(magAxis(st.spin)), star.beam]); else f.beam.fill(0);
   // The spin axis carries the wind nebula's torus and jets.
   if (star.beam) f.spin.set([...toView(SPIN), star.beam]); else f.spin.fill(0);
   // A young star's disk and jets turn with the star.
@@ -525,6 +600,7 @@ function makeFrame() {
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo') * dipLight(), fxv('fxShimmer'), 0]);
+  eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
   if (rip) {
     // The ring slows as it spreads; reduced motion keeps it small and still.
@@ -578,6 +654,7 @@ function frame(now) {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
+    st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     // The lens zooms over about two seconds.
     const zooming = cam.t < 1;
     if (zooming) {
@@ -602,12 +679,20 @@ function frame(now) {
     const easing = stepZoom(dt);
     const dipping = stepDip(dt);
     if (rip && (rip.t += dt) >= RIP_LIFE) rip = null;
+    // A still press past the cue starts the star's egg under it.
+    const holding = pointer.id !== null && !pointer.drag;
+    if (holding && !egg && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE && startEgg(pointer.x0, pointer.y0)) pointer.egg = true;
+    // Now and then an egg comes on its own, near the middle of the view.
+    if (!egg && !calm && drifting > 0 && EGGS[st.star] && Math.random() < dt / RARE) {
+      if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()))) egg.rare = true;
+    }
+    stepEgg(dt, holding && pointer.egg);
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || easing || dipping || glowing || !!rip || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || easing || dipping || glowing || !!rip || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
-    if (STARS[shown].beam && drifting > 0) pulse();
+    if (STARS[shown].beam && (drifting > 0 || egg?.kind === 'voice')) pulse();
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
@@ -615,12 +700,21 @@ function frame(now) {
   }
 }
 // A pulsar ticks as each beam sweeps past the eye.
-let lastFace = 0;
+let lastFace = 0, lastTurn = 0;
+// The point in a turn where the beam faces the eye.
+const FACE = (() => { let b = 0, bz = -2; for (let i = 0; i < 360; i++) { const z = magAxis(i / 360 * SPIN_PERIOD)[2]; if (z > bz) { bz = z; b = i / 360; } } return b; })();
 function pulse() {
-  const m = toView(magAxis(st.time));
-  const face = m[2];
-  if (face > 0.95 && lastFace <= 0.95) snd.tick();
-  lastFace = face;
+  const turn = st.spin / SPIN_PERIOD - FACE;
+  // Fast turns pass the eye between frames: count turns, one tick each.
+  if (egg?.kind === 'voice' && egg.rate > 1.5) {
+    const n = Math.min(2, Math.floor(turn) - Math.floor(lastTurn));
+    for (let i = 0; i < n; i++) snd.tick();
+  } else {
+    const face = toView(magAxis(st.spin))[2];
+    if (face > 0.95 && lastFace <= 0.95) snd.tick();
+    lastFace = face;
+  }
+  lastTurn = turn;
 }
 // Each arcade loop that snaps in plays its note once.
 function cueArcade(fl) {
@@ -653,13 +747,14 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
-const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, t0: 0, drag: false, p0: 0, w0: 0 };
+const pointer = { id: null, x0: 0, y0: 0, x: 0, y: 0, at: 0, t0: 0, drag: false, egg: false, p0: 0, w0: 0 };
 const local = e => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
 stage.addEventListener('pointerdown', e => {
   if (e.button !== 0 || !ren || pointer.id !== null || (e.target !== canvas && e.target !== stage)) return;
   try { stage.setPointerCapture(e.pointerId); } catch { /* capture is optional */ }
   const [x, y] = local(e);
-  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: performance.now(), t0: performance.now(), drag: false, p0: st.pitch, w0: st.yaw });
+  const now = performance.now();
+  Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: now, t0: now, drag: false, egg: false, p0: st.pitch, w0: st.yaw });
   const hit = pickAt(x, y);
   pressed = hit.d < reach() ? hit.t : null;
   poke();
@@ -684,7 +779,8 @@ stage.addEventListener('pointermove', e => {
 });
 function endPointer(e) {
   if (e.pointerId !== pointer.id) return;
-  const tap = e.type === 'pointerup' && !pointer.drag;
+  // A press that started an egg is not a tap.
+  const tap = e.type === 'pointerup' && !pointer.drag && !pointer.egg;
   if (pointer.drag) snd.endTurn();
   pointer.id = null; pointer.drag = false; pressed = null;
   if (tap) flareNear(pointer.x, pointer.y);

@@ -362,7 +362,8 @@ function ropeRest(rg, time) {
 // The hand lights a region or prominence: lit runs from 0 to 1.
 export const LIT_GAIN = 0.15;
 const glow = o => 1 + LIT_GAIN * (o.lit || 0);
-export function strands(sun, time, { star, activity }, out) {
+// spin: the pulsar's own clock, which an egg can speed up.
+export function strands(sun, time, { star, activity, spin = time }, out) {
   const B = STARS[star];
   let n = 0;
   const act = clamp(activity);
@@ -408,7 +409,7 @@ export function strands(sun, time, { star, activity }, out) {
     }
   }
   for (const p of sun.proms) n = promStrands(p, B, time, out, n);
-  if (B.field) n = fieldStrands(time, B, out, n);
+  if (B.field) n = fieldStrands(spin, B, out, n);
   for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
   return n;
 }

@@ -520,11 +520,62 @@ export function makeSound(kit) {
     send(ac, c, 0.3);
   }
 
+  // The Carrington storm reaches the earth: a far telegraph sounder clacks, its line sparks.
+  // In 1859 operators sent messages on the storm's current alone.
+  function telegraph() {
+    const ac = kit.live();
+    if (!ac || !kit.noise) return;
+    const t0 = ac.currentTime + 0.02;
+    const pan = Math.random() < 0.5 ? -0.55 : 0.55;
+    const bar = (at, f, lvl) => {
+      const g = voice(ac, pan);
+      env(g, at, lvl, 0.0015, 0.05);
+      noise(ac, at, 0.07, 1.2).connect(filt(ac, 'bandpass', f, 6)).connect(g);
+      send(ac, g, 0.6);
+    };
+    // The sounder: a click as the key goes down, a clack as it comes up.
+    let at = t0;
+    for (let i = 0; i < 22; i++) {
+      const len = Math.random() < 0.35 ? 0.2 : 0.07;
+      bar(at, 1500 * jit(0.05), 0.09);
+      bar(at + len, 900 * jit(0.05), 0.06);
+      at += len + (Math.random() < 0.2 ? 0.3 : 0.09);
+    }
+    // Sparks: short crackles where the current jumps at the instrument.
+    for (let i = 0; i < 9; i++) {
+      const sp = t0 + Math.random() * (at - t0);
+      const g = voice(ac, clamp(pan + (Math.random() - 0.5) * 0.3, -1, 1));
+      env(g, sp, 0.07 * jit(0.5), 0.001, 0.03 + 0.05 * Math.random());
+      noise(ac, sp, 0.12, 2).connect(filt(ac, 'highpass', 3500, 0.7)).connect(g);
+    }
+  }
+
+  // The Great Dimming: a chord that falls and muffles as the light goes.
+  function dim(band) {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.01;
+    const root = (ROOT[band] || 220) / 2;
+    const pad = voice(ac, 0);
+    pad.gain.setValueAtTime(0, t);
+    pad.gain.linearRampToValueAtTime(0.05, t + 3);
+    pad.gain.setTargetAtTime(0.0001, t + 12, 5);
+    const plp = filt(ac, 'lowpass', 1200, 0.5);
+    plp.frequency.exponentialRampToValueAtTime(160, t + 10);
+    plp.connect(pad);
+    for (const m of [1, 1.189, 1.498]) {
+      const o = osc(ac, 'triangle', root * m, t, 30);
+      o.frequency.exponentialRampToValueAtTime(root * m * 0.94, t + 10);
+      o.connect(plp);
+    }
+    send(ac, pad, 0.5);
+  }
+
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     wind = null;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, hush, tick, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, hush, tick, telegraph, dim, snap, turn, endTurn, quiet, get busy() { return pending > 0; } };
 }
