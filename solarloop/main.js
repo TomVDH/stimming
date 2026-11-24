@@ -9,7 +9,7 @@ import { detail } from '../shared/detail.js';
 import { R, SPIN_UP, STARS, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_STORM, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 mark('libs');
 
 const ID = 'solarloop';
@@ -30,6 +30,8 @@ const st = {
   // The ambient clock: it runs while the toy drifts and stops asleep.
   time: 34,
   pitch: 0, yaw: 0,
+  // The pulsar's own clock: a voice egg runs it faster.
+  spin: 34,
   next: 0,
 };
 const sun = makeSun();
@@ -336,11 +338,19 @@ function startEgg(x, y) {
   setRot();
   if (kind === 'carrington') egg = makeCarrington(c);
   else if (kind === 'dimming') egg = makeDimming();
+  else if (kind === 'voice') egg = makeVoice();
   return !!egg;
 }
 // One step of the egg's clock; a hold let go early runs it back out.
 function stepEgg(dt, holding) {
   if (!egg) return;
+  if (egg.kind === 'voice') {
+    egg.t += dt;
+    // Reduced motion: the spin rises only four times.
+    stepVoice(egg, dt, holding, SPIN_PERIOD, calm ? 4 : Infinity);
+    if (egg.done) egg = null;
+    return;
+  }
   if (egg.t < 0 && !holding && !egg.rare) {
     egg.t -= dt * 2;
     if (egg.t <= CUE - HOLD) egg = null;
@@ -415,7 +425,7 @@ function makeFrame() {
   f.time = st.time;
   const star = STARS[st.star];
   f.band = star;
-  f.count = strands(sun, st.time, { star: st.star, activity: act }, ren.data);
+  f.count = strands(sun, st.time, { star: st.star, activity: act, spin: st.spin }, ren.data);
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
   f.frameNo = calm ? 0 : frameNo;
@@ -446,7 +456,7 @@ function makeFrame() {
   f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, (1 - weight('wide')) * on]);
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
   // The pulsar's magnetic axis, in the view frame.
-  if (star.beam) f.beam.set([...toView(magAxis(st.time)), star.beam]); else f.beam.fill(0);
+  if (star.beam) f.beam.set([...toView(magAxis(st.spin)), star.beam]); else f.beam.fill(0);
   // The spin axis carries the wind nebula's torus and jets.
   if (star.beam) f.spin.set([...toView(SPIN), star.beam]); else f.spin.fill(0);
   // A young star's disk and jets turn with the star.
@@ -513,6 +523,7 @@ function frame(now) {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
+    st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     // The lens zooms over about two seconds.
     const zooming = cam.t < 1;
     if (zooming) {
@@ -544,7 +555,7 @@ function frame(now) {
     frameNo++;
     lively = zooming || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) snd.hum(st.star);
-    if (STARS[st.star].beam && drifting > 0) pulse();
+    if (STARS[st.star].beam && (drifting > 0 || egg?.kind === 'voice')) pulse(dt);
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
@@ -552,12 +563,21 @@ function frame(now) {
   }
 }
 // A pulsar ticks as each beam sweeps past the eye.
-let lastFace = 0;
-function pulse() {
-  const m = toView(magAxis(st.time));
-  const face = m[2];
-  if (face > 0.95 && lastFace <= 0.95) snd.tick();
-  lastFace = face;
+let lastFace = 0, lastTurn = 0;
+// The point in a turn where the beam faces the eye.
+const FACE = (() => { let b = 0, bz = -2; for (let i = 0; i < 360; i++) { const z = magAxis(i / 360 * SPIN_PERIOD)[2]; if (z > bz) { bz = z; b = i / 360; } } return b; })();
+function pulse(dt) {
+  const turn = st.spin / SPIN_PERIOD - FACE;
+  // Fast turns pass the eye between frames: count turns, place ticks on the audio clock.
+  if (egg?.kind === 'voice' && egg.rate > 1.5) {
+    const n = Math.min(8, Math.floor(turn) - Math.floor(lastTurn));
+    for (let i = 0; i < n; i++) snd.tick(dt * (i + 1) / n, 0.6);
+  } else {
+    const face = toView(magAxis(st.spin))[2];
+    if (face > 0.95 && lastFace <= 0.95) snd.tick();
+    lastFace = face;
+  }
+  lastTurn = turn;
 }
 // Each arcade loop that snaps in plays its note once.
 function cueArcade(fl) {

@@ -1,6 +1,7 @@
 // Solar loop easter eggs: a long hold on a star plays its real famous event.
 // Sun: the Carrington flare of 1 September 1859.
 // Betelgeuse: the Great Dimming of 2019 to 2020.
+// Pulsar: the Vela pulsar's true voice, 11.19 pulses a second.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -16,7 +17,7 @@ export const CUE = 0.6;
 // An egg comes on its own about once per this many awake seconds.
 export const RARE = 25 * 60;
 // The star that holds each egg.
-export const EGGS = { sun: 'carrington', betelgeuse: 'dimming' };
+export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice' };
 
 /* ---------- the Carrington flare ---------- */
 // Carrington and Hodgson saw two white kernels flash over a huge spot group.
@@ -70,4 +71,27 @@ export function dimming(egg) {
   const cool = (t < 0 ? 0.6 * sstep(CUE - HOLD, 0, t) : 0.6 + 0.4 * sstep(0, 3, t)) * clear;
   const veil = sstep(0, 5, t) * clear;
   return { cool, veil };
+}
+
+/* ---------- the Vela pulsar's true voice ---------- */
+// Vela turns 11.19 times a second; the toy shows it every 1.6 s.
+// Radio telescopes play its pulses as a low buzz.
+export const VELA_HZ = 11.19;
+// A rare voice holds its full speed this long, in seconds.
+export const VOICE_HOLD = 6;
+export function makeVoice() {
+  return { kind: 'voice', t: CUE - HOLD, rate: 1 };
+}
+/**
+ * One step of the spin rate, as a multiple of the toy's own spin.
+ * A hold eases it up to the true rate on a log scale; a release eases it back.
+ */
+export function stepVoice(egg, dt, holding, base, cap = Infinity) {
+  const top = Math.min(cap, VELA_HZ * base);
+  const up = holding || (egg.rare && egg.t < VOICE_HOLD);
+  const goal = up ? Math.exp(Math.log(top) * sstep(CUE - HOLD, 0, egg.t)) : 1;
+  // Up quickly as the hold builds; down over about three seconds.
+  const k = up ? 1 : 1 - Math.exp(-dt / 1.2);
+  egg.rate = up ? Math.max(egg.rate, goal) : egg.rate + (goal - egg.rate) * k;
+  egg.done = !up && egg.rate < 1.02;
 }

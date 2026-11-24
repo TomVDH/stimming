@@ -359,7 +359,8 @@ function ropeRest(rg, time) {
  * Writes every strand for the given clock into out.
  * @returns {number} The strand count.
  */
-export function strands(sun, time, { star, activity }, out) {
+// spin: the pulsar's own clock, which an egg can speed up.
+export function strands(sun, time, { star, activity, spin = time }, out) {
   const B = STARS[star];
   let n = 0;
   const act = clamp(activity);
@@ -405,7 +406,7 @@ export function strands(sun, time, { star, activity }, out) {
     }
   }
   for (const p of sun.proms) n = promStrands(p, B, time, out, n);
-  if (B.field) n = fieldStrands(time, B, out, n);
+  if (B.field) n = fieldStrands(spin, B, out, n);
   for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
   return n;
 }

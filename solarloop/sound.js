@@ -279,15 +279,16 @@ export function makeSound(kit) {
   }
 
   // A pulsar's tick: a dry click on a short low thump, each time a beam sweeps past.
-  function tick() {
+  // delay places it later on the audio clock; lvl scales it.
+  function tick(delay = 0, lvl = 1) {
     const ac = kit.live();
     if (!ac || !kit.noise) return;
-    const t = ac.currentTime + 0.003;
+    const t = ac.currentTime + 0.003 + delay;
     const c = voice(ac, 0);
-    env(c, t, 0.12, 0.001, 0.05);
+    env(c, t, 0.12 * lvl, 0.001, 0.05);
     noise(ac, t, 0.08, 1.4).connect(filt(ac, 'bandpass', 2400, 2)).connect(c);
     const th = voice(ac, 0);
-    env(th, t, 0.16, 0.002, 0.14);
+    env(th, t, 0.16 * lvl, 0.002, 0.14);
     const o = osc(ac, 'sine', 120, t, 0.2);
     o.frequency.exponentialRampToValueAtTime(50, t + 0.12);
     o.connect(th);
