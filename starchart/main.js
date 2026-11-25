@@ -395,7 +395,8 @@ function springTo(z) {
     arrive();
   } else cam.moving = true;
   rail?.show(cam.z, cam.to);
-  poke();
+  // Only zooming closer than the full star wakes rested audio (Tom, 2026-11-25).
+  poke(z < NOTCH - 1e-3);
 }
 // One critically damped step toward x (the SmoothDamp integral); T is its time constant.
 // Firm: the step never passes X.
@@ -1574,8 +1575,8 @@ function schedule(delay = 0) {
 const nearness = () => Math.log(fit.full.hw / view.hw) / Math.log(fit.full.hw / fit.long.hw);
 // The eased turn rate goes along, so Beta Lyrae's swell keeps time with its orbit (Tom, 2026-11-24).
 function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness(), 10 ** turn.lr); }
-function poke() {
-  hear();
+function poke(wakeSound = true) {
+  if (wakeSound) hear();
   lastInput = performance.now();
   if (!raf && !timer) last = performance.now();
   if (timer) { clearTimeout(timer); timer = 0; }
@@ -1586,13 +1587,13 @@ function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer
 
 /* ---------- sound idle ---------- */
 // Left alone, the choir rests at 28 s and the sound stops at 90 s (Tom, 2026-11-25).
-// A mouse move counts here, so the sound idles apart from the frame loop.
+// Input or zooming closer than the full star wakes it; plain mouse moves do not.
 // ?idle=0.1 scales the three times for QA.
 const IDLE_K = Number(new URLSearchParams(location.search).get('idle')) || 1;
 const REST_AT = 28 * IDLE_K, CUT_AT = 90 * IDLE_K, CUT_FADE = 4 * IDLE_K;
 // The stage: awake, rest, fade or cut.
 let heardAt = performance.now(), soundT = 0, soundState = 'awake';
-// Input or a mouse move: the sound comes back from where it is.
+// Input or zooming closer than the full star: the sound comes back from where it is.
 function hear() {
   heardAt = performance.now();
   if (!started || !visible) return;
@@ -1671,9 +1672,9 @@ stage.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse') return;
   hoverAt = e.target === canvas || e.target === stage ? local(e) : null;
   readHover();
-  if (farAt(cam.z) > 0) poke(); else hear();
+  if (farAt(cam.z) > 0) poke(false);
 });
-stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
+stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(false); });
 
 // The view as it stood on the last frame, for the haze's history weight.
 const hold = { z: 0, yaw: 0, pitch: 0, star: null };

@@ -308,10 +308,10 @@ Only with `?fluid` in the address. Fire's 3D fluid (`starchart/fluid.js`, a trim
 Plays by default (Tom, 2026-11-25); a mute is stored and holds, so a muted boot makes no audio context at all. Any key or a click wakes the sound. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
 
 - The choir's base level is 0.85, 15 percent below the old level; the rumble keeps its level (Tom, 2026-11-25). `CHOIR` in `sound.js`; the Dev Choir level trims on top of it. The lab plays the same chain, so it matches.
-- Left alone, the sound rests, then stops (Tom, 2026-11-25). Its idle clock counts every input and also every mouse move over the stage, so it runs apart from the frame loop. The ramps run on the audio clock, so they add no frame work: one timer checks the idle time.
+- Left alone, the sound rests, then stops (Tom, 2026-11-25). Its idle clock resets on input and on zooming closer than the full star; plain mouse movement over the stage and zooming at or beyond the full star do not wake it (Tom, 2026-11-25). The ramps run on the audio clock, so they add no frame work: one timer checks the idle time.
   - Rest, from 28 s idle over 10 s: the choir goes down 6 dB and a low pass closes from 20 kHz to 1.4 kHz, so it sounds a little dull. The middle singers go to 0.45, the high singers to 0.12 and the melody to 0.1 (`REST` in `choir.js`). The low singers and the rumble hold, so the bass comes forward.
   - Cut, at 90 s idle: the voice fades out over the last 4 s, then every sound stops and the context suspends.
-  - Return, on input or a mouse move: the level, the layers and the low pass come back over 8 s. Input during the last fade lifts the voice back over about 2 s. After a cut, a mouse move resumes the context where the page has had a gesture; else a click or a key does. The new voice starts at the rest mix, so it comes back from the bass up.
+  - Return, on input or zooming closer than the full star: the level, the layers and the low pass come back over 8 s. Input during the last fade lifts the voice back over about 2 s. After a cut, zooming closer or a click or key resumes the context where the page has had a gesture. The new voice starts at the rest mix, so it comes back from the bass up.
   - A hidden tab and mute still stop the sound at once. `?idle=0.1` scales the three times for QA; `__solar.sound` (with `?qa`) reads the stage and the rest gains.
 
 - Awake, the star's voice in two layers (Tom, 2026-11-23). The star sets the key: the larger the star, the lower.
