@@ -288,9 +288,25 @@ float torusDust(vec3 q, float fill) {
 vec3 bandQ(float r, float phi, float y) {
   // One turn in about 2.6 minutes (Tom, 2026-11-24: turn faster).
   // 61 whole turns per 9600 s clock wrap, so the wrap shows no jump.
-  float pt = phi - uTime * (TAU * 61.0 / 9600.0) + 0.3 * (r - 30.0);
-  float rs = 30.0 + 2.2 * (r - 30.0);
+  // Past the middle the swirl winds tighter and draws out longer, so the edge fans out.
+  float ro = max(r - 30.0, 0.0);
+  float pt = phi - uTime * (TAU * 61.0 / 9600.0) + 0.3 * (r - 30.0) + 0.01 * ro * ro;
+  float rs = 30.0 + 2.2 * (r - 30.0) + 0.05 * ro * ro;
   return vec3(cos(pt) * rs, y, sin(pt) * rs);
+}
+// A cloud point in the broad-line layers' frame, as bandQ.
+// Inside the band the gas turns faster: one turn in about 73 s.
+// The layer above and the layer below take different billows.
+vec3 blrQ(float r, float phi, float y) {
+  float pt = phi - uTime * (TAU * 131.0 / 9600.0) + 0.2 * (r - 18.0);
+  float rs = 18.0 + 1.6 * (r - 18.0);
+  return vec3(cos(pt) * rs, y + sign(y) * 37.0, sin(pt) * rs);
+}
+// The broad-line clouds' density: Worley billows, eroded by texture noise.
+// env: the layer's shape; where it thins, the clouds break into masses.
+float blrDust(vec3 q, float env) {
+  float w = 0.7 * wor(q * 0.3) + 0.3 * hn(q * 0.8 + 2.7);
+  return smoothstep(0.56, 0.34, w + 0.55 * (1.0 - env)) * env;
 }
 // The cloud layer's reach: radii CB0 to CB1, heights to CREACH times the layer's height.
 const float CB0 = 2.4, CB1 = 24.0, CREACH = 2.2;
@@ -393,18 +409,27 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
     // The dusty torus: thick, clumpy, dark; its inner rim glows hot where the disc lights it.
     // A flat band, 12 wide and 3 tall (Tom, 2026-11-24: "much less tall").
     float RT = 30.0, ar = 6.0, ay = 1.5;
-    if (abs(r - RT) < ar * 1.1 && abs(y) < ay * 3.5) {
+    if (r > RT - ar * 1.1 && r < 39.5 && abs(y) < ay * 3.5) {
       // The shear is fixed, so it never winds up.
       vec3 q = bandQ(r, phi, y);
       // Worley holes run through the band; its inner and outer edges stay sharp.
       // The top and bottom feather off as volume (Tom, 2026-11-24).
-      float feather = exp(-0.5 * y * y / (ay * ay));
+      // Outward the band tapers to a third of its height and frays (Tom, 2026-11-24).
+      float taper = smoothstep(RT, 39.0, r);
+      float ayr = ay * (1.0 - 0.65 * taper);
+      float feather = exp(-0.5 * y * y / (ayr * ayr));
       // The middle of the band is denser (Tom, 2026-11-24).
-      float fill = exp(-pow((r - RT) / (ar * 0.5), 2.0)) * feather;
-      float dd = torusDust(q, fill) * smoothstep(ar * 1.1, ar * 0.85, abs(r - RT)) * feather * uHoleQ.y;
+      // Toward the end the dust breaks into separate streaks, as the blue layers fray.
+      float fill = exp(-pow((r - RT) / (ar * 0.5), 2.0)) * feather - 0.9 * taper;
+      float edge = smoothstep(RT - ar * 1.1, RT - ar * 0.85, r) * smoothstep(39.8, 36.0, r);
+      // Past the middle the dust splits into spiral fingers that fan out.
+      // They follow the shear in bandQ, so they trail as the chevrons do.
+      float fing = smoothstep(0.35, 0.85, 0.5 + 0.5 * sin(14.0 * atan(q.z, q.x) + 4.0 * hn(q * 0.3)));
+      float dd = torusDust(q, fill) * mix(1.0, fing, taper) * edge * feather * uHoleQ.y;
       if (dd > 1e-3) {
         // The disc's light falls across the band's face; its inner edge burns.
-        float lit = 0.25 * pow((RT - ar) / r, 2.0) + 0.75 * exp(-0.6 * max(r - (RT - ar), 0.0));
+        // The fanned streaks keep enough light to show.
+        float lit = (0.25 + 0.3 * taper) * pow((RT - ar) / r, 2.0) + 0.75 * exp(-0.6 * max(r - (RT - ar), 0.0));
         // A billow shades its own far side: dust a step toward the hole blocks the light.
         lit *= exp(-1.2 * smoothstep(0.55, 0.3, wor(bandQ(r - 0.9, phi, y) * 0.45)));
         // The billows block light; the holes between them let it through.
@@ -412,7 +437,27 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
         L.x += dd * (0.03 + lit) * 0.6;
       }
     }
-    // Broad-line clouds: soft clumps above and below the disc, lit by it.
+    // Broad-line clouds: a cloud layer above the disc and one below (Tom, 2026-11-24).
+    // Worley billows give it structure; its edges fray into separate masses.
+    if (r > 8.0 && r < 28.0 && abs(y) > 0.5 && abs(y) < 11.0) {
+      // The layer rises as the disc flares.
+      float hc = 2.5 + 0.15 * r;
+      float env = smoothstep(8.0, 12.0, r) * smoothstep(28.0, 22.0, r) * exp(-pow((abs(y) - hc) / 2.4, 2.0));
+      if (env > 0.02) {
+        vec3 q = blrQ(r, phi, y);
+        float cd = blrDust(q, env);
+        if (cd > 1e-3) {
+          // Cloud a step toward the hole shades this point: the near side catches the light.
+          vec3 p2 = p - p / R3 * 1.4;
+          float sh = blrDust(blrQ(length(p2.xz), atan(p2.z, p2.x), p2.y), env);
+          float lit = 0.12 + exp(-1.8 * sh);
+          float cl = cd * uHoleQ.z;
+          L.y += cl * lit * 0.22 * 14.0 / R3;
+          ext += cl * 0.45;
+        }
+      }
+    }
+    // Some clumps ride among the layers (Tom, 2026-11-24: the dots back, some of them).
     // Cells 5 apart in shells, 7 along the orbit; each shell turns whole at its own Kepler rate.
     // A clump stays inside its cell, so no cell edge cuts it.
     if (r > 10.5 && r < 25.5 && abs(y) < 10.0) {
@@ -425,7 +470,7 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
       vec3 id = vec3(k, mod(floor(u), nc), jy);
       float h = h13(id + 3.1);
       // More clumps near the disc, fewer high above it.
-      if (h < 0.55 * exp(-yc * yc / 80.0)) {
+      if (h < 0.28 * exp(-yc * yc / 80.0)) {
         float hr = h13(id + 11.7), hs = h13(id + 23.9);
         vec3 o = vec3(r - rk - 0.4 * (hr - 0.5), y - yc - 0.4 * (hs - 0.5), (fract(u) - 0.5) * TAU * rk / nc);
         // Sizes vary about 2.5 times; the orbit draws each clump out a little.
