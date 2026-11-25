@@ -11,6 +11,8 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const HOLD = 6000;
 // One film frame at the menu's 30 fps, in ms.
 const FRAME = 1000 / 30;
+// The i hint comes on this long after the card's last line, in ms.
+const TIP_AFTER = 700;
 export const CARD_STYLES = [['intro', 'Intro'], ['stamp', 'Stamp'], ['caption', 'Caption']];
 
 const h = (tag, cls, text) => {
@@ -73,6 +75,7 @@ export function makeCard(o) {
       at += 3 * FRAME;
     }
     later(fade, at + HOLD);
+    return at;
   }
   // Stamp: the box lands in three frames, then the lines come on.
   function stamp({ name, lines }) {
@@ -81,6 +84,7 @@ export function makeCard(o) {
     let at = 6 * FRAME;
     for (const el of lines) { later(() => el.classList.remove('is-shut'), at); at += 2 * FRAME; }
     later(fade, at + HOLD);
+    return at;
   }
   // The caption's lines: the name, the type and formal name, then rows padded so values line up.
   const captionLines = c => [
@@ -88,7 +92,8 @@ export function makeCard(o) {
     ...c.rows.map(([k, v]) => [`${k.padEnd(11)}${v}`, 'e2 e3']),
   ];
   // Caption: each line types on in the monospace face, the name slowly and the facts fast.
-  function caption(c) {
+  // done runs when the last line has typed on.
+  function caption(c, done) {
     const cl = captionLines(c), text = cl.map(([t]) => t);
     const lines = cl.map(([, cls]) => box.appendChild(h('p', cls)));
     const cur = h('span', 'cur', '█');
@@ -99,6 +104,7 @@ export function makeCard(o) {
       if (ci < text[li].length) return later(type, li === 0 ? 40 + Math.random() * 30 : 14 + Math.random() * 10);
       if (++li < lines.length) { ci = 0; return later(type, li === 1 ? 260 : 90); }
       later(() => cur.remove(), 1600);
+      later(done, TIP_AFTER);
       later(fade, HOLD);
     };
     type();
@@ -106,32 +112,31 @@ export function makeCard(o) {
 
   // Our Sun beside the object at their true ratio, above the card (Tom, 2026-11-24).
   // k is the object's radius in R☉; a black hole gives its horizon's.
-  // The larger body is H px wide; the smaller shrinks to scale, at least a 2 px dot.
-  // A dot under 6 px wears a ring, so the eye finds it.
+  // Both stand on one centre line, the smaller at the left, at one scale.
+  // The larger is H/2 tall at most; past that the smaller keeps 4 px of radius,
+  // and the larger shows only the arc of its edge, as wide as the box allows (Tom, 2026-11-24).
   function sizeMark({ k }) {
-    const H = 48, GAP = 10;
+    const W = 150, H = 52, MID = H / 2, GAP = 8, BIG = H / 2 - 2, SMALL = 4;
+    const ratio = k >= 1 ? k : 1 / k;
+    const fits = SMALL * ratio <= BIG;
+    const rBig = fits ? BIG : SMALL * ratio, rSmall = fits ? Math.max(BIG / ratio, 1.5) : SMALL;
     const el = h('div', 'c-sun');
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
-    const circle = (cx, cy, r, cls) => {
+    const circle = (cx, r, cls) => {
       const c = document.createElementNS(NS, 'circle');
-      Object.entries({ cx, cy, r }).forEach(([a, v]) => c.setAttribute(a, v));
+      Object.entries({ cx, cy: MID, r }).forEach(([a, v]) => c.setAttribute(a, v));
       c.setAttribute('class', cls);
       svg.append(c);
     };
-    const dSun = k >= 1 ? H / k : H, dObj = k >= 1 ? H : H * k;
-    const body = (x, d, cls) => {
-      const r = Math.max(1, d / 2);
-      circle(x + r, H - r, r, cls);
-      if (d < 6) circle(x + r, H - r, 5, 'c-sun-ring');
-      return x + Math.max(2 * r, d < 6 ? 10 : 0);
-    };
-    const x = body(0, dSun, 'c-sun-sol') + GAP;
-    const w = body(x, dObj, 'c-sun-obj');
+    const sx = Math.max(rSmall, 1.5) + 1, limb = sx + rSmall + GAP;
+    const w = fits ? Math.ceil(limb + 2 * rBig + 1) : W;
+    circle(sx, rSmall, k >= 1 ? 'c-sun-sol' : 'c-sun-obj');
+    circle(limb + rBig, rBig, (k >= 1 ? 'c-sun-obj' : 'c-sun-sol') + (fits ? '' : ' is-arc'));
     svg.setAttribute('width', w); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', `0 0 ${w} ${H}`);
     // The larger body takes the number: Sun to object.
-    el.append(svg, h('span', 'c-sun-k', k >= 1 ? `☉ 1 : ${fmtRatio(k)}` : `☉ ${fmtRatio(1 / k)} : 1`));
+    el.append(svg, h('span', 'c-sun-k', k >= 1 ? `☉ 1 : ${fmtRatio(k)}` : `☉ ${fmtRatio(ratio)} : 1`));
     return el;
   }
   // A ratio: two figures below 10, whole to 100,000, then powers of ten.
@@ -143,9 +148,9 @@ export function makeCard(o) {
      * @param {{ name: string, type: string, latin: string | null, rows: [string, string][] }} c
      * @param {string} style One of CARD_STYLES.
      * @param {{ k: number } | null} sun The object's radius in R☉ beside our Sun, or null on the Sun.
-     * @param {boolean} hint Shows the hint to press i again for the article.
+     * @param {boolean} again The i key opened it: the hint says press i again.
      */
-    show(c, style = 'intro', sun = null, hint = false) {
+    show(c, style = 'intro', sun = null, again = false) {
       clear();
       box = h('div', `sl-card sl-card--${style}`);
       box.dataset.view = view;
@@ -157,21 +162,22 @@ export function makeCard(o) {
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
       }
+      // The i key's hint stands under the facts on every card (Tom, 2026-11-24).
+      // It comes on a little after the card's last line.
+      const tip = h('p', 'c-hint');
+      tip.append(h('kbd', null, 'I'), again ? 'again for the article' : 'for the article');
+      const open = () => tip.classList.remove('is-shut');
       if (style === 'caption') {
         if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
-        else caption(c);
+        else caption(c, open);
+        box.append(tip);
       } else {
         const parts = build(c);
-        if (RM.matches) later(fade, HOLD);
-        else if (style === 'stamp') stamp(parts); else intro(parts);
-      }
-      // The i key's hint shows under the facts, a beat after the card (Tom, 2026-11-24).
-      if (hint) {
-        const tip = h('p', 'c-hint');
-        tip.append(h('kbd', null, 'i'), ' again for the article');
         box.append(tip);
-        if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
+        if (RM.matches) later(fade, HOLD);
+        else { const end = style === 'stamp' ? stamp(parts) : intro(parts); later(open, end + TIP_AFTER); }
       }
+      if (!RM.matches) tip.classList.add('is-shut');
     },
     fade,
     clear,

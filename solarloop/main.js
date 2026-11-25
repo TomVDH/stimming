@@ -14,7 +14,7 @@ import { glyph } from './glyphs.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
-import { makeSStars } from './sstars.js';
+import { makeSStars, YEAR_S } from './sstars.js';
 import { makeCard, CARD_STYLES } from './card.js';
 import { makeArticle } from './article.js';
 import { cardLines } from './facts.js';
@@ -51,13 +51,32 @@ const st = {
   turn: 34 * SPIN_UP,
   next: 0,
 };
-/* ---------- turn speed: real time, x5k or x10k (Tom, 2026-11-24) ---------- */
-// id, bar label, times faster than life.
-const RATES = [['real', 'Real time', 1], ['x5k', '×5k', 5e3], ['x10k', '×10k', 1e4]];
+/* ---------- turn speed: 5x to 100x of each star's own base (Tom, 2026-11-24) ---------- */
+// At 10x one turn takes 60 to 120 s; a longer true period takes longer.
+const TURN_S = [60, 120], TURN_P = [0.22, 5e4];
+// The S stars' clock: one year in 1.5 s, so S2 laps in about 24 s.
+const S2_DAYS = 16.05 * 365.25, S_RATE = 365.25 * 86400 / YEAR_S;
+// Vela's true spin, in s; the toy shows it in SPIN_PERIOD.
+const VELA_S = 0.0893;
+/**
+ * The clock that a star shows, or null when nothing on it keeps time.
+ * kind: rot, orb, s2 or spin; days: the true period; fit: the rate at 10x.
+ */
+function clockOf(key) {
+  const B = STARS[key];
+  if (key === 'sgra') return { kind: 's2', days: S2_DAYS, fit: S_RATE };
+  if (B.ns) return { kind: 'spin', days: VELA_S / 86400, fit: VELA_S / SPIN_PERIOD };
+  // A tidally locked pair turns once per orbit.
+  const days = B.day || B.shells?.orbit || 0;
+  if (!days) return null;
+  const f = clamp(Math.log(days / TURN_P[0]) / Math.log(TURN_P[1] / TURN_P[0]));
+  const kind = B.day && !B.bin && !B.pair ? 'rot' : 'orb';
+  return { kind, days, fit: days * 86400 / (TURN_S[0] + f * (TURN_S[1] - TURN_S[0])) };
+}
+// id, bar label, times the star's base. Unknown stored speeds fall back to 10x.
+const RATES = [['x5', '5×', 5], ['x10', '10×', 10], ['x50', '50×', 50], ['x100', '100×', 100]];
 const savedRate = RATES.find(r => r[0] === store.get('rate'));
-// rate eases to its target on a log scale, so a switch never jolts the star.
-const turn = { pick: savedRate ? savedRate[0] : 'x10k', lr: 0, vr: 0 };
-turn.lr = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
+const turn = { pick: savedRate ? savedRate[0] : 'x10', lr: 0, vr: 0, of: '' };
 // Activity in words (Tom, 2026-11-24): each step and the strength it sets, 0 to 100.
 const ACT_STEPS = [['quiet', 'Quiet', 25], ['active', 'Active', 60], ['stormy', 'Stormy', 95]];
 // The nearest step to a stored strength.
@@ -68,6 +87,9 @@ const calmMotion = () => gv('motion', 'lively') === 'calm';
 const rateText = () => RATES.find(r => r[0] === turn.pick)[1];
 const TURN_ICON = '<svg class="sl-turn" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 3.8v3.4h-3.4"/></svg>';
 const rateLabel = () => `${TURN_ICON}<span>${rateText()}</span>`;
+// The log of a star's rate at 10x; 4 when the star keeps no time.
+const fitLog = key => Math.log10(clockOf(key)?.fit ?? 1e4);
+const rateLog = key => fitLog(key) + Math.log10(RATES.find(r => r[0] === turn.pick)[2] / 10);
 const sun = makeSun();
 // The star on screen: it trails st.star through the switch dip.
 let shown = st.star;
@@ -621,13 +643,26 @@ const chart = makeChart({
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
   onOpen: on => { if (on) { rail.hide(); card.clear(); clock.hide(); } },
 });
-// The time clock: the star's time passing, in days and weeks, for a while (Tom, 2026-11-24).
+// The time clock: the star's own period, rate and elapsed time, for a while (Tom, 2026-11-24).
 const clock = makeClock({
   frame: stage.closest('.stim-frame') || stage.parentElement,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
 });
+// The S stars' years since this visit began.
+let sYears = 0;
+// What the clock reads now: the shown star's clock, rate, time and phase.
+function clockRead() {
+  const c = clockOf(shown);
+  if (!c) return null;
+  const P = c.days * 86400;
+  if (c.kind === 'spin') { const t = st.spin * c.fit; return { ...c, rate: c.fit, t, phase: t / P % 1 }; }
+  // The readout shows the picked rate, not the eased one, so its text holds still.
+  const rate = 10 ** rateLog(shown);
+  if (c.kind === 's2') { const t = sYears * 365.25 * 86400; return { ...c, rate, t, phase: t / P % 1 }; }
+  return { ...c, rate, t: st.turn, phase: st.turn / P % 1 };
+}
 // Reduced motion stops the turn, so the clock has nothing to count.
-function showClock() { if (!calm) clock.show(st.turn, RATES.find(r => r[0] === turn.pick)[2]); }
+function showClock() { if (!calm) clock.show(shown, clockRead()); }
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
   mid: NOTCH,
@@ -667,12 +702,12 @@ function arrive() {
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
 // Our Sun stands beside the object at their true ratio; the Sun's own card has none.
-function showCard(hint = false) {
+function showCard(again = false) {
   cardStar = st.star;
   // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
   const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
-  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, hint);
+  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, again);
   showClock();
 }
 // A new card style plays at once when the view rests on the full star.
@@ -1233,7 +1268,7 @@ function frame(now) {
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting * (calmMotion() ? 0.4 : 1);
     const turning = stepTurn(dt);
-    clock.tick(st.turn, 10 ** turn.lr);
+    clock.tick(shown, clockRead());
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
     const swaying = stepSway(dt);
@@ -1241,8 +1276,8 @@ function frame(now) {
     const adapting = stepEye(dt);
     stepFlares(sun, dt * flarePace(STARS[shown]) * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
-    // The S stars run on their own clock; each visit starts it again.
-    if (shown === 'sgra') sst.step(dt * drifting); else sst.reset();
+    // The S stars follow Turn; each visit starts their clock again.
+    if (shown === 'sgra') { const k = dt * drifting * 10 ** (turn.lr - fitLog('sgra')); sst.step(k); sYears += k / YEAR_S; } else { sst.reset(); sYears = 0; }
     if (FLUID) {
       // A new framing may show another prominence: the fluid moves to it.
       if (!fluidRun || fluidRun.mode !== cam.mode) { const p = promInView(); if (p) startFluid(p); }
@@ -1365,16 +1400,17 @@ const hold = { z: 0, yaw: 0, pitch: 0, star: null };
 // The giant cells' churn phase (Tom, 2026-11-24).
 let churn = 0;
 function stepTurn(dt) {
-  const target = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
+  const target = rateLog(shown);
   let easing = false;
-  if (calm) { turn.lr = target; turn.vr = 0; }
+  // A new star takes its own rate at once, behind the switch's black.
+  if (calm || turn.of !== shown) { turn.lr = target; turn.vr = 0; turn.of = shown; }
   else if (Math.abs(turn.lr - target) > 1e-4 || Math.abs(turn.vr) > 1e-4) {
     [turn.lr, turn.vr] = follow(turn.lr, target, turn.vr, 0.35, dt);
     easing = true;
   } else { turn.lr = target; turn.vr = 0; }
   st.turn += dt * drifting * 10 ** turn.lr;
-  // A giant's cells churn with the turn clock: a lobe lives about 40 s at x10k.
-  churn += dt * drifting * 10 ** turn.lr / 4e5 * STARS[shown].lump[2];
+  // A giant's cells churn with Turn: a lobe lives about 40 s at 10x.
+  churn += dt * drifting * 0.025 * 10 ** (turn.lr - fitLog(shown)) * STARS[shown].lump[2];
   return easing;
 }
 

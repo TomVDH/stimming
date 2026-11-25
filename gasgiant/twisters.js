@@ -74,7 +74,8 @@ uniform vec4 uTwB[${TW_MAX}];
 uniform vec4 uTwC[${TW_MAX}];
 // Dev (Tom, 2026-11-24): 0 draws the relief march, 1 flipbook cards,
 // 2 the full march within uTwMix km of the eye and cards past it,
-// 3 ceiling funnels in the cloud density, with no twister layers.
+// 3 ceiling funnels in the cloud density, with no twister layers,
+// 4 ceiling funnels within uTwMix km and cards past it.
 // uCardK scales the cards' light to the void's.
 uniform float uTwCard, uCardK, uTwMix;
 // The ceiling funnels' rim and back light.
@@ -120,6 +121,8 @@ float ceilFunnel(vec3 p, float h, vec4 n1, vec4 n2, out vec4 tw) {
   for (int i = 0; i < ${TW_MAX}; i++) {
     vec4 A = uTwA[i], B = uTwB[i];
     if (B.y <= 0.0) continue;
+    // In mode 4 the far ones are cards.
+    if (uTwCard > 3.5 && length(A.xy - uCam.xz) > uTwMix) continue;
     // 1.5 is the cards' girth, CARD_MS.
     float s = B.y / TW_H, w = A.z * 1.5;
     vec2 d0 = (p.xz - A.xy) / s;
@@ -442,8 +445,10 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tA, out vec4 cB, o
     float tf = -1.0;
     // Mixed: the full march within uTwMix km, cards past it.
     bool near = length(uTwA[i].xy - ro.xz) <= uTwMix;
+    // Mode 4: the near ones are funnels in the cloud density.
+    if (uTwCard > 3.5 && near) continue;
     vec4 r = uTwCard < 0.5 ? twister(i, ro, rd, ta, tb, jit, tf)
-      : uTwCard > 1.5 && near ? twVol(i, ro, rd, ta, tb, jit, tf)
+      : uTwCard > 1.5 && uTwCard < 2.5 && near ? twVol(i, ro, rd, ta, tb, jit, tf)
       : twCard(i, ro, rd, ta, tb, tf);
     if (tf < 0.0) continue;
     // A nearer one takes layer A; the old A joins layer B in depth order.
