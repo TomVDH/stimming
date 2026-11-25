@@ -103,7 +103,7 @@ let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const RESIZE = new Set(['pix', 'march', 'cabin']);
 const tune = (id, v) => {
   TUNE[id] = v;
-  if (id === 'twMode' && (v === 'cards' || v === 'mixed')) makeCards();
+  if (id === 'twMode' && (v === 'cards' || v === 'mixed' || v === 'funnelsMix')) makeCards();
   if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
   if (RESIZE.has(id) && P) resize(true);
   BK.gen++;
@@ -132,8 +132,8 @@ const DEV = [
   choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
   choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
   slider('Render', 'bake', 'Bake past, km (0 off)', 0, 200, 5),
-  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards'], ['mixed', 'Marched near, cards far'], ['funnels', 'Ceiling funnels']]),
-  slider('Twisters', 'twMix', 'Marched within, km', 0, 400, 5),
+  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards'], ['mixed', 'Marched near, cards far'], ['funnels', 'Ceiling funnels'], ['funnelsMix', 'Funnels near, cards far']]),
+  slider('Twisters', 'twMix', 'Near within, km', 0, 400, 5),
   slider('Twisters', 'cardK', 'Card light', 0, 12, 0.1),
   slider('Twisters', 'rimK', 'Funnel rim', 0, 3, 0.05),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
@@ -606,10 +606,10 @@ function render(dt) {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
     gl.uniform1i(u.uWall, 5);
-    if (!cards && (TUNE.twMode === 'cards' || TUNE.twMode === 'mixed') && S.alt < 12) makeCards();
+    if (!cards && (TUNE.twMode === 'cards' || TUNE.twMode === 'mixed' || TUNE.twMode === 'funnelsMix') && S.alt < 12) makeCards();
     twisterUniforms(S.tC, twA, twB, twC);
     // Cards, marched twisters and ceiling funnels have the cards' girth: the wall cloud and dust widen to match.
-    const wide = TUNE.twMode === 'funnels' || (cards && TUNE.twMode !== 'live');
+    const wide = TUNE.twMode === 'funnels' || TUNE.twMode === 'funnelsMix' || (cards && TUNE.twMode !== 'live');
     if (wide) for (let i = 0; i < TW_MAX; i++) { twC[i * 4 + 2] *= CARD_MS; twC[i * 4 + 3] *= CARD_MS; }
     // ?qa: __gg.noTw = true hides them, to time the march without them.
     if (globalThis.__gg?.noTw) { twB.fill(0); twC.fill(0); }
@@ -621,9 +621,10 @@ function render(dt) {
     gl.uniform4fv(u.uTwC, twC);
     gl.uniform1f(u.uTwLo, 0);
     // Ceiling funnels live in the cloud density, so no twister layer draws.
-    gl.uniform1f(u.uTwHi, TUNE.twMode === 'funnels' ? 0 : TW_MAX);
+    gl.uniform1f(u.uTwHi, TUNE.twMode === 'funnels' || (TUNE.twMode === 'funnelsMix' && !cards) ? 0 : TW_MAX);
     // The live march draws until the cards are baked.
-    gl.uniform1f(u.uTwCard, TUNE.twMode === 'funnels' ? 3 : !cards ? 0 : TUNE.twMode === 'cards' ? 1 : TUNE.twMode === 'mixed' ? 2 : 0);
+    // Funnels near and cards far shows all funnels until the cards are baked.
+    gl.uniform1f(u.uTwCard, TUNE.twMode === 'funnels' ? 3 : TUNE.twMode === 'funnelsMix' ? (cards ? 4 : 3) : !cards ? 0 : TUNE.twMode === 'cards' ? 1 : TUNE.twMode === 'mixed' ? 2 : 0);
     gl.uniform1f(u.uTwMix, TUNE.twMix);
     gl.uniform1f(u.uCardK, TUNE.cardK);
     gl.uniform1f(u.uRimK, TUNE.rimK);
