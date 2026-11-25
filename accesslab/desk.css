@@ -1,0 +1,85 @@
+/* The desk: one item at a time, its panels as tabs. Panels add their own CSS. */
+:root {
+  --bg: oklch(0.16 0.012 275);
+  --line: oklch(0.29 0.016 275);
+  --fg: oklch(0.94 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --ink: oklch(0.05 0.01 275);
+  --focus: oklch(0.84 0.13 205);
+  --warn: oklch(0.72 0.19 25);
+  --sans: "Gabarito", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --acc-ink: #fff;
+  color-scheme: dark;
+}
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 500; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-Medium.woff2) format("woff2"); }
+@font-face { font-family: "Iosevka Term Slab"; font-weight: 800; font-display: swap; src: url(../shared/fonts/IosevkaTermSlab-ExtraBold.woff2) format("woff2"); }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); }
+body { font: 500 16px/1.3 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: clip; padding: 24px 16px 96px; }
+/* A grid track grows to its widest child; minmax(0, 1fr) keeps the strip inside. */
+main { max-width: 1180px; margin-left: clamp(0px, 5vw, 64px); display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+main > * { min-width: 0; }
+
+/* ---------- Bar v3 words: no boxes, slab caps, a slash between groups ---------- */
+.bar { display: flex; flex-wrap: wrap; align-items: center; margin-left: -11px; font: 800 13px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; }
+.sl { color: var(--muted); padding: 0 6px; font-weight: 500; }
+.w { appearance: none; position: relative; isolation: isolate; height: 40px; padding: 0 11px; border: 0; background: none; color: var(--fg); font: inherit; letter-spacing: inherit; text-transform: inherit; text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+/* The flash box closes in from the sides on hover, as on Bar v3. */
+.w::before { content: ""; position: absolute; inset: 5px 0; z-index: -1; background: #fff; clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end); }
+.w:hover::before, .w[aria-pressed="true"]::before, .w[aria-selected="true"]::before { clip-path: inset(0 0); }
+.w:hover, .w[aria-pressed="true"], .w[aria-selected="true"] { color: var(--bg); }
+.w:disabled { opacity: 0.4; cursor: default; }
+.w:disabled::before { display: none; }
+.w:disabled:hover { color: var(--fg); }
+.w:focus-visible { outline: none; box-shadow: inset 0 -3px 0 var(--focus); }
+.hd { margin: 0; font: 800 11px/1 var(--slab); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+
+/* ---------- top: title and the pages of this desk ---------- */
+.top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 24px; }
+.top h1 { margin: 0; font: 700 clamp(26px, 3.4vw, 36px)/1 "B612", var(--sans); letter-spacing: -0.02em; }
+
+/* ---------- the strip: every item's emblem ---------- */
+.strip { display: flex; gap: 2px; overflow-x: auto; padding: 2px 0 8px; scrollbar-width: thin; }
+.strip button { flex: none; width: 34px; height: 34px; padding: 0; border: 0; background: none; cursor: pointer; display: grid; place-items: center; position: relative; }
+.strip i { width: 24px; height: 24px; background: var(--muted); -webkit-mask: var(--em) center / contain no-repeat; mask: var(--em) center / contain no-repeat; opacity: 0.55; }
+.strip button:hover i { opacity: 1; background: var(--fg); }
+.strip button[aria-current="true"] { background: #fff; }
+.strip button[aria-current="true"] i { background: var(--bg); opacity: 1; }
+.strip .nil { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.strip button.un i, .strip button.un .nil { outline: 1px dashed var(--muted); outline-offset: 2px; }
+/* A dot under an item that has work saved. */
+.strip button.touched::after { content: ""; position: absolute; left: 50%; bottom: 0; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--fg); }
+.strip .gap { flex: none; width: 1px; margin: 4px 8px; background: var(--line); }
+
+/* ---------- the item: head, tabs, panel ---------- */
+.head { display: grid; gap: 8px; padding-top: 6px; }
+.head .name { font: 800 clamp(34px, 5vw, 56px)/1 "B612", var(--sans); letter-spacing: -0.03em; }
+.head .nl { font-weight: 600; opacity: 0.86; }
+.head .nl .ipa { font-weight: 400; opacity: 0.6; }
+.head .facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 20px; font: 800 12px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.head .facts .acc-i { display: inline-flex; align-items: center; gap: 8px; color: var(--fg); }
+.head .facts .acc-i b { font-weight: 800; }
+.tabs { position: sticky; top: 0; z-index: 30; background: var(--bg); border-bottom: 1px solid var(--line); padding: 4px 0; }
+.tabs .w small { font: 500 11px/1 var(--slab); letter-spacing: 0.04em; text-transform: none; opacity: 0.7; }
+.panel { min-height: 50vh; padding-top: 6px; }
+
+/* ---------- access glyphs and tech tags ---------- */
+.g { flex: none; width: 27px; height: 18px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; color: var(--acc-ink); }
+.marks { display: inline-flex; align-items: center; gap: 1px; }
+.marks svg { width: 1.25em; height: 1.25em; color: var(--fg); }
+.tags { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.tag { display: inline-flex; align-items: center; height: 18px; padding: 0 5px; border: 1px solid currentColor; border-radius: 3px; font: 700 10px/1 var(--slab); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.tag.now { background: var(--muted); border-color: var(--muted); color: var(--bg); }
+.tag.off { opacity: 0.55; text-decoration: line-through; }
+
+/* ---------- the toast: a done thing, with Undo ---------- */
+.toast { position: fixed; left: 50%; bottom: 18px; translate: -50% 0; z-index: 400; display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 4px 0 16px;
+  background: #fff; color: var(--bg); font: 800 12px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; box-shadow: 0 6px 30px oklch(0 0 0 / 0.5); }
+.toast[hidden] { display: none; }
+.toast button { appearance: none; height: 36px; padding: 0 12px; border: 0; background: var(--bg); color: #fff; font: inherit; letter-spacing: inherit; cursor: pointer; }
+
+/* ---------- YAML ---------- */
+.yaml { margin: 0; padding: 16px 18px; border-radius: 12px; background: oklch(0.11 0.01 275); font: 500 13px/1.55 var(--slab); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 70vh; overflow: auto; }
+
+@media (prefers-reduced-motion: reduce) { .w::before { transition: none; } }
