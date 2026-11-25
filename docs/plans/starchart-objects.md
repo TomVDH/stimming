@@ -9,21 +9,21 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 40 |
-| Picked by Tom, not built | 2 |
+| Built, in the tray | 41 |
+| Picked by Tom, not built | 1 |
 | Asked for by Tom, not built | 1 |
 | Offered, no answer | 18 |
 | Offered, not picked | 12 |
 | Parked | 4 |
 
-## Built (40)
+## Built (41)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
 | Group | Bodies |
 |---|---|
 | Stars | Sun, Proxima, Epsilon Eridani, Procyon, Sirius, Vega, Regulus, Zeta Ophiuchi, Fomalhaut, Arcturus |
-| Giants | Rigel, Mira (`gico`), Betelgeuse, R Leporis (`7rv1`), VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
+| Giants | Polaris (`br7d`), Rigel, Mira (`gico`), Betelgeuse, R Leporis (`7rv1`), VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
 | Newborn and failed | T Tauri, Luhman 16, WISE 0855 |
 | Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Thorne–Żytkow object (`ye4c`) |
 | Runaways | S5-HVS1 (`q5aa`) |
@@ -47,7 +47,6 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 
 | Bean | Object | Tom's choice |
 |---|---|---|
-| `br7d` | Cepheid variable | Polaris (2026-11-25) |
 | `l4n7` | J1407b's giant rings | Build it too, beside Fomalhaut (2026-11-25) |
 
 ## Asked for by Tom, not built

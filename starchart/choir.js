@@ -231,6 +231,10 @@ TAPNORM.mothra = TAPNORM.betalyr;
 VOICES.earendel = VOICES.rigel;
 NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
+// Polaris sings Procyon's choir.
+VOICES.polaris = VOICES.procyon;
+NORM.polaris = NORM.procyon;
+TAPNORM.polaris = TAPNORM.procyon;
 // R Leporis sings VY CMa's choir.
 VOICES.rlep = VOICES.vycma;
 NORM.rlep = NORM.vycma;
@@ -286,10 +290,12 @@ Object.assign(VOICES, {
   ring: from('siriusb', { dist: 0.9, rev: 14, mix: 1.8, width: 1.8 }),
   crab: from('neutron', { dist: 0.95, rev: 14, mix: 1.9, width: 1.9 }),
   magnetar: from('neutron', { bright: 0.8, metal: 0.4, step: 10, swR: 0.03 }),
+  // Polaris: the North Star, beating every four days. Procyon's pad, lower, on a quicker swell.
+  polaris: from('procyon', { swR: 0.1, swD: 0.3 }),
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];

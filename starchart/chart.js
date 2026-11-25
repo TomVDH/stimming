@@ -26,6 +26,7 @@ export const CHART = {
   rigel: { t: 12100, cls: 'B8 Ia supergiant' },
   betelgeuse: { t: 3600, cls: 'M1 Ia supergiant' },
   rlep: { kind: 'giant', t: 2290, cls: 'C7,6e carbon star, Hind\'s Crimson Star' },
+  polaris: { kind: 'cepheid', t: 6015, cls: 'F7 Ib Cepheid, the North Star' },
   mira: { kind: 'tail', t: 3100, cls: 'M7 IIIe pulsing red giant, a 13 ly tail' },
   vycma: { t: 3490, cls: 'M5 Ia hypergiant' },
   wr124: { kind: 'wind', t: 44700, cls: 'WN8h Wolf-Rayet' },
@@ -85,7 +86,7 @@ const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3)) 
 // The groups, by kind of body; an object in none of them joins "More".
 const GROUPS = [
   ['Stars', ['proxima', 'epseri', 'sun', 'xxtri', 'procyon', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
-  ['Giants', ['arcturus', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
+  ['Giants', ['arcturus', 'polaris', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
   ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur']],
   ['Dead stars', ['magnetar', 'neutron', 'crab', 'siriusb', 'ring']],

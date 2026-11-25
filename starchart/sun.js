@@ -289,6 +289,17 @@ export const STARS = {
     disk: [1.9, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
     wide: 'none', long: 'none', root: 164.81,
   },
+  // Polaris: the North Star, a yellow supergiant 46 suns wide, and a Cepheid.
+  // It beats every 3.97 days; it turns every 100 days, too slowly to show at the beat's pace.
+  // The true swing is now under 0.05 magnitude; the toy's beat is about three times larger.
+  polaris: {
+    ...FLARE, day: 0, rain: 0.4, bubble: 0.2,
+    beat: { days: 3.97, swell: 0.05, light: 0.15 },
+    row: 11, rsun: 46.27, expo: 1, hotW: 1, coolW: 1.05, loop: 0.5, prom: 0.6, dust: 0.05, rays: 1,
+    hal: [1, 0.75, 0.45], streak: [1, 0.85, 0.6],
+    disk: [1.7, 0.6, 0.08, 0.36], disk2: [90, 0.5, 0.35, 0.08], tex: [40, 8, 0.1, 0.5],
+    wide: 'none', long: 'none', root: 185,
+  },
   // Mira: a pulsing red giant, about 330 to 400 suns wide, beating every 332 days.
   // It ploughs through the gas at 130 km/s: a bow shock ahead, a tail 13 light years long.
   // The tail is the toy's, not to scale; its blue is GALEX's ultraviolet light.
