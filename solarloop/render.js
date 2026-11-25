@@ -1883,17 +1883,11 @@ vec3 deepField(vec2 b) {
   }
   return col;
 }
-// A point of light as Webb sees it: a soft core and six thin spikes, fixed to the frame.
+// A point of light: a hard core in a soft glow that falls off slowly, no spikes (Tom, 2026-11-24).
+// len sets how far the glow reaches, in R.
 float pip(vec2 d, float pw, float len) {
-  float core = exp(-dot(d, d) / (pw * pw * 2.2)) + 0.35 * exp(-length(d) / (pw * 3.0));
-  float sp = 0.0;
-  for (int k = 0; k < 3; k++) {
-    float a = 1.5708 + float(k) * 1.0472;
-    vec2 u = vec2(cos(a), sin(a));
-    float along = abs(dot(d, u)), across = abs(u.x * d.y - u.y * d.x);
-    sp += exp(-across / (pw * 0.45)) * exp(-along / len);
-  }
-  return core + 0.55 * sp;
+  float r = length(d);
+  return exp(-r * r / (pw * pw * 2.0)) + 0.5 * exp(-r / (pw * 2.5)) + 0.12 * exp(-r / len);
 }
 // A strong lens round a far star (Tom, 2026-11-24): the light is traced, not drawn.
 // q: the view in R, turned so the lens lies along +x; Pv: the same point unturned, for the spikes.
@@ -1926,7 +1920,7 @@ vec3 lensScene(vec2 q, vec2 Pv) {
     vec2 c = (h.xy - 0.5) * 2.6 * tE * sqrt(h.z);
     col += gold * galaxy(t - c, 0.35 + 1.1 * h.w * h.w, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
   }
-  // A few foreground stars of our own galaxy, with Webb's spikes.
+  // A few foreground stars of our own galaxy.
   for (int k = 0; k < 3; k++) {
     vec4 h = hash42(vec2(float(k) + 41.0, 2.3));
     vec2 c = vec2((h.x - 0.2) * 2.2 * D, (h.y - 0.5) * 1.6 * D);
