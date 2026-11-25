@@ -93,11 +93,17 @@ function stepDip(dt) {
 // At the switch's dark point the camera stands on the new star's quarter cut,
 // then glides out to the full star, where the card plays (Tom, 2026-11-24).
 // The eye takes the quarter cut's light at once, as the frame is black.
+// Glides to the full star; the card waits until 2 s after rest.
+function glideIn() {
+  springTo(NOTCH);
+  cam.glide = true;
+  restAt = 0;
+}
 function toQuarter() {
   Object.assign(cam, { z: 0, aim: 0, to: 0, v: 0, va: 0, moving: false, from: 0, arrived: false });
   Object.assign(eye, { real: realAt(0), far: farAt(0), vr: 0, vf: 0 });
   applyView();
-  springTo(NOTCH);
+  glideIn();
 }
 // The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
 const FLUID = new URLSearchParams(location.search).has('fluid');
@@ -141,6 +147,8 @@ const cam = {
   from: z0,
   // The followers' speeds, and true while they move.
   v: 0, va: 0, moving: false,
+  // True while the opening or a switch glides in; its card waits for rest.
+  glide: false,
   // The nearest stop names the framing.
   get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
 };
@@ -236,9 +244,27 @@ function toggleLens() {
 // The wheel, a pinch and the - and = keys move the zoom by dz.
 // One magnet notch: a pause near the full star settles the zoom on it (Tom, 2026-11-24).
 const NOTCH = 2, NOTCH_REACH = 0.3;
+// The full star is a sticky stop on the way in (Tom, 2026-11-24).
+// An inward gesture stops there; a later, separate gesture goes on in.
+// A pause of GAP ms ends a gesture; PUSH is the inward travel that leaves the stop.
+const GAP = 220, PUSH = 0.25;
+const stick = { held: false, armed: false, push: 0, last: 0 };
 let settle = 0;
 function zoomBy(dz) {
   if (chart?.isOpen) return;
+  const now = performance.now(), fresh = now - stick.last > GAP;
+  stick.last = now;
+  if (dz < 0 && cam.to > NOTCH && cam.to + dz <= NOTCH) {
+    Object.assign(stick, { held: true, armed: false, push: 0 });
+    return springTo(NOTCH);
+  }
+  if (stick.held && cam.to === NOTCH && dz < 0) {
+    // Trackpad momentum from the catching gesture stays absorbed.
+    if (fresh) stick.armed = true;
+    if (!stick.armed || (stick.push -= dz) < PUSH) return;
+    dz = -stick.push;
+  }
+  stick.held = false;
   springTo(cam.to + dz);
   clearTimeout(settle);
   settle = setTimeout(() => {
@@ -248,6 +274,8 @@ function zoomBy(dz) {
 // Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
   z = clamp(z, 0, Z_MAX);
+  // A glide-in ends at any new target.
+  cam.glide = false;
   // A move away from the full star fades the star card.
   if (z !== NOTCH) card?.fade();
   // A new move starts: note where it began, and let its arrival play the card again.
@@ -365,7 +393,7 @@ const FX = [
   ['fxDirt', 'Post', 'Lens dirt', 0, 4, 1, 4, 'Smudges on the glass that catch the star\'s light.'],
   ['fxRoll', 'Post', 'Highlight roll-off', 0, 2, 1, 1, 'The brightest parts fade to warm white, as on film.'],
   ['fxVig', 'Post', 'Vignette', 0, 2, 1, 1, 'The frame darkens toward its corners.'],
-  ['fxGrain', 'Post', 'Grain', 0, 5, 1, 1, 'Film grain, strongest in the mid tones, still while the toy sleeps.'],
+  ['fxGrain', 'Post', 'Grain', 0, 5, 1, 1, 'Film grain, even over the whole frame, still while the toy sleeps.'],
   ['fxVol', 'Volume', 'Haze density', 0, 4, 1, 2, 'How thick the haze and dust round the star are.'],
   ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1, 1, 'How much starlight the haze scatters.'],
   ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1, 1, 'The star\'s outer atmosphere, seen on the full view.'],
@@ -504,8 +532,19 @@ let cardStar = null;
 // The card plays once the view is within a hair of the full star, once per arrival (Tom, 2026-11-24).
 // A heavy zoom creeps for seconds at the end; the card need not wait for the creep.
 const ARRIVE_NEAR = 0.02;
+// A glide-in's card plays this long after the view rests, in ms (Tom, 2026-11-24).
+const CARD_REST = 2000;
+// The view counts as at rest within this zoom distance and speed.
+const REST_NEAR = 0.004, REST_V = 0.01;
+let restAt = 0;
 function arrive() {
-  if (!started || cam.to !== NOTCH || cam.arrived || Math.abs(cam.z - NOTCH) > ARRIVE_NEAR || performance.now() < cardAfter) return;
+  if (!started || cam.to !== NOTCH || cam.arrived || performance.now() < cardAfter) return;
+  if (Math.abs(cam.z - NOTCH) > (cam.glide ? REST_NEAR : ARRIVE_NEAR)) return;
+  if (cam.glide) {
+    if (Math.abs(cam.v) + Math.abs(cam.va) > REST_V) return;
+    if (!restAt) { restAt = performance.now(); setTimeout(arrive, CARD_REST + 20); }
+    if (performance.now() < restAt + CARD_REST) return;
+  }
   if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
   cam.arrived = true;
   showCard();
@@ -1250,7 +1289,7 @@ try {
   started = true;
   poke();
   // Once the intro has gone, the view glides in from far out; the card plays when it settles.
-  setTimeout(() => springTo(NOTCH), 400);
+  setTimeout(glideIn, 400);
 } catch (err) {
   console.error(err);
   fail.removeAttribute('hidden');
