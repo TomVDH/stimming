@@ -1917,20 +1917,21 @@ float galaxy(vec2 q, float s, float e, float a) {
 }
 // The deep field behind the lens, in the source plane, in R: two layers of hashed galaxies.
 // Far galaxies redden; nearer ones are blue spirals and pale ellipticals.
-vec3 deepField(vec2 b) {
+// k scales the cells to the lens: specks, small galaxies and a few large ones.
+vec3 deepField(vec2 b, float k) {
   vec3 col = vec3(0.0);
-  for (int L = 0; L < 2; L++) {
-    float cell = L == 0 ? 7.0 : 26.0;
+  for (int L = 0; L < 3; L++) {
+    float cell = k * (L == 0 ? 0.011 : L == 1 ? 0.04 : 0.15);
     vec2 g = floor(b / cell);
     for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
       vec2 id = g + vec2(dx, dy);
       vec4 h = hash42(id + float(L) * 71.3);
-      if (h.w < (L == 0 ? 0.35 : 0.6)) continue;
+      if (h.w < (L == 0 ? 0.2 : L == 1 ? 0.5 : 0.8)) continue;
       vec2 c = (id + h.xy) * cell;
-      float sz = cell * (L == 0 ? 0.035 + 0.05 * h.z : 0.05 + 0.06 * h.z);
+      float sz = cell * (L == 0 ? 0.03 + 0.04 * h.z : L == 1 ? 0.04 + 0.05 * h.z : 0.03 + 0.05 * h.z);
       float I = galaxy(b - c, sz, 0.25 + 0.75 * fract(h.z * 7.0), h.x * 6.283);
       vec3 tint = mix(vec3(0.55, 0.68, 1.0), vec3(1.0, 0.42, 0.28), fract(h.y * 13.0));
-      col += tint * I * (0.12 + 0.35 * fract(h.w * 31.0));
+      col += tint * I * (L == 0 ? 0.1 + 0.25 * fract(h.w * 31.0) : 0.15 + 0.4 * fract(h.w * 31.0));
     }
   }
   return col;
@@ -1959,36 +1960,36 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   float pw = max(length(fwidth(q)), 1e-3);
   // The host galaxy, round the star's own source position: a clumpy disc in uBowC with blue knots.
   vec2 bs = vec2(-(D - tE), 0.0) + sw * 0.35;
-  vec2 hq = b - bs - vec2(0.6, 0.9);
-  float host = galaxy(hq, 1.6, 0.7, 0.8);
+  vec2 hq = b - bs - vec2(0.004, 0.006) * D;
+  float host = galaxy(hq, 0.011 * D, 0.7, 0.8);
   float knots = 0.0;
   for (int k = 0; k < 7; k++) {
     vec4 h = hash42(vec2(float(k), 3.7));
-    knots += galaxy(hq - (h.xy - 0.5) * 4.0, 0.25 + 0.3 * h.z, 1.0, 0.0);
+    knots += galaxy(hq - (h.xy - 0.5) * 0.03 * D, (0.0016 + 0.002 * h.z) * D, 1.0, 0.0);
   }
   vec3 col = uBowC * host * 0.9 + vec3(0.7, 0.8, 1.0) * knots * 0.6;
   // Every galaxy behind the cluster is bent too: arcs and arclets ring it.
-  col += deepField(b + vec2(13.7, -5.1));
+  col += deepField(b + vec2(13.7, -5.1) * D * 0.01, D);
   // The cluster in front: a giant elliptical at the centre in its own halo, members round it, gold.
   vec3 gold = vec3(1.0, 0.8, 0.52);
-  col += gold * (1.6 * galaxy(t, 2.4, 0.72, 0.4) + 0.18 * exp(-tl / (0.35 * tE)));
-  for (int k = 0; k < 26; k++) {
+  col += gold * (1.6 * galaxy(t, 0.016 * D, 0.72, 0.4) + 0.16 * exp(-tl / (0.35 * tE)));
+  for (int k = 0; k < 48; k++) {
     vec4 h = hash42(vec2(float(k) * 1.37, 9.1));
     vec2 c = (h.xy - 0.5) * 2.6 * tE * sqrt(h.z);
-    col += gold * galaxy(t - c, 0.35 + 1.1 * h.w * h.w, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
+    col += gold * galaxy(t - c, (0.0025 + 0.008 * h.w * h.w) * D, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
   }
   // A few foreground stars of our own galaxy.
   for (int k = 0; k < 3; k++) {
     vec4 h = hash42(vec2(float(k) + 41.0, 2.3));
     vec2 c = vec2((h.x - 0.2) * 2.2 * D, (h.y - 0.5) * 1.6 * D);
-    col += vec3(0.85, 0.9, 1.0) * pip(q - c - sw, pw, 3.0 + 6.0 * h.z) * 0.5 * h.w;
+    col += vec3(0.85, 0.9, 1.0) * pip(q - c - sw, pw, (0.004 + 0.008 * h.z) * D) * 0.5 * h.w;
   }
   // The star itself, twice: here, burning, and its fainter counter-image past the cluster.
   // The counter-image follows the lens: it stands at b - tE b/|b| from the lens centre, b the star's source place.
   vec2 sb = -lens - tE * normalize(-lens) + sw * 0.35;
   vec2 ci = lens + sb - tE * sb / max(length(sb), 1e-3);
-  col += vec3(1.0) * pip(Pv, pw, 7.0) * 1.4;
-  col += vec3(1.0) * pip(q - ci, pw, 4.0) * 0.45;
+  col += vec3(1.0) * pip(Pv, pw, 0.012 * D) * 1.4;
+  col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
   return col;
 }
 // A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.
@@ -2119,7 +2120,8 @@ void main() {
   } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
   // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 : uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
+  // A lensed far star's scene comes in as the star shrinks to a pip, and draws over it with no seam.
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < ${MAX_FLARES}; k++) {
