@@ -3,8 +3,9 @@
 title: 'Star catalog: card rework: short How to play, Sun diagram, unit symbols, i key and article'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-25T05:33:37Z
-updated_at: 2026-11-25T05:33:37Z
+updated_at: 2026-11-25T20:52:31Z
 parent: stimming-e35i
 ---
 
@@ -21,3 +22,5 @@ Tom, 2026-11-24: the hint / controls menu copy is unwieldy; rework the Sun compa
 - [x] Every object's full article in plain English after Simple English Wikipedia, in our own words (35)
 - [ ] A toy still for every object (10 of 35 so far)
 - [ ] Doc lines; Tom looks
+
+2026-11-25: the nine bodies added that day (Przybylski's star, Hubble V1, Gaia BH1, Eta Carinae, V838 Monocerotis, Gargantua, UHZ1, MoM-z14, the Einstein Cross) have full articles, two Commons photos each and a toy still.
