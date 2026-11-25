@@ -104,9 +104,9 @@ export const VOICES = {
   // Beta Lyrae: a blue-white giant pours gas onto a partner hidden in a disc; they eclipse each 112 s.
   // Two chords trade places for the pair; notes and melody glide like the stream; the choir dims once per orbit.
   betalyr: P({ ...song('lydian'), ...ARP, swTurn: true, move: 'glide', melody: 'glide', voice: 0.75, vowel: 1.2, metal: 0.2, bright: 1.3, step: 10, dist: 0.35, rev: 11, mix: 1.3, width: 1.7, oct: [1, 0.6, 0.6], swR: 1 / 112, swD: 0.35, fx: { sweep: 0.3, echo: 0.3 }, gain: 1 }),
-  // V1400 Centauri: a young orange K star deep in eclipse behind J1407b's giant rings.
-  // A warm choir, dimmed; a phaser and a quicker swell for ringlets that sweep past; a little icy metal.
-  j1407: P({ ...song('rise'), ...ARP, voice: 0.8, vowel: 0.85, metal: 0.15, bright: 0.75, step: 9, dist: 0.4, rev: 11, mix: 1.4, width: 1.8, oct: [1, 0.6, 0.6], swR: 0.15, swD: 0.3, fx: { sweep: 0.5, echo: 0.35 }, gain: 1 }),
+  // Fomalhaut: a white star in a narrow ring of icy dust; the ringed model's voice, moved whole (Tom).
+  // A warm choir, dimmed; a phaser and a quicker swell for the belt's clumps; a little icy metal.
+  fomalhaut: P({ ...song('rise'), ...ARP, voice: 0.8, vowel: 0.85, metal: 0.15, bright: 0.75, step: 9, dist: 0.4, rev: 11, mix: 1.4, width: 1.8, oct: [1, 0.6, 0.6], swR: 0.15, swD: 0.3, fx: { sweep: 0.5, echo: 0.35 }, gain: 1 }),
   // The Thorne–Żytkow object: a red supergiant with a neutron star in its core (1977 prediction).
   // It starts from the quasar's sound (Tom's reference): darker and heavier for the giant,
   // a metal ring for the core, and a slow swell for its faint pulse.
@@ -138,7 +138,7 @@ export const NORM = {
   luhman: 0.21,
   wise: 0.18,
   ttauri: 0.28,
-  j1407: 0.41,
+  fomalhaut: 0.41,
   arcturus: 0.82,
   betalyr: 0.45,
   rigel: 0.68,
@@ -168,7 +168,7 @@ export const TAPNORM = {
   luhman: 0.99,
   wise: 0.99,
   ttauri: 1.08,
-  j1407: 1.0,
+  fomalhaut: 1.0,
   arcturus: 1.24,
   betalyr: 1.06,
   rigel: 1.24,
@@ -193,7 +193,7 @@ export const GLOWNORM = {
   proxima: 0.92,
   wr124: 0.95,
   betalyr: 0.82,
-  j1407: 0.68,
+  fomalhaut: 0.68,
   cygx1: 0.67,
 };
 // Stephenson 2-18 sings VY CMa's choir; its root in sound.js sits lower.
@@ -233,6 +233,37 @@ NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
 // Powehi sings Sagittarius A*'s choir, lower.
 VOICES.powehi = VOICES.sgra;
+// A preset from a relative's: its sound, with changes; fx lists only the effects to turn on.
+const from = (id, o = {}) => ({ ...VOICES[id], ...o, oct: o.oct || VOICES[id].oct, fx: o.fx ? fxOn(o.fx) : VOICES[id].fx });
+// The bodies of 2026-11-24 evening (Tom: "the choir tool to have the latest bodies").
+Object.assign(VOICES, {
+  // Stephenson 2-18: the largest known star, thick dust. VY CMa's pad, deeper, farther and wider.
+  st218: from('vycma', { step: 16, dist: 0.8, rev: 13, mix: 1.6, width: 1.95, bright: 0.5, swR: 0.05 }),
+  // WOH G64: a red supergiant in an egg of glow and a dust torus. VY CMa's pad, an ominous song.
+  wohg64: from('vycma', { ...song('ominous'), bright: 0.6, metal: 0.1, swR: 0.06, swD: 0.3 }),
+  // The quasi-star: a black hole feeds inside a giant envelope. The Thorne-Zytkow voice, darker.
+  quasi: from('tzo', { ...song('phrygian'), bright: 0.6, metal: 0.35, step: 15, rev: 14, mix: 1.8 }),
+  // WR 140: a Wolf-Rayet pair puffing nested dust shells. WR 124's wide choir; a deeper, slower swell.
+  wr140: from('wr124', { swR: 0.05, swD: 0.32, rev: 13, mix: 1.6 }),
+  // VFTS 352: two hot O stars whose envelopes touch. Beta Lyrae's gliding choir, brighter, no orbit swell.
+  vfts352: from('betalyr', { ...song('sus'), swTurn: false, bright: 1.45, metal: 0.15, swR: 0.14 }),
+  // XX Trianguli: an orange giant blotched with giant spots. Arcturus's pad on a warmer song.
+  xxtri: from('arcturus', { ...song('rise'), bright: 0.85, swD: 0.3 }),
+  // Epsilon Aurigae: an F supergiant a dark disc crosses for two years. Rigel's pad, a held, dimming song.
+  epsaur: from('rigel', { ...song('sus'), bright: 1, swR: 0.04, swD: 0.38 }),
+  // Mothra: a lensed pair of stars, very far away. S5-HVS1's glassy voice, faint and distant.
+  mothra: from('s5hvs1', { dist: 0.95, rev: 14, mix: 1.8, width: 1.9, bright: 1.1 }),
+  // Earendel: the farthest single star seen, on a lensed arc. An airy, far choir.
+  earendel: from('wr124', { voice: 0.4, dist: 1, rev: 15, mix: 1.9, bright: 1.35 }),
+  // Powehi (M87*): the first black hole imaged. Sagittarius A*'s deep pad, slower and darker.
+  powehi: from('sgra', { step: 18, rev: 15, bright: 0.45, det: 16 }),
+});
+// Until the lab measures them, each new body takes its relative's levels.
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra']]) {
+  NORM[id] ??= NORM[rel];
+  TAPNORM[id] ??= TAPNORM[rel];
+  GLOWNORM[id] ??= GLOWNORM[rel];
+}
 NORM.powehi = NORM.sgra;
 TAPNORM.powehi = TAPNORM.sgra;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
@@ -1078,8 +1109,9 @@ export function tapBus(ac, { out, hall, track = n => n }) {
   const fold = r => { while (r >= 2) r /= 2; while (r < 1) r *= 2; return r; };
   return {
     // A blast: root is the star's key two octaves down; chordRoot moves it to the chord.
-    blast({ t, root, K, len = 6, p = SUN, pan = 0, room = null, chordRoot = 1 }) {
-      if (!p.stack) steal(live.blast, 1, t, 0.5); else prune(live.blast, t);
+    // max: how many blasts may ring at once; a tap run's triad keeps three.
+    blast({ t, root, K, len = 6, p = SUN, pan = 0, room = null, chordRoot = 1, max = 1 }) {
+      if (!p.stack) steal(live.blast, max, t, 0.5); else prune(live.blast, t);
       const sh = shell();
       const h = blast(ac, { t, root: root * fold(chordRoot), K, len, p, out: sh, track });
       route(sh, pan * 0.3, 0.5, room, 0.5 * p.dist, p.stack);

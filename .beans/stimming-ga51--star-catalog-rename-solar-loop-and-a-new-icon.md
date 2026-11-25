@@ -26,3 +26,15 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 - [x] Name: Aster; Dutch Aster (ˈɑstər); toys.json, the menu tile, the page title, intro and heading, the toy doc; the folder and address stay solarloop
 - [x] Icon round 4, "a better and new icon" (Tom): a bloom first (Tom: "how is a flower relevant -- sweeping STAR with FLARE"), then a flared star (Tom: "a little less gaudy and more villeneuvian"); now one white-hot star in warm haze, a long anamorphic sweep, a short vertical flare, one faint ghost; D, the star over a tall dark monolith; round 3's emblems take its number
 - [ ] Tom picks on the sheet; the pick goes live on the menu
+
+## Spectral Sightings (Tom, 2026-11-24: "Spectral Sightings is the new name of the TOY")
+
+- [x] Name: Spectral Sightings; toys.json, the menu tile, the page title, intro and heading, the choir lab title, the toy doc; the folder and address stay solarloop
+- [x] Dutch name: Sterrenkaart (ˈstɛrəkaːrt), a star chart (Tom: "what is a good name for a star chart")
+- [x] Tom picks round 4 A, the star in haze: the menu tile and its hook, the intro emblem (shared/emblems/solarloop.svg) and the favicon (tools/favicons.mjs, Playwright 1.63.0)
+
+## Star Chart (Tom, 2026-11-24: "Star Chart is the name of the toy", "change slug too")
+
+- [x] Name: Star Chart, Dutch Sterrenkaart, everywhere Spectral Sightings stood
+- [x] The pick on the sheet: icons/picks.json, solarloop A of solarloop-4
+- [x] Slug: solarloop to starchart (the folder, toys.json, the menu tile and hook, the emblem, favicon, toy doc, plan, QA captures, the icon sheet key, picks, the access lab, CREDITS); a redirect at solarloop/index.html; saved settings carry over to the new id; round names (solarloop-1 to 4) stay as file names; tests 276/276, build clean

@@ -11,7 +11,8 @@ export const BCRIT = 2.598;
 export const SPIN_UP = 1e4;
 export const STRIDE = 16;
 export const MAX_STRANDS = 2048;
-export const MAX_FLARES = 2;
+// Up to eight flares run at once; a ninth tap waits for one to end (Tom, 2026-11-24).
+export const MAX_FLARES = 8;
 // A flare runs this long, then the region is calm again.
 export const FLARE_END = 50;
 
@@ -57,6 +58,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // starspot: giant spots: weight, the caps' edge latitude, the big spot's latitude and longitude.
 // discE: a dark disc in front, edge on: light, centre, half width, half thickness, in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
+// kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
 const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
@@ -182,7 +184,7 @@ export const STARS = {
     ...FLARE, day: 0.22, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, clouds: [1, 6, 1.6, 1],
     row: 13, rsun: 0.1, expo: 0.9, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.4,
     hal: [0.8, 0.25, 0.3], streak: [0.9, 0.4, 0.45],
-    disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.7],
+    disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.2],
     wide: 'none', long: 'none', root: 293.66,
   },
   // WISE 0855: a Y brown dwarf, the coldest known; dark, with water ice clouds.
@@ -190,7 +192,7 @@ export const STARS = {
     ...FLARE, day: 0.42, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, clouds: [1, 4, 1.2, 0.6],
     row: 14, rsun: 0.1, expo: 0.85, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.25,
     hal: [0.5, 0.25, 0.3], streak: [0.6, 0.4, 0.45],
-    disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.75],
+    disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.25],
     wide: 'none', long: 'none', root: 329.63,
   },
   // T Tauri: a young star, three suns wide, still wrapped in its birth dust.
@@ -361,11 +363,11 @@ export const STARS = {
   // Mothra: a yellow hypergiant, 271 suns, and a blue supergiant, 60 suns, 10.5 billion light years off.
   // An unseen lens of 10,000 to a million suns magnifies them; the orbit is unknown.
   // Far out the host galaxy shows as an arc. The partner holds still; its place is the toy's.
-  // The full view stands 80 times back: the pair is a pip on its arc (Tom, 2026-11-24).
+  // The full view stands 400 times back: the pair is a pip in its lens (Tom, 2026-11-24).
   mothra: {
-    ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 80,
+    ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 400,
     pair: { at: [2.5, 0.35, 1.2], size: 0.22, neck: 0, cool: 1 },
-    bow: { kind: 2, heading: 0.5, size: 150, col: [1, 0.45, 0.6] },
+    bow: { kind: 2, heading: 0.5, size: 460, col: [1, 0.45, 0.6] },
     row: 28, rsun: 271, expo: 1, hotW: 1, coolW: 1, loop: 0.3, prom: 0, dust: 0.1, rays: 1,
     hal: [1, 0.8, 0.45], streak: [1, 0.85, 0.6],
     disk: [1.7, 0.7, 0.04, 0.3], disk2: [120, 0, 0.3, 0.06], tex: [20, 5, 0.06, 0.55],
@@ -374,10 +376,10 @@ export const STARS = {
   // Earendel: perhaps the most distant star, its light 12.9 billion years old.
   // If single, a B star of 13,000 to 16,000 K and 103 to 393 suns; 200 here.
   // A galaxy cluster magnifies it; far out its host galaxy shows as the Sunrise Arc.
-  // The full view stands 80 times back: the star is a pip on the Sunrise Arc (Tom, 2026-11-24).
+  // The full view stands 400 times back: the star is a pip on the Sunrise Arc (Tom, 2026-11-24).
   earendel: {
-    ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 80,
-    bow: { kind: 2, heading: 2.6, size: 170, col: [1, 0.38, 0.3] },
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 400,
+    bow: { kind: 2, heading: 2.6, size: 520, col: [1, 0.38, 0.3] },
     row: 2, rsun: 200, expo: 1, hotW: 1, coolW: 0.8, loop: 0.45, prom: 0.5, dust: 0, rays: 1.15,
     hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
@@ -608,6 +610,8 @@ export const flareCurve = {
   born: j => 0.45 + 0.62 * j + 0.012 * j * j,
 };
 export const ARCADE = 22;
+// Fibres per erupting rope, and per arcade loop.
+const ROPE_FIBRES = 36, LOOP_FIBRES = 9;
 // The rope lies across the neutral line at a slant, so its arch shows side on.
 const ROPE_TURN = 0.85;
 
@@ -671,7 +675,7 @@ export function strands(sun, time, { star, activity, spin = time }, out) {
   }
   for (const p of sun.proms) n = promStrands(p, B, time, out, n);
   if (B.field) n = fieldStrands(spin, B, out, n);
-  for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
+  for (const fl of sun.flares) n = flareStrands(fl, B, out, n, sun.flares.length);
   return n;
 }
 
@@ -744,7 +748,9 @@ export function stepProms(sun, dt) {
 // The point a prominence shows to a tap: part way up its body.
 export const promApex = p => scale(p.c, R + p.h * 0.6);
 
-function flareStrands(fl, B, out, n) {
+// crowd: the flares that run now; with many, each takes fewer fibres, so all fit.
+function flareStrands(fl, B, out, n, crowd = 1) {
+  const thin = crowd > 3 ? 0.5 : 1;
   const { rg, t } = fl;
   const C = flareCurve;
   const sep = C.sep(t, rg);
@@ -766,12 +772,21 @@ function flareStrands(fl, B, out, n) {
   // The rope lifts off with growing speed and leaves the frame.
   const h0 = rg.span[1] * 0.42;
   const hr = C.ropeH(t, h0);
-  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(500, 900, hr)) * fl.k;
+  // It fades as it climbs, before its legs stretch into long straight lines.
+  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(150, 420, hr)) * fl.k;
   if (ropeI > 0.002) {
-    const A = footT(rg, ROPE_TURN, 0, -rg.len * 0.6), Bf = footT(rg, ROPE_TURN, 0, rg.len * 0.6);
-    const twR = 2.5 + 0.2 * (hr - h0);
-    for (let k = 0; k < 12; k++) {
-      n = put(out, n, A, hr * (0.94 + 0.012 * k), Bf, 0.08 * Math.sin(k), 1.4 + 0.008 * hr, ropeI * 0.12, k, 0, twR * (0.7 + 0.05 * k), 0.9, k * 0.5236 + t * 0.4, 2);
+    // The rope is a bundle of fibres: a twisted tube that swells and frays as it lifts.
+    const lift = hr - h0;
+    const tube = 8 + 0.12 * lift, fray = sstep(30, 220, lift);
+    for (let k = 0; k < ROPE_FIBRES * thin; k++) {
+      const q = m => hash(fl.seed * 17 + k, m, 91);
+      // Fibres fill the tube's cross-section evenly.
+      const rr = tube * Math.sqrt(q(1)) * (1 + 0.8 * fray * q(2));
+      const turn = rg.ropeTurn ?? ROPE_TURN;
+      const A = footT(rg, turn, (q(3) - 0.5) * 6, -rg.len * (0.55 + 0.1 * q(4)));
+      const Bf = footT(rg, turn, (q(5) - 0.5) * 6, rg.len * (0.55 + 0.1 * q(6)));
+      const I = ropeI * 0.04 / thin * (0.4 + 1.2 * q(7)) * (1 - 0.6 * fray * q(8));
+      n = put(out, n, A, hr * (0.96 + 0.08 * q(9)), Bf, (q(10) - 0.5) * 0.12, 2.2 + 2.6 * q(11) + 0.004 * lift, I, k, 0, rr, 0.9 + 0.3 * q(12), q(13) * 6.2832 + t * 0.4, 2);
     }
   }
   // The arcade: loops snap in over the ribbons, each born hot, then cooling.
@@ -787,13 +802,16 @@ function flareStrands(fl, B, out, n) {
     const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
-    const drain = clamp((tau - 12) / 13);
-    // Three threads per arcade loop: a loop is a bundle of strands.
-    for (let k = 0; k < 3; k++) {
-      // Each thread takes its own hash slots: 20, 30, 40, 50 and 60 apart by k.
-      const A = foot(rg, a + (q(20 + k) - 0.5) * 3, off + (q(30 + k) - 0.5) * 4 + 2);
-      const Bf = foot(rg, -a + (q(40 + k) - 0.5) * 3, off + (q(50 + k) - 0.5) * 4 - 2);
-      n = put(out, n, A, a * 1.2 + 3, Bf, (q(11) - 0.5) * 0.2, 1.0 + 0.5 * q(60 + k), I * [0.7, 0.5, 0.35][k], q(14) * 7, drain);
+    // An arcade loop is a tube of fibres, so the row reads as a glowing comb.
+    const tube = 1.5 + 0.05 * a;
+    for (let k = 0; k < Math.ceil(LOOP_FIBRES * thin); k++) {
+      // Each fibre takes its own hash slots, 100 apart by k.
+      const r = m => hash(fl.seed * 31 + j, 100 * k + m, 78);
+      const ang = r(1) * 6.2832, rad = tube * Math.sqrt(r(2));
+      const de = Math.cos(ang) * rad, df = Math.sin(ang) * rad;
+      const A = foot(rg, a + de + (r(3) - 0.5) * 2, off + df + 2);
+      const Bf = foot(rg, -a - de + (r(4) - 0.5) * 2, off + df - 2);
+      n = put(out, n, A, (a * 1.2 + 3) * (1 + 0.05 * (r(5) - 0.5)), Bf, (q(11) - 0.5) * 0.2 + (r(6) - 0.5) * 0.08, 1.4 + 1.6 * r(7), I * 0.16 / thin * (0.4 + 1.2 * r(8)), q(14) * 7 + r(9), clamp((tau - 12 - 8 * r(10)) / 13));
     }
   }
   return n;
@@ -803,18 +821,23 @@ function flareStrands(fl, B, out, n) {
 // A flare site where the hand taps the disk (Tom, 2026-11-24).
 // It carries what a flare needs from a region: its frame, span and length.
 // c is the tapped point in the star's frame; the bipole runs east to west.
-export function makeSite(c) {
-  let e = cross([0, 1, 0], c);
+// view: the direction to the eye in the star's frame; the arcade then faces the eye.
+export function makeSite(c, view = null) {
+  // Loops lie across e; with e square to the eye, they stand side-on at the limb.
+  let e = view ? cross(view, c) : cross([0, 1, 0], c);
+  if (Math.hypot(e[0], e[1], e[2]) < 0.05) e = cross([0, 1, 0], c);
   if (Math.hypot(e[0], e[1], e[2]) < 1e-3) e = [1, 0, 0];
   e = norm(e);
-  return { c, e, f: cross(c, e), span: [12, 60], len: 80, hk: 1, lastFlare: -1e9, site: true };
+  // A tap's flare is large, so its arcade reads at the wide view: up to about 85 Mm tall.
+  // Its rope turns nearly square to the eye too, so it lifts as an arch, not as lines.
+  return { c, e, f: cross(c, e), span: [20, 110], len: 140, hk: 1, lastFlare: -1e9, site: true, ropeTurn: view ? 1.35 : ROPE_TURN };
 }
 // The flare's pace: slower on every star, and slower still on a large one.
 // The sun runs at 0.75; a supergiant takes about four times as long.
 export const flarePace = B => 0.75 / clamp(Math.pow(B.rsun, 0.18), 0.8, 3.5);
 export function startFlare(sun, rg, time, k = 1) {
-  sun.flares = sun.flares.filter(f => f.rg !== rg);
-  if (sun.flares.length >= MAX_FLARES) sun.flares.shift();
+  // A new flare never cuts a running one short; at the limit the tap does nothing.
+  if (sun.flares.length >= MAX_FLARES) return null;
   const fl = { rg, t: 0, k, seed: Math.floor(Math.random() * 1e6) };
   sun.flares.push(fl);
   rg.lastFlare = time;

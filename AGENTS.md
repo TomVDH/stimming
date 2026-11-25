@@ -49,6 +49,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | `icons/` | Icon workbench and the icon sheet |
 | `barlab/`, `fxlab/`, `introlab/`, `glasslab/`, `menulab/`, `serieslab/` | Workbenches (`noindex`) |
 | `inventorylab/`, `docs/inventory/` | Toy inventory: Tom's verdict per toy, one JSON record each. Format: `docs/inventory/schema.md` |
+| `accesslab/` | The toy desk: one toy at a time, its Icon, Feedback and Intro tabs, a YAML per toy; the access kit and type trials. A template: `accesslab/TEMPLATE.md` |
 | `tools/` | `commit.sh`, capture scripts, checks |
 | `tests/` | `bar-v2.html` and node tests |
 | `docs/` | Standards, menu, toy docs, plans, QA captures |

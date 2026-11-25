@@ -1,17 +1,17 @@
 // Solar loop: a star's edge at a vast scale, graded like film.
 // Loops rise and drain; giant prominences stand over the limb.
 // A tap flares a region or lifts a prominence off; a drag turns the sun.
-// Plan: docs/plans/solarloop.md. Toy doc: docs/toys/solarloop.md.
+// Plan: docs/plans/starchart.md. Toy doc: docs/toys/starchart.md.
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
+import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, MAX_FLARES, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { glyph } from './glyphs.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
@@ -27,7 +27,14 @@ if (!new URLSearchParams(location.search).has('dev')) {
 }
 mark('libs');
 
-const ID = 'solarloop';
+const ID = 'starchart';
+// The toy was solarloop until 2026-11-24: its saved settings move to the new id once.
+try {
+  const was = 'stimming.solarloop.', now = `stimming.${ID}.`;
+  for (const k of Object.keys(localStorage)) {
+    if (k.startsWith(was) && localStorage.getItem(now + k.slice(was.length)) == null) localStorage.setItem(now + k.slice(was.length), localStorage.getItem(k));
+  }
+} catch { /* private mode */ }
 const stage = document.getElementById('stage');
 const fail = stage.querySelector('.fail');
 const store = {
@@ -552,6 +559,7 @@ const zoomText = z => z > 2.02 ? `full ${pullText(z)}` : VIEWS[Math.round(z)];
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
   st.star = v;
+  egg?.stop?.();
   egg = null;
   store.set('star', v);
   article.close();
@@ -770,6 +778,8 @@ function resize(force = false) {
 function flareAt(rg) {
   if (!rg) return;
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
+  // Eight flares already run: this tap waits, silent.
+  if (!fl) return;
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
   poke();
@@ -849,7 +859,8 @@ function flareNear(x, y) {
   const { t, prom, d } = pickAt(x, y);
   if (t && d < reach()) { if (prom) eruptAt(t); else flareAt(t); return; }
   const s = diskAt(x, y);
-  if (s) flareAt(makeSite(s));
+  // The eye's direction in the star's frame: M's third row.
+  if (s) flareAt(makeSite(s, [M[2][0], M[2][1], M[2][2]]));
 }
 
 /* ---------- hover: the cursor reads the region under it ---------- */
@@ -898,8 +909,29 @@ function surfaceAt(x, y) {
   const v = [vx, vy, Math.sqrt(Math.max(0, R * R - vx * vx - vy * vy))];
   return [0, 1, 2].map(c => (M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]) / R);
 }
-function startEgg(x, y) {
-  const kind = EGGS[st.star];
+// Mercury's transit: its x and y in star units, and whether it stands on the disk.
+function mercury() {
+  const by = fit.long.cy, cw = Math.sqrt(Math.max(0, R * R - by * by)), span = 2 * cw + 60;
+  const bx = ((st.time * 1.5) % span) - span / 2;
+  return { x: bx, y: by, on: STARS[st.star].long === 'mercury' && Math.hypot(bx, by) < R };
+}
+// A star point in CSS pixels.
+const cssAt = (x, y) => [((x - view.cx) / view.hw * 0.5 + 0.5) * cssW, (0.5 - (y - view.cy) / view.hh * 0.5) * cssH];
+// A hold this near Mercury, in CSS pixels, plays the ship instead of Carrington.
+const MERCURY_REACH = 70;
+function startEgg(x, y, rare = false) {
+  let kind = EGGS[st.star];
+  const m = mercury();
+  if (kind === 'carrington' && m.on) {
+    const [mx, my] = cssAt(m.x, m.y);
+    if (rare ? Math.random() < 0.5 : Math.hypot(mx - x, my - y) < MERCURY_REACH) kind = 'sunshine';
+  }
+  if (kind === 'sunshine') {
+    egg = makeSunshine(m.x);
+    // The beacon starts with the cue and runs to the ship's end.
+    egg.stop = snd.beacon?.(clamp(cssAt(m.x, m.y)[0] / cssW * 2 - 1, -1, 1), SHIP_END + HOLD - CUE) || null;
+    return true;
+  }
   // The star turns during the hold: the flash lands under the finger.
   const now = st.time, turnNow = st.turn;
   st.time += HOLD - CUE;
@@ -925,7 +957,7 @@ function stepEgg(dt, holding) {
   }
   if (egg.t < 0 && !holding && !egg.rare) {
     egg.t -= dt * 2;
-    if (egg.t <= CUE - HOLD) egg = null;
+    if (egg.t <= CUE - HOLD) { egg.stop?.(); egg = null; }
     return;
   }
   egg.t += dt;
@@ -939,6 +971,8 @@ function stepEgg(dt, holding) {
   } else if (egg.kind === 'dimming') {
     if (egg.t >= 0 && !egg.fired) { egg.fired = true; snd.dim(st.star); }
     if (egg.t >= DIM_END) egg = null;
+  } else if (egg.kind === 'sunshine') {
+    if (egg.t >= SHIP_END) { egg.stop?.(); egg = null; }
   }
 }
 // The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
@@ -957,9 +991,9 @@ function eggFrame(out, dim) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(8), flB: new Float32Array(8),
-  sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
-  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
+  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(4 * MAX_FLARES), flB: new Float32Array(4 * MAX_FLARES),
+  sat: new Float32Array(4 * MAX_FLARES), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
@@ -1105,6 +1139,14 @@ function makeFrame() {
   // The transit shows on the long lens and on the full star.
   f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, (1 - weight('wide')) * on]);
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
+  // The Sun's egg: the ship in transit, a little north of Mercury's chord.
+  // It draws larger than true, so it reads; never smaller than 5 CSS pixels.
+  if (egg?.kind === 'sunshine') {
+    const sh = sunshine(egg), [sx, sy] = px(sh.x, by + 22);
+    const size = Math.max(bodySize(star, star.long) * 0.5 * ppm * 1.8, 5 * view.H / cssH);
+    f.ship.set([sx, sy, size, sh.w * (1 - weight('wide'))]);
+    f.ship2.set([sh.heading, sh.tilt, sh.glint, 0]);
+  } else f.ship.fill(0);
   // The pulsar's magnetic axis, in the view frame.
   if (star.beam) f.beam.set([...toView(magNow(star)), star.beam]); else f.beam.fill(0);
   // The spin axis carries the wind nebula's torus and jets.
@@ -1260,7 +1302,7 @@ function frame(now) {
     if (holding && !egg && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE && startEgg(pointer.x0, pointer.y0)) pointer.egg = true;
     // Now and then an egg comes on its own, near the middle of the view.
     if (!egg && !calm && drifting > 0 && EGGS[st.star] && Math.random() < dt / RARE) {
-      if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()))) egg.rare = true;
+      if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()), true)) egg.rare = true;
     }
     stepEgg(dt, holding && pointer.egg);
     // The pulsar pings as a beam crosses the eye: st.spin mod 1.6 passes 1.2.
@@ -1415,8 +1457,10 @@ function stepEye(dt) {
 const sway = { x: 0, y: 0, vx: 0, vy: 0 };
 const SWAY_T = 0.9;
 // Steps the follow; true while it moves.
+// A lensed far star sways from the full view on: its full view is already far out (Tom, 2026-11-24).
 function stepSway(dt) {
-  const on = calm ? 0 : farAt(cam.z);
+  const lensed = STARS[shown]?.bow?.kind === 2;
+  const on = calm ? 0 : lensed ? Math.max(farAt(cam.z), clamp(cam.z - NOTCH + 1, 0, 1)) : farAt(cam.z);
   const tx = hoverAt && on ? (hoverAt[0] / cssW * 2 - 1) * on : 0;
   const ty = hoverAt && on ? (1 - hoverAt[1] / cssH * 2) * on : 0;
   [sway.x, sway.vx] = follow(sway.x, tx, sway.vx, SWAY_T, dt);

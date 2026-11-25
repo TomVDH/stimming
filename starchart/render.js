@@ -4,7 +4,7 @@
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
 import { TRI_VS, program, linked, target, free, bind, tri, to } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
-import { R, BCRIT, STRIDE, MAX_STRANDS, NR } from './sun.js';
+import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES } from './sun.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
 import { FLARE } from '../shared/flare.js';
 
@@ -643,7 +643,7 @@ uniform float uDust;
 uniform vec4 uReg[${NR}];
 // Each region's bipole axis in the view frame, and its sunspot size.
 uniform vec4 uSpot[${NR}];
-uniform vec4 uFl[2], uFlB[2];
+uniform vec4 uFl[${MAX_FLARES}], uFlB[${MAX_FLARES}];
 uniform vec4 uEgg[4], uDim[2];
 // A Wolf-Rayet wind: its glow, its clumps, the nebula's light, the nebula's radius in R.
 uniform vec4 uWind;
@@ -687,6 +687,57 @@ ${HOLE}
 float lumpAt(vec3 d) {
   vec3 p = d * uLump.y + vec3(0.0, 0.0, uLump.z);
   return 0.65 * vn(p) + 0.35 * vn(p * 2.1 + vec3(5.2, 1.3, uLump.z * 0.6)) - 0.5;
+}
+// One band of a brown dwarf's deck: its cloud at longitude lon and warped latitude wl.
+// b is the band coordinate; the band's middle sits at id + 0.5.
+// The band drifts at one speed, so it never smears into streaks.
+float bandTau(float id, float lon, float wl, float b) {
+  float h = h13(vec3(id, 7.0, 3.0));
+  // Neighbour bands run opposite ways.
+  float odd = mod(id, 2.0);
+  float lo = lon + uTime * 0.012 * uCloud.w * (odd * 2.0 - 1.0) * (0.5 + h);
+  // One storm oval rides some bands; it twists the cloud round its eye.
+  float c = h * 40.0 + uTime * 0.004 * uCloud.w;
+  vec2 v = vec2(atan(sin(lo - c), cos(lo - c)), (b - id - 0.5) * 3.1416 / uCloud.y);
+  float e = h > 0.45 ? length(v / vec2(0.34, 0.6 * 3.1416 / uCloud.y)) : 9.0;
+  float sw = 2.6 * exp(-e * e * 1.6);
+  vec2 v2 = mat2(cos(sw), sin(sw), -sin(sw), cos(sw)) * v;
+  lo += v2.x - v.x;
+  wl += (v2.y - v.y) * 0.64;
+  vec3 bq = vec3(cos(lo), wl * 1.4, sin(lo)) + id * 3.7;
+  // Belts are thinner and hotter than zones.
+  float base = odd > 0.5 ? 0.6 + 0.4 * h : 1.1 + 0.5 * h;
+  vec3 w = vec3(fbm(bq * 3.0 + 1.0), fbm(bq * 3.0 + 4.0), 0.0);
+  float lump = fbm(bq * 2.2 + w * 1.8);
+  // Fine turbulence, a little longer along the band than across it, in two sizes.
+  float fine = 0.7 * fbm(vec3(bq.x * 8.0, bq.y * 11.0, bq.z * 8.0) + w * 2.2) + 0.3 * fbm(bq * 26.0 + w * 3.0);
+  float tau = base * (0.5 + 1.0 * lump) * (0.4 + 1.2 * smoothstep(0.2, 0.8, fine));
+  // A storm's eye is clearer than its wall.
+  return tau * mix(1.0, 0.65 + 0.8 * smoothstep(0.3, 0.9, e), exp(-e * e * 0.8));
+}
+// A brown dwarf's cloud deck: its optical depth at the unit point q, about 0 to 3.
+// Bands sit in latitude, so seen side-on they crowd toward the poles.
+float deckTau(vec3 q) {
+  float lat = asin(clamp(q.y, -1.0, 1.0)) / 1.5708;
+  float lon = atan(q.z, q.x);
+  // Slow weather bends the band edges in a frame that does not shear.
+  float wl = lat + 0.1 * uCloud.z * (fbm(q * 3.0 + vec3(0.0, 0.0, uTime * 0.006)) - 0.5) + 0.1 * (vn(vec3(lat * 2.6, 1.0, 3.0)) - 0.5);
+  float b = (wl * 0.5 + 0.5) * uCloud.y;
+  // Two neighbour bands blend across a soft shear zone at their edge.
+  float i0 = floor(b - 0.5), fr = fract(b - 0.5);
+  float s = smoothstep(0.3, 0.7, fr);
+  float tau = mix(bandTau(i0, lon, wl, b), bandTau(i0 + 1.0, lon, wl, b), s);
+  // The shear zone churns: its cloud is a little thicker.
+  tau += 0.35 * (1.0 - abs(2.0 * s - 1.0));
+  // An L dwarf's mottle: soft round blotches of rising and sinking gas, in two sizes.
+  float mottle = 0.6 * fbm(q * 5.0 + vec3(0.0, 0.0, uTime * 0.01)) + 0.4 * fbm(q * 12.0 + vec3(0.0, uTime * 0.017, 0.0));
+  tau *= 0.45 + 1.1 * mottle;
+  // Large patches thin and thicken over hours, as on Luhman 16B's map.
+  tau *= 0.5 + 1.0 * fbm(q * 1.3 + vec3(5.0, 0.0, uTime * 0.003));
+  // The poles lose their bands to a chaos of small storms.
+  float pole = smoothstep(0.62, 0.86, abs(lat));
+  float chaos = (0.6 + 1.4 * fbm(q * 6.0 + 2.0 * mottle)) * (0.55 + 0.9 * mottle);
+  return mix(tau, chaos, pole);
 }
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
@@ -737,25 +788,18 @@ void main() {
     float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
     // A rising giant cell is hot and bulges; a sinking one is cool and falls back.
     tex *= 1.0 + 2.0 * uLump.w * lumpAt(q);
-    // A brown dwarf: a cloud deck in bands round its spin axis, no granules.
+    // A brown dwarf glows from inside; its clouds are cool blankets on top.
+    // Thin cloud lets the hot deep light through; thick cloud shows its dull top.
     if (uCloud.x > 0.0) {
-      float lat = q.y;
-      float lon = atan(q.z, q.x);
-      // Neighbour bands run opposite ways, so the edges between them shear.
-      float spd = sin(lat * uCloud.y * 3.14159 + 0.7);
-      float lo = lon + uTime * 0.012 * uCloud.w * spd;
-      vec3 cq = vec3(cos(lo), lat * 2.2, sin(lo));
-      // Eddies curl the band edges.
-      vec3 ew = vec3(fbm(cq * 3.0 + 1.0), fbm(cq * 3.0 + 4.0), fbm(cq * 3.0 + 7.0));
-      // Uneven band widths: the latitude itself is warped.
-      float wl = lat + 0.18 * (vn(vec3(lat * 2.6, 1.0, 3.0)) - 0.5);
-      float edge = wl + uCloud.z * 0.14 * (fbm(cq * 4.0 + ew * 2.5) - 0.5);
-      float band = 0.5 + 0.5 * sin(edge * uCloud.y * 3.14159);
-      band = mix(band, smoothstep(0.2, 0.8, band), 0.5);
-      float fine = fbm(vec3(cq.x * 7.0, cq.y * 16.0, cq.z * 7.0) + ew * 1.6);
-      // A few dark storm ovals ride the bands.
-      float storm = smoothstep(0.78, 0.9, fbm(cq * 2.2 + 11.0));
-      float deck = 0.6 + 0.42 * band + 0.75 * (fine - 0.5) - 0.4 * storm;
+      float m = max(mu, 0.1);
+      // Deeper along the view ray, the point under the eye slides toward the limb.
+      vec3 sink = uToSun * (n * mu - vec3(0.0, 0.0, 1.0));
+      float t1 = deckTau(q);
+      float t2 = deckTau(normalize(q + sink * min(0.04 / m, 0.09)));
+      // The slant path through the deck grows as 1 / mu, so the limb dims by itself.
+      float tr = exp(-(0.35 * t1 + 0.65 * t2) / m);
+      // A high haze glows at the limb, lit from below.
+      float deck = mix(0.4, 1.8, tr) + 0.9 * pow(1.0 - mu, 3.0);
       tex = mix(tex, deck, uCloud.x);
     }
     // From far away the surface detail melts into one even glow.
@@ -1038,7 +1082,7 @@ void main() {
     hot += uYso.w * jvis * jet * knots * 0.5;
   }
   // The erupting bubble: a faint shell, dim inside.
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < ${MAX_FLARES}; k++) {
     if (uFlB[k].z <= 0.0) continue;
     vec3 c = uFl[k].xyz * (R + uFlB[k].x);
     float d = length(P - c.xy) / uFlB[k].y;
@@ -1297,6 +1341,12 @@ void main() {
       k += exp(-pow((foot - (0.5 - at)) / w, 2.0)) * (1.0 - u * 0.6);
     }
     I += vI * uRain * k * 1.6;
+  }
+  // An erupting rope: knots of cool plasma ride its fibres, so it reads as torn plasma, not a hose.
+  if (vKind == 2.0) {
+    float fr = vS * 26.0 + vPh * 7.3 - uTime * 0.15;
+    float kr = n1(fr) * 0.6 + n1(fr * 2.3 + 3.0) * 0.6;
+    I *= 0.25 + 1.3 * kr * kr;
   }
   // Prominences: knots of cool plasma slide down toward the feet.
   if (vKind >= 3.0) {
@@ -1725,9 +1775,11 @@ function noiseVolume(n) {
 /* ---------- final: heat bend, grade, volume, bodies, lens, film ---------- */
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
-uniform vec4 uSat[2];
+uniform vec4 uSat[${MAX_FLARES}];
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, uFx5;
 uniform vec2 uBodyK;
+// The Sun's egg: the ship's x, y and size in pixels and weight; heading, shield slant, glint.
+uniform vec4 uShip, uShip2;
 uniform vec3 uHal, uStreak;
 // The far lens's sway with the mouse, -1 to 1 on each axis.
 uniform vec2 uSway;
@@ -1760,7 +1812,7 @@ uvec3 pcg3(uvec3 v) {
 // The kernel's white core, added to the hot light before the grade.
 float kern(vec2 fc) {
   float s = 0.0;
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < ${MAX_FLARES}; k++) {
     float S = uSat[k].z;
     if (S <= 0.0) continue;
     vec2 d = (fc - uSat[k].xy) / uSc;
@@ -1883,6 +1935,95 @@ vec3 starfield(vec2 fc) {
   }
   return acc;
 }
+// Hash without Sine, 2 in and 4 out (Dave Hoskins, MIT).
+vec4 hash42(vec2 p) {
+  vec4 q = fract(vec4(p.xyxy) * vec4(0.1031, 0.1030, 0.0973, 0.1099));
+  q += dot(q, q.wzxy + 33.33);
+  return fract((q.xxyz + q.yzzw) * q.zywx);
+}
+// One galaxy: an exponential profile of scale s, axis ratio e, turned by a.
+float galaxy(vec2 q, float s, float e, float a) {
+  vec2 r = vec2(cos(a) * q.x + sin(a) * q.y, -sin(a) * q.x + cos(a) * q.y);
+  r.y /= e;
+  return exp(-length(r) / s);
+}
+// The deep field behind the lens, in the source plane, in R: two layers of hashed galaxies.
+// Far galaxies redden; nearer ones are blue spirals and pale ellipticals.
+// k scales the cells to the lens: specks, small galaxies and a few large ones.
+vec3 deepField(vec2 b, float k) {
+  vec3 col = vec3(0.0);
+  for (int L = 0; L < 3; L++) {
+    float cell = k * (L == 0 ? 0.011 : L == 1 ? 0.04 : 0.15);
+    vec2 g = floor(b / cell);
+    for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+      vec2 id = g + vec2(dx, dy);
+      vec4 h = hash42(id + float(L) * 71.3);
+      if (h.w < (L == 0 ? 0.2 : L == 1 ? 0.5 : 0.8)) continue;
+      vec2 c = (id + h.xy) * cell;
+      float sz = cell * (L == 0 ? 0.03 + 0.04 * h.z : L == 1 ? 0.04 + 0.05 * h.z : 0.03 + 0.05 * h.z);
+      float I = galaxy(b - c, sz, 0.25 + 0.75 * fract(h.z * 7.0), h.x * 6.283);
+      vec3 tint = mix(vec3(0.55, 0.68, 1.0), vec3(1.0, 0.42, 0.28), fract(h.y * 13.0));
+      col += tint * I * (L == 0 ? 0.1 + 0.25 * fract(h.w * 31.0) : 0.15 + 0.4 * fract(h.w * 31.0));
+    }
+  }
+  return col;
+}
+// A point of light: a hard core in a soft glow that falls off slowly, no spikes (Tom, 2026-11-24).
+// len sets how far the glow reaches, in R.
+float pip(vec2 d, float pw, float len) {
+  float r = length(d);
+  return exp(-r * r / (pw * pw * 2.0)) + 0.5 * exp(-r / (pw * 2.5)) + 0.12 * exp(-r / len);
+}
+// A strong lens round a far star (Tom, 2026-11-24): the light is traced, not drawn.
+// q: the view in R, turned so the lens lies along +x; Pv: the same point unturned.
+// The lens is a singular isothermal sphere uBow.z radii off, its Einstein radius 0.86 of that:
+// so the star sits by the critical curve, hugely magnified, and shows twice.
+// Each pixel looks back through the lens to the source plane: b = t - tE t/|t|.
+vec3 lensScene(vec2 q, vec2 Pv) {
+  float D = uBow.z, tE = 0.86 * D;
+  // The mouse sway slides the layers by depth: the foreground stars most, the cluster less, the deep field least.
+  // The lens is traced from the shifted places, so the arcs flow and re-form as the view sways.
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 sw = vec2(dot(uSway, ax), ax.x * uSway.y - ax.y * uSway.x) * D * 0.07;
+  vec2 lens = vec2(D, 0.0) + sw * 0.5;
+  vec2 t = q - lens;
+  float tl = max(length(t), 1e-3);
+  vec2 b = t - tE * t / tl + sw * 0.35;
+  float pw = max(length(fwidth(q)), 1e-3);
+  // The host galaxy, round the star's own source position: a clumpy disc in uBowC with blue knots.
+  vec2 bs = vec2(-(D - tE), 0.0) + sw * 0.35;
+  vec2 hq = b - bs - vec2(0.004, 0.006) * D;
+  float host = galaxy(hq, 0.011 * D, 0.7, 0.8);
+  float knots = 0.0;
+  for (int k = 0; k < 7; k++) {
+    vec4 h = hash42(vec2(float(k), 3.7));
+    knots += galaxy(hq - (h.xy - 0.5) * 0.03 * D, (0.0016 + 0.002 * h.z) * D, 1.0, 0.0);
+  }
+  vec3 col = uBowC * host * 0.9 + vec3(0.7, 0.8, 1.0) * knots * 0.6;
+  // Every galaxy behind the cluster is bent too: arcs and arclets ring it.
+  col += deepField(b + vec2(13.7, -5.1) * D * 0.01, D);
+  // The cluster in front: a giant elliptical at the centre in its own halo, members round it, gold.
+  vec3 gold = vec3(1.0, 0.8, 0.52);
+  col += gold * (1.6 * galaxy(t, 0.016 * D, 0.72, 0.4) + 0.16 * exp(-tl / (0.35 * tE)));
+  for (int k = 0; k < 48; k++) {
+    vec4 h = hash42(vec2(float(k) * 1.37, 9.1));
+    vec2 c = (h.xy - 0.5) * 2.6 * tE * sqrt(h.z);
+    col += gold * galaxy(t - c, (0.0025 + 0.008 * h.w * h.w) * D, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
+  }
+  // A few foreground stars of our own galaxy.
+  for (int k = 0; k < 3; k++) {
+    vec4 h = hash42(vec2(float(k) + 41.0, 2.3));
+    vec2 c = vec2((h.x - 0.2) * 2.2 * D, (h.y - 0.5) * 1.6 * D);
+    col += vec3(0.85, 0.9, 1.0) * pip(q - c - sw, pw, (0.004 + 0.008 * h.z) * D) * 0.5 * h.w;
+  }
+  // The star itself, twice: here, burning, and its fainter counter-image past the cluster.
+  // The counter-image follows the lens: it stands at b - tE b/|b| from the lens centre, b the star's source place.
+  vec2 sb = -lens - tE * normalize(-lens) + sw * 0.35;
+  vec2 ci = lens + sb - tE * sb / max(length(sb), 1e-3);
+  col += vec3(1.0) * pip(Pv, pw, 0.012 * D) * 1.4;
+  col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
+  return col;
+}
 // A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.
 // The bow shock takes Wilkin's shape: r(t) = R0 sqrt(3 (1 - t cot t)) / sin t, t from the apex.
 vec3 runaway(vec2 P) {
@@ -1899,18 +2040,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
-  // A lensed arc: the host galaxy smeared along a circle round an unseen lens.
-  // The star sits on the arc; the lens's centre lies uBow.z radii off along the heading.
-  if (uBow.w > 1.5) {
-    vec2 lc = q - vec2(uBow.z, 0.0);
-    float rl = length(lc);
-    float th = atan(lc.y, -lc.x);
-    float band = exp(-pow((rl - uBow.z) / (0.5 + 0.02 * uBow.z), 2.0));
-    float ends = smoothstep(0.45, 0.15, abs(th));
-    // Lensing shears the galaxy's knots along the arc.
-    float kn = 0.3 + 1.2 * pow(fbm(vec3(th * uBow.z * 0.12, (rl - uBow.z) * 1.4, 7.0)), 2.0);
-    return uBowC * band * ends * kn;
-  }
+  // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
+  if (uBow.w > 1.5) return lensScene(q, P / R);
   // A wake: a long faint trail behind, widening, its knots streaming away.
   float back = -q.x;
   float w = 0.35 + 0.035 * back;
@@ -1947,6 +2078,33 @@ vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
   float rim = exp(-pow((d - 0.98) / 0.025, 2.0)) * pow(0.5 + 0.5 * dot(normalize(e + 1e-4), to), 3.0);
   vec3 rimC = light * 0.6;
   return c * (1.0 - disc * b.w) + (lit * disc + rimC * rim * 0.8) * b.w;
+}
+float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+float sdSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+// A ship in transit, black on the disk: a slanted sunshield, a spine, modules and a payload block.
+// The shield's rim catches the light round its edge; a glint flashes as it turns.
+vec3 ship(vec3 c, vec2 fc) {
+  if (uShip.w <= 0.0) return c;
+  float s = uShip.z;
+  vec2 e = (fc - uShip.xy) / s;
+  float ca = cos(uShip2.x), sa = sin(uShip2.x);
+  vec2 p = vec2(ca * e.x + sa * e.y, -sa * e.x + ca * e.y);
+  // The shield is a disc seen at a slant: an ellipse, its long axis across the heading.
+  float tl = uShip2.y;
+  float dS = (length(p / vec2(tl, 1.0)) - 1.0) * tl;
+  // The spine trails behind the shield; two modules ride it; the payload is the block at its end.
+  float dP = sdSeg(p, vec2(0.0), vec2(3.4, 0.0)) - 0.045;
+  dP = min(dP, sdBox(p - vec2(1.1, 0.0), vec2(0.12, 0.18)));
+  dP = min(dP, sdBox(p - vec2(1.8, 0.0), vec2(0.08, 0.3)));
+  dP = min(dP, sdBox(p - vec2(3.05, 0.0), vec2(0.42, 0.34)) - 0.03);
+  float d = min(dS, dP);
+  float aa = 1.0 / s;
+  float cov = smoothstep(aa, -aa, d);
+  vec3 gold = grade(vec2(2.5, 0.0)) * vec3(1.25, 1.0, 0.6);
+  float rim = exp(-pow(dS / (1.6 / s + 0.015), 2.0)) * (0.35 + 6.0 * uShip2.z);
+  // The glint throws a short cross of light off the rim.
+  float star4 = uShip2.z * (exp(-abs(e.y) * 40.0) * exp(-abs(e.x) * 1.5) + exp(-abs(e.x) * 40.0) * exp(-abs(e.y) * 1.5));
+  return c * (1.0 - cov * uShip.w) + gold * (rim * 0.5 + star4 * 1.5) * uShip.w;
 }
 void main() {
   // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
@@ -1994,10 +2152,11 @@ void main() {
   } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
   // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 : uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
+  // A lensed far star's scene comes in as the star shrinks to a pip, and draws over it with no seam.
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < ${MAX_FLARES}; k++) {
     float S = uSat[k].z;
     if (S <= 0.0) continue;
     // A stronger core throws a longer streak.
@@ -2030,6 +2189,7 @@ void main() {
   vec2 fc = uv * uRes;
   c = body(c, fc, uBodyA, uBodyK.x);
   c = body(c, fc, uBodyB, uBodyK.y);
+  c = ship(c, fc);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
   // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
@@ -2346,6 +2506,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(f.u.uBodyA, v.bodyA);
     gl.uniform4fv(f.u.uBodyB, v.bodyB);
     gl.uniform2fv(f.u.uBodyK, v.bodyK);
+    if (v.ship) { gl.uniform4fv(f.u.uShip, v.ship); gl.uniform4fv(f.u.uShip2, v.ship2); }
     gl.uniform1f(f.u.uLens, v.lens);
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);

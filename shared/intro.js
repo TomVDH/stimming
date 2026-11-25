@@ -183,7 +183,7 @@ export const VARIETIES = {
   plate: look('plate', 'Plate: the title sits on a white plate', { nameK: 0.8, blur: 30, dim: 0.38 },
     { fonts: { fd: 'B612', fn: SLAB, fs: SLAB, fsn: SLAB } }),
   signal: look('signal', 'Signal: white flash, then the logo takes the toy’s accent', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
-    { stack: true, ink: true, fonts: { fd: 'Gabarito', fn: 'B612', fs: 'B612', fsn: 'B612' } }),
+    { stack: true, ink: true, fonts: { fd: SLAB, fn: 'B612', fs: 'B612', fsn: 'B612' } }),
   readout: look('readout', 'Readout: the title rides above the logo, all slab caps', { nameK: 0.6, logoK: 0.9, padK: 0.8, blur: 24, dim: 0.4 },
     { fonts: { fd: SLAB, fn: SLAB, fs: SLAB, fsn: SLAB } }),
   // Strobe keeps Classic's style; its blinks and cuts fit inside Classic's beats.
