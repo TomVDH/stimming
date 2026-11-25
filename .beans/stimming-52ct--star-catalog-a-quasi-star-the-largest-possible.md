@@ -14,7 +14,8 @@ Hypothetical, early universe: a black hole at the heart of a vast envelope, a re
 
 - [x] Reference images opened before the model (a model: no image exists; the look follows the article, a red giant scaled up with a black hole at its heart)
 - [x] Look built: the Thorne-Zytkow cutaway, core 2 swaps the neutron star and shell for a hole's shadow, an infall ring and heat through the inside; its own ramp (row 26); 18,000 suns on the ladder
-- [ ] Checked live in the browser
+- [x] Checked live in the browser (2026-11-24: the hole was 7 px, unreadable)
+- [x] Redrawn as artists show it (Tom: translucent, torn, the hole shining through): rifts, a near edge-on disc round a larger shadow, dust 0.05
 - [x] Facts, sourced (Wikipedia URL kept)
 - [ ] Card text (stimming-mfak)
 - [ ] Running build shown early; Tom looks at it live

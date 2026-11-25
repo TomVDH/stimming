@@ -313,7 +313,7 @@ export const STARS = {
   // Drawn in cutaway, as the Thorne-Zytkow object is; 18,000 suns sits between the models.
   quasi: {
     ...FLARE, day: 50000, ribbon: 1, bubble: 0.1, core: 2, lump: [0.05, 1.8, 0.6, 0.3],
-    row: 26, rsun: 18000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.2, prom: 0.5, dust: 0.3, rays: 0.9,
+    row: 26, rsun: 18000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.2, prom: 0.5, dust: 0.05, rays: 0.9,
     hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
     disk: [1.85, 1.2, 0, 0.3], disk2: [160, 0.6, 0.3, 0.05], tex: [3, 1.6, 0, 0.7],
     wide: 'none', long: 'none', root: 87.31,
@@ -324,7 +324,7 @@ export const STARS = {
   // shells: their light, their spacing in R, the orbit in days.
   wr140: {
     ...FLARE, rain: 0, bubble: 0.3, wind: [0.8, 0.6, 0, 9], reach: 2.6,
-    shells: { light: 1.6, gap: 0.62, orbit: 2895 },
+    shells: { light: 2.6, gap: 0.62, orbit: 2895 },
     row: 27, rsun: 35, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1.2,
     hal: [0.6, 0.65, 1], streak: [0.65, 0.75, 1],
     disk: [1.4, 0.12, 0.3, 0.3], disk2: [240, 0, 0, 0], tex: [40, 4, 0, 0.3],
@@ -333,8 +333,9 @@ export const STARS = {
   // VFTS 352: two hot O stars of nearly equal size, so close their envelopes touch.
   // They orbit in under 27 hours, tidally locked, so the turn carries the twin round.
   // pair: the twin's place in R and its size; the radius is not in the article: 7 suns is the toy's.
+  // The centres stand 17.6 suns apart (Almeida 2015): 2.43 R, so a narrow waist shows.
   vfts352: {
-    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: { at: [1.85, 0, 0], size: 1, neck: 1, cool: 0 }, reach: 1.75,
+    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: { at: [2.43, 0, 0], size: 1, neck: 1, cool: 0 }, reach: 1.75,
     row: 8, rsun: 7, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],

@@ -855,15 +855,28 @@ void main() {
     // Within: a white-gold core zone, a ragged burning shell, the neutron star at the heart.
     // The neutron star is drawn far larger than its true 20 km.
     // uCore 2 is a quasi-star: a black hole at the heart, and no burning shell.
+    // Drawn as artists show it: a thin, torn envelope with the hole's disc glowing through (Tom, 2026-11-24).
     if (uCore > 1.5) {
       float x = r / R;
       float pulse = 0.8 + 0.2 * sin(uTime * 0.5) * sin(uTime * 0.17 + 2.0);
-      hot *= 1.0 - 0.6 * smoothstep(0.9, 0.1, x);
-      // Gas falling into the hole heats the whole inside, brightest near the middle.
-      float heat = exp(-x * x / 0.07) * (0.55 + 0.9 * fbm(q * 5.0 + vec3(0.0, 0.0, tb * 2.0)));
-      // A blazing infall ring hugs the hole's shadow.
-      float ring = exp(-pow((x - 0.034) / 0.011, 2.0)) * 5.0 + exp(-x * x / 0.006) * 0.8;
-      hot = (hot + uDisk.x * (1.1 * heat + ring) * pulse) * smoothstep(0.02, 0.027, x);
+      // Rifts open in the envelope, wider toward the middle.
+      float rift = smoothstep(0.4, 0.7, fbm(q * 2.6 + vec3(0.0, 0.0, tb * 1.5)));
+      float veil = mix(1.0, 0.14, smoothstep(0.95, 0.15, x)) * (1.0 - 0.85 * rift * smoothstep(1.0, 0.4, x));
+      hot *= veil;
+      // Gas falling in heats the inside; it shows most through the rifts.
+      float heat = exp(-x * x / 0.2) * (0.5 + 0.9 * fbm(q * 4.0 + vec3(0.0, 0.0, tb * 2.0)));
+      hot += uDisk.x * 0.9 * heat * (0.35 + 0.65 * rift) * pulse;
+      // The hole's disc, tilted near edge on: a thin ellipse round the shadow.
+      vec2 hp = P / R;
+      vec2 he = vec2(0.94 * hp.x + 0.34 * hp.y, -0.34 * hp.x + 0.94 * hp.y);
+      float rho = length(vec2(he.x, he.y / 0.3)), phi = atan(he.y / 0.3, he.x);
+      float swirl = 0.55 + 0.9 * fbm(vec3(cos(phi - uTime * 0.3) * 3.0, sin(phi - uTime * 0.3) * 3.0, rho * 12.0));
+      // The side that comes toward the eye beams brighter.
+      float disc = smoothstep(0.075, 0.1, rho) * exp(-max(rho - 0.1, 0.0) / 0.12) * swirl * (1.0 + 0.55 * cos(phi));
+      // The shadow hides the disc's far half; the near half crosses in front.
+      float hs = length(hp), shadow = smoothstep(0.06, 0.07, hs);
+      float ring = 3.0 * exp(-pow((hs - 0.072) / 0.006, 2.0));
+      hot = hot * shadow + uDisk.x * pulse * (ring + 2.2 * disc * (he.y < 0.0 ? 1.0 : shadow));
     } else if (uCore > 0.0) {
       float x = r / R;
       float pulse = 0.75 + 0.25 * sin(uTime * 0.7) * sin(uTime * 0.23 + 1.0);
@@ -1100,21 +1113,39 @@ void main() {
   }
   // WR 140: each close pass of the pair puffs out a soot shell, every 7.9 years.
   // The shells nest at even steps and drift out; JWST counts more than 17.
+  // The dust forms on a cone round the wind collision, so only two fans of each shell show.
+  // The fans follow the JWST MIRI picture: a wide one up and right, a narrow one down and left.
   if (uShell.x > 0.0 && r > R) {
     // The shells hang in space: a drag turns them with the camera.
-    vec2 Pc = (uCamM * vec3(P, 0.0)).xy;
-    float rr = length(Pc) / (R * uShell.y);
-    float sp = rr - fract(uShell.z);
-    float n = floor(sp + 0.5);
-    float d = sp - n;
-    // Each shell keeps its own clumps as it drifts out.
-    float id = n - floor(uShell.z);
+    vec2 Pc = (uCamM * vec3(P, 0.0)).xy / R;
     float ang = atan(Pc.y, Pc.x);
-    // The dust forms in a broad fan: two opposite lobes, as in the JWST picture.
-    float fan = 0.2 + 0.8 * pow(abs(cos(ang - 0.95)), 1.6);
-    float clump = 0.5 + 0.9 * fbm(vec3(cos(ang) * 4.0, sin(ang) * 4.0, id * 1.7));
-    float shell = exp(-d * d / 0.01) * smoothstep(1.6, 2.6, rr) * smoothstep(19.0, 13.0, rr) * exp(-rr / 14.0);
-    cool += uShell.x * uDisk.x * shell * fan * clump * (0.5 * uOff + 0.25 + 0.3 * uFar);
+    float du = mod(ang - 1.3 + 3.14159, 6.28318) - 3.14159;
+    float dl = mod(ang - 3.72 + 3.14159, 6.28318) - 3.14159;
+    float fan = max(smoothstep(1.0, 0.4, abs(du)), smoothstep(0.62, 0.22, abs(dl)));
+    // A broad plume of old dust trails up and left.
+    float dp = mod(ang - 2.6 + 3.14159, 6.28318) - 3.14159;
+    float plume = 0.1 * smoothstep(1.1, 0.2, abs(dp));
+    if (fan + plume > 0.0) {
+      // Each fan in its own frame: x along the fan's axis.
+      float lower = step(abs(dl), abs(du));
+      float axa = mix(1.3, 3.72, lower);
+      vec2 lc = abs(vec2(dot(Pc, vec2(cos(axa), sin(axa))), dot(Pc, vec2(-sin(axa), cos(axa)))));
+      // A cone's section is flatter than a circle: a superellipse gives the boxy arcs.
+      float pw = mix(3.0, 2.3, lower);
+      float rad = pow(pow(lc.x, pw) + pow(lc.y, pw), 1.0 / pw) / (uShell.y * mix(1.0, 0.82, lower));
+      // Each shell is a thin sheet: the eye sums the dust along its line of sight.
+      // The column peaks at the sheet's inner edge and fades inward, so haze fills the gaps.
+      float base = fract(uShell.z), k0 = ceil(rad - base), dens = 0.0;
+      for (int j = 0; j < 4; j++) {
+        float a = k0 + float(j) + base, b = a - 0.16, e = 0.02 * a;
+        float c = sqrt(max(a * a - rad * rad, 0.0) + e) - sqrt(max(b * b - rad * rad, 0.0) + e);
+        dens += c / sqrt(0.32 * a) * exp(-a / 7.0) * smoothstep(1.4, 2.4, a) * smoothstep(19.0, 13.0, a);
+      }
+      // Each shell keeps its own clumps as it drifts out.
+      float clump = 0.55 + 0.8 * fbm(vec3(cos(ang) * 5.0, sin(ang) * 5.0, (k0 - floor(uShell.z)) * 1.7));
+      float haze = plume * exp(-rad / 9.0) * smoothstep(1.5, 3.0, rad);
+      cool += uShell.x * uDisk.x * (dens * fan * clump + haze) * (0.5 * uOff + 0.25 + 0.3 * uFar);
+    }
   }
   // Fomalhaut's dust belts (Tom, 2026-11-24: a real ringed star), scaled from 133 AU to a few radii.
   // A narrow main belt with a sharp inner edge, its centre a little off the star; a faint inner belt;
@@ -1185,7 +1216,8 @@ void main() {
     vec2 c2 = uPair.xy * R;
     float r2 = length(P - c2);
     float Rt = R * uPair2.x;
-    float k = 0.3 * R;
+    // The blend reaches across the gap between the twins, so a narrow waist forms.
+    float k = 1.1 * R;
     float hm = clamp(0.5 + 0.5 * (r2 - r) / k, 0.0, 1.0);
     float du = mix(r2 - Rt, r - R, hm) - k * hm * (1.0 - hm);
     bool inTwin = r2 < Rt;
