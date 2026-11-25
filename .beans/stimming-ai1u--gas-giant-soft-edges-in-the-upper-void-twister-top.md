@@ -40,6 +40,15 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [x] Flicker and vertical streaks (Tom's screenshot): card frames read at an explicit mip level from the distance
 - [x] Rolling rebake (Tom: "Yes, rolling rebake"): a back cube builds one strip a frame, swaps, cross-fades over 1.5 s; about 0.2 ms a frame, 98 MB more; `?qa` `__gg.noRoll` holds it
 - [x] Ceiling funnels as a fourth Dev mode (Tom: "the cloud layer warped down as a contiguous piece"): `ceilFunnel()` in the cloud density; light taps jittered on funnels to end the ceiling-shadow bands
-- [ ] Funnel walls need billow detail
+- [ ] Funnel walls need billow detail (see Next)
 - [x] Funnels backlit and side-lit (Tom: "side and backlit -- brighter -- rim lighting"): silhouette rim from the wall's facing angle; Dev, Funnel rim
 - [x] Funnels near, cards far as a fifth Dev mode (Tom: "distant twisters are cards here -- offer that as option")
+
+## Next (2026-11-24 close)
+
+- [ ] Funnel walls: billows and collars; lose the fine horizontal striae
+- [ ] Marched near twisters: tune rims and detail
+- [ ] Tom picks one default of the five twister modes (default now: marched near, cards far)
+- [ ] Lighter far bake: the two cubes take about 196 MB at RGBA16F
+- [ ] Hyper cyclone in the far bake (Tom's batch, 2026-11-24)
+- [ ] Zany structures in the middle distance on the card machinery (Tom's batch, 2026-11-24)
