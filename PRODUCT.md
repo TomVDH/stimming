@@ -62,7 +62,7 @@ Tom's standing rulings. Record only; do not expand.
 
 - Name: Stimming. The onnozelaer mark sits in the footer.
 - Dark only. Colours are OKLCH tokens (`shared/stim.css`).
-- Type: Gabarito for writing, Iosevka Term Slab for the wordmark (Tom, 2026-11-25), B612 for headings, Iosevka Term Slab caps for menu labels and controls.
+- Type: Gabarito for writing, Iosevka Term Slab for the wordmark (Tom, 2026-11-25), B612 for headings, the menu tagline and the toy titles (Tom, 2026-11-25), Iosevka Term Slab caps for controls.
 - Taste: daring, zany and original. Never skeuomorphic or fussy.
 - Too much: Harmonograph and Music box were "way too involved". Too little: bare-minimal is "too minimal".
 - Usable first: the Awwwards-style menu set was "fun but not usable".

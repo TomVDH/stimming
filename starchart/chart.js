@@ -114,7 +114,8 @@ export function makeChart(o) {
     b.type = 'button';
     b.setAttribute('aria-label', label);
     b.tabIndex = -1;
-    b.addEventListener('click', () => glide(ladder.scrollLeft + dir * ladder.clientWidth * 0.75));
+    // A page moves three quarters of the ribbon, then settles on a body.
+    b.addEventListener('click', () => springTo(nearest((goal ?? pos) + dir * ladder.clientWidth * 0.75)));
   }
   ribbon.append(prev, ladder, next);
   el.append(hd, ribbon);
@@ -151,7 +152,9 @@ export function makeChart(o) {
         open(false);
       });
       b.addEventListener('pointerenter', () => tell(s));
-      b.addEventListener('focus', () => { tell(s); centre(b); });
+      // Only keyboard focus glides the body to the middle (Tom, 2026-11-25).
+      // A press focuses the tile too; a glide then would move it from under the pointer, and the click would miss.
+      b.addEventListener('focus', () => { tell(s); if (b.matches(':focus-visible')) centre(b); });
       b.addEventListener('pointerleave', () => tell());
       row.append(b);
       btns.push({ b, s, g: gi });
@@ -172,51 +175,85 @@ export function makeChart(o) {
   }
 
   /* ---------- the ribbon's motion ---------- */
-  let anim = 0;
-  const stop = () => { cancelAnimationFrame(anim); anim = 0; };
-  // A glide eases to a scroll position; reduced motion jumps.
-  function glide(to) {
-    stop();
-    const max = ladder.scrollWidth - ladder.clientWidth;
-    to = Math.max(0, Math.min(max, to));
-    if (RM.matches) { ladder.scrollLeft = to; return; }
-    const from = ladder.scrollLeft, t0 = performance.now(), T = 260;
-    const step = now => {
-      const k = Math.min(1, (now - t0) / T), e = 1 - (1 - k) ** 3;
-      ladder.scrollLeft = from + (to - from) * e;
-      anim = k < 1 ? requestAnimationFrame(step) : 0;
-    };
-    anim = requestAnimationFrame(step);
+  // One spring carries every move: the wheel, a throw, the keys and the arrows.
+  // The position is a float of our own, so slow motion never steps in whole pixels.
+  // No CSS scroll snap: it fought each set position, so the ribbon jittered (Tom, 2026-11-24).
+  let pos = 0, vel = 0, goal = null, anim = 0, lastT = 0, centres = [];
+  // The spring's rate per ms, critically damped: it settles in about 0.25 s, with no overshoot.
+  const W = 0.016;
+  const maxPos = () => Math.max(0, ladder.scrollWidth - ladder.clientWidth);
+  const clampPos = x => Math.max(0, Math.min(maxPos(), x));
+  function setPos(x) { pos = clampPos(x); ladder.scrollLeft = pos; }
+  // Each body's centre as a scroll position, so a move can settle on one.
+  function measure() {
+    const l = ladder.getBoundingClientRect();
+    centres = btns.map(({ b }) => { const r = b.getBoundingClientRect(); return clampPos(ladder.scrollLeft + r.left + r.width / 2 - l.left - l.width / 2); });
   }
+  const nearest = x => centres.reduce((a, c) => Math.abs(c - x) < Math.abs(a - x) ? c : a, centres[0] ?? x);
+  function stop() { cancelAnimationFrame(anim); anim = 0; goal = null; vel = 0; }
+  function tick(now) {
+    const dt = Math.min(32, now - lastT);
+    lastT = now;
+    // Four small steps a frame keep the spring stable at any frame rate.
+    for (let i = 0; i < 4; i++) {
+      const h = dt / 4;
+      vel += (-W * W * (pos - goal) - 2 * W * vel) * h;
+      pos += vel * h;
+    }
+    if (Math.abs(pos - goal) < 0.3 && Math.abs(vel) < 0.01) { setPos(goal); anim = 0; goal = null; vel = 0; return; }
+    setPos(pos);
+    anim = requestAnimationFrame(tick);
+  }
+  // Sends the ribbon toward g, keeping the speed it has; reduced motion jumps.
+  function springTo(g, v0 = vel) {
+    goal = clampPos(g);
+    vel = v0;
+    if (RM.matches) { setPos(goal); stop(); return; }
+    if (!anim) { lastT = performance.now(); anim = requestAnimationFrame(tick); }
+  }
+  const glide = to => springTo(to);
   // The body glides to the ribbon's middle.
   function centre(b, smooth = true) {
     // Measured on screen: the tile's offset parent is the sheet, not the ribbon.
     const r = b.getBoundingClientRect(), l = ladder.getBoundingClientRect();
     const to = ladder.scrollLeft + r.left + r.width / 2 - l.left - l.width / 2;
-    if (smooth) glide(to); else { stop(); ladder.scrollLeft = to; }
+    if (smooth) springTo(to); else { stop(); setPos(to); }
   }
   // The arrows and the edge fades show only where more lies.
   function edges() {
-    const max = ladder.scrollWidth - ladder.clientWidth;
+    const max = maxPos();
     const atStart = ladder.scrollLeft <= 2, atEnd = ladder.scrollLeft >= max - 2;
     prev.hidden = atStart; next.hidden = atEnd;
     ribbon.classList.toggle('more-left', !atStart);
     ribbon.classList.toggle('more-right', !atEnd);
   }
-  ladder.addEventListener('scroll', edges, { passive: true });
-  new ResizeObserver(edges).observe(ladder);
-  // A wheel, either axis, scrolls the ribbon sideways at once.
+  // A native scroll (touch) moves the ribbon on its own; the spring takes its place from there.
+  let touching = false;
+  ladder.addEventListener('scroll', () => { if (!anim && !drag) pos = ladder.scrollLeft; edges(); }, { passive: true });
+  // After a touch scroll ends, the ribbon settles on the nearest body.
+  ladder.addEventListener('scrollend', () => { if (touching && !anim && !drag) springTo(nearest(ladder.scrollLeft), 0); });
+  new ResizeObserver(() => { measure(); edges(); }).observe(ladder);
+  // A wheel, either axis, steers the spring; a pause settles it on the nearest body.
+  let wheelT = 0;
   ladder.addEventListener('wheel', e => {
     e.preventDefault();
-    stop();
-    ladder.scrollLeft += Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+    touching = false;
+    const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? ladder.clientWidth : 1;
+    const d = (Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX) * k;
+    springTo((goal ?? pos) + d);
+    clearTimeout(wheelT);
+    wheelT = setTimeout(() => springTo(nearest(goal ?? pos)), 160);
   }, { passive: false });
-  // A mouse drag throws the ribbon; it coasts and slows. Touch scrolls natively.
+  // A mouse drag holds the ribbon to the hand; a throw lands on the body nearest its coast.
   let drag = null, dragged = false;
   ladder.addEventListener('pointerdown', e => {
-    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    touching = e.pointerType !== 'mouse';
+    // Any press stops the ribbon where it stands, so the tile under the pointer stays there.
     stop();
-    drag = { x: e.clientX, left: ladder.scrollLeft, id: e.pointerId, v: 0, t: e.timeStamp, lx: e.clientX };
+    clearTimeout(wheelT);
+    pos = ladder.scrollLeft;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    drag = { x: e.clientX, start: pos, id: e.pointerId, samples: [[e.timeStamp, e.clientX]] };
     dragged = false;
   });
   ladder.addEventListener('pointermove', e => {
@@ -225,29 +262,23 @@ export function makeChart(o) {
     // A press becomes a drag after 8 px.
     if (!dragged && Math.abs(dx) < 8) return;
     if (!dragged) { dragged = true; ladder.setPointerCapture(e.pointerId); ladder.classList.add('is-dragging'); }
-    ladder.scrollLeft = drag.left - dx;
-    const dt = Math.max(1, e.timeStamp - drag.t);
-    drag.v = 0.8 * drag.v + 0.2 * (-(e.clientX - drag.lx) / dt);
-    drag.t = e.timeStamp; drag.lx = e.clientX;
+    setPos(drag.start - dx);
+    // The last 100 ms of the hand give the throw's speed.
+    drag.samples.push([e.timeStamp, e.clientX]);
+    while (drag.samples.length > 2 && e.timeStamp - drag.samples[0][0] > 100) drag.samples.shift();
   });
   const endDrag = e => {
     if (!drag || e.pointerId !== drag.id) return;
-    const v = drag.v;
+    const s = drag.samples, a = s[0], z = s[s.length - 1];
     drag = null;
     ladder.classList.remove('is-dragging');
     if (!dragged) return;
     // The click that ends a drag clears after it fires.
     setTimeout(() => { dragged = false; }, 0);
-    if (RM.matches || Math.abs(v) < 0.05) return;
-    // The throw coasts on, losing speed with a time constant of about 0.3 s.
-    let vel = v * 16, last = performance.now();
-    const coast = now => {
-      const dt = now - last; last = now;
-      ladder.scrollLeft += vel * dt / 16;
-      vel *= Math.exp(-dt / 300);
-      anim = Math.abs(vel) > 0.2 ? requestAnimationFrame(coast) : 0;
-    };
-    anim = requestAnimationFrame(coast);
+    // A hand that rested before letting go throws nothing.
+    const v = e.timeStamp - z[0] > 80 || z[0] === a[0] ? 0 : -(z[1] - a[1]) / (z[0] - a[0]);
+    // Where a coast with a 0.26 s time constant would end; the ribbon settles on the body nearest it.
+    springTo(nearest(pos + v * 260), v);
   };
   ladder.addEventListener('pointerup', endDrag);
   ladder.addEventListener('pointercancel', endDrag);
@@ -275,6 +306,7 @@ export function makeChart(o) {
       el.classList.toggle('is-landing', !RM.matches);
       // The ribbon opens with the object in hand at its middle.
       const cur = btns.find(x => x.s.value === o.get())?.b;
+      measure();
       if (cur) { centre(cur, false); cur.focus({ preventScroll: true }); }
       edges();
       o.onOpen?.(true);
