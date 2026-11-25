@@ -1,6 +1,6 @@
-# Star catalog (`solarloop`)
+# Aster (`solarloop`)
 
-Named Solar loop until 2026-11-24 (Tom renamed it); the folder and address stay `solarloop`.
+Named Solar loop, then Star catalog, until 2026-11-24 (Tom renamed it Aster, Dutch Aster); the folder and address stay `solarloop`.
 
 Lab toy, idea 238. Bean `stimming-e35i`. Plan: `docs/plans/solarloop.md`.
 
