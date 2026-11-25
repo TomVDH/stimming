@@ -5,7 +5,7 @@ status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-25T21:51:06Z
-updated_at: 2026-11-25T22:02:37Z
+updated_at: 2026-11-25T22:04:40Z
 parent: stimming-0cau
 ---
 
@@ -16,3 +16,5 @@ Promoted card per toy (card@gallery icons/spike-<round>.html): morpher a@3, pop 
 2026-11-25: done as images: shared/tiles/<id>.svg (paint inlined from each gallery card), an img.pr in each tile, the old drawing hidden by CSS. Left: each card's own hover motion; the three earlier-menu-tile picks (kaleido, neon, cauldron).
 
 2026-11-25: nine tiles were already the promoted design, live, with their motion (drone, foil, motorway, plasma, putty, sonar, subway, vortex, washer); their image is gone again. 25 left to port: the image stands in for the card until its motion is ported.
+
+2026-11-25: Morpher ported live (sample): the goo card with its mint drop, a scoped marching-squares tracer, the resting path in the markup for no-JS. 24 left as images.
