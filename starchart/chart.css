@@ -67,20 +67,36 @@
 
 /* A tile: the body floating in the middle of its well at its own size, the name under it. */
 .sl-tile {
-  --well: 100px; --small: 10px;
-  /* The icon's side: 10 px for the pulsar up to the full well for the quasi-star. */
+  --well: 100px; --small: 24px;
+  /* The icon's side: 24 px for the pulsar up to the full well for the quasi-star (Tom, 2026-11-24: the pulsar was too small). */
   --s: calc(var(--small) + var(--f, 0.5) * (var(--well) - var(--small)));
   /* A cell is as wide as its body, and never narrower than a name. */
   --cell: max(64px, calc(var(--s) + 8px));
-  appearance: none; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; width: var(--cell);
+  position: relative; appearance: none; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; width: var(--cell);
   margin: 0; padding: 4px 0; border: 0; background: none; color: inherit; cursor: pointer;
   font: inherit; text-transform: inherit; scroll-snap-align: center; -webkit-user-drag: none;
 }
 .sl-tile:focus { outline: none; }
+/* The highlight box (Tom, 2026-11-24): a hairline frame round the body and its name.
+   On hover it closes in from the sides in three film frames, as the bar's flash box does. */
+.sl-tile::before {
+  content: ""; position: absolute; inset: 2px 1px; pointer-events: none;
+  border: 1px solid oklch(1 0 0 / 0.5); background: oklch(1 0 0 / 0.06);
+  opacity: 0; transform: scaleX(1.12); transition: opacity 0.1s steps(3, end), transform 0.1s steps(3, end);
+}
+@media (hover: hover) {
+  .sl-tile:hover::before { opacity: 1; transform: none; }
+}
+.sl-tile:focus-visible::before { opacity: 1; transform: none; }
+/* The body in hand keeps a quieter frame. */
+.sl-tile[aria-pressed="true"]::before { opacity: 1; transform: none; border-color: oklch(1 0 0 / 0.28); background: none; }
 .sl-well { display: grid; place-items: center; width: 100%; height: var(--well); }
 /* The icon: three flat tones in the body's own colour, at the body's own size (Tom, 2026-11-24).
    The mix with white keeps the dim colours, such as the brown dwarfs', readable. */
-.sl-tray .sl-glyph { display: block; width: var(--s); height: var(--s); overflow: visible; color: color-mix(in oklch, var(--c), white 25%); }
+.sl-tray .sl-glyph { display: block; width: var(--s); height: var(--s); overflow: visible; color: color-mix(in oklch, var(--c), white 25%); transform-origin: 50% 50%; }
+/* The body under the pointer, in focus or in hand floats and breathes, gently (Tom, 2026-11-24). */
+.sl-tile:is(:hover, :focus-visible, [aria-pressed="true"]) .sl-glyph { animation: sl-breathe 3.2s ease-in-out infinite alternate; }
+@keyframes sl-breathe { from { transform: translateY(1px) scale(0.98); } to { transform: translateY(-2px) scale(1.05); } }
 /* The bar's star button wears the same icon, small, in place of the square swatch (Tom, 2026-11-24). */
 .sl-bar-glyph { flex: none; width: 18px; height: 18px; overflow: visible; filter: none !important; }
 /* The turn button's circular arrow, drawn in the bar's ink. */
@@ -97,8 +113,8 @@
 .sl-tile[aria-pressed="true"] .sl-name { opacity: 1; color: var(--acc-on, var(--ink)); background: var(--acc-fill, var(--fg)); -webkit-text-stroke: 0; }
 
 @media (max-width: 640px) {
-  .sl-tile { --well: 80px; --small: 8px; }
+  .sl-tile { --well: 80px; --small: 20px; }
   .sl-ladder { padding: 0 8px; }
   .sl-info b { font-size: 14px; }
 }
-@media (prefers-reduced-motion: reduce) { .sl-glass { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sl-glass, .sl-tile::before { transition: none; } .sl-tile .sl-glyph { animation: none !important; } }

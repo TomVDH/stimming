@@ -632,7 +632,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
+uniform vec4 uDisk, uDisk2, uTex, uBeam, uGrav, uCloud, uYso;
 // A cool giant's giant cells: limb heave, lobe scale, churn phase, cell light.
 uniform vec4 uLump;
 // far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
@@ -652,7 +652,7 @@ uniform mat3 uCamM;
 // A buried neutron star shown in cutaway through the disk.
 uniform float uCore;
 // A neutron star's true physics: on, compactness, the striped wind's light, the light cylinder in R.
-// uNsU, uNsV: the spin's in-plane axes in the view frame, with the spin phase and the magnetic tilt.
+// uNsU, uNsV: the spin's in-plane axes in the view frame; uNsV.w is the magnetic tilt.
 uniform vec4 uNs, uNsU, uNsV;
 // How hard a pulsar's flashes may flash: 1 at its true rate, near 0.2 when fast enough to flicker.
 uniform float uFlashW;
@@ -764,12 +764,6 @@ void main() {
       n = vec3(P / max(r, 1e-4) * sqrt(max(1.0 - cpsi * cpsi, 0.0)), cpsi);
     }
     vec3 q = uToSun * n;
-    // The neutron star's crust turns with its spin, about the spin axis, once per pulse.
-    if (uNs.x > 0.0) {
-      vec3 s = cross(uNsU.xyz, uNsV.xyz);
-      float a = -uNsU.w;
-      q = uToSun * (n * cos(a) + cross(s, n) * sin(a) + s * dot(s, n) * (1.0 - cos(a)));
-    }
     // Granules boil: bright cells, dark lanes; each cell lives about 7 s.
     // Noise bends the cells and blurs the lanes, so they never read as hexagons.
     vec3 gq = q * uTex.x + vec3(0.0, 0.0, tb * 7.5);
@@ -855,15 +849,28 @@ void main() {
     // Within: a white-gold core zone, a ragged burning shell, the neutron star at the heart.
     // The neutron star is drawn far larger than its true 20 km.
     // uCore 2 is a quasi-star: a black hole at the heart, and no burning shell.
+    // Drawn as artists show it: a thin, torn envelope with the hole's disc glowing through (Tom, 2026-11-24).
     if (uCore > 1.5) {
       float x = r / R;
       float pulse = 0.8 + 0.2 * sin(uTime * 0.5) * sin(uTime * 0.17 + 2.0);
-      hot *= 1.0 - 0.6 * smoothstep(0.9, 0.1, x);
-      // Gas falling into the hole heats the whole inside, brightest near the middle.
-      float heat = exp(-x * x / 0.07) * (0.55 + 0.9 * fbm(q * 5.0 + vec3(0.0, 0.0, tb * 2.0)));
-      // A blazing infall ring hugs the hole's shadow.
-      float ring = exp(-pow((x - 0.034) / 0.011, 2.0)) * 5.0 + exp(-x * x / 0.006) * 0.8;
-      hot = (hot + uDisk.x * (1.1 * heat + ring) * pulse) * smoothstep(0.02, 0.027, x);
+      // Rifts open in the envelope, wider toward the middle.
+      float rift = smoothstep(0.4, 0.7, fbm(q * 2.6 + vec3(0.0, 0.0, tb * 1.5)));
+      float veil = mix(1.0, 0.14, smoothstep(0.95, 0.15, x)) * (1.0 - 0.85 * rift * smoothstep(1.0, 0.4, x));
+      hot *= veil;
+      // Gas falling in heats the inside; it shows most through the rifts.
+      float heat = exp(-x * x / 0.2) * (0.5 + 0.9 * fbm(q * 4.0 + vec3(0.0, 0.0, tb * 2.0)));
+      hot += uDisk.x * 0.9 * heat * (0.35 + 0.65 * rift) * pulse;
+      // The hole's disc, tilted near edge on: a thin ellipse round the shadow.
+      vec2 hp = P / R;
+      vec2 he = vec2(0.94 * hp.x + 0.34 * hp.y, -0.34 * hp.x + 0.94 * hp.y);
+      float rho = length(vec2(he.x, he.y / 0.3)), phi = atan(he.y / 0.3, he.x);
+      float swirl = 0.55 + 0.9 * fbm(vec3(cos(phi - uTime * 0.3) * 3.0, sin(phi - uTime * 0.3) * 3.0, rho * 12.0));
+      // The side that comes toward the eye beams brighter.
+      float disc = smoothstep(0.075, 0.1, rho) * exp(-max(rho - 0.1, 0.0) / 0.12) * swirl * (1.0 + 0.55 * cos(phi));
+      // The shadow hides the disc's far half; the near half crosses in front.
+      float hs = length(hp), shadow = smoothstep(0.06, 0.07, hs);
+      float ring = 3.0 * exp(-pow((hs - 0.072) / 0.006, 2.0));
+      hot = hot * shadow + uDisk.x * pulse * (ring + 2.2 * disc * (he.y < 0.0 ? 1.0 : shadow));
     } else if (uCore > 0.0) {
       float x = r / R;
       float pulse = 0.75 + 0.25 * sin(uTime * 0.7) * sin(uTime * 0.23 + 1.0);
@@ -960,31 +967,11 @@ void main() {
     float vis = r < R ? smoothstep(-60.0, 60.0, c.z) : 1.0;
     hot += uDisk2.w * uReg[k].w * vis * exp(-dot(d, d) / (2.0 * 70.0 * 70.0));
   }
-  // A pulsar's two beams: narrow cones from its magnetic poles, swept by the spin.
+  // A pulsar's caps: a pole whose beam faces the eye flares.
+  // The beams themselves light dust in the volume pass, as a lighthouse.
   if (uBeam.w > 0.0) {
     for (int k = 0; k < 2; k++) {
       vec3 b = k == 0 ? uBeam.xyz : -uBeam.xyz;
-      float l2 = length(b.xy);
-      // The star hides the half of a cone that points away behind it.
-      float behind = b.z < 0.0 && r < R ? 0.0 : 1.0;
-      // With true physics the beams stay unseen, as radio beams are; only the pulse shows.
-      if (l2 > 0.02 && uNs.x <= 0.0) {
-        vec2 bd = b.xy / l2;
-        float along = dot(P, bd);
-        if (along > 0.0) {
-          // Depth along the cone: the projection shortens it by l2.
-          float s3 = along / l2;
-          float across = abs(P.x * bd.y - P.y * bd.x);
-          float wid = R * 0.06 + s3 * 0.09 * l2 + s3 * 0.18 * (1.0 - l2);
-          float core = exp(-pow(across / (wid * 0.25), 2.0));
-          float sheath = exp(-pow(across / wid, 2.0));
-          // Bunches of charge stream out along the beam.
-          float grain = 0.6 + 0.8 * fbm(vec3(s3 * 0.003 - uTime * 3.0, across * 0.01, float(k) * 3.0));
-          // The cone starts at the pole, where the axis leaves the surface.
-          float fall = exp(-s3 / 2600.0) * smoothstep(R * l2 * 0.8, R * l2 + 20.0, along);
-          hot += uBeam.w * (1.6 * core + 0.5 * sheath) * grain * fall * behind;
-        }
-      }
       // A beam aimed at the eye: the pole flares in a tight burst.
       // Above 2.5 flashes a second this blends to a steady glow: no photosensitive flicker.
       float face = pow(max(b.z, 0.0), 60.0) * uFlashW;
@@ -1008,30 +995,11 @@ void main() {
       float lat = asin(clamp(dot(xn, s), -1.0, 1.0));
       float phi = atan(dot(xn, uNsV.xyz), dot(xn, uNsU.xyz));
       float wind = (r3 - rl) / rl;
-      float latS = atan(-tan(uNsV.w) * cos(phi - uNsU.w + wind));
+      float latS = atan(-tan(uNsV.w) * cos(phi + wind));
       float w = 0.14 + 0.02 * r3;
       sw += exp(-pow((lat - latS) / w, 2.0)) * smoothstep(rl * 0.85, rl * 1.4, r3) * pow(rl / r3, 1.6) * (0.5 + vn(vec3(r3 * 2.0 - uTime * 0.8, phi * 3.0, 3.0)));
     }
     cool += uNs.z * uDisk.x * 1.6 * sw / 24.0 * 7.0;
-  }
-  // The wind nebula: a torus round the spin equator, and a jet from each spin pole.
-  if (uSpin.w > 0.0 && r > R) {
-    vec2 sp = length(uSpin.xy) > 1e-3 ? normalize(uSpin.xy) : vec2(0.0, 1.0);
-    vec2 e1 = vec2(sp.y, -sp.x);
-    float x = dot(P, e1), y = dot(P, sp);
-    float tilt = max(abs(uSpin.z), 0.12);
-    // The ring seen at a slant: an ellipse, short along the spin axis.
-    float rho = length(vec2(x, y / tilt));
-    float RT = R * 2.3;
-    float tex = 0.5 + fbm(vec3(atan(y / tilt, x) * 3.0, rho * 0.004, uTime * 0.03));
-    // The near half of the torus is brighter: relativistic flow toward the eye.
-    float near = 0.7 + 0.3 * sign(y) * sign(uSpin.z);
-    cool += uSpin.w * 0.4 * exp(-pow((rho - RT) / (RT * 0.16), 2.0)) * tex * near;
-    cool += uSpin.w * 0.12 * exp(-pow((rho - RT * 1.5) / (RT * 0.3), 2.0)) * tex;
-    // The jets wander like a hose under pressure.
-    float wig = 60.0 * sin(abs(y) * 0.004 - uTime * 0.6) * smoothstep(0.0, R * 2.0, abs(y));
-    float jet = exp(-pow((x - wig) / (R * 0.08 + abs(y) * 0.04), 2.0)) * exp(-abs(y) / (R * 3.5)) * smoothstep(R * 0.9, R * 1.5, abs(y));
-    hot += uSpin.w * 0.35 * jet * (0.6 + 0.8 * fbm(vec3(y * 0.004 - uTime * 0.8 * sign(y), x * 0.01, 2.0)));
   }
   // A young star: a ringed dust disk at a slant, and a jet from each pole.
   if (uYso.w > 0.0) {
@@ -1100,21 +1068,39 @@ void main() {
   }
   // WR 140: each close pass of the pair puffs out a soot shell, every 7.9 years.
   // The shells nest at even steps and drift out; JWST counts more than 17.
+  // The dust forms on a cone round the wind collision, so only two fans of each shell show.
+  // The fans follow the JWST MIRI picture: a wide one up and right, a narrow one down and left.
   if (uShell.x > 0.0 && r > R) {
     // The shells hang in space: a drag turns them with the camera.
-    vec2 Pc = (uCamM * vec3(P, 0.0)).xy;
-    float rr = length(Pc) / (R * uShell.y);
-    float sp = rr - fract(uShell.z);
-    float n = floor(sp + 0.5);
-    float d = sp - n;
-    // Each shell keeps its own clumps as it drifts out.
-    float id = n - floor(uShell.z);
+    vec2 Pc = (uCamM * vec3(P, 0.0)).xy / R;
     float ang = atan(Pc.y, Pc.x);
-    // The dust forms in a broad fan: two opposite lobes, as in the JWST picture.
-    float fan = 0.2 + 0.8 * pow(abs(cos(ang - 0.95)), 1.6);
-    float clump = 0.5 + 0.9 * fbm(vec3(cos(ang) * 4.0, sin(ang) * 4.0, id * 1.7));
-    float shell = exp(-d * d / 0.01) * smoothstep(1.6, 2.6, rr) * smoothstep(19.0, 13.0, rr) * exp(-rr / 14.0);
-    cool += uShell.x * uDisk.x * shell * fan * clump * (0.5 * uOff + 0.25 + 0.3 * uFar);
+    float du = mod(ang - 1.3 + 3.14159, 6.28318) - 3.14159;
+    float dl = mod(ang - 3.72 + 3.14159, 6.28318) - 3.14159;
+    float fan = max(smoothstep(1.0, 0.4, abs(du)), smoothstep(0.62, 0.22, abs(dl)));
+    // A broad plume of old dust trails up and left.
+    float dp = mod(ang - 2.6 + 3.14159, 6.28318) - 3.14159;
+    float plume = 0.1 * smoothstep(1.1, 0.2, abs(dp));
+    if (fan + plume > 0.0) {
+      // Each fan in its own frame: x along the fan's axis.
+      float lower = step(abs(dl), abs(du));
+      float axa = mix(1.3, 3.72, lower);
+      vec2 lc = abs(vec2(dot(Pc, vec2(cos(axa), sin(axa))), dot(Pc, vec2(-sin(axa), cos(axa)))));
+      // A cone's section is flatter than a circle: a superellipse gives the boxy arcs.
+      float pw = mix(3.0, 2.3, lower);
+      float rad = pow(pow(lc.x, pw) + pow(lc.y, pw), 1.0 / pw) / (uShell.y * mix(1.0, 0.82, lower));
+      // Each shell is a thin sheet: the eye sums the dust along its line of sight.
+      // The column peaks at the sheet's inner edge and fades inward, so haze fills the gaps.
+      float base = fract(uShell.z), k0 = ceil(rad - base), dens = 0.0;
+      for (int j = 0; j < 4; j++) {
+        float a = k0 + float(j) + base, b = a - 0.16, e = 0.02 * a;
+        float c = sqrt(max(a * a - rad * rad, 0.0) + e) - sqrt(max(b * b - rad * rad, 0.0) + e);
+        dens += c / sqrt(0.32 * a) * exp(-a / 7.0) * smoothstep(1.4, 2.4, a) * smoothstep(19.0, 13.0, a);
+      }
+      // Each shell keeps its own clumps as it drifts out.
+      float clump = 0.55 + 0.8 * fbm(vec3(cos(ang) * 5.0, sin(ang) * 5.0, (k0 - floor(uShell.z)) * 1.7));
+      float haze = plume * exp(-rad / 9.0) * smoothstep(1.5, 3.0, rad);
+      cool += uShell.x * uDisk.x * (dens * fan * clump + haze) * (0.5 * uOff + 0.25 + 0.3 * uFar);
+    }
   }
   // Fomalhaut's dust belts (Tom, 2026-11-24: a real ringed star), scaled from 133 AU to a few radii.
   // A narrow main belt with a sharp inner edge, its centre a little off the star; a faint inner belt;
@@ -1185,7 +1171,8 @@ void main() {
     vec2 c2 = uPair.xy * R;
     float r2 = length(P - c2);
     float Rt = R * uPair2.x;
-    float k = 0.3 * R;
+    // The blend reaches across the gap between the twins, so a narrow waist forms.
+    float k = 1.1 * R;
     float hm = clamp(0.5 + 0.5 * (r2 - r) / k, 0.0, 1.0);
     float du = mix(r2 - Rt, r - R, hm) - k * hm * (1.0 - hm);
     bool inTwin = r2 < Rt;
@@ -2104,9 +2091,6 @@ void main() {
   vec2 uv = vUv + weave;
   vec2 P = uView.xy + (uv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
-  // Gravity bends the light round a neutron star: the sky slides outward at the limb.
-  // The shift never reaches into the disk, so the limb stays single.
-  if (uCam.z > 0.0 && r > R) uv -= normalize(P) * min(uCam.z * 0.08 * R * R / r, (r - R) * 0.75) / uView.zw * 0.5;
   // Heat bends the air above the limb.
   float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
@@ -2370,7 +2354,6 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uDust, v.band.dust);
     gl.uniform1f(s.u.uFull, v.full);
     gl.uniform4fv(s.u.uBeam, v.beam);
-    gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uStarspot, v.band.starspot);
     gl.uniform4fv(s.u.uDiscE, v.band.discE);

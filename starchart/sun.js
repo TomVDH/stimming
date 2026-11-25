@@ -42,7 +42,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // loop, prom: loop and prominence light. dust: a clumpy envelope of ejecta.
 // rays: light shaft gain. hal: halation tint. streak: lens streak tint.
 // wide, long: the scale body beside the limb and the one in transit.
-// field, beam, lensing: a neutron star's field lines, pulsar beams and bent light.
+// field, beam: a neutron star's field lines and pulsar beams.
 // oblate: how much wider the equator is than the poles, seen side-on.
 // grav: the spin axis in the star's frame, and the gravity darkening at its equator.
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
@@ -60,12 +60,12 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
+const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
   neutron: {
-    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, lensing: 2.2,
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1,
     // True physics (Tom, 2026-11-24): its gravity bends its own light; the striped wind spirals out.
     // u: compactness, the Schwarzschild radius over the radius. rl: the light cylinder in R, not to scale.
     ns: { u: 0.34, rl: 2.2, wind: 1, beam: 1 },
@@ -313,7 +313,7 @@ export const STARS = {
   // Drawn in cutaway, as the Thorne-Zytkow object is; 18,000 suns sits between the models.
   quasi: {
     ...FLARE, day: 50000, ribbon: 1, bubble: 0.1, core: 2, lump: [0.05, 1.8, 0.6, 0.3],
-    row: 26, rsun: 18000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.2, prom: 0.5, dust: 0.3, rays: 0.9,
+    row: 26, rsun: 18000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.2, prom: 0.5, dust: 0.05, rays: 0.9,
     hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
     disk: [1.85, 1.2, 0, 0.3], disk2: [160, 0.6, 0.3, 0.05], tex: [3, 1.6, 0, 0.7],
     wide: 'none', long: 'none', root: 87.31,
@@ -324,7 +324,7 @@ export const STARS = {
   // shells: their light, their spacing in R, the orbit in days.
   wr140: {
     ...FLARE, rain: 0, bubble: 0.3, wind: [0.8, 0.6, 0, 9], reach: 2.6,
-    shells: { light: 1.6, gap: 0.62, orbit: 2895 },
+    shells: { light: 2.6, gap: 0.62, orbit: 2895 },
     row: 27, rsun: 35, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1.2,
     hal: [0.6, 0.65, 1], streak: [0.65, 0.75, 1],
     disk: [1.4, 0.12, 0.3, 0.3], disk2: [240, 0, 0, 0], tex: [40, 4, 0, 0.3],
@@ -333,8 +333,9 @@ export const STARS = {
   // VFTS 352: two hot O stars of nearly equal size, so close their envelopes touch.
   // They orbit in under 27 hours, tidally locked, so the turn carries the twin round.
   // pair: the twin's place in R and its size; the radius is not in the article: 7 suns is the toy's.
+  // The centres stand 17.6 suns apart (Almeida 2015): 2.43 R, so a narrow waist shows.
   vfts352: {
-    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: { at: [1.85, 0, 0], size: 1, neck: 1, cool: 0 }, reach: 1.75,
+    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: { at: [2.43, 0, 0], size: 1, neck: 1, cool: 0 }, reach: 1.75,
     row: 8, rsun: 7, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],
