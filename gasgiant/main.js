@@ -10,7 +10,7 @@ import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, SWIRL_FS, marchFS, zoneFor } from './clouds.js';
-import { WALL_FS, WALL_W, WALL_H, WALL_N, TW_MAX, twisterUniforms, CARD_BAKE_FS, CARD_ENC_FS, bakeCards } from './twisters.js';
+import { WALL_FS, WALL_W, WALL_H, WALL_N, TW_MAX, twisterUniforms, CARD_BAKE_FS, CARD_ENC_FS, CARD_MS, bakeCards } from './twisters.js';
 import { COMPOSITE_FS, FINAL_FS, BOKEH_FS } from './post.js';
 import { wetGlassMotion } from '../shared/wetglass.js';
 import { CABIN_FS } from './cabin.js';
@@ -86,7 +86,7 @@ const TUNE_DEF = {
   // The far view bakes from this many km out; 0 marches every ray in full.
   bake: 25,
   // The upper void's twisters: the live march, or flipbook cards (Tom, 2026-11-24).
-  twMode: 'live', cardK: 3, twMix: 80,
+  twMode: 'live', cardK: 3, twMix: 60,
   tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
 // An effect's level: its depth value, none, or full.
@@ -126,8 +126,8 @@ const DEV = [
   choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
   choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
   slider('Render', 'bake', 'Bake past, km (0 off)', 0, 200, 5),
-  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards'], ['mixed', 'Live near, cards far']]),
-  slider('Twisters', 'twMix', 'Live within, km', 0, 400, 5),
+  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards'], ['mixed', 'Marched near, cards far']]),
+  slider('Twisters', 'twMix', 'Marched within, km', 0, 400, 5),
   slider('Twisters', 'cardK', 'Card light', 0, 12, 0.1),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
   slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
@@ -337,6 +337,8 @@ function makeCards() {
     const r = await bakeCards(gl, pr, { wait: () => new Promise(res => requestAnimationFrame(res)) });
     for (const q of Object.values(pr)) gl.deleteProgram(q.p);
     cards = r;
+    // The wall clouds widen with the cards, so the far view bakes again.
+    BK.gen++;
     // ?qa: the cards' format, size and bake times.
     if (QS.has('qa')) globalThis.__gg.cards = { fmt: r.fmt, mb: +(r.bytes / 1048576).toFixed(1), bakeMs: Math.round(r.bakeMs), encMs: Math.round(r.encMs) };
     touch();
@@ -592,6 +594,8 @@ function render(dt) {
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
     gl.uniform1i(u.uWall, 5);
     twisterUniforms(S.tC, twA, twB, twC);
+    // Cards and marched twisters have the cards' girth: the wall cloud and the dust widen to match.
+    if (cards && TUNE.twMode !== 'live') for (let i = 0; i < TW_MAX; i++) { twC[i * 4 + 2] *= CARD_MS; twC[i * 4 + 3] *= CARD_MS; }
     // ?qa: __gg.noTw = true hides them, to time the march without them.
     if (globalThis.__gg?.noTw) { twB.fill(0); twC.fill(0); }
     // ?qa: __gg.twOnly = i shows only twister i.

@@ -72,8 +72,8 @@ uniform mediump sampler2DArray uWall;
 uniform vec4 uTwA[${TW_MAX}];
 uniform vec4 uTwB[${TW_MAX}];
 uniform vec4 uTwC[${TW_MAX}];
-// Dev (Tom, 2026-11-24): 0 draws the live march, 1 flipbook cards,
-// 2 the live march within uTwMix km of the eye and cards past it.
+// Dev (Tom, 2026-11-24): 0 draws the relief march, 1 flipbook cards,
+// 2 the full march within uTwMix km of the eye and cards past it.
 // uCardK scales the cards' light to the void's.
 uniform float uTwCard, uCardK, uTwMix;
 ${TW_SHAPE}
@@ -231,6 +231,126 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
   }
   return vec4(col, 1.0 - Tt);
 }
+// The fully marched twister (Tom, 2026-11-24: "fully marched ones for the close ones").
+// It marches the spike's density and backlight live, at the cards' girth and in their colours.
+// Value noise on a hash, as the spike and the card bake have it.
+float tvH(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float tvN(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(tvH(i), tvH(i + vec3(1, 0, 0)), f.x), mix(tvH(i + vec3(0, 1, 0)), tvH(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(tvH(i + vec3(0, 0, 1)), tvH(i + vec3(1, 0, 1)), f.x), mix(tvH(i + vec3(0, 1, 1)), tvH(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float tvF(vec3 p, int oct) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++) { if (i >= oct) break; s += a * tvN(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
+  return s;
+}
+// The spike's density at shape point q (off the axis) and height Y; R is the radius; turn is in turns.
+float tvDens(vec2 q, float Y, int v, float R, float turn, int oct) {
+  float r = length(q);
+  if (r > R * 1.7 + 0.8) return 0.0;
+  float f = Y / TW_H;
+  float a = atan(q.y, q.x) - turn * 6.2831853 - f * 6.0;
+  float n = tvF(vec3(cos(a) * 1.4, sin(a) * 1.4, Y * 0.3) * 1.7 + vec3(0.0, 0.0, r * 0.4), oct);
+  float hel = 0.5 + 0.5 * cos(2.0 * a + Y * 0.9);
+  float ph = (Y / 2.6 - turn * 2.0) * 6.2831853 + a + 1.4 * sin(a + Y * 0.25) + n * 4.0;
+  float bands = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(ph));
+  float rough = v == 2 ? 0.25 : v == 1 ? 0.8 : 1.0, bandK = v == 2 ? 0.35 : v == 1 ? 0.6 : 1.0;
+  float edge = R * (0.62 + (1.0 - rough) * 0.32 + 0.5 * n * rough + 0.32 * hel * rough + 0.26 * bands * bandK) - r;
+  float d = smoothstep(0.0, (0.5 + 0.6 * f) * (v == 2 ? 0.9 : 1.0), edge);
+  float skirt = 1.0 - smoothstep(0.02, 0.16, f);
+  d *= mix(1.0, smoothstep(0.35, 0.75, n + 0.2 * hel), skirt * 0.8);
+  d *= mix(1.0, smoothstep(0.3, 0.7, n), smoothstep(0.75, 1.0, f) * 0.7);
+  // The top thins out over a long reach, ragged by the noise, so it melts into the wall cloud.
+  d *= 1.0 - smoothstep(0.6, 0.9, f + 0.45 * (n - 0.5));
+  return d * (0.6 + 0.5 * mix(0.5, n, rough) + 0.35 * bands * bandK + 0.2 * hel);
+}
+float tvHG(float mu, float g) { float g2 = g * g; return (1.0 - g2) / (12.566371 * pow(1.0 + g2 - 2.0 * g * mu, 1.5)); }
+float tvPhase(float mu) { return mix(tvHG(mu, 0.75), tvHG(mu, -0.2), 0.3) * 12.566371; }
+vec4 twVol(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout float tF) {
+  vec4 A = uTwA[i], B = uTwB[i];
+  int v = int(A.w + 0.5) % 4;
+  float s = B.y / TW_H, w = A.z * CD_MS, ph = B.w;
+  // Half the twister's spin, as the cards turn.
+  float turn = uT * B.z * 0.5 / 6.2831853 + ph * 0.1;
+  float Rb = s * (w * twRad(TW_H * 0.9, v) * 1.7 + 7.0);
+  vec2 oc = ro.xz - A.xy;
+  float a2 = dot(rd.xz, rd.xz), b = dot(oc, rd.xz), c = dot(oc, oc) - Rb * Rb;
+  float disc = b * b - a2 * c;
+  if (disc < 0.0 || a2 < 1e-6) return vec4(0.0);
+  float sq = sqrt(disc), ta = (-b - sq) / a2, tb = (-b + sq) / a2;
+  if (abs(rd.y) > 1e-5) {
+    float u0 = (B.x - 0.6 - ro.y) / rd.y, u1 = (B.x + B.y * 0.92 - ro.y) / rd.y;
+    ta = max(ta, min(u0, u1));
+    tb = min(tb, max(u0, u1));
+  }
+  ta = max(ta, ta0);
+  tb = min(tb, tb0);
+  if (ta >= tb) return vec4(0.0);
+  // The light comes from behind the twister as the eye sees it, a little above and to the left: the spike's.
+  vec3 bk = normalize(vec3(A.x - ro.x, 0.0, A.y - ro.z) + 1e-4);
+  vec3 sd = normalize(cross(bk, vec3(0.0, 1.0, 0.0)));
+  vec3 ld = normalize(bk * 0.9 + vec3(0.0, 0.35, 0.0) + sd * 0.25);
+  float pha = tvPhase(dot(rd, ld));
+  // Over cloud the foot melts into the deck; over a hole, or for a tip twister, the funnel tapers to a tip.
+  float gr = A.w > 3.5 ? 0.0 : twGround(A.xy);
+  // Steps of 0.18 shape km; the jitter and the frame history fill between them.
+  // A far column takes longer ones, to about a pixel of the march.
+  float st = max(0.18, ta * 0.0012 / s);
+  float t = ta + jit * st * s, lum = 0.0, Tt = 1.0, fF = -1.0;
+  for (int k = 0; k < 160; k++) {
+    if (t > tb || Tt < 0.03) break;
+    vec3 p = ro + rd * t;
+    float Y = (altOf(p) - B.x) / s;
+    vec2 q = (p.xz - A.xy) / s - twAxis(Y, v, ph);
+    float f0 = Y / TW_H;
+    float tip = mix(pow(smoothstep(0.0, 0.45, f0), 0.8), 1.0, gr);
+    float R = twRad(Y, v) * w * tip, r = length(q);
+    // Far from the column, step by the gap to its widest wall.
+    if (r > R * 1.7 + 0.8) { t += max((r - R * 1.7 - 0.8) * 0.6, st) * s; continue; }
+    float d = tvDens(q, Y, v, R, turn, 3);
+    if (d > 0.002) {
+      // The light's depth toward the light behind, over four growing taps.
+      float od = 0.0, ls = 0.35;
+      vec3 pl = vec3(q.x, Y, q.y);
+      for (int j = 0; j < 4; j++) {
+        pl += ld * ls;
+        vec2 ql = pl.xz + twAxis(Y, v, ph) - twAxis(pl.y, v, ph);
+        od += tvDens(ql, pl.y, v, twRad(pl.y, v) * w * tip, turn, 2) * ls;
+        ls *= 1.8;
+      }
+      float f = Y / TW_H;
+      // The card bake's rate: the body goes dark, thin edges pass the light.
+      od = od * 8.0 * (v == 2 ? 2.0 : 1.0) + smoothstep(0.55, 1.0, f) * 1.5;
+      float sun = exp(-od) * pha + 0.15 * exp(-od * 0.25) * tvPhase(dot(rd, ld) * 0.5) + 0.03 * exp(-od * 0.1);
+      float amb = mix(0.04, 0.09, f) * exp(-max(0.0, 1.0 - r / R) * 1.6);
+      float al = 1.0 - exp(-d * 6.0 * st);
+      lum += Tt * (sun + amb) * al;
+      Tt *= 1.0 - al;
+      if (fF < 0.0) fF = f;
+      if (tF < 0.0 && Tt < 0.97) tF = t;
+    }
+    t += st * s;
+  }
+  float al = 1.0 - Tt;
+  if (al < 1e-3) return vec4(0.0);
+  vec3 p = ro + rd * max(tF, ta);
+  float h = altOf(p);
+  vec3 col = cardTint(lum / al, max(fF, 0.0)) * (lum + 0.05 * al);
+  // The void's light sets the level, as on the cards.
+  col *= dot(lut(h).rgb, vec3(0.3, 0.5, 0.2)) * uCardK;
+  float fk = 0.0;
+  for (int j = 0; j < 4; j++) {
+    vec4 fl = uFlash[j];
+    if (fl.w <= 0.0) continue;
+    vec3 fq = fl.xyz - p;
+    float d2 = dot(fq, fq);
+    fk += fl.w * (1.8 * exp(-d2 / 60.0) + 0.5 * exp(-sqrt(d2) / 14.0));
+  }
+  col += mix(pal(0.5), vec3(0.85), 0.35) * FLASH_C * fk * al * (1.0 - 0.55 * al);
+  return vec4(col, al);
+}
 // One flipbook card along the ray: a vertical plane through the twister, square to the view.
 // card() needs CARD_GL ahead of this code. tF is where the card shows, or -1.
 vec4 twCard(int i, vec3 ro, vec3 rd, float ta, float tb, inout float tF) {
@@ -276,8 +396,11 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tA, out vec4 cB, o
   for (int i = 0; i < ${TW_MAX}; i++) {
     if (uTwB[i].y <= 0.0 || float(i) < uTwLo || float(i) >= uTwHi) continue;
     float tf = -1.0;
-    bool asCard = uTwCard > 0.5 && (uTwCard < 1.5 || length(uTwA[i].xy - ro.xz) > uTwMix);
-    vec4 r = asCard ? twCard(i, ro, rd, ta, tb, tf) : twister(i, ro, rd, ta, tb, jit, tf);
+    // Mixed: the full march within uTwMix km, cards past it.
+    bool near = length(uTwA[i].xy - ro.xz) <= uTwMix;
+    vec4 r = uTwCard < 0.5 ? twister(i, ro, rd, ta, tb, jit, tf)
+      : uTwCard > 1.5 && near ? twVol(i, ro, rd, ta, tb, jit, tf)
+      : twCard(i, ro, rd, ta, tb, tf);
     if (tf < 0.0) continue;
     // A nearer one takes layer A; the old A joins layer B in depth order.
     if (tA < 0.0 || tf < tA) {
@@ -503,6 +626,16 @@ float cdN(vec2 p) {
   f = f * f * (3.0 - 2.0 * f);
   return mix(mix(cdH(i), cdH(i + vec2(1, 0)), f.x), mix(cdH(i + vec2(0, 1)), cdH(i + vec2(1, 1)), f.x), f.y);
 }
+// Colour by light, in the void's greens (Tom, 2026-11-24): deep jade cores, mint rims.
+// Lu is the light over the alpha; f is the height, 0 at the floor, 1 at the ceiling.
+vec3 cardTint(float Lu, float f) {
+  vec3 body = mix(vec3(0.1, 0.26, 0.21), vec3(0.18, 0.24, 0.3), smoothstep(0.5, 0.95, f));
+  vec3 lit = mix(vec3(0.5, 0.95, 0.74), vec3(0.84, 1.0, 0.9), smoothstep(0.3, 1.2, Lu));
+  vec3 tint = mix(body, lit, smoothstep(0.02, 0.6, Lu));
+  // The foot takes the floor's green; the top takes the ceiling's.
+  tint = mix(tint, tint * vec3(0.7, 1.15, 0.9), 1.0 - smoothstep(0.05, 0.3, f));
+  return mix(tint, tint * vec3(0.8, 1.05, 0.9), smoothstep(0.55, 0.85, f));
+}
 // v: the variety. t: the time in s. ph: the twister's phase. spin: its spin in rad/s.
 vec4 card(int v, vec2 vT, float t, float ph, float spin) {
   // Half the twister's spin: massive columns turn slowly (Tom, 2026-11-24).
@@ -529,16 +662,9 @@ vec4 card(int v, vec2 vT, float t, float ph, float spin) {
     vec2 cb = texture(uBook, vec3(u, float(v * CD_NF + f1))).rg;
     c += mix(ca, cb, fract(ft)) * (k == 0 ? 1.0 - wf : wf);
   }
-  // Colour by light, in the void's greens (Tom, 2026-11-24): deep jade cores, mint rims.
   float f = vT.y * CD_FY / 24.0;
-  float L = c.r * c.r * 4.0, Lu = L / max(c.g, 1e-3);
-  vec3 body = mix(vec3(0.1, 0.26, 0.21), vec3(0.18, 0.24, 0.3), smoothstep(0.5, 0.95, f));
-  vec3 lit = mix(vec3(0.5, 0.95, 0.74), vec3(0.84, 1.0, 0.9), smoothstep(0.3, 1.2, Lu));
-  vec3 tint = mix(body, lit, smoothstep(0.02, 0.6, Lu));
-  // The foot takes the floor's green; the top takes the ceiling's.
-  tint = mix(tint, tint * vec3(0.7, 1.15, 0.9), 1.0 - smoothstep(0.05, 0.3, f));
-  tint = mix(tint, tint * vec3(0.8, 1.05, 0.9), smoothstep(0.55, 0.85, f));
-  vec3 rgb = tint * (L + 0.05 * c.g);
+  float L = c.r * c.r * 4.0;
+  vec3 rgb = cardTint(L / max(c.g, 1e-3), f) * (L + 0.05 * c.g);
   // Alpha gradients mask the top and the foot (Tom, 2026-11-24).
   // A slow wobble across the card keeps each fade off a straight line.
   float wb = 0.025 * sin(vT.x * 23.0 + ph * 0.9) + 0.015 * sin(vT.x * 61.0 + ph * 0.5);
