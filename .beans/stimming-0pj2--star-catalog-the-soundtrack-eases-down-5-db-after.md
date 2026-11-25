@@ -1,11 +1,11 @@
 ---
 # stimming-0pj2
 title: 'Star Chart: the sound rests at 28 s idle and cuts at 90 s'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-25T02:54:02Z
-updated_at: 2026-11-25T18:17:35Z
+updated_at: 2026-11-25T18:21:11Z
 parent: stimming-e35i
 ---
 
@@ -21,8 +21,12 @@ Tom, 2026-11-25 (replaces the 15 s, 5 dB ask): "if the toy is left unattended --
 - [x] Input or a mouse move: back over 8 s, from the bass up after a cut
 - [x] Choir base level 0.85 (Tom, 2026-11-25: down 15 percent, rumble as is)
 - [x] Doc lines
-- [ ] Tom listens
+- [x] Tom listens (2026-11-25: sounds right)
 
 Tom, 2026-11-25, added: "it may dull the audio a little too when it fades out -- it will come full in undull as it scales up again"; "the choir reduces by 15% volume by default now as well".
 
 QA (in-app pane, hidden): ?idle=0.1 runs rest, fade, cut and return; ?idle=0.75 cuts after the loop sleep: context suspended, 0 rAF in 2 s; mute stops at once; clean console. A hidden tab is not checked live.
+
+## Summary of Changes
+
+Committed in 1b3c4166. choir.js has a rest gain on each octave layer and the melody (`REST`, `v.rest()`). sound.js has the rest ramp (`settle`, `stir`), a -6 dB choir gain and a low pass that closes to 1.4 kHz, `fade` and `unfade`, and the choir base level 0.85. main.js has one idle timer, `hear()` for every input and mouse move, and `?idle=N` for QA. The frame loop sleep no longer stops the sound.
