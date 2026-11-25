@@ -4,7 +4,7 @@
 // It speaks the card's language (Tom, 2026-11-24): no box, the name flashes, each line wipes on.
 // It stands in the view's open sky, as the card does: setView names the view.
 
-import { ARTICLES } from './articles.js';
+import { ARTICLES, EGG_TEXT } from './articles.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 // One film frame at 30 fps, in ms.
@@ -22,9 +22,10 @@ const h = (tag, cls, text) => {
   return el;
 };
 
-// A photo in the article: dithered in white ink until a pointer or focus reaches it (Tom, 2026-11-24).
+// A photo in the article: dithered until a pointer or focus reaches it (Tom, 2026-11-24).
+// The dots take the star's colour, as the bar does (Tom, 2026-11-25).
 // A tap toggles it on touch. The dither is drawn once, when the image loads.
-function figure(ph) {
+function figure(ph, ink) {
   const fig = h('figure', 'a-inline');
   fig.tabIndex = 0;
   const img = h('img');
@@ -52,6 +53,9 @@ function figure(ph) {
       px[i + 3] = on ? 255 : 0;
     }
     g.putImageData(d, 0, 0);
+    g.globalCompositeOperation = 'source-in';
+    g.fillStyle = ink;
+    g.fillRect(0, 0, w, hh);
   }, { once: true });
   img.src = new URL(ph.src, import.meta.url).href;
   fig.addEventListener('click', () => fig.classList.toggle('is-open'));
@@ -92,6 +96,10 @@ export function makeArticle(o) {
     const a = ARTICLES[id];
     box = h('aside', 'sl-art');
     box.dataset.view = view;
+    // The bar holds the star's colour as its target; the article takes it at once.
+    const ui = (o.stage.closest('.stim-frame') || o.stage.parentElement)?.querySelector('.sg-ui');
+    const ink = ui?.style.getPropertyValue('--sc-acc').trim() || '#fff';
+    box.style.setProperty('--sc-acc', ink);
     box.setAttribute('aria-label', `${c.name}: article`);
     // The stage's taps and drags stay off the article.
     for (const ev of ['pointerdown', 'wheel']) box.addEventListener(ev, e => e.stopPropagation());
@@ -120,20 +128,37 @@ export function makeArticle(o) {
       // A photo stands after the paragraph its entry names.
       for (const ph of a?.photos ?? []) {
         if (ph.after !== k) continue;
-        const fig = figure(ph);
+        const fig = figure(ph, ink);
         body.append(fig);
         lines.push(fig);
       }
     });
-    box.append(body);
+    // The source closes the text, before the eggs (Tom, 2026-11-25).
     if (c.wiki) {
       const src = h('p', 'a-src');
       const at = h('a', null, 'Wikipedia ↗');
       at.href = c.wiki; at.target = '_blank'; at.rel = 'noopener';
       src.append(h('span', 'a-k', 'Source'), at);
-      box.append(src);
+      body.append(src);
       lines.push(src);
     }
+    // The object's eggs stand in their own section, after the source (Tom, 2026-11-25).
+    // Each egg: what to do, what it is, then its background.
+    const eggs = EGG_TEXT[id] ?? [];
+    if (eggs.length) {
+      const head = h('h3', 'a-eggs', 'Easter eggs');
+      body.append(head);
+      lines.push(head);
+      for (const egg of eggs) {
+        const title = h('h4', 'a-egg', egg.name);
+        const rows = h('dl', 'a-egg-rows');
+        for (const [k, v] of [['Do', egg.how], ['What', egg.what]]) rows.append(h('dt', 'a-k', k), h('dd', null, v));
+        const bg = h('p', 'a-text', egg.background);
+        body.append(title, rows, bg);
+        lines.push(title, rows, bg);
+      }
+    }
+    box.append(body);
     // The close hint is a button too, so a pointer can shut the article.
     const shut = h('button', 'a-hint');
     shut.type = 'button';
