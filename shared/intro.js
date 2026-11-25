@@ -127,8 +127,9 @@ function loadLine(root, host, still = false) {
     const count = note.n ? `${note.k} / ${note.n}` : '';
     el.setAttribute('aria-valuetext', note.text);
     if (word) { word.nodeValue = count ? `${note.text} · ${count}` : note.text; return; }
-    capT.textContent = note.text;
-    capN.textContent = count;
+    capT.dataset.t = note.text;
+    capN.dataset.t = count;
+    cap.dataset.on = '';
     // Each new step wipes on, as the titles do.
     cap.classList.remove('is-new');
     void cap.offsetWidth;
