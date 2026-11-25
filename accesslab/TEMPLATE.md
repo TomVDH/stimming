@@ -3,7 +3,7 @@
 Status: active · bean `stimming-9ex4`
 
 The desk walks a list of items, one at a time. Each item gets the same panels as tabs, and one YAML file that holds every panel's work on it.
-Stimming's desk (`accesslab/index.html`) has three panels for each toy: Icon, Feedback, Intro. The access kit (`access.html`) is a separate page.
+Stimming's desk (`accesslab/index.html`) has four panels for each toy: Icon, Feedback, Intro, Share. The access kit (`access.html`) is a separate page.
 
 Copy this folder for another project. Change the config, keep the core.
 
@@ -118,3 +118,4 @@ Export all writes `project`, `date` and `items:`, one entry per touched item. Ha
 | Icon | `icons/sheet.html` (GALLERY), `icons/rounds.json`, `icons/picks.json`, `icons/history/menu.json`, `icons/index.html`, the menu | `stimming.icons.marks`, `stimming.icons.cuts`: the sheet's keys |
 | Feedback | All of inventorylab, ported: the toy, its stack, its logos, the full schema-2 form, the overview; `docs/inventory/*.json` (dev server), `series.json`, the menu | `stimming.inventory.<id>`; Save file writes `docs/inventory/<id>.json` |
 | Intro | `shared/intro.js`, `toys.json`, `access-data.js` | The inventory record's `intro` area; `stimming.desk.intro.<id>` for the look it was judged in |
+| Share | `share-card.js`: `toys.json`, the emblem, the still, the menu wordmark, `access-data.js` | Nothing |

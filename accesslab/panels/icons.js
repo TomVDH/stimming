@@ -299,9 +299,11 @@ function cutMenu() {
   for (let n = doc.querySelector(sel)?.parentElement; n && n !== doc.documentElement; n = n.parentElement) {
     for (const [k, v] of [['display', 'block'], ['transform', 'none'], ['filter', 'none'], ['opacity', '1'], ['contain', 'none'], ['content-visibility', 'visible']]) n.style.setProperty(k, v, 'important');
   }
+  // The page's shared defs stay visible: a hidden clip shape clips the art away.
   st.textContent = `html, body { background: transparent !important; overflow: hidden !important; }
     body * { visibility: hidden !important; }
     ${sel}, ${sel} * { visibility: visible !important; }
+    svg defs, svg defs * { visibility: visible !important; }
     ${sel} { position: fixed !important; left: 0 !important; top: 0 !important; width: 128px !important; height: 128px !important; margin: 0 !important; padding: 0 !important; transform: none !important; opacity: 1 !important; filter: none !important; z-index: 9999 !important; display: grid !important; place-items: center !important; }
     ${sel} > :not(.obj) { display: none !important; }
     ${sel} .obj { width: 100% !important; height: 100% !important; max-width: none !important; }

@@ -22,9 +22,9 @@ const PACK = { morpher: "three", pop: "three", fidget: "dom", domino: "three", p
 /** @type {Record<string, { tier: string, webgpu: boolean }>} */
 export const TECH = Object.fromEntries(Object.entries(PACK).map(([k, v]) => [k, { tier: v.replace('+gpu', ''), webgpu: v.endsWith('+gpu') }]));
 /** @type {Record<string, string>} */
-const TAG = { dom: 'DOM', canvas2d: '2D', webgl2: 'GL', three: '3D', webgpu: 'GPU' };
+export const TAG = { dom: 'DOM', canvas2d: '2D', webgl2: 'GL', three: '3D', webgpu: 'GPU' };
 /** @type {Record<string, string>} */
-const TAG_NAME = { dom: 'DOM, SVG, CSS', canvas2d: 'Canvas 2D', webgl2: 'WebGL2', three: 'three.js', webgpu: 'WebGPU' };
+export const TAG_NAME = { dom: 'DOM, SVG, CSS', canvas2d: 'Canvas 2D', webgl2: 'WebGL2', three: 'three.js', webgpu: 'WebGPU' };
 /**
  * Outline: supported. Filled: runs now. A WebGPU toy without WebGPU runs GL.
  * @param {string} id @param {boolean} [noGpu]

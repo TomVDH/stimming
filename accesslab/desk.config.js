@@ -26,7 +26,7 @@ export default {
   // Groups in strip order, with their filter word.
   groups: [['main', 'Main'], ['lab', 'Lab'], ['unlisted', 'Unlisted']],
   // Panel modules from ./panels/, in tab order.
-  panels: ['icons', 'feedback', 'intro'],
+  panels: ['icons', 'feedback', 'intro', 'share'],
   // The item a bare address opens.
   first: 'railgun',
 
