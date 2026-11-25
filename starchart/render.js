@@ -1098,16 +1098,17 @@ void main() {
       // Subtle Keplerian shimmer along each ringlet.
       float shim = 0.85 + 0.25 * fbm(vec3(cos(ang - uTime * 0.06 / max(rf, 0.15)) * 4.0, sin(ang - uTime * 0.06 / max(rf, 0.15)) * 4.0, rf * 18.0));
       float tau = inSpan * vary * (0.35 + 0.45 * b1 + 0.3 * b2 + 0.15 * b3) * gap1 * gap2 * gap3 * shim;
-      // Companion planet sits at ring centre and casts shadow away from V1400 Centauri.
+      // Companion planet sits at ring centre; soft tapering penumbra fades away from V1400 Centauri.
       float rp = 0.22;
       float plMask = smoothstep(rp * 1.08, rp * 0.92, length(d));
       float farSide = step(0.0, e.y * sign(uRing.w));
       float plHide = plMask * farSide;
       vec2 toS = normalize(-uRing.yz + 1e-4);
-      vec2 toSp = normalize(vec2(ca * toS.x + sa * toS.y, (-sa * toS.x + ca * toS.y) / max(k, 0.08)));
-      float behindP = smoothstep(-0.05, 0.15, -dot(pl, toSp));
-      float perpP = abs(pl.x * toSp.y - pl.y * toSp.x);
-      float pSh = 1.0 - 0.82 * behindP * smoothstep(rp * 1.15, rp * 0.78, perpP);
+      vec2 away = -toS;
+      float along = dot(d, away);
+      float perp = abs(d.x * away.y - d.y * away.x);
+      float penW = rp * (0.96 + 0.22 * max(along, 0.0));
+      float pSh = 1.0 - 0.62 * smoothstep(0.0, rp * 0.7, along) * smoothstep(penW * 1.45, penW * 0.55, perp) * exp(-max(along, 0.0) * 0.9);
       // Dense rings eclipse the star while exomoon gaps transmit starlight.
       float occ = clamp(tau * 0.82, 0.0, 0.92);
       hot *= (1.0 - occ * step(r, R)) * (1.0 - plMask);
@@ -2780,12 +2781,14 @@ vec3 ringNeb(vec2 pR) {
     T *= exp(-(dens * 2.2 + fill * 0.35) * dt);
     if (T < 0.015) break;
   }
-  // Faint outer concentric hydrogen halo loops and radial rays, as JWST shows.
+  // Faint organic outer hydrogen halo wisps feathered smoothly into deep space.
   float d = sqrt(d2);
-  float rays = 0.55 + 0.45 * sin(atan(q.y, q.x) * 28.0 + 2.0 * fbm(vec3(q * 3.0, 1.0)));
-  float halo = exp(-pow((d - 1.25) / 0.24, 2.0)) * 0.14 * (0.35 + 1.25 * fbm(vec3(q * 4.5, 4.0))) * rays;
+  vec3 w0 = uCamM * vec3(q, 0.0);
+  float wisp = fbm(w0 * 3.6 + 2.4) * fbm(w0 * 7.2 + 5.1);
+  float halo = smoothstep(0.82, 1.08, d) * smoothstep(1.5, 1.04, d) * 0.16 * smoothstep(0.12, 0.52, wisp);
   vec2 sky = (uCamM * vec3(q, -1.0)).xy;
-  return (acc + vec3(0.92, 0.3, 0.32) * halo + ophStars(sky * 1.3, pw * 1.3) * 0.42 * T) * vis;
+  float sFade = smoothstep(1.48, 0.88, d);
+  return (acc + vec3(0.88, 0.28, 0.3) * halo + ophStars(sky * 1.3, pw * 1.3) * 0.38 * T * sFade) * vis;
 }
 // The Crab Nebula (M1), uBow.z R along its long axis; vast over the pinprick pulsar.
 // 64-step front-to-back march over baked 128³ Worley billows with one-step self-shading,

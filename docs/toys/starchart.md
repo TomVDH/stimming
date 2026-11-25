@@ -93,8 +93,8 @@ Fomalhaut (Alpha Piscis Austrini), a white A3 V star 25 light years away, about 
 J1407b joins as its own body beside Fomalhaut (Tom, 2026-11-25: "Build the rings too"): the young K5 star V1400 Centauri (about 0.96 suns wide, 3.2 d rotation) eclipsed in 2007 by a companion carrying at least 37 concentric rings 0.6 AU (180 million km) across.
 
 - Shares the `uRing` block with `uRing3.w` set to 1: 37+ concentric ringlets with three exomoon-carved gaps (including the wide Kenworthy-Mamajek gap), Keplerian shimmer, and warm starlight illumination strongest near V1400 Centauri.
-- The companion sits off to the left and in front of V1400 Centauri (`cz: 1.5`), so a drag shows real 3D foreground parallax, the right wing of the rings sweeps across and eclipses the star behind dense bands while exomoon gaps transmit sunlight, and the companion shows a dark sphere with a thin sunlit crescent rim, a conical shadow across its own rings, and the near rings crossing in front of its face.
-- Full view stands 3.4 times back. Warm orange K5 ramp for V1400 Centauri and warm amber-ivory ramp for the rings (`row: 31`). Shares Fomalhaut's warm ringed choir at root G sharp 3 (207.65 Hz).
+- The companion sits off to the left and in front of V1400 Centauri (`cx: -2.55`, `cz: 1.5`), so a drag shows real 3D foreground parallax, the right wing of the rings sweeps across and eclipses the star behind dense bands while exomoon gaps transmit sunlight, and the companion shows a dark sphere with a thin sunlit crescent rim, a soft tapering penumbra across its rings, and the near rings crossing in front of its face.
+- Full view stands 3.9 times back. Warm orange K5 ramp for V1400 Centauri and warm amber-ivory ramp for the rings (`row: 31`). Shares Fomalhaut's warm ringed choir at root G sharp 3 (207.65 Hz).
 
 ## The Wolf-Rayet star (bean `stimming-gzrx`)
 
