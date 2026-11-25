@@ -20,8 +20,8 @@ Goal: the Crab as a lit volume with real scale.
 - Perf: march at reduced resolution or in the baked volume pass; hold the 30 fps budget; one perf change at a time, judged live.
 - The Ring Nebula (stimming-wcfv) may reuse the same shell march.
 
-- [x] Pick the technique and its pass (final pass at half resolution, or the volume pass): a baked 128³ volume (NBAKE), marched in the final pass
-- [x] March the shell: 3D Worley cellular Rayleigh-Taylor filament web, Hubble mint/gold/terracotta palette, milky sky-blue synchrotron cloud, front-to-back 48-step absorption
-- [x] Scale cues and dynamics: 10x larger nebula over pinprick pulsar (`reach: 180`, `size: 280`), Doppler-beamed relativistic wisps, flickering inner knot, Chandra 3D torus and curved jet, subtle expansion, Taurus stars through gaps
+- [x] Pick the technique and its pass (final pass at half resolution, or the volume pass): a baked 128³ volume (NBAKE + uNoise3), marched in the final pass
+- [x] March the shell: 3C 273-style thresholded 3D Worley filament walls with clear cavities, one-step baked radial self-shading toward the pulsar, Worley synchrotron billows, 64-step front-to-back march with interleaved gradient noise
+- [x] Scale cues and dynamics: 10x larger nebula over pinprick pulsar (`reach: 180`, `size: 280`), inner termination ring, Chandra 3D torus, Doppler-beamed relativistic wisps, flickering inner knot, curved jet, subtle expansion, Taurus stars through gaps
 - [ ] Perf check live with Tom
 - [ ] Tom looks at it live

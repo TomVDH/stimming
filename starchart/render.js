@@ -1966,10 +1966,18 @@ function noiseVolume(n) {
 // A cube round the star, 2.8 wide (3.0 for the Ring); the march samples it.
 const NB_N = 128;
 const NBAKE = `${HEAD}
+precision highp sampler3D;
+uniform sampler3D uNoise3;
 uniform int uWhich;
 uniform float uLayer;
 out vec4 o;
 ${NOISE}
+// Smooth 3D texture noise, as QBAKE's hn.
+float nbHn(vec3 p) {
+  vec3 x = p * 2.0, i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return texture(uNoise3, (i + f + 0.5) / 64.0).r;
+}
 // Coarse dust density for V838 radial self-shadow taps.
 float v838Coarse(vec3 p) {
   float r = length(p);
@@ -1998,35 +2006,43 @@ vec2 nbWorley(vec3 x) {
       }
   return vec2(sqrt(d1), sqrt(d2) - sqrt(d1));
 }
+// Crab Nebula (M1) filament density at w: thresholded Worley walls eroded by smooth noise.
+float crabFil(vec3 w, out float eOut, out vec3 rtOut) {
+  vec3 rt = vec3(0.82 * w.x + 0.57 * w.y, -0.57 * w.x + 0.82 * w.y, w.z);
+  rtOut = rt;
+  vec3 u = rt / vec3(1.06, 0.76, 0.78);
+  vec3 nd = u / max(length(u), 1e-3);
+  float bay = 0.16 * exp(-pow((nd.x + 0.7) / 0.35, 2.0) - pow((nd.y - 0.35) / 0.38, 2.0));
+  float e = length(u) / (1.0 + 0.24 * (nbHn(nd * 1.4 + 5.0) - 0.5) - bay);
+  eOut = e;
+  if (e < 0.22 || e > 1.32) return 0.0;
+  vec3 wq = w + 0.26 * (vec3(nbHn(w * 1.5 + 1.2), nbHn(w * 1.5 + 6.4), nbHn(w * 1.5 + 11.7)) - 0.5);
+  vec2 c1 = nbWorley(wq * 3.8);
+  vec2 c2 = nbWorley(wq * 7.2 + 4.3);
+  float er1 = nbHn(wq * 3.2 + 2.1) - 0.5;
+  float er2 = nbHn(wq * 6.4 + 7.3) - 0.5;
+  // Thresholded cell walls keep crisp tendrils and real dark cavities between them.
+  float f1 = smoothstep(0.24, 0.04, c1.y + 0.22 * er1 + 0.1 * er2);
+  float f2 = smoothstep(0.18, 0.03, c2.y + 0.18 * er2) * smoothstep(0.32, 0.74, nbHn(wq * 2.2 + 1.4));
+  float shell = smoothstep(0.26, 0.58, e) * smoothstep(1.16, 0.82, e);
+  float outer = smoothstep(0.68, 0.92, e) * smoothstep(1.28, 0.98, e);
+  return clamp((f1 * 0.92 + f2 * 0.75) * shell + f2 * 0.65 * outer, 0.0, 1.0);
+}
 void main() {
   vec3 w = (vec3(gl_FragCoord.xy / ${NB_N}.0, uLayer) * 2.0 - 1.0) * (uWhich == 3 ? 1.5 : 1.4);
   if (uWhich == 2) {
-    // Crab Nebula (M1): tilted lower-left to upper-right, matching Hubble's framing.
-    vec3 rt = vec3(0.82 * w.x + 0.57 * w.y, -0.57 * w.x + 0.82 * w.y, w.z);
-    vec3 u = rt / vec3(1.06, 0.76, 0.78);
-    vec3 nd = u / max(length(u), 1e-3);
-    // Ragged Rayleigh-Taylor outer edge and western bay indentation.
-    float bay = 0.16 * exp(-pow((nd.x + 0.7) / 0.35, 2.0) - pow((nd.y - 0.35) / 0.38, 2.0));
-    float e = length(u) / (1.0 + 0.24 * (fbm(nd * 2.6 + 5.0) - 0.5) - bay);
-    // Domain-warped 3D Worley cell walls form Hubble's lacy, hollow filament web.
-    vec3 wq = w + 0.26 * (vec3(fbm(w * 2.7 + 1.2), fbm(w * 2.7 + 6.4), fbm(w * 2.7 + 11.7)) - 0.5);
-    vec2 c1 = nbWorley(wq * 3.6);
-    vec2 c2 = nbWorley(wq * 7.4 + 4.1);
-    float fine = fbm(wq * 11.5 + 3.0);
-    float web = exp(-c1.y * 8.5) * (0.45 + 1.15 * fine) + 0.72 * exp(-c2.y * 7.5) * (0.35 + 1.1 * fine);
-    // Knots brighten where filament walls meet; outer fingers fray into wispy tendrils.
-    float shell = smoothstep(0.26, 0.62, e) * smoothstep(1.16, 0.82, e);
-    float outer = smoothstep(0.68, 0.9, e) * smoothstep(1.28, 0.96, e);
-    float fil = web * shell * (0.65 + 0.65 * smoothstep(0.2, 0.7, c1.x)) + exp(-c2.y * 6.5) * fine * outer * 0.75;
-    // Smoky milky-blue synchrotron cloud filling the cavity, hollowed slightly in outer cells.
-    float syn = exp(-e * e * 2.15) * smoothstep(1.02, 0.45, e) * (0.55 + 0.75 * fbm(wq * 2.5 + 1.3));
-    syn *= 0.72 + 0.48 * fbm(rt * 5.2 + vec3(2.1, -1.4, 3.3));
-    // Element stratification after Hubble: seafoam [O III] inside/lower-left, warm rust H-alpha outside.
-    float patchN = fbm(rt * 1.8 + vec3(4.2, -1.8, 2.5));
-    float ion = clamp((e - 0.34) * 0.75 + 0.42 * (patchN - 0.42) + 0.14 * rt.y, 0.0, 1.0);
-    // Alpha bakes internal illumination: inner faces facing the synchrotron core burn brightest.
-    float lit = clamp(smoothstep(1.12, 0.28, e) * (0.55 + 0.65 * fine), 0.0, 1.0);
-    o = vec4(clamp(fil / 2.2, 0.0, 1.0), clamp(syn / 1.6, 0.0, 1.0), ion, lit);
+    float e; vec3 rt;
+    float fil = crabFil(w, e, rt);
+    // One step toward the pulsar bakes directional self-shading, as QBAKE does.
+    float eI; vec3 rtI;
+    float sh = crabFil(w - normalize(w + 1e-4) * 0.075, eI, rtI);
+    // Structured Worley-eroded synchrotron billows filling the hollow interior.
+    float sb = 0.62 * nbWorley(rt * 2.5 + vec3(1.5)).x + 0.38 * nbHn(rt * 3.2 + 3.1);
+    float syn = smoothstep(0.76, 0.22, sb) * exp(-e * e * 1.6) * smoothstep(0.98, 0.42, e);
+    // Hubble element stratification: inner/lower-left seafoam [O III], mid gold [S II], outer rust H-alpha.
+    float patchN = nbHn(rt * 1.3 + vec3(4.2, -1.8, 2.5));
+    float ion = clamp((e - 0.34) * 0.75 + 0.42 * (patchN - 0.44) + 0.14 * rt.y, 0.0, 1.0);
+    o = vec4(fil, syn, ion, sh);
   } else if (uWhich == 3) {
     // The Ring: a prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
     vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
@@ -2605,8 +2621,8 @@ vec3 ringNeb(vec2 pR) {
   return acc * 0.9 + vec3(1.0, 0.3, 0.25) * halo;
 }
 // The Crab Nebula (M1), uBow.z R along its long axis; vast over the pinprick pulsar.
-// Front-to-back march through baked 128³ cellular filaments and synchrotron cloud,
-// with Doppler-beamed relativistic pulsar wisps, Chandra torus, jet and subtle expansion.
+// 64-step front-to-back march over baked 128³ Worley billows with one-step self-shading,
+// interleaved gradient noise dithering, Doppler-beamed relativistic wisps and Chandra torus.
 vec3 crabNeb(vec2 pR) {
   vec2 q = pR / uBow.z;
   float pw = max(length(fwidth(q)), 1e-4);
@@ -2616,55 +2632,55 @@ vec3 crabNeb(vec2 pR) {
   float zMax = sqrt(max(1.96 - d2, 0.0));
   vec3 acc = vec3(0.0);
   float T = 1.0;
-  const int N = 48;
+  const int N = 64;
   float dt = 2.0 * zMax / float(N);
-  float dither = hash(gl_FragCoord.xy) - 0.5;
+  // Interleaved gradient noise breaks step bands cleanly with no white-noise grain.
+  float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
   // Pulsar spin axis tilted northwest-southeast, matching Chandra and Hubble.
   vec3 jAx = normalize(vec3(-0.62, 0.64, 0.45));
+  vec3 beamDir = normalize(vec3(-0.4, 0.55, 0.73));
   // Slow outward breathing echoes the remnant's 1,500 km/s expansion.
   float expScale = 1.0 - 0.012 * sin(uTime * 0.08);
   for (int i = 0; i < N; i++) {
-    // Front to back so near lacy filaments absorb and frame the blue synchrotron heart.
-    float z = zMax - (float(i) + 0.5 + dither) * dt;
+    // Front to back so near shadowed filaments carve depth over the synchrotron core.
+    float z = zMax - (float(i) + 0.5 + jq) * dt;
     vec3 w = uCamM * vec3(q, z);
     vec3 ws = w * expScale;
     if (any(greaterThan(abs(ws), vec3(1.38)))) continue;
     vec4 nb = texture(uNeb, ws / 2.8 + 0.5);
-    float fil = nb.r * 2.2, syn = nb.g * 1.6, lit = nb.a;
-    // Inner 3D pulsar wind nebula: torus, Doppler-beamed half-c wisps, inner knot and curved jet.
+    float fil = nb.r, syn = nb.g, sh = nb.a;
+    // Inner 3D pulsar wind nebula: termination ring, torus, half-c wisps, inner knot and jet.
     float r3 = length(w);
     vec3 pwn = vec3(0.0);
-    if (r3 < 0.36) {
+    if (r3 < 0.38) {
       float h = dot(w, jAx);
       vec3 pl = w - h * jAx;
       float rho = length(pl);
-      // Relativistic beaming brightens the approaching northwest side of the torus and wisps.
-      float beam = 0.6 + 0.65 * clamp(dot(pl / max(rho, 1e-3), normalize(vec3(-0.4, 0.55, 0.73))), -0.6, 1.0);
-      float tor = exp(-pow((rho - 0.11) / 0.042, 2.0)) * exp(-pow(h / 0.022, 2.0)) * beam;
-      // Relativistic wisps ripple continuously outward from the termination shock.
-      float ph = rho * 58.0 - uTime * 2.4;
-      float wisp = pow(0.5 + 0.5 * sin(ph), 2.5) * exp(-pow((rho - 0.13) / 0.11, 2.0)) * exp(-pow(h / 0.032, 2.0)) * beam;
-      // Inner knot flickers softly beside the pulsar.
-      float knot = exp(-dot(w - jAx * 0.03, w - jAx * 0.03) / 0.0009) * (0.75 + 0.25 * sin(uTime * 1.9));
-      // Softly curved southeast/northwest synchrotron jet.
+      float beam = 0.55 + 0.75 * clamp(dot(pl / max(rho, 1e-3), beamDir), -0.6, 1.0);
+      float innerRing = exp(-pow((rho - 0.055) / 0.014, 2.0)) * exp(-pow(h / 0.014, 2.0)) * beam;
+      float tor = exp(-pow((rho - 0.125) / 0.04, 2.0)) * exp(-pow(h / 0.022, 2.0)) * beam;
+      float ph = rho * 62.0 - uTime * 2.5;
+      float wisp = pow(0.5 + 0.5 * sin(ph), 3.0) * exp(-pow((rho - 0.14) / 0.11, 2.0)) * exp(-pow(h / 0.028, 2.0)) * beam;
+      float knot = exp(-dot(w - jAx * 0.028, w - jAx * 0.028) / 0.0007) * (0.72 + 0.28 * sin(uTime * 1.9));
       vec3 jw = w - vec3(0.05 * h * h, 0.0, 0.0);
       float jRho = length(jw - dot(jw, jAx) * jAx);
-      float jet = exp(-pow(jRho / (0.012 + 0.035 * abs(h)), 2.0)) * smoothstep(0.03, 0.08, abs(h)) * exp(-abs(h) / 0.2);
-      pwn = vec3(0.68, 0.84, 1.0) * (tor * 1.9 + wisp * 1.35 + jet * 1.1) + vec3(0.92, 0.96, 1.0) * knot * 1.4;
+      float jet = exp(-pow(jRho / (0.011 + 0.032 * abs(h)), 2.0)) * smoothstep(0.025, 0.075, abs(h)) * exp(-abs(h) / 0.22);
+      pwn = vec3(0.7, 0.86, 1.0) * (innerRing * 2.2 + tor * 1.8 + wisp * 1.45 + jet * 1.1) + vec3(0.94, 0.97, 1.0) * knot * 1.5;
     }
+    if (fil < 0.004 && syn < 0.004 && pwn.b < 0.004) continue;
+    // One-step self-shading (QBAKE style): bright inner rim toward the pulsar, dark outer back.
+    float rimLit = 0.08 + 1.55 * exp(-2.4 * sh) / (0.35 + r3 * r3 * 1.1);
     // Hubble M1 palette: pale mint/seafoam [O III], warm sulfur gold, muted terracotta-rust H-alpha.
-    vec3 filC = mix(vec3(0.54, 0.88, 0.68), vec3(0.92, 0.84, 0.46), smoothstep(0.18, 0.52, nb.b));
-    filC = mix(filC, vec3(0.84, 0.36, 0.18), smoothstep(0.48, 0.88, nb.b));
-    // Inner filament junctions facing the synchrotron engine burn creamy white-gold.
-    filC = mix(filC * 0.72, mix(filC, vec3(1.0, 0.94, 0.84), 0.48), lit);
-    // Milky sky-blue to ethereal white-blue synchrotron core.
-    vec3 synC = mix(vec3(0.38, 0.62, 0.96), vec3(0.84, 0.92, 1.0), smoothstep(0.22, 1.05, syn));
-    float powder = 0.55 + 0.45 * (1.0 - exp(-fil * 2.4));
-    acc += T * (filC * fil * 1.25 * powder + synC * syn * 0.82 + pwn) * dt * 0.9;
-    T *= exp(-(fil * 2.1 + syn * 0.22) * dt);
-    if (T < 0.02) break;
+    vec3 filC = mix(vec3(0.5, 0.86, 0.66), vec3(0.94, 0.82, 0.44), smoothstep(0.18, 0.52, nb.b));
+    filC = mix(filC, vec3(0.84, 0.34, 0.16), smoothstep(0.48, 0.88, nb.b));
+    // Lit inner faces burn creamy warm-white; shadowed backsides stay deep smoky rust.
+    filC = mix(filC * 0.42, mix(filC, vec3(1.0, 0.94, 0.86), 0.38), clamp(rimLit * 0.55, 0.0, 1.0));
+    vec3 synC = mix(vec3(0.36, 0.6, 0.96), vec3(0.86, 0.93, 1.0), smoothstep(0.2, 0.92, syn));
+    acc += T * (filC * fil * rimLit * 1.15 + synC * syn * 0.95 + pwn) * dt * 1.05;
+    T *= exp(-(fil * 3.4 + syn * 0.35) * dt);
+    if (T < 0.015) break;
   }
-  // Faint Taurus field stars seen through the dark cavities in the filament cage.
+  // Faint Taurus field stars seen through the dark gaps in the filament cage.
   vec2 sky = (uCamM * vec3(q, -1.0)).xy;
   acc += ophStars(sky * 1.35, pw * 1.35) * 0.42 * T;
   return acc * vis;
@@ -3156,6 +3172,9 @@ export async function makeRender(gl, opts = {}) {
     gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     const b = P.nbake;
     gl.useProgram(b.p);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.uniform1i(b.u.uNoise3, 0);
     gl.uniform1i(b.u.uWhich, which);
     gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
     gl.viewport(0, 0, NB_N, NB_N);
