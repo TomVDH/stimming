@@ -101,6 +101,9 @@ const LUTS = [
   // The quasi-star: a crimson envelope, the heart burning gold to white.
   [['000000', 0], ['100202', 0.1], ['3a0804', 0.26], ['821c08', 0.44], ['cc4a12', 0.6], ['f8922e', 0.75], ['ffd890', 0.88], ['fffaf0', 1]],
   [['000000', 0], ['100204', 0.12], ['3a0a12', 0.3], ['7a1e1c', 0.5], ['c04a30', 0.68], ['f09060', 0.84], ['fff0e4', 1]],
+  // WR 140: a blue-white blaze; its soot shells glow warm cream.
+  [['000000', 0], ['04060e', 0.1], ['121c3c', 0.26], ['32508e', 0.44], ['7092d8', 0.6], ['b6cbff', 0.74], ['ecf1ff', 0.86], ['ffffff', 1]],
+  [['000000', 0], ['0a0804', 0.12], ['2a2412', 0.3], ['6a5a32', 0.5], ['b4a068', 0.68], ['e8dcae', 0.84], ['fffbea', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -473,6 +476,8 @@ uniform vec4 uNs, uNsU, uNsV;
 uniform float uFlashW;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
 uniform vec4 uRing, uRing2, uRing3;
+// WR 140's dust shells: their light, their spacing in R, the orbits counted.
+uniform vec4 uShell;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
 // uBinN: the disc's axis in the view frame.
 uniform vec4 uBin, uBinD, uBinN;
@@ -847,6 +852,24 @@ void main() {
     float neb = env * axis * uWind.z;
     cool += neb * (0.16 + 1.0 * kn * kn);
     hot += neb * 0.15 * kn;
+  }
+  // WR 140: each close pass of the pair puffs out a soot shell, every 7.9 years.
+  // The shells nest at even steps and drift out; JWST counts more than 17.
+  if (uShell.x > 0.0 && r > R) {
+    // The shells hang in space: a drag turns them with the camera.
+    vec2 Pc = (uCamM * vec3(P, 0.0)).xy;
+    float rr = length(Pc) / (R * uShell.y);
+    float sp = rr - fract(uShell.z);
+    float n = floor(sp + 0.5);
+    float d = sp - n;
+    // Each shell keeps its own clumps as it drifts out.
+    float id = n - floor(uShell.z);
+    float ang = atan(Pc.y, Pc.x);
+    // The dust forms in a broad fan: two opposite lobes, as in the JWST picture.
+    float fan = 0.2 + 0.8 * pow(abs(cos(ang - 0.95)), 1.6);
+    float clump = 0.5 + 0.9 * fbm(vec3(cos(ang) * 4.0, sin(ang) * 4.0, id * 1.7));
+    float shell = exp(-d * d / 0.01) * smoothstep(1.6, 2.6, rr) * smoothstep(19.0, 13.0, rr) * exp(-rr / 14.0);
+    cool += uShell.x * uDisk.x * shell * fan * clump * (0.5 * uOff + 0.25 + 0.3 * uFar);
   }
   // Fomalhaut's dust belts (Tom, 2026-11-24: a real ringed star), scaled from 133 AU to a few radii.
   // A narrow main belt with a sharp inner edge, its centre a little off the star; a faint inner belt;
@@ -1739,6 +1762,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
     gl.uniform4fv(s.u.uRing3, v.ring3);
+    gl.uniform4fv(s.u.uShell, v.shell);
     gl.uniform4fv(s.u.uBin, v.bin);
     gl.uniform4fv(s.u.uBinD, v.binD);
     gl.uniform4fv(s.u.uBinN, v.binN);

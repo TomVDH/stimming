@@ -314,6 +314,18 @@ export const STARS = {
     disk: [1.85, 1.2, 0, 0.3], disk2: [160, 0.6, 0.3, 0.05], tex: [3, 1.6, 0, 0.7],
     wide: 'none', long: 'none', root: 87.31,
   },
+  // WR 140: a Wolf-Rayet star and an O star whose winds collide.
+  // Each close pass, every 2,895 days, puffs out a new shell of soot.
+  // The disk is the O star, 35 suns wide, veiled by the pair's winds.
+  // shells: their light, their spacing in R, the orbit in days.
+  wr140: {
+    ...FLARE, rain: 0, bubble: 0.3, wind: [0.8, 0.6, 0, 9], reach: 2.6,
+    shells: { light: 1.6, gap: 0.62, orbit: 2895 },
+    row: 27, rsun: 35, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1.2,
+    hal: [0.6, 0.65, 1], streak: [0.65, 0.75, 1],
+    disk: [1.4, 0.12, 0.3, 0.3], disk2: [240, 0, 0, 0], tex: [40, 4, 0, 0.3],
+    wide: 'none', long: 'none', root: 146.83,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.

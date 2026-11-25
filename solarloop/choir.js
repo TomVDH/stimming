@@ -208,6 +208,10 @@ TAPNORM.wohg64 = TAPNORM.betelgeuse;
 VOICES.quasi = VOICES.tzo;
 NORM.quasi = NORM.tzo;
 TAPNORM.quasi = TAPNORM.tzo;
+// WR 140 sings WR 124's choir.
+VOICES.wr140 = VOICES.wr124;
+NORM.wr140 = NORM.wr124;
+TAPNORM.wr140 = TAPNORM.wr124;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 
