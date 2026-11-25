@@ -16,6 +16,10 @@ const STYLE = `
 .ic-cell { position: relative; display: grid; gap: 8px; width: 128px; }
 .ic-cell .box { position: relative; width: 128px; height: 128px; border-radius: 14px; overflow: hidden; background: oklch(0.12 0.01 275); }
 .ic-cell .box img { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* An earlier menu tile runs live in a snapshot of its day; the still shows until it loads. */
+.ic-cell .box .ic-past { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; opacity: 0; background: transparent; }
+.ic-cell .box.live .ic-past { opacity: 1; }
+.ic-cell .box.live img { visibility: hidden; }
 .ic-cell .box svg { width: 100%; height: 100%; }
 .ic-cell .lab { font: 800 10px/1.3 var(--slab); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ic-cell .lab b { color: var(--fg); }
@@ -164,6 +168,40 @@ function paint() {
   if (sc) { sc.textContent = n ? `${showCut ? 'Hide' : 'Show'} ${n} cut` : 'Nothing cut'; sc.disabled = !n; }
 }
 const countCut = (/** @type {string} */ id) => [...load(CUT)].filter(k => k.startsWith(`${id}-`)).length;
+
+// Earlier menu tiles load three at a time, as on the icon sheet.
+// A tile takes over from its still once its snapshot says it is ready.
+/** @param {HTMLElement} host @param {number} my */
+function goPast(host, my) {
+  const queue = /** @type {HTMLIFrameElement[]} */ ([...host.querySelectorAll('iframe.ic-past')]);
+  const wire = (/** @type {HTMLIFrameElement} */ f) => {
+    const t0 = performance.now();
+    const poll = setInterval(() => {
+      const d = f.contentDocument, ready = d?.documentElement.dataset.ready;
+      if (my !== gen) { clearInterval(poll); return; }
+      if (!ready && performance.now() - t0 < 12000) return;
+      clearInterval(poll);
+      if (ready !== '1' || !d) { f.remove(); return; }
+      // A click on the tile does not open the toy.
+      d.addEventListener('click', e => { e.preventDefault(); e.stopImmediatePropagation(); }, true);
+      f.parentElement?.classList.add('live');
+    }, 100);
+  };
+  let loading = 0;
+  const next = () => {
+    while (my === gen && loading < 3 && queue.length) {
+      const f = /** @type {HTMLIFrameElement} */ (queue.shift());
+      if (!f.isConnected) continue;
+      loading++;
+      let done = false;
+      const free = () => { if (done) return; done = true; loading--; next(); };
+      f.addEventListener('load', () => { free(); wire(f); }, { once: true });
+      setTimeout(free, 8000);
+      f.src = /** @type {string} */ (f.dataset.src);
+    }
+  };
+  next();
+}
 
 // The cards of this toy in one gallery, as the sheet finds them.
 /** @param {Document} doc @param {string} id @param {string} r */
@@ -329,11 +367,12 @@ export default {
       + (it.emblem ? `<div class="ic-cell"><span class="box" style="background: #fff; display: grid; place-items: center"><i style="width: 72%; height: 72%; background: var(--bg); -webkit-mask: url(${IC}../${it.emblem}) center / contain no-repeat; mask: url(${IC}../${it.emblem}) center / contain no-repeat"></i></span><span class="lab"><b>Intro logo</b></span></div>` : '')
       + '</div></div>'
       + rs.map((r, i) => `<div class="ic-row"><p class="hd">Round ${rs.length - i} of ${rs.length} · ${/^\d+$/.test(r) ? `spike ${r}` : r}${i === 0 ? ' · newest' : ''}</p><div data-round="${r}"></div></div>`).join('')
-      + (past.length ? `<div class="ic-row"><p class="hd">Menu, earlier · ${past.length} tile${past.length > 1 ? 's' : ''}, newest first</p><div class="ic-cards">${past.map((/** @type {any} */ p, /** @type {number} */ i) => [p, i + 1]).reverse().map(([p, n]) => cell(`${id}-menu${n}@menu`, `<img src="${IC}${p.file}" alt="" loading="lazy">`, `<b>Menu ${n}</b> · ${day(p.from)}`)).join('')}</div></div>` : '')
+      + (past.length ? `<div class="ic-row"><p class="hd">Menu, earlier · ${past.length} tile${past.length > 1 ? 's' : ''}, newest first</p><div class="ic-cards">${past.map((/** @type {any} */ p, /** @type {number} */ i) => [p, i + 1]).reverse().map(([p, n]) => cell(`${id}-menu${n}@menu`, `<img src="${IC}${p.file}" alt="" loading="lazy">${p.page ? `<iframe class="ic-past" data-src="${IC}${p.page}?lab&tile=${encodeURIComponent(p.id || id)}" title="${it.name}, menu tile ${n}" tabindex="-1" scrolling="no"></iframe>` : ''}`, `<b>Menu ${n}</b> · ${day(p.from)}`)).join('')}</div></div>` : '')
       + (early.length ? `<div class="ic-row"><p class="hd">Icon lab · the first directions</p><div class="ic-cards">${early.map((/** @type {any} */ e) => cell(`${id}-${e.set.toLowerCase().replace(/\W+/g, '-')}@lab`, e.svg, `<b>${e.set}</b>`)).join('')}</div></div>` : '')
       + (rs.length || past.length || early.length ? '' : '<p class="hd">No icon rounds yet</p>');
     const cur = document.getElementById('ic-cur');
     if (cur) liveTile(cur);
+    goPast(host, my);
     host.querySelectorAll('[data-round]').forEach((h, i) => mountRound(/** @type {HTMLElement} */ (h), id, /** @type {string} */ (/** @type {HTMLElement} */ (h).dataset.round), my, i === 0 ? newestPick : ''));
     paint();
   },

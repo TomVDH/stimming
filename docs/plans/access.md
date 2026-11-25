@@ -27,7 +27,7 @@ The desk is that template: a project-free core (`desk.js`), one config (`desk.co
 - `?toy=<id>&tab=<tab>` opens a toy at a tab. Arrow keys step toys.
 - The icon-masks session owns `icons/`; the desk only reads it and keeps its vote keys.
 - Not merged from `introlab/`: the font slots, the timeline, the phase pauses, Copy table, the audio notice words and the number place.
-- Gaps: earlier menu tiles show as stills. Galleries take the sheet's emblem fix, so no emblem file 404s. The saved-record list and the folder list need the dev server.
+- Gaps: Galleries take the sheet's emblem fix, so no emblem file 404s. The saved-record list and the folder list need the dev server.
 
 ## 1. The glyphs
 
