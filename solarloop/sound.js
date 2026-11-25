@@ -117,10 +117,37 @@ export function makeSound(kit, opt = () => undefined) {
   const roomOf = (ac, band) => drone && drone.ac === ac && drone.band === band ? drone.voice.cv : null;
   // Taps play in the chord the choir sings now.
   const chordOf = (ac, band, t) => drone && drone.ac === ac && drone.band === band ? drone.voice.chordAt(t) : null;
-  function braam(ac, t, pan, band, K, len = 6) {
+  // up: a ratio over the chord's root, for a tap run. max: blasts that may ring at once.
+  function braam(ac, t, pan, band, K, len = 6, up = 1, max = 1) {
     const ch = chordOf(ac, band, t);
-    tapsOf(ac).blast({ t, root: keyOf(band) / 4, K, len, p: preset(band), pan, room: roomOf(ac, band), chordRoot: ch ? ch.root : 1 });
+    tapsOf(ac).blast({ t, root: keyOf(band) / 4 * up, K, len, p: preset(band), pan, room: roomOf(ac, band), chordRoot: ch ? ch.root : 1, max });
   }
+  // Quick taps step through the chord the choir sings now (Tom, 2026-11-24).
+  // A tap within RUN_GAP s of the last one takes the next step; a pause starts at the root again.
+  const RUN_GAP = 1.6;
+  const run = { n: -1, at: -Infinity };
+  const octave = r => { while (r >= 2) r /= 2; while (r < 1) r *= 2; return r; };
+  // The chord's tones inside one octave, low to high.
+  // Tones within 30 cents of one another, or of the octave, count once.
+  const CLOSE = 2 ** (30 / 1200);
+  const tonesOf = ch => (ch ? ch.tones : [1, 1.2599, 1.4983]).map(octave).sort((a, b) => a - b)
+    .filter((r, i, a) => (i === 0 || r / a[i - 1] > CLOSE) && (i === 0 || 2 / r > CLOSE));
+  // Steps up a list for two octaves, then back down.
+  const bounce = (list, n) => { const L = list.length, span = 2 * L, i = n % (2 * span), k = i <= span ? i : 2 * span - i; return list[k % L] * 2 ** Math.floor(k / L); };
+  // How a star's tap run moves (Tom: it follows the choir).
+  // arp: one note at a time up and down the chord. Bright songs take it.
+  // triad: each tap adds a voice of an open triad (root, fifth, third an octave up), three ringing. Minor songs take it.
+  // fifths: root, fifth, octave, with no third.
+  const TAP_RUNS = {
+    arp: (ch, n) => [bounce(tonesOf(ch), n), 1],
+    triad: (ch, n) => {
+      const ts = tonesOf(ch), near = x => ts.reduce((a, b) => Math.abs(b - x) < Math.abs(a - x) ? b : a);
+      // The fifth, and the third: the tone nearest a minor or major third.
+      return [bounce([1, near(1.4983), 2 * near(1.22)], n), 3];
+    },
+    fifths: (ch, n) => [bounce([1, 1.4983], n), 1],
+  };
+  const runOf = p => p.tapRun || (p.harmony === 2 || p.chord === 'minor' ? 'triad' : 'arp');
 
   // The star's voice while the toy is awake, in two layers.
   // The space rumble: a constant, dense, deep surround drone, a seamless loop.
@@ -238,7 +265,11 @@ export function makeSound(kit, opt = () => undefined) {
     if (!ac) return;
     const t = ac.currentTime + 0.005;
     const K = clamp(k, 0.3, 1);
-    if (on('sndBlast')) braam(ac, t, pan, band, K * 0.7, 6);
+    run.n = t - run.at < RUN_GAP ? run.n + 1 : 0;
+    run.at = t;
+    const [up, max] = TAP_RUNS[runOf(preset(band))](chordOf(ac, band, t), run.n);
+    // Added triad voices sit lower, so three ringing are not much louder than one.
+    if (on('sndBlast')) braam(ac, t, pan, band, K * 0.7 * (max > 1 && run.n > 0 ? 0.6 : 1), 6, up, max);
     if (!on('sndGlow')) return;
     // The glow: a slow chord while the arcade shines.
     const ch = chordOf(ac, band, t);
