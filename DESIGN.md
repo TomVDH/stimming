@@ -100,7 +100,7 @@ spacing:
   control-gap: "6px"
   corner: "12px"
   sheet-pad: "12px"
-  gutter: "16px"
+  gutter: "8px"
   chip: "26px"
   chip-touch: "36px"
 components:
@@ -305,7 +305,7 @@ Intro copy in the Signal look: the subtitle, the Flemish name, the motto and its
 - The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link, a Clock link and a Credits link. The Clock view shows neither of the first two; it puts Credits at the end of its quips row.
 
 **A toy page** (`shared/stim.css:47`, `:134`, `:148-153`)
-- `.wrap` is a grid with `clamp(20px, 3.4vw, 40px)` gaps and 28 px above. Body gutters are 16 px or the safe-area inset, whichever is larger.
+- `.wrap` is a grid with `clamp(20px, 3.4vw, 40px)` gaps and 28 px above. Body gutters are 8 px or the safe-area inset, whichever is larger.
 - The stage fills the first screen: `max(280px, calc(100svh - var(--chrome, 176px)))`. `stim.js` measures `--chrome`.
 - Bar v2 (the standard, Tom, 2026-11-09) lays controls over the stage in four corners, each 12 px from the edge, with 6 px between controls (`shared/stim.css:326-338`). The key strip sits bottom centre. The slot table and limits are in `AGENTS.md` and `docs/plans/bar-v2.md`.
 - Under the stage: `section.about`, 1160 px at most. The vignette is two equal columns that become one at 760 px (`shared/stim.css:274-286`).
