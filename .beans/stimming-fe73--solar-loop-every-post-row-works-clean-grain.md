@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T21:56:43Z
-updated_at: 2026-11-24T23:40:32Z
+updated_at: 2026-11-25T00:36:30Z
 parent: stimming-e35i
 ---
 
@@ -24,3 +24,6 @@ Tom, 2026-11-24: "can we please get proper post fx settings, grain cleaned up an
 - [x] The heat shimmer's ripples keep one screen size (about 22 CSS px) and fade far out; before, they were tied to the star and aliased to a seethe as the view pulled back (measured: correlation at 1 px went to -0.6 at x32). Grain measured uniform at every zoom (Tom: "the noise effect does not seem uniform")
 
 - [x] ACES is the house tone map, fitted to Film (exposure 0.4, gamma 1.4): shadows and mids match within a level or two on the Sun, Rigel and Betelgeuse at four views; the brightest highlights roll off (the Sun on the long lens: 23 % clipped white under Film, none under ACES) (Tom: "lets turn aces on by default and tweak our lighting")
+
+- [x] Grain: even gaussian, one CSS pixel, one strength everywhere (spread 10.2 dark, 12.0 mid, 11.0 bright) (Tom: "the gaussian grain is NOT uniform")
+- [x] Haze denoised: each frame blends with its history (0.85 at rest, none while moving, reset on a star switch); at rest it changes by 0.07 levels a frame

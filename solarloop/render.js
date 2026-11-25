@@ -1105,6 +1105,15 @@ void main() {
   o = vec4(acc, accG, accL, T);
 }`;
 
+// The haze keeps a running blend of its frames, so the march's moving dither averages out (Tom, 2026-11-24).
+// uW is the history's weight: high while the view rests, low while it moves.
+const ACC = `${HEAD}
+uniform sampler2D uCur, uHist;
+uniform float uW;
+in vec2 vUv;
+out vec4 o;
+void main() { o = mix(texture(uCur, vUv), texture(uHist, vUv), uW); }`;
+
 // A three-tap blur along one axis: it hides the march dither, as in Fire.
 const BLUR = `${HEAD}
 uniform sampler2D uSrc;
@@ -1427,18 +1436,14 @@ void main() {
   vec2 v = vUv - 0.5;
   c *= clamp(1.0 - (0.6 + 0.25 * uLens) * uFx2.w * pow(length(v * vec2(1.0, 0.9)) * 1.35, 2.2), 0.15, 1.0);
   c = look(c);
-  // Film grain: soft clumps 1.4 CSS pixels wide at any resolution, 24 frames a second.
-  // It sits in the mid tones and stays out of black space; it holds still while the toy sleeps.
-  float l = dot(c, vec3(0.3, 0.55, 0.15));
-  vec2 gp = gl_FragCoord.xy / max(1.0, 1.4 * uDpr);
+  // Film grain: even gaussian noise, one CSS pixel per grain, one strength over the whole frame (Tom, 2026-11-24).
+  // A new frame of it 24 times a second; it holds still while the toy sleeps.
+  vec2 gi = floor(gl_FragCoord.xy / max(1.0, uDpr));
   // The frame count wraps, so the hash keeps its precision.
-  float gf = mod(floor(uTime * 24.0), 64.0);
-  vec2 gi = floor(gp), gt = fract(gp);
-  gt = gt * gt * (3.0 - 2.0 * gt);
-  float g00 = hash(gi + gf * 17.0), g10 = hash(gi + vec2(1.0, 0.0) + gf * 17.0);
-  float g01 = hash(gi + vec2(0.0, 1.0) + gf * 17.0), g11 = hash(gi + vec2(1.0, 1.0) + gf * 17.0);
-  float gr = (mix(mix(g00, g10, gt.x), mix(g01, g11, gt.x), gt.y) - 0.5) * 2.0;
-  c += gr * uFilm.x * 1.6 * uFx3.x * smoothstep(0.02, 0.15, l) * (0.35 + 2.6 * l * (1.0 - l));
+  float gf = mod(floor(uTime * 24.0), 64.0) * 17.0;
+  // Four uniform draws sum to a near gaussian; the scale gives it a unit spread.
+  float gr = (hash(gi + gf) + hash(gi + gf + 31.7) + hash(gi + gf + 63.1) + hash(gi + gf + 97.3) - 2.0) * 1.732;
+  c += gr * uFilm.x * 0.9 * uFx3.x;
   o = vec4(clamp(c, 0.0, 1.0) * uDip, 1.0);
 }`;
 
@@ -1451,6 +1456,7 @@ export async function makeRender(gl, opts = {}) {
     rays: program(gl, TRI_VS, RAYS),
     vol: program(gl, TRI_VS, VOL),
     blur: program(gl, TRI_VS, BLUR),
+    acc: program(gl, TRI_VS, ACC),
     final: program(gl, TRI_VS, FINAL),
     ...(opts.fluid ? fluidPrograms(gl) : {}),
   });
@@ -1487,17 +1493,22 @@ export async function makeRender(gl, opts = {}) {
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-  let hdr = null, rays = null, volA = null, volB = null, W = 0, H = 0;
+  let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
+  // The haze history is empty until a first frame fills it.
+  let histOk = false;
   // shift: the volume's size as a power of two below the frame; 1 is half size.
   function resize(w, h, shift = 1) {
     W = Math.max(2, w); H = Math.max(2, h);
     gl.canvas.width = W; gl.canvas.height = H;
-    free(gl, hdr); free(gl, rays); free(gl, volA); free(gl, volB);
+    free(gl, hdr); free(gl, rays); free(gl, volA); free(gl, volB); free(gl, volH); free(gl, volO);
     hdr = target(gl, W, H);
     rays = target(gl, Math.max(2, W >> 1), Math.max(2, H >> 1));
     // The volume marches at half size, a quarter on slow machines; the blur hides the dither.
     volA = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
     volB = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
+    volH = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
+    volO = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
+    histOk = false;
   }
   // Clears a target to one colour: a skipped pass leaves it neutral.
   function clearTo(t, r, g, b, a) {
@@ -1618,7 +1629,16 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, bp, 'uSrc', 0, volB);
     gl.uniform2f(bp.u.uStep, 0, 1);
     tri(gl, volA, empty);
-    } else clearTo(volA, 0, 0, 0, 1);
+    // Blend this frame with the haze's history; the result becomes the new history.
+    const ap = P.acc;
+    gl.useProgram(ap.p);
+    bind(gl, ap, 'uCur', 0, volA);
+    bind(gl, ap, 'uHist', 1, volH);
+    gl.uniform1f(ap.u.uW, histOk ? v.volHold ?? 0 : 0);
+    tri(gl, volO, empty);
+    [volH, volO] = [volO, volH];
+    histOk = true;
+    } else { clearTo(volH, 0, 0, 0, 1); histOk = false; }
 
     const f = P.final;
     gl.useProgram(f.p);
@@ -1626,7 +1646,7 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, f, 'uBloom', 1, bt);
     bind(gl, f, 'uRays', 2, rays);
     bind(gl, f, 'uLut', 3, lutT);
-    bind(gl, f, 'uVol', 4, volA);
+    bind(gl, f, 'uVol', 4, volH);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
     gl.uniform4fv(f.u.uView, v.view);

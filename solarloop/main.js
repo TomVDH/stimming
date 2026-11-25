@@ -854,6 +854,11 @@ function makeFrame() {
   f.dpr = view.H / Math.max(1, cssH);
   // The switch dip fades the whole frame, glare, stars and grain too.
   f.dip = dipLight();
+  // The haze's history weight: it holds while the view rests and lets go while it moves (Tom, 2026-11-24).
+  // A new star on screen starts it afresh.
+  const move = Math.abs(cam.z - hold.z) * 10 + (Math.abs(st.yaw - hold.yaw) + Math.abs(st.pitch - hold.pitch)) * 20;
+  f.volHold = shown === hold.star ? 0.85 * Math.exp(-move * 40) : 0;
+  Object.assign(hold, { z: cam.z, yaw: st.yaw, pitch: st.pitch, star: shown });
   // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
   f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
   // Mercury at true size, in transit on the long lens; nothing beside the limb.
@@ -1115,6 +1120,9 @@ stage.addEventListener('pointermove', e => {
   if (farAt(cam.z) > 0) poke();
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
+
+// The view as it stood on the last frame, for the haze's history weight.
+const hold = { z: 0, yaw: 0, pitch: 0, star: null };
 
 /* ---------- the star's turn ---------- */
 // Advances the star's own turn at its eased rate; true while the rate still eases.
