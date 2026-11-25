@@ -12,7 +12,8 @@ parent: stimming-e35i
 Tom picked it on 2026-11-25 (the impressive one). A red supergiant after a merger; pulled back, the 2002 flash's light echo grows through warped dust shells (runaway kind 7).
 
 - [x] v838Echo, entry and the id in every table
+- [x] Full 48-step 3D volumetric raymarch with Beer-Lambert absorption and baked radial self-shadowing (NBAKE)
 - [x] Docs
 - [ ] Tom's live look
 
-Baked (Tom, 2026-11-25): the dust is a 128³ volume baked once on first show (NBAKE); the march samples it.
+Baked (Tom, 2026-11-25): the dust is a 128³ volume baked once on first show (NBAKE); `v838Echo` marches it front to back in 48 steps with light-echo delay `r - z`, K3-style radial self-shadowing, and foreground dust occlusion.

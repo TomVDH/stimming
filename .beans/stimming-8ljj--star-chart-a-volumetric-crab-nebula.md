@@ -21,7 +21,7 @@ Goal: the Crab as a lit volume with real scale.
 - The Ring Nebula (stimming-wcfv) may reuse the same shell march.
 
 - [x] Pick the technique and its pass (final pass at half resolution, or the volume pass): a baked 128³ volume (NBAKE), marched in the final pass
-- [x] March the shell: filaments, glow, absorption
-- [ ] Scale cues and parallax on drag
+- [x] March the shell: front-to-back 48-step march, tilted M1 silhouette with western bay, O III / S II / H-alpha filament palette, absorption
+- [x] Scale cues and parallax on drag: 3D tilted pulsar wind torus with expanding relativistic wisps, curved bipolar jets, faint stars through gaps
 - [ ] Perf check live with Tom
 - [ ] Tom looks at it live

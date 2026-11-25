@@ -331,10 +331,10 @@ export const STARS = {
     wide: 'none', long: 'none', root: 174.61,
   },
   // Gaia BH1: a sun-like star round a dormant black hole of 9.6 suns, every 186 days, 1.4 AU apart.
-  // The hole stands 300 R off; pulled back, it bends the stars behind it. The full view stands 260 times back.
+  // The hole orbits 155 R out in Ophiuchus dust; the full view stands 130 times back.
   gaiabh1: {
-    ...FLARE, spots: 0.8, day: 25, reach: 260,
-    bow: { kind: 8, heading: 0.6, size: 300, col: [0, 0, 0] },
+    ...FLARE, spots: 0.8, day: 25, reach: 130,
+    bow: { kind: 8, heading: 0.42, orbit: 186, size: 155, col: [0, 0, 0] },
     row: 0, rsun: 0.99, expo: 1, hotW: 1, coolW: 1.15, loop: 0.9, prom: 0.9, dust: 0, rays: 0.9,
     hal: [1, 0.45, 0.14], streak: [1, 0.72, 0.36],
     disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12], tex: [170, 16, 0.15, 0.55],
@@ -477,9 +477,9 @@ export const STARS = {
   },
   // Epsilon Aurigae: an F supergiant, about 143 to 358 suns wide; 200 here.
   // Every 27 years a disc 3.8 AU wide and 0.475 AU thick crosses it for about two years.
-  // At this size the disc spans 2 R each way and stands 0.26 R thick each way.
+  // Marched as a tilted 3D dusty disc 2.1 R in half-width; the full view stands 2.4 times back.
   epsaur: {
-    ...FLARE, day: 0, rain: 0.3, bubble: 0.15, discE: [1, 0.45, 2.04, 0.26], reach: 1.8,
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.15, discE: [1, 0.32, 2.1, 0.24], reach: 2.4,
     row: 11, rsun: 200, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.4, dust: 0.1, rays: 1,
     hal: [1, 0.85, 0.6], streak: [1, 0.9, 0.7],
     disk: [1.6, 0.6, 0.05, 0.35], disk2: [110, 0.3, 0.3, 0.06], tex: [30, 6, 0.06, 0.5],

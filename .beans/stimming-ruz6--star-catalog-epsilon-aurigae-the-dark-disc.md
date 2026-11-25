@@ -13,7 +13,7 @@ Tom, 2026-11-24: yes, from the striking and largest stars list.
 An F0 supergiant; a vast dark disc crosses it every 27 years, the eclipse lasts about two years. https://en.wikipedia.org/wiki/Epsilon_Aurigae
 
 - [x] Reference images opened before the model (opened after the first build: the article's artist impression, a vast dark dusty disc with a glowing heart; the slab's size and edge-on view follow the article's numbers and its 87-degree orbit)
-- [x] Look built: uDiscE in the SKY pass, an edge-on flared slab 2.04 by 0.26 R (3.8 by 0.475 AU at 200 suns), blocking 70 percent, a lit rim and the hidden B star's glow; held mid-eclipse; Procyon's ramp
+- [x] Look rebuilt: 28-step front-to-back 3D volumetric march through a tilted, flared, swirling dusty disc with concentric lanes, backlit warm rims, and inner B5V cavity glow (`uDiscE` in SKY); `reach: 2.4`
 - [ ] Checked live in the browser (Tom: no side server; he checks the branch)
 - [x] Facts, sourced (Wikipedia URL kept)
 - [ ] Card text (stimming-mfak)

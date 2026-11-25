@@ -60,7 +60,7 @@ export const CHART = {
   v838: { kind: 'echo', t: 3300, cls: 'red supergiant after a merger, in its light echo' },
   earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
   powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
-  gargantua: { kind: 'hole', t: null, cls: 'supermassive black hole, after a film' },
+  gargantua: { kind: 'hole', t: null, cls: 'supermassive black hole, Interstellar' },
 };
 
 const fmtR = (rsun, value) => {
@@ -378,6 +378,8 @@ export function makeChart(o) {
     // A press on the Star button right after an outside close keeps it shut.
     toggle() { if (el.hidden && performance.now() - closedAt < 250) return; open(el.hidden); },
     get isOpen() { return !el.hidden; },
+    // Left-to-right tray order so [ and ] step consistently with the ribbon.
+    order: btns.map(x => x.s.value),
     sync,
   };
 }

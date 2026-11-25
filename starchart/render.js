@@ -1108,23 +1108,79 @@ void main() {
     float dd = length(dq);
     cool += vis * uDisk.x * uOff * 0.5 * exp(-dd * dd / 0.3);
   }
-  // Epsilon Aurigae: a vast dusty disc round a hidden B star crosses the supergiant.
-  // It is edge on and blocks about 70 percent of the light: the toy holds it mid-eclipse.
+  // Epsilon Aurigae: a vast tilted 3D dusty disc round a hidden B star eclipses the supergiant.
+  // Marched front to back through a flared, swirling dust slab; starlight backlights its wispy rims.
   if (uDiscE.x > 0.0) {
-    // The disc hangs in space: a drag turns it with the camera.
-    vec2 e = (uCamM * vec3(P, 0.0)).xy / R - vec2(uDiscE.y, -0.08);
-    e = vec2(0.9988 * e.x + 0.05 * e.y, -0.05 * e.x + 0.9988 * e.y);
-    // The disc flares: it thickens toward its rim.
-    float th = uDiscE.w * (0.65 + 0.35 * smoothstep(0.2, 1.0, abs(e.x) / uDiscE.z));
-    float edge = length(vec2(e.x / uDiscE.z, e.y / th));
-    float inD = smoothstep(1.0, 0.92, edge);
-    float block = 0.7 * inD * (0.8 + 0.4 * fbm(vec3(e * 4.0, 4.0)));
-    hot *= 1.0 - block;
-    cool *= 1.0 - block;
-    // Starlight scatters forward through the dust and lights the rim.
-    cool += uDiscE.x * uDisk.x * 0.1 * exp(-pow((edge - 0.97) / 0.05, 2.0));
-    // The hidden B star glows faintly at the disc's heart.
-    cool += uDiscE.x * uDisk.x * 0.2 * exp(-dot(e, e) / 0.015);
+    vec3 C = vec3(uDiscE.y, -0.05, 1.85);
+    vec3 Cv = C * uCamM;
+    float Rd = uDiscE.z * 1.15;
+    vec2 offC = P / R - Cv.xy;
+    float b2 = dot(offC, offC);
+    if (b2 < Rd * Rd) {
+      // Tilted 11 degrees toward the eye and canted slightly so the disc reads in 3D.
+      vec3 nD = normalize(vec3(-0.09, 0.975, 0.2));
+      vec3 uD = normalize(cross(vec3(0.0, 0.0, 1.0), nD));
+      vec3 vD = cross(nD, uD);
+      vec3 w0 = uCamM * vec3(P / R, 0.0);
+      vec3 dir = uCamM[2];
+      float zSph = sqrt(max(Rd * Rd - b2, 0.0));
+      float zStar = r < R ? sqrt(max(1.0 - (r / R) * (r / R), 0.0)) : -4.0;
+      float Hmax = uDiscE.w * 1.65;
+      float h0 = dot(w0 - C, nD), hd = dot(dir, nD);
+      float zLo = Cv.z - zSph, zHi = Cv.z + zSph;
+      if (abs(hd) > 1e-4) {
+        float za = (-Hmax - h0) / hd, zb = (Hmax - h0) / hd;
+        zLo = max(zLo, min(za, zb));
+        zHi = min(zHi, max(za, zb));
+      } else if (abs(h0) > Hmax) { zHi = zLo - 1.0; }
+      zLo = max(zLo, zStar);
+      if (zHi > zLo + 1e-3) {
+        float T = 1.0, scHot = 0.0, scCool = 0.0;
+        const int ND = 28;
+        float dt = (zHi - zLo) / float(ND);
+        float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+        for (int i = uZero; i < ND; i++) {
+          float z = zHi - (float(i) + 0.5 + jit) * dt;
+          vec3 w = w0 + z * dir;
+          vec3 d = w - C;
+          float h = dot(d, nD);
+          vec2 pl = vec2(dot(d, uD), dot(d, vD));
+          float rc = length(pl);
+          if (rc > uDiscE.z * 1.12 || rc < 0.05) continue;
+          float rf = clamp(rc / uDiscE.z, 0.0, 1.0);
+          // Flared height: thin round the B-star cavity, thickening toward the outer rim.
+          float H = uDiscE.w * (0.28 + 0.72 * pow(rf, 1.25));
+          float ah = abs(h) / max(H, 0.02);
+          if (ah > 2.6) continue;
+          // Swirling Keplerian clouds and concentric dusty lanes.
+          float ang = atan(pl.y, pl.x) + uTime * 0.06 / (0.35 + rc);
+          vec3 nc = vec3(cos(ang) * rc * 1.5, sin(ang) * rc * 1.5, h * 4.5);
+          float turb = hn2(nc * 1.3 + vec3(0.0, 0.0, rc * 2.0));
+          float fine = hn2(nc * 3.1 + vec3(4.2, -1.7, 2.5));
+          float rings = 0.62 + 0.38 * sin(rc * 19.0 + 1.8 * sin(rc * 7.0));
+          float gap = 1.0 - 0.52 * exp(-pow((rc - uDiscE.z * 0.56) / 0.075, 2.0));
+          float radEnv = smoothstep(0.16, 0.34, rc) * smoothstep(uDiscE.z * 1.1, uDiscE.z * 0.76, rc);
+          float prof = exp(-ah * ah * 1.6) + 0.42 * exp(-ah * ah * 0.42);
+          float dens = prof * radEnv * rings * gap * (0.35 + 1.5 * turb * (0.55 + 0.75 * fine));
+          if (dens < 0.004) continue;
+          // Supergiant behind the disc backlights the wispy upper, lower and outer dust rims.
+          float rS = max(length(w), 0.35);
+          float rim = smoothstep(0.32, 1.35, ah) * 0.85 + 0.55 * smoothstep(0.68, 1.04, rf);
+          float back = uDiscE.x * uDisk.x * (0.32 / (0.35 + rS * rS * 0.55)) * rim * exp(-dens * 1.35);
+          // Hidden B5V companion warms the inner cavity wall from within.
+          float inner = uDiscE.x * uDisk.x * 0.55 * exp(-pow((rc - 0.24) / 0.16, 2.0)) * exp(-ah * ah * 0.8);
+          float stepW = T * dens * dt * 2.0;
+          scHot += stepW * (back * 0.95 + inner * 0.15);
+          scCool += stepW * (back * 0.25 + inner * 0.85);
+          T *= exp(-dens * dt * 2.8);
+          if (T < 0.02) break;
+        }
+        hot = hot * T + scHot;
+        cool = cool * T + scCool;
+        // Hidden B star's soft blue-white heart peeking through the central cavity.
+        cool += T * uDiscE.x * uDisk.x * 0.28 * exp(-b2 / 0.014);
+      }
+    }
   }
   // A partner star. VFTS 352: a twin O star in contact; the envelopes merge in a neck.
   // A smooth union of the two disks draws the peanut; side on it shows, end on it hides.
@@ -1906,28 +1962,44 @@ function noiseVolume(n) {
 }
 
 /* ---------- the nebulae's dust, baked once on first use ---------- */
-// 0 the Homunculus round Eta Carinae, 1 V838 Monocerotis's dust shells, 2 the Crab Nebula, 3 the Ring Nebula.
-// A cube round the star, 2.8 wide (3.0 for the Ring), in the nebula's own units and frame; the march samples it.
+// 0 Eta Carinae, 1 V838 Monocerotis, 2 Crab, 3 Ring, 4 Gaia BH1 dust.
+// A cube round the star, 2.8 wide (3.0 for the Ring); the march samples it.
 const NB_N = 128;
 const NBAKE = `${HEAD}
 uniform int uWhich;
 uniform float uLayer;
 out vec4 o;
 ${NOISE}
+// Coarse dust density for V838 radial self-shadow taps.
+float v838Coarse(vec3 p) {
+  float r = length(p);
+  float sh = 0.5 + 0.5 * sin(r * 26.0 + 3.2 * fbm(p * 2.6 + 2.0));
+  float cav = smoothstep(0.28, 0.56, fbm(p * 1.9 + vec3(3.1, -2.4, 1.7)));
+  return pow(sh, 2.5) * (0.15 + 0.85 * cav) * smoothstep(1.36, 0.52, r) * smoothstep(0.03, 0.14, r);
+}
 void main() {
   vec3 w = (vec3(gl_FragCoord.xy / ${NB_N}.0, uLayer) * 2.0 - 1.0) * (uWhich == 3 ? 1.5 : 1.4);
   if (uWhich == 2) {
-    // The Crab: an ellipsoid cage of filaments round a synchrotron glow, its rim ragged.
-    vec3 u = w / vec3(1.0, 0.68, 0.75);
+    // The Crab (M1): tilted ellipsoid cage of tangled filaments round a synchrotron cavity.
+    vec3 rt = vec3(0.79 * w.x - 0.61 * w.y, 0.61 * w.x + 0.79 * w.y, w.z);
+    vec3 u = rt / vec3(1.02, 0.68, 0.76);
     vec3 nd = u / max(length(u), 1e-3);
-    float e = length(u) / (1.0 + 0.24 * (fbm(nd * 2.0 + 5.0) - 0.5));
-    // The filaments: ridges of two noise layers, in a thick shell.
-    float r1 = pow(1.0 - abs(fbm(w * 4.5) - 0.5) * 2.0, 14.0);
-    float r2 = pow(1.0 - abs(fbm(w * 9.0 + 3.0) - 0.5) * 2.0, 18.0);
-    float fil = (r1 + 0.7 * r2 + 0.12 * fbm(w * 3.0 + 9.0)) * smoothstep(0.35, 0.75, e) * smoothstep(1.08, 0.9, e);
-    // The synchrotron glow: soft, blue-white, brightest round the pulsar.
-    float syn = exp(-e * e * 2.2) * (0.5 + 0.8 * fbm(u * 3.0 + 1.3));
-    o = vec4(fil / 3.0, syn / 2.0, smoothstep(0.3, 0.7, fbm(w * 1.5 + 8.0)), 1.0);
+    // Ragged Rayleigh-Taylor rim and the iconic western bay indentation.
+    float bay = 0.18 * exp(-pow((nd.x + 0.85) / 0.35, 2.0) - pow((nd.y - 0.1) / 0.4, 2.0));
+    float e = length(u) / (1.0 + 0.26 * (fbm(nd * 2.4 + 5.0) - 0.5) - bay);
+    // Domain-warped 3D tendril cage: broad oxygen/sulfur veins and crisp H-alpha webs.
+    vec3 wq = w + 0.22 * (vec3(fbm(w * 2.8 + 1.2), fbm(w * 2.8 + 6.4), fbm(w * 2.8 + 11.7)) - 0.5);
+    float r1 = pow(1.0 - abs(fbm(wq * 4.2) - 0.5) * 2.0, 6.0);
+    float r2 = pow(1.0 - abs(fbm(wq * 8.6 + 3.1) - 0.5) * 2.0, 9.5);
+    float shell = smoothstep(0.34, 0.68, e) * smoothstep(1.14, 0.84, e);
+    float tendril = smoothstep(0.55, 0.82, e) * smoothstep(1.24, 0.96, e);
+    float fil = (r1 * 0.95 + r2 * 1.15) * shell + r2 * 0.55 * tendril;
+    // Structured synchrotron cloud filling the interior with fibrous magnetic striations.
+    float syn = exp(-e * e * 1.85) * smoothstep(1.02, 0.58, e) * (0.45 + 0.85 * fbm(wq * 2.6 + 1.3));
+    syn *= 0.75 + 0.45 * fbm(u * 6.0 + vec3(2.1, -1.4, 3.3));
+    // Ionization map: inner O III teal, mid S II gold, outer H-alpha crimson.
+    float ion = clamp((e - 0.35) * 0.85 + 0.35 * (fbm(wq * 2.0 + 8.0) - 0.5), 0.0, 1.0);
+    o = vec4(clamp(fil / 2.2, 0.0, 1.0), clamp(syn / 1.8, 0.0, 1.0), ion, 1.0);
   } else if (uWhich == 3) {
     // The Ring: a prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
     vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
@@ -1943,6 +2015,18 @@ void main() {
     float dens = (ring + wall) * (0.3 + 1.4 * smoothstep(0.3, 0.75, stk)) * (0.6 + 0.6 * m);
     float fill = 0.16 * smoothstep(0.85, 0.2, sh) * (0.6 + 0.8 * m);
     o = vec4(dens / 2.8, sh / 2.0, fill / 0.3, 1.0);
+  } else if (uWhich == 4) {
+    // Gaia BH1 in Ophiuchus: layered galactic dust cirrus tilted across the plane.
+    vec3 g = vec3(w.x * 0.85 + w.y * 0.52, -w.x * 0.52 + w.y * 0.85, w.z);
+    vec3 wq = g + 0.38 * (vec3(fbm(g * 2.2 + 1.5), fbm(g * 2.2 + 6.1), fbm(g * 2.2 + 11.3)) - 0.5);
+    float band = exp(-pow(wq.y / 0.68, 2.0));
+    float cl = fbm(wq * vec3(2.8, 4.6, 2.8) + 2.0);
+    float fil = pow(1.0 - abs(fbm(wq * 6.5 + 4.0) - 0.5) * 2.0, 4.0);
+    float fine = fbm(wq * 13.0 + 8.5);
+    float env = smoothstep(1.38, 0.72, length(w));
+    float dens = (0.45 * pow(smoothstep(0.32, 0.78, cl), 1.6) + 0.55 * fil * smoothstep(0.28, 0.72, cl)) * (0.28 + 0.72 * band) * env;
+    float wisp = fil * (0.4 + 0.9 * fine) * env;
+    o = vec4(clamp(dens * 1.4, 0.0, 1.0), clamp(wisp * 1.2, 0.0, 1.0), clamp(cl * 0.65 + fine * 0.35, 0.0, 1.0), 1.0);
   } else if (uWhich == 0) {
     // The axis leans about 41 degrees from the line of sight.
     vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
@@ -1967,15 +2051,21 @@ void main() {
     float dens = wall + 0.7 * sk;
     o = vec4(dens / 3.0, m, clamp(sk / max(dens, 1e-3), 0.0, 1.0), 1.0);
   } else {
+    // V838 Monocerotis: warped billowing dust shells, cavities and radial shadow.
     float r3 = length(w);
-    // A warp turns the shells into eddies, as in Hubble's pictures.
-    vec3 wq = w + 0.3 * (vec3(fbm(w * 3.5 + 1.0), fbm(w * 3.5 + 7.0), fbm(w * 3.5 + 13.0)) - 0.5);
+    vec3 wq = w + 0.32 * (vec3(fbm(w * 2.6 + 1.1), fbm(w * 2.6 + 7.3), fbm(w * 2.6 + 13.7)) - 0.5);
     float rq = length(wq), ang = atan(wq.y, wq.x);
-    float sw = fbm(wq * 2.5 + 2.0);
-    float shells = 0.5 + 0.5 * sin(rq * 34.0 + sw * 10.0 + 1.5 * sin(ang * 3.0 + rq * 8.0) * smoothstep(0.0, 0.2, length(wq.xy)));
-    float fine = 0.7 * fbm(wq * 12.0 + 5.0) + 0.3 * fbm(wq * 29.0 + 9.0);
-    float dens = pow(shells, 6.0) * (0.2 + 2.2 * fine * fine) * smoothstep(1.3, 0.6, r3) * smoothstep(0.02, 0.12, r3);
-    o = vec4(dens / 2.5, 0.0, 0.0, 1.0);
+    float sw = fbm(wq * 2.2 + 2.0);
+    float shells = 0.5 + 0.5 * sin(rq * 26.0 + sw * 9.5 + 1.6 * sin(ang * 3.0 + rq * 7.0) * smoothstep(0.0, 0.25, length(wq.xy)));
+    float billow = fbm(wq * 5.5 + 4.3);
+    float fine = fbm(wq * 12.5 + 9.1);
+    float cav = smoothstep(0.28, 0.56, fbm(w * 1.9 + vec3(3.1, -2.4, 1.7)));
+    float mask = pow(shells, 3.2) * (0.35 + 1.45 * billow) + 0.32 * pow(billow, 2.2);
+    float env = smoothstep(1.36, 0.52, r3) * smoothstep(0.03, 0.14, r3);
+    float dens = mask * (0.35 + 1.5 * fine * fine) * (0.12 + 0.88 * cav) * env;
+    // Three taps toward the star bake radial self-shadowing into green.
+    float radTau = (v838Coarse(w * 0.72) + v838Coarse(w * 0.48) + v838Coarse(w * 0.24)) * r3 * 0.42;
+    o = vec4(clamp(dens / 2.2, 0.0, 1.0), clamp(radTau / 1.8, 0.0, 1.0), clamp(billow * 0.65 + fine * 0.35, 0.0, 1.0), 1.0);
   }
 }`;
 
@@ -2296,24 +2386,90 @@ vec3 etaNeb(vec2 pR) {
   float oe = exp(-pow((d - 1.3) / 0.22, 2.0)) * 0.16 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
   return acc + vec3(1.0, 0.3, 0.2) * oe;
 }
-// Gaia BH1's dormant black hole, uBow.z R off along the heading; not to scale: its shadow is 60 km wide.
-// No gas falls in, so it shows only by bending the stars behind it: a point lens, b = t - tE² / t.
+// Dense Ophiuchus star field in world sky coordinates, bent by Gaia BH1.
+vec3 ophStars(vec2 sky, float pw) {
+  vec3 acc = vec3(0.0);
+  for (int L = 0; L < 2; L++) {
+    float cell = L == 0 ? 0.21 : 0.085;
+    float fade = smoothstep(cell * 0.25, cell * 0.06, pw);
+    if (fade <= 0.0) continue;
+    vec2 g = floor(sky / cell);
+    for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+      vec2 id = g + vec2(dx, dy);
+      vec4 h = hash42(id + float(L) * 43.7 + 11.2);
+      if (h.w < (L == 0 ? 0.42 : 0.52)) continue;
+      vec2 c = (id + 0.12 + 0.76 * h.xy) * cell;
+      float dd = length(sky - c);
+      float rad = min(pw * (L == 0 ? 1.25 : 0.9), cell * 0.14);
+      float b = (L == 0 ? 0.95 : 0.42) * pow(h.z, 2.2) + 0.05;
+      vec3 col = mix(vec3(1.0, 0.76, 0.54), vec3(0.74, 0.86, 1.0), fract(h.x * 17.3));
+      acc += col * b * fade * (exp(-dd * dd / (rad * rad * 1.4)) + 0.18 * exp(-dd / (rad * 3.5)));
+    }
+  }
+  return acc;
+}
+// Gaia BH1's dormant black hole, orbiting uBow.z R out in Ophiuchus; not to scale.
+// Marches baked 3D Ophiuchus dust (NBAKE); rays behind the hole bend round its shadow.
 vec3 dormantHole(vec2 P) {
-  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
-  vec2 pr = P / R, dq = pr - uBow.z * ax;
-  float rr = max(length(dq), 1e-4), tE = 0.06 * uBow.z;
-  if (rr > 8.0 * tE) return vec3(0.0);
-  float rpp = max(fwidth(pr.x), 1e-5);
-  vec2 fc = gl_FragCoord.xy;
-  vec2 src = fc - (tE * tE / rr) * (dq / rr) / rpp;
-  // The shadow hides what lies behind it; the bent stars take the place of the straight ones.
-  float sh = smoothstep(0.42 * tE, 0.36 * tE, rr);
-  vec3 c = (starfield(src) * (1.0 - sh) - starfield(fc)) * uCam.w;
-  // The Einstein ring: the galaxy's faint diffuse light, gathered round the hole.
-  c += vec3(0.6, 0.7, 1.0) * 0.16 * exp(-pow((rr - tE) / (0.14 * tE), 2.0)) * (1.0 - sh);
-  // The photon ring: a thin line of starlight bent round the shadow's edge.
-  c += vec3(0.85, 0.9, 1.0) * 0.5 * exp(-pow((rr - 0.43 * tE) / (0.025 * tE), 2.0));
-  return c;
+  vec2 q = P / (R * uBow.z);
+  float pw = max(length(fwidth(q)), 1e-4);
+  float vis = smoothstep(3.0, 22.0, uView.w / R);
+  if (vis <= 0.0) return vec3(0.0);
+  // Tilted 3D orbit (about 52 degrees); uCamM turns world space into the view.
+  float ang = uBow.y;
+  vec3 bhW = vec3(cos(ang), sin(ang) * 0.62, sin(ang) * 0.78);
+  vec3 bhV = bhW * uCamM;
+  vec2 dq = q - bhV.xy;
+  float rr = max(length(dq), 1e-4);
+  float tE = 0.22, rSh = 0.4 * tE;
+  float defl = min(tE * tE / max(rr, rSh * 0.8), 3.0);
+  vec2 bend = (dq / rr) * defl;
+  float sh = smoothstep(rSh * 1.05, rSh * 0.92, rr);
+  // Front-to-back march through the baked 128³ Ophiuchus dust volume.
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  float d2 = dot(q, q);
+  if (d2 < 2.4) {
+    const int N = 36;
+    float dt = 2.7 / float(N);
+    float dither = hash(gl_FragCoord.xy) - 0.5;
+    for (int i = 0; i < N; i++) {
+      float z = 1.35 - (float(i) + 0.5 + dither) * dt;
+      // Dust behind the black hole bends through its lens and hides behind its shadow.
+      float behind = smoothstep(bhV.z + 0.08, bhV.z - 0.14, z);
+      vec2 qRay = q - bend * behind;
+      vec3 w = uCamM * vec3(qRay, z);
+      if (any(greaterThan(abs(w), vec3(1.38)))) continue;
+      vec4 nb = texture(uNeb, w / 2.8 + 0.5);
+      float dens = nb.r * 1.15;
+      float rBh = length(w - bhW);
+      // Faint wind and dust focused round the dormant hole, never a hot disc.
+      float halo = exp(-rBh / 0.24) * smoothstep(0.08, 0.15, rBh) * nb.g * 0.55;
+      float tot = dens + halo;
+      if (tot < 0.004) continue;
+      float occ = 1.0 - sh * behind;
+      float rStar = max(length(w), 0.08);
+      // Warm light from the G star, over cool indigo and ochre Ophiuchus cirrus.
+      vec3 starC = vec3(1.0, 0.78, 0.48) * (0.34 / (0.12 + rStar * rStar * 2.4));
+      vec3 galC = mix(vec3(0.24, 0.34, 0.6), vec3(0.78, 0.5, 0.34), nb.b) * (0.28 + 0.75 * nb.g);
+      vec3 haloC = vec3(0.62, 0.74, 0.94) * halo * 1.35;
+      float powder = 0.6 + 0.4 * (1.0 - exp(-tot * 2.4));
+      acc += T * occ * ((starC + galC) * dens + haloC) * powder * dt * 1.1;
+      T *= exp(-tot * dt * 1.35);
+      if (T < 0.02) break;
+    }
+  }
+  // Lensed Ophiuchus stars behind the dust; the shadow masks straight stars too.
+  vec2 skyBent = (uCamM * vec3(q - bend, -1.0)).xy;
+  vec3 stars = ophStars(skyBent, pw) * (1.0 - sh) * T;
+  // Subtle Einstein ring and crisp photon ring, brightened slightly toward the star.
+  vec2 toStar = normalize(-bhV.xy + 1e-4);
+  float side = 0.75 + 0.45 * max(dot(dq / rr, toStar), 0.0);
+  vec3 ein = vec3(0.55, 0.68, 1.0) * 0.18 * exp(-pow((rr - tE) / (0.13 * tE), 2.0)) * (1.0 - sh) * side;
+  vec3 phot = mix(vec3(0.8, 0.88, 1.0), vec3(1.0, 0.86, 0.68), 0.35 * max(dot(dq / rr, toStar), 0.0));
+  phot *= 0.65 * exp(-pow((rr - rSh * 1.03) / (0.045 * rSh), 2.0)) * side;
+  vec3 maskFar = -starfield(gl_FragCoord.xy) * uCam.w * sh;
+  return (acc + stars + ein + phot) * vis + maskFar;
 }
 // The Einstein Cross (Q2237+030), after Hubble: a quasar 8 billion light years back,
 // lensed into four images round the bulge of a near barred spiral, Huchra's Lens.
@@ -2346,31 +2502,54 @@ vec3 einCross(vec2 p) {
   }
   return col;
 }
-// V838 Monocerotis's light echo, after Hubble (2002 to 2006).
-// The flash of 2002 lights the dust round the star as its light passes through.
-// Light that reaches us at one time scattered off a paraboloid round the star: z = (x² + y²) / (2 ct) - ct / 2.
-// The echo grows on its own clock, once every 150 s; uBow.z R is the dust's outer edge; not to scale.
+// V838 Monocerotis's volumetric light echo, after Hubble (2002 to 2006).
+// Marches baked 128³ dust (NBAKE) front to back; the flash lights voxels at tau = r - z.
+// Unlit foreground dust absorbs light behind it; the echo cycles every 150 s.
 vec3 v838Echo(vec2 pR) {
   vec2 q = pR / uBow.z;
   float d2 = dot(q, q);
-  if (d2 > 2.6) return vec3(0.0);
+  if (d2 > 1.92) return vec3(0.0);
+  float vis = smoothstep(1.2, 6.0, uView.w / R);
+  if (vis <= 0.0) return vec3(0.0);
   float cyc = fract(uTime / 150.0);
-  float ct = 0.08 + 1.15 * cyc;
-  float fade = smoothstep(0.0, 0.08, cyc) * smoothstep(1.0, 0.8, cyc);
+  float ct = 0.14 + 1.35 * cyc;
+  float fade = smoothstep(0.0, 0.07, cyc) * smoothstep(1.0, 0.82, cyc);
+  float zMax = sqrt(max(1.92 - d2, 0.0));
   vec3 acc = vec3(0.0);
-  for (int k = 0; k < 10; k++) {
-    // Earlier light lies on a larger paraboloid; the flash turned from blue-white to deep red.
-    float e = float(k) / 9.0;
-    float cc = max(ct - 0.3 * e, 0.02);
-    vec3 w = uCamM * vec3(q, d2 / (2.0 * cc) - 0.5 * cc);
-    float r3 = length(w);
-    if (r3 > 1.3) continue;
-    // The baked dust: nested shells warped into eddies (NBAKE).
-    float dens = texture(uNeb, w / 2.8 + 0.5).r * 2.5;
-    // Scattered light falls with the square of the distance from the star.
-    acc += mix(vec3(0.7, 0.85, 1.0), vec3(1.0, 0.32, 0.1), e) * dens / (0.05 + r3 * r3) * 0.045;
+  float T = 1.0;
+  const int N = 48;
+  float dt = 2.0 * zMax / float(N);
+  float dither = hash(gl_FragCoord.xy) - 0.5;
+  for (int i = 0; i < N; i++) {
+    // Front to back so foreground dust darkens the glowing echo behind it.
+    float z = zMax - (float(i) + 0.5 + dither) * dt;
+    vec3 w = uCamM * vec3(q, z);
+    if (any(greaterThan(abs(w), vec3(1.38)))) continue;
+    vec4 nb = texture(uNeb, w / 2.8 + 0.5);
+    float dens = nb.r * 2.2;
+    if (dens < 0.004) continue;
+    float r3 = max(length(w), 0.03);
+    // Exact light-travel delay for a paraboloid echo facing the observer.
+    float age = ct - (r3 - z);
+    float pulse = smoothstep(-0.04, 0.05, age) * smoothstep(0.46, 0.1, age);
+    float e = clamp(age / 0.42, 0.0, 1.0);
+    // Multiple brightness peaks echo the 2002 outburst's blue-to-crimson fade.
+    float ripple = 0.72 + 0.38 * exp(-pow((e - 0.14) / 0.09, 2.0)) + 0.32 * exp(-pow((e - 0.48) / 0.11, 2.0));
+    vec3 col = mix(vec3(0.72, 0.86, 1.0), vec3(1.0, 0.76, 0.46), smoothstep(0.0, 0.38, e));
+    col = mix(col, vec3(0.92, 0.24, 0.08), smoothstep(0.32, 1.0, e));
+    col *= mix(vec3(0.88, 0.94, 1.04), vec3(1.08, 0.88, 0.74), nb.b);
+    // K3-style radial self-shadow, powder and forward-scattering phase.
+    float sh = nb.g * 1.8;
+    float k3Sh = exp(-sh * 2.1) + 0.28 * exp(-sh * 0.55);
+    float powder = 0.55 + 0.45 * (1.0 - exp(-dens * 2.5));
+    float phase = 0.55 + 0.95 * pow(0.5 + 0.5 * (z / r3), 2.2);
+    float core = exp(-r3 * 4.5) * 0.45;
+    vec3 emit = (col * pulse * ripple * fade * 1.75 / (0.07 + r3 * r3) + vec3(0.95, 0.28, 0.1) * core) * k3Sh * powder * phase;
+    acc += T * emit * dens * dt * 1.35;
+    T *= exp(-dens * dt * 2.4);
+    if (T < 0.02) break;
   }
-  return acc * fade;
+  return acc * vis;
 }
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
 // A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
@@ -2398,31 +2577,54 @@ vec3 ringNeb(vec2 pR) {
   float halo = exp(-pow((d - 1.4) / 0.2, 2.0)) * 0.12 * (0.3 + 1.4 * fbm(vec3(q * 5.0, 4.0)));
   return acc * 0.9 + vec3(1.0, 0.3, 0.25) * halo;
 }
-// The Crab Nebula, uBow.z R along its long axis; not to scale: the true nebula is 11 light years wide.
-// A lit volume (Tom, 2026-11-25: volumetrics, scale): a cage of red and gold filaments round a blue synchrotron glow.
-// Each ray marches the baked volume (NBAKE) in the camera's frame, so a drag turns it and the filaments part in depth.
+// The Crab Nebula (M1), uBow.z R along its long axis; not to scale: the true nebula is 11 light years wide.
+// Front-to-back march through baked 128³ filaments and synchrotron glow, with 3D pulsar torus, moving wisps and jets.
 vec3 crabNeb(vec2 pR) {
   vec2 q = pR / uBow.z;
-  if (length(q) > 1.5) return vec3(0.0);
+  float pw = max(length(fwidth(q)), 1e-4);
+  float vis = smoothstep(1.2, 6.0, uView.w / R);
+  float d2 = dot(q, q);
+  if (vis <= 0.0 || d2 > 1.96) return vec3(0.0);
+  float zMax = sqrt(max(1.96 - d2, 0.0));
   vec3 acc = vec3(0.0);
   float T = 1.0;
-  const int N = 40;
-  float dt = 2.8 / float(N);
+  const int N = 48;
+  float dt = 2.0 * zMax / float(N);
+  float dither = hash(gl_FragCoord.xy) - 0.5;
+  // Pulsar spin axis in 3D: tilted like Chandra's torus and curved jet.
+  vec3 jAx = normalize(vec3(-0.55, 0.72, 0.42));
   for (int i = 0; i < N; i++) {
-    vec3 w = uCamM * vec3(q, -1.4 + (float(i) + 0.5) * dt);
+    // Front to back so near filaments occlude the synchrotron glow and far cage.
+    float z = zMax - (float(i) + 0.5 + dither) * dt;
+    vec3 w = uCamM * vec3(q, z);
     if (any(greaterThan(abs(w), vec3(1.38)))) continue;
     vec4 nb = texture(uNeb, w / 2.8 + 0.5);
-    float fil = nb.r * 3.0, syn = nb.g * 2.0;
-    vec3 filC = mix(vec3(1.0, 0.2, 0.1), vec3(1.0, 0.7, 0.36), nb.b);
-    // The filaments glow and also hide a little of what lies behind them.
-    acc += T * (filC * fil * 0.55 + vec3(0.55, 0.7, 1.0) * syn * 0.75) * dt * 0.75;
-    T *= exp(-fil * dt * 1.5);
+    float fil = nb.r * 2.2, syn = nb.g * 1.8;
+    // Inner 3D pulsar wind torus, expanding relativistic wisps and curved bipolar jets.
+    float r3 = length(w);
+    vec3 pwn = vec3(0.0);
+    if (r3 < 0.48) {
+      float h = dot(w, jAx);
+      float rho = length(w - h * jAx);
+      float tor = exp(-pow((rho - 0.14) / 0.055, 2.0)) * exp(-pow(h / 0.032, 2.0));
+      // Wisps ripple outward from the inner ring at half light speed.
+      float wisp = (0.55 + 0.45 * sin(rho * 48.0 - uTime * 2.1)) * exp(-pow((rho - 0.16) / 0.12, 2.0)) * exp(-pow(h / 0.045, 2.0));
+      float jet = exp(-pow(rho / (0.018 + 0.04 * abs(h)), 2.0)) * smoothstep(0.04, 0.1, abs(h)) * exp(-abs(h) / 0.24);
+      pwn = vec3(0.68, 0.84, 1.0) * (tor * 2.2 + wisp * 1.15 + jet * 1.4);
+    }
+    // Real M1 filament palette: inner O III teal, mid S II gold-orange, outer H-alpha crimson.
+    vec3 filC = mix(vec3(0.32, 0.85, 0.68), vec3(1.0, 0.66, 0.26), smoothstep(0.18, 0.58, nb.b));
+    filC = mix(filC, vec3(1.0, 0.2, 0.12), smoothstep(0.5, 0.88, nb.b));
+    vec3 synC = mix(vec3(0.36, 0.58, 1.0), vec3(0.76, 0.88, 1.0), smoothstep(0.25, 1.1, syn));
+    float powder = 0.65 + 0.35 * (1.0 - exp(-fil * 2.2));
+    acc += T * (filC * fil * 1.15 * powder + synC * syn * 0.72 + pwn) * dt * 0.88;
+    T *= exp(-(fil * 1.65 + syn * 0.18) * dt);
+    if (T < 0.02) break;
   }
-  // The inner torus and the jet round the pulsar, drawn flat: they are small.
-  vec2 u = q / vec2(1.0, 0.68);
-  float tor = exp(-pow((length(u / vec2(1.0, 0.4)) - 0.09) / 0.025, 2.0)) * 0.5;
-  float jet = exp(-pow(u.x / 0.012, 2.0)) * smoothstep(0.22, 0.02, abs(u.y)) * 0.25;
-  return acc + vec3(0.55, 0.7, 1.0) * (tor + jet);
+  // Faint far stars seen through gaps in the filament cage.
+  vec2 sky = (uCamM * vec3(q, -1.0)).xy;
+  acc += ophStars(sky * 1.4, pw * 1.4) * 0.38 * T;
+  return acc * vis;
 }
 // Mira's bow shock and tail, in R along its heading; not to scale.
 // The true tail is 13 light years long; uBow.z is the bow's stand-off.
@@ -2900,7 +3102,7 @@ export async function makeRender(gl, opts = {}) {
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // Black hole detail: below 1 the holes' sky pass draws to holeT, made on first use.
-  // A nebula's dust, baked the first time its star shows: kind 4 the Crab, 5 the Ring, 6 Eta Carinae, 7 V838 Monocerotis.
+  // A nebula's dust bakes on first show: 4 Crab, 5 Ring, 6 Eta Carinae, 7 V838, 8 Gaia BH1.
   const nebT = {};
   function nebTex(which) {
     const t = gl.createTexture();
@@ -2976,7 +3178,7 @@ export async function makeRender(gl, opts = {}) {
     if (!hdr) return;
     // A nebula's dust bakes once, the first time its star shows.
     const nk = v.bow[0] > 0 ? Math.round(v.bow[3]) : 0;
-    const nw = { 6: 0, 7: 1, 4: 2, 5: 3 }[nk];
+    const nw = { 6: 0, 7: 1, 4: 2, 5: 3, 8: 4 }[nk];
     if (nw !== undefined && !nebT[nk]) nebT[nk] = nebTex(nw);
     gl.disable(gl.BLEND);
     if (fluid && v.fluid) fluid.step(v.fluid.step);

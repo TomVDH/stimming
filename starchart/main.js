@@ -847,8 +847,9 @@ addEventListener('keydown', e => {
   else if (e.key === 'i' || e.key === 'I') infoPress();
   else if (e.key === 'Escape' && article.isOpen()) article.close();
   else if (step) {
-    const at = PICKS.findIndex(x => x.value === st.star);
-    pickStar(PICKS[(at + step + PICKS.length) % PICKS.length].value);
+    const order = chart.order;
+    const at = order.indexOf(st.star);
+    pickStar(order[(at + step + order.length) % order.length]);
   } else return;
   e.preventDefault();
 });
@@ -1244,8 +1245,15 @@ function makeFrame() {
   const bw = star.bow;
   // The heading turns with the camera, so the arc or the wake keeps its place round the star.
   if (bw) {
-    const h = camView([Math.cos(bw.heading), Math.sin(bw.heading), 0]);
-    f.bow.set([1 + (bw.style ?? 0), Math.atan2(h[1], h[0]), bw.size, bw.kind]); f.bowC.set(bw.col);
+    if (bw.kind === 8 && bw.orbit) {
+      // Gaia BH1's hole orbits in 3D with Turn; uCamM turns it in the shader.
+      const ang = bw.heading + st.turn / (bw.orbit * 86400) * 2 * Math.PI;
+      f.bow.set([1 + (bw.style ?? 0), ang, bw.size, bw.kind]);
+    } else {
+      const h = camView([Math.cos(bw.heading), Math.sin(bw.heading), 0]);
+      f.bow.set([1 + (bw.style ?? 0), Math.atan2(h[1], h[0]), bw.size, bw.kind]);
+    }
+    f.bowC.set(bw.col);
   } else { f.bow.fill(0); f.bowC.fill(0); }
   // WR 140's dust shells: one per orbit, counted on the star's own clock.
   const sh = star.shells;
@@ -1822,8 +1830,8 @@ try {
   setTimeout(glideIn, 400);
   // The other stars' disk passes compile in idle time, nearest in the list first.
   // They start after the glide in and wait while the star moves, so no compile hitches it.
-  const at = PICKS.findIndex(x => x.value === st.star);
-  const order = PICKS.map((x, i) => [x.value, Math.min(Math.abs(i - at), PICKS.length - Math.abs(i - at))]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+  const at = chart.order.indexOf(st.star);
+  const order = chart.order.map((v, i) => [v, Math.min(Math.abs(i - at), chart.order.length - Math.abs(i - at))]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
   setTimeout(() => ren?.warm?.(order, () => busy || !visible), 400 + GLIDE_MS);
 } catch (err) {
   console.error(err);
