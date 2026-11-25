@@ -17,4 +17,5 @@ Tom, 2026-11-24: "the time compression needs to be revised -- subsession please"
 - [x] Commit on claude/solarloop-time-f59d1a; report the branch
 - [x] Landed on main (Tom: "ensure main gets this")
 - [x] Turn steps 5x, 10x, 50x, 100x of each star's base; the clock holds still (fixed columns, picked rate)
+- [x] Steps Real time, x5, x10, x25, x100; the clock is one faint line over the zoom rail
 - [ ] Tom looks at the clock and the turn times

@@ -58,7 +58,7 @@ const st = {
   turn: 34 * SPIN_UP,
   next: 0,
 };
-/* ---------- turn speed: 5x to 100x of each star's own base (Tom, 2026-11-24) ---------- */
+/* ---------- turn speed: real time, or x5 to x100 of each star's own base (Tom, 2026-11-24) ---------- */
 // At 10x one turn takes 60 to 120 s; a longer true period takes longer.
 const TURN_S = [60, 120], TURN_P = [0.22, 5e4];
 // The S stars' clock: one year in 1.5 s, so S2 laps in about 24 s.
@@ -80,8 +80,8 @@ function clockOf(key) {
   const kind = B.day && !B.bin && !B.pair ? 'rot' : 'orb';
   return { kind, days, fit: days * 86400 / (TURN_S[0] + f * (TURN_S[1] - TURN_S[0])) };
 }
-// id, bar label, times the star's base. Unknown stored speeds fall back to 10x.
-const RATES = [['x5', '5×', 5], ['x10', '10×', 10], ['x50', '50×', 50], ['x100', '100×', 100]];
+// id, bar label, times the star's base; real time has none. Unknown stored speeds fall back to x10.
+const RATES = [['real', 'Real time', 0], ['x5', '×5', 5], ['x10', '×10', 10], ['x25', '×25', 25], ['x100', '×100', 100]];
 const savedRate = RATES.find(r => r[0] === store.get('rate'));
 const turn = { pick: savedRate ? savedRate[0] : 'x10', lr: 0, vr: 0, of: '' };
 // Activity in words (Tom, 2026-11-24): each step and the strength it sets, 0 to 100.
@@ -96,7 +96,10 @@ const TURN_ICON = '<svg class="sl-turn" viewBox="0 0 24 24" aria-hidden="true"><
 const rateLabel = () => `${TURN_ICON}<span>${rateText()}</span>`;
 // The log of a star's rate at 10x; 4 when the star keeps no time.
 const fitLog = key => Math.log10(clockOf(key)?.fit ?? 1e4);
-const rateLog = key => fitLog(key) + Math.log10(RATES.find(r => r[0] === turn.pick)[2] / 10);
+const rateLog = key => {
+  const k = RATES.find(r => r[0] === turn.pick)[2];
+  return k ? fitLog(key) + Math.log10(k / 10) : 0;
+};
 const sun = makeSun();
 // The star on screen: it trails st.star through the switch dip.
 let shown = st.star;
