@@ -116,7 +116,7 @@ export const VOICES = {
   sgra: P({ ...song('phrygian'), ...ARP, ...ANALOG, det: 14, res: 5, fmot: 0.5, bright: 0.5, step: 16, dist: 0.85, rev: 14, mix: 1.8, width: 1.9, oct: [0.6, 0.8, 1.1], swR: 0.03, swD: 0.2, glowWave: 'sawtooth', fx: { dark: 0.5, echo: 0.45 }, gain: 1 }),
   // 3C 273: the first quasar, radio-loud and billions of light years away. A far transmission.
   qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 1 }),
-  neutron: P({ ...song('overtones'), ...ARP, wob: 0.7, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 1 }),
+  neutron: P({ ...song('overtones'), ...ARP, wob: 1, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 1 }),
 };
 // Normalization: each star's level against the Sun, measured offline.
 // K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render (2026-11-24).
@@ -358,7 +358,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   g.connect(out);
   let tail = g;
   // Air absorbs the top on far stars.
-  if (live || p.dist > 0) { n.air = filt('lowpass', 20000, 0.5); n.air.connect(tail); tail = n.air; }
+  if (live || p.dist > 0 || p.wob > 0) { n.air = filt('lowpass', 20000, 0.5); n.air.connect(tail); tail = n.air; }
   // Width: mid and side, with the side scaled.
   if (live || p.width !== 1) {
     const sp = ac.createChannelSplitter(2), mg = ac.createChannelMerger(2);
@@ -427,7 +427,11 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   let wob = null;
   if (live || p.wob > 0) {
     const cs = () => { const c = ac.createConstantSource(); c.offset.value = 0; src(c, t); return c; };
-    wob = { bend: cs(), open: cs(), tail: cs(), trem: G(1), vibG: G(0), tremG: G(0) };
+    wob = { bend: cs(), open: cs(), tail: cs(), air: cs(), trem: G(1), vibG: G(0), tremG: G(0), lvl: G(1) };
+    // After the reverb, where it is heard: the level swells and the air opens.
+    g.disconnect();
+    g.connect(wob.lvl).connect(out);
+    wob.air.connect(n.air.frequency);
     wob.vibO = lfo(1, 1, wob.vibG.gain).o;
     wob.vibO.disconnect();
     wob.vibO.connect(wob.vibG);
@@ -609,6 +613,11 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
     anchor(wob.trem.gain, at);
     wob.trem.gain.linearRampToValueAtTime(1 - 0.2 * Math.min(1, w), at + 0.08);
     wob.trem.gain.setTargetAtTime(1, at + 0.08, 0.2);
+    // The breath you hear: the whole voice swells about 4 dB and brightens, then lets go.
+    anchor(wob.lvl.gain, at);
+    wob.lvl.gain.linearRampToValueAtTime(1 + 0.8 * w, at + 0.08);
+    wob.lvl.gain.setTargetAtTime(1, at + 0.08, 0.18);
+    swell1(wob.air.offset, at, 9000 * w, 0.06, 0.2);
   };
   // A fast spin, in flashes a second: the wobbles fuse into a vibrato and a tremolo at that rate.
   // The choir opens further as the rate climbs toward Vela's 11.2. Rate 0 settles it.
