@@ -363,6 +363,17 @@ export const STARS = {
     disk: [1.8, 1.4, 0, 0.18], disk2: [140, 0.45, 0.2, 0.05], tex: [6, 2.6, 0, 0.7],
     wide: 'none', long: 'none', root: 116.54,
   },
+  // V838 Monocerotis: two stars merged in 2002; the flash made it briefly one of the brightest stars in the galaxy.
+  // Now a cool red supergiant, 470 suns wide here, in thick dust. Pulled back, the flash's light echo grows through its shells.
+  // The echo stands 40 R out; the full view stands 30 times back.
+  v838: {
+    ...FLARE, day: 0, ribbon: 1, bubble: 0.12, lump: [0.06, 1.5, 0.8, 0.4], reach: 30,
+    bow: { kind: 7, heading: 0, size: 40, col: [1, 0.6, 0.4] },
+    row: 30, rsun: 470, expo: 1, hotW: 1, coolW: 1.1, loop: 0.15, prom: 0.4, dust: 1.1, rays: 0.7,
+    hal: [1, 0.22, 0.12], streak: [1, 0.38, 0.26],
+    disk: [1.8, 1.4, 0, 0.18], disk2: [140, 0.45, 0.2, 0.05], tex: [6, 2.6, 0, 0.7],
+    wide: 'none', long: 'none', root: 130.81,
+  },
   // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
   vycma: {
     ...FLARE, day: 20000, ribbon: 1, bubble: 0.12, lump: [0.08, 1.6, 0.8, 0.4],

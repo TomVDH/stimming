@@ -232,6 +232,9 @@ VOICES.earendel = VOICES.rigel;
 NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
 VOICES.etacar = VOICES.rigel;
+VOICES.v838 = VOICES.betelgeuse;
+NORM.v838 = NORM.betelgeuse;
+TAPNORM.v838 = TAPNORM.betelgeuse;
 NORM.etacar = NORM.rigel;
 TAPNORM.etacar = TAPNORM.rigel;
 for (const id of ['uhz1', 'momz14', 'eincross']) { VOICES[id] = VOICES.rigel; NORM[id] = NORM.rigel; TAPNORM[id] = TAPNORM.rigel; }
@@ -289,6 +292,8 @@ Object.assign(VOICES, {
   mothra: from('s5hvs1', { dist: 0.95, rev: 14, mix: 1.8, width: 1.9, bright: 1.1 }),
   // Earendel: the farthest single star seen, on a lensed arc. An airy, far choir.
   // Eta Carinae: Rigel's pad, low, wide and stormy.
+  // V838 Monocerotis: Betelgeuse's pad, far and wide, a long tail of echoes.
+  v838: from('betelgeuse', { dist: 0.95, rev: 18, mix: 2.1, width: 2, bright: 0.95, fx: { echo: 0.7 } }),
   etacar: from('rigel', { dist: 0.9, rev: 14, mix: 1.7, width: 1.8, bright: 1.15, det: 14 }),
   earendel: from('wr124', { voice: 0.4, dist: 1, rev: 15, mix: 1.9, bright: 1.35 }),
   // UHZ1 and MoM-z14: far galaxies. Earendel's airy choir, lower, farther and darker.
@@ -319,7 +324,7 @@ Object.assign(VOICES, {
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['etacar', 'rigel'], ['uhz1', 'wr124'], ['momz14', 'wr124'], ['eincross', 'qso'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['hubblev1', 'procyon'], ['gaiabh1', 'sun'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['etacar', 'rigel'], ['v838', 'betelgeuse'], ['uhz1', 'wr124'], ['momz14', 'wr124'], ['eincross', 'qso'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['hubblev1', 'procyon'], ['gaiabh1', 'sun'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];

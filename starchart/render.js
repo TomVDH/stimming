@@ -2283,6 +2283,37 @@ vec3 einCross(vec2 p) {
   }
   return col;
 }
+// V838 Monocerotis's light echo, after Hubble (2002 to 2006).
+// The flash of 2002 lights the dust round the star as its light passes through.
+// Light that reaches us at one time scattered off a paraboloid round the star: z = (x² + y²) / (2 ct) - ct / 2.
+// The echo grows on its own clock, once every 150 s; uBow.z R is the dust's outer edge; not to scale.
+vec3 v838Echo(vec2 pR) {
+  vec2 q = pR / uBow.z;
+  float d2 = dot(q, q);
+  if (d2 > 2.6) return vec3(0.0);
+  float cyc = fract(uTime / 150.0);
+  float ct = 0.08 + 1.15 * cyc;
+  float fade = smoothstep(0.0, 0.08, cyc) * smoothstep(1.0, 0.8, cyc);
+  vec3 acc = vec3(0.0);
+  for (int k = 0; k < 5; k++) {
+    // Earlier light lies on a larger paraboloid; the flash turned from blue-white to deep red.
+    float e = float(k) / 4.0;
+    float cc = max(ct - 0.3 * e, 0.02);
+    vec3 w = uCamM * vec3(q, d2 / (2.0 * cc) - 0.5 * cc);
+    float r3 = length(w);
+    if (r3 > 1.3) continue;
+    // The dust: nested shells the star blew off long before, broken into swirls and eddies.
+    // A warp turns the shells into eddies, as in Hubble's pictures.
+    vec3 wq = w + 0.3 * (vec3(fbm(w * 3.5 + 1.0), fbm(w * 3.5 + 7.0), fbm(w * 3.5 + 13.0)) - 0.5);
+    float rq = length(wq), ang = atan(wq.y, wq.x);
+    float sw = fbm(wq * 2.5 + 2.0);
+    float shells = 0.5 + 0.5 * sin(rq * 34.0 + sw * 10.0 + 1.5 * sin(ang * 3.0 + rq * 8.0) * smoothstep(0.0, 0.2, length(wq.xy)));
+    float dens = pow(shells, 6.0) * (0.2 + 2.2 * pow(fbm(wq * 12.0 + 5.0), 2.0)) * smoothstep(1.3, 0.6, r3) * smoothstep(0.02, 0.12, r3);
+    // Scattered light falls with the square of the distance from the star.
+    acc += mix(vec3(0.7, 0.85, 1.0), vec3(1.0, 0.32, 0.1), e) * dens / (0.05 + r3 * r3) * 0.09;
+  }
+  return acc * fade;
+}
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
 // A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
 // Each ray marches through it in the camera's frame, so a drag turns the barrel.
@@ -2382,6 +2413,8 @@ vec3 runaway(vec2 P) {
   }
   // Gaia BH1: a dormant black hole beside the star, seen only by its lensing.
   if (uBow.w > 7.5) return dormantHole(P);
+  // V838 Monocerotis: the light echo of its flash, lighting the dust shells round it.
+  if (uBow.w > 6.5) return v838Echo(P / R);
   // Eta Carinae's Homunculus: two dusty lobes, marched in 3D.
   if (uBow.w > 5.5) return etaNeb(P / R);
   // The Ring Nebula: a barrel of glowing gas round a white dwarf, marched in 3D.
