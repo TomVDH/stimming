@@ -89,7 +89,8 @@ Tom: "make the intro flash parts the preloader as well".
 - API: `progress(part)` in `shared/intro.js`, 0 to 1, never back. The intro lifts on `ready`, as before.
 - Shell default: `stage()` puts `libs` at 0.3, `build` at 0.5, `first-frame` at 0.95; with no stage call the intro itself reports 0.12, then 0.4 at the load event.
 - The line creeps up to 0.14 past the last report. The sheen is `translate` only, so it runs while the main thread compiles.
-- Reduced motion: a still line and the word Loading at the foot, after 1.2 s. No creep.
+- Reduced motion: a still line and the word Loading at the foot, after 1.2 s. No creep. A toy that names its steps shows the step there instead: `Baking the haze · 2 / 6`.
+- Load notes (Tom, 2026-11-25, bean `stimming-1wzu`; Star Chart first): `buildSteps(n, notes)` names each build step, and the intro shows it just above the line, with its count at the right (`BAKING THE HAZE   2 / 6`). Above, not under: under the line it crowds the title. Plain words for what the machine does. A note holds at least 0.4 s and wipes on in film frames. It shows only with the line, so a fast load shows nothing. The intro root is `aria-hidden`, so screen readers hear none of it yet. A toy without notes looks as before. API: `loadNote(text, k, n)` in `shared/intro.js`.
 - A toy that is ready in time never shows the line. Intro length, cold, main against the branch (ms): Galaxy 5297 and 5281, Window seat 3930 and 3981.
 - The failsafe that clears a dead overlay is 10 s, was 5 s.
 

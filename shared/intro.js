@@ -74,6 +74,20 @@ let loadAt = 0;
 export function progress(part) {
   loadAt = Math.min(1, Math.max(loadAt, Number(part) || 0));
 }
+// The step the toy works on now, in words; empty when the toy names none.
+let note = { text: '', k: 0, n: 0 };
+/**
+ * Names the load step that starts now; the intro shows it above the load line.
+ * A toy that never calls it shows the line alone, as before.
+ * @param {string} text The step in plain words, for example 'Baking the haze'.
+ * @param {number} [k] This step's number, from 1.
+ * @param {number} [n] The number of steps.
+ */
+export function loadNote(text, k = 0, n = 0) {
+  note = { text: String(text || ''), k, n };
+}
+// A note stays at least this long, so a fast step never flickers.
+const NOTE_HOLD = 400;
 // The titles open, then the toy gets this many frames more before the load line shows.
 const LOAD_GRACE = 10;
 // The line creeps this far past the last report, so a long step still moves.
@@ -89,13 +103,40 @@ function loadLine(root, host, still = false) {
   el.setAttribute('aria-valuemin', '0');
   el.setAttribute('aria-valuemax', '100');
   host.append(el);
-  let at = 0, timer = 0;
+  // The caption above the line: the step in words, and its count.
+  const cap = document.createElement('span');
+  cap.className = 'intro-note';
+  cap.setAttribute('role', 'status');
+  const capT = document.createElement('span'), capN = document.createElement('span');
+  capN.className = 'intro-note-n';
+  cap.append(capT, capN);
+  // Reduced motion: the words replace the still word Loading.
+  const word = still ? [...host.childNodes].find(c => c.nodeType === Node.TEXT_NODE) : null;
+  if (!still) host.append(cap);
+  let at = 0, timer = 0, shown = '', since = 0;
   const set = v => {
     at = v;
     el.style.setProperty('--load', v.toFixed(4));
     el.setAttribute('aria-valuenow', String(Math.round(100 * v)));
   };
+  // Swaps in the newest note once the last one has held.
+  const say = () => {
+    const key = `${note.text}|${note.k}`;
+    if (!note.text || key === shown || performance.now() - since < NOTE_HOLD) return;
+    shown = key; since = performance.now();
+    const count = note.n ? `${note.k} / ${note.n}` : '';
+    el.setAttribute('aria-valuetext', note.text);
+    if (word) { word.nodeValue = count ? `${note.text} · ${count}` : note.text; return; }
+    capT.dataset.t = note.text;
+    capN.dataset.t = count;
+    cap.dataset.on = '';
+    // Each new step wipes on, as the titles do.
+    cap.classList.remove('is-new');
+    void cap.offsetWidth;
+    cap.classList.add('is-new');
+  };
   const tick = () => {
+    say();
     if (still) return set(loadAt);
     // The line runs to the reported point, then creeps on, slower and slower.
     const far = Math.min(0.97, loadAt + LOAD_CREEP);
@@ -474,6 +515,7 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     await play(root, p => ({ opacity: 1 - p }), 300);
     root.remove();
     loadAt = 0;
+    note = { text: '', k: 0, n: 0 };
     return;
   }
 
@@ -664,4 +706,5 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   root.remove();
   // The intro lab plays many intros on one page; each starts from nothing.
   loadAt = 0;
+  note = { text: '', k: 0, n: 0 };
 }
