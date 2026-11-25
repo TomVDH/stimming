@@ -21,7 +21,8 @@ Code every toy uses. A change here reaches every page.
 | `wetglass.js`, `water.js`, `precip.js`, `sky.js`, `flare.js`, `glow.js`, `grade.js`, `output.js`, `weather.js`, `detail.js` | Shader bundles. Each has a card in `fxlab/`. Glass effects stay one group. |
 | `precipfield.js` | Rain and snow as particles in the world, lit by lamps: streaks, blur discs, the forward lobe. Each toy keeps its crowds, lights and depth test. Whiteout is the reference; no `fxlab/` card. |
 | `clouds.js` | Cloud light: the two-lobe phase and light shafts under clouds. The look is common; each toy gives its occlusion source. Railgun is the reference; no `fxlab/` card. |
-| `intro.js`, `intro.css` | The intro. Signal ships (`DEFAULT_VARIETY`). It is also the preloader: the load line, and the load note above it (`loadNote`, fed by `buildSteps(n, notes)`). |
+| `intro.js`, `intro.css` | The intro. Signal ships (`DEFAULT_VARIETY`); Punch, in Signal's look, plays one time in ten (`RARE`); `?intro=<variety>` forces one. It shows the toy's access flags and Best with sound (`access.js`), tech tags in the bottom-left corner, and places the block with `placeBlock()`. It is also the preloader: the load line, and the load note above it (`loadNote`, fed by `buildSteps(n, notes)`). |
+| `access.js` | Access glyphs, flags and tech tags, from each toy's `access` and `tech` in `toys.json`. The intro and the workbenches use it. |
 | `loadwatch.js` | Load watch for heavy toys: a visible, stored load step. A load that died shows on the next open. Opt-in per toy. |
 | `menu/` | The Clock. Rules: `docs/menu.md`. |
 | `series/shots.js` | Series shots and `shotIcon()`. |

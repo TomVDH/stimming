@@ -1,10 +1,12 @@
-// Derives each toy's renderer tags from its code. Prints JSON; writes nothing.
-// Usage: node tools/techtags.mjs [--table] [id ...]
+// Derives each toy's renderer tags from its code. Prints JSON.
+// --write puts { tier, webgpu } in each toy's toys.json "tech" field, after "access".
+// Usage: node tools/techtags.mjs [--table | --write] [id ...]
 // Plan: docs/plans/access.md, section "Tech tags". Bean stimming-9ex4.
-import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync } from 'node:fs';
 import { join, extname } from 'node:path';
 
-const ROOT = new URL('..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+import { fileURLToPath } from 'node:url';
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const toys = JSON.parse(readFileSync(join(ROOT, 'toys.json'), 'utf8'));
 const args = process.argv.slice(2);
 const table = args.includes('--table');
@@ -44,7 +46,24 @@ function tags(id) {
 const out = {};
 for (const id of ids.length ? ids : Object.keys(toys)) out[id] = tags(id);
 
-if (table) {
+if (args.includes('--write')) {
+  // Field order: docs/standards/code.md. "access" and "tech" follow "sound".
+  const next = {};
+  for (const [id, toy] of Object.entries(toys)) {
+    const t = out[id], entry = {};
+    for (const [k, v] of Object.entries(toy)) {
+      if (k === 'access' || k === 'tech') continue;
+      entry[k] = v;
+      if (k === 'sound') {
+        entry.access = toy.access ?? null;
+        entry.tech = t ? { tier: t.tier, webgpu: t.webgpu } : toy.tech ?? null;
+      }
+    }
+    next[id] = entry;
+  }
+  writeFileSync(join(ROOT, 'toys.json'), JSON.stringify(next, null, 2) + '\n');
+  console.log(`toys.json: tech for ${Object.values(out).filter(Boolean).length} toys`);
+} else if (table) {
   const count = {};
   for (const t of Object.values(out)) if (t) count[t.tier + (t.webgpu ? '+webgpu' : '')] = (count[t.tier + (t.webgpu ? '+webgpu' : '')] || 0) + 1;
   for (const [id, t] of Object.entries(out)) console.log(`${id.padEnd(16)} ${t ? `${t.tier}${t.webgpu ? ' +webgpu' : ''}${t.also.length ? `  (also ${t.also.join(', ')})` : ''}` : 'no files'}`);

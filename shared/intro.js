@@ -1,6 +1,7 @@
 // Stimming intro: emblem in a flash box, the name unfurls, hold until ready, clear.
 // It is also the preloader: a toy that loads for longer gets a load line at the foot of the flash box.
-// Toy pages import it as '../shared/intro.js'. No dependencies.
+// Toy pages import it as '../shared/intro.js'. Its one import is access.js, beside it.
+import { injectSprite, flagsHTML, flagsText, techHTML, inkOf, glyph } from './access.js';
 // The root toys.json holds each toy's name, subtitle, emblem, accent and Dutch name.
 // The page's own intro text stays when toys.json cannot load.
 
@@ -211,6 +212,14 @@ export const SOUND_NOTE = { glyph: true, words: 'Best with sound', nudge: false 
 // Each variety may change the timing, the flash, how the box leaves, how lines open and the exit.
 // read: true holds for reading time; false holds to T.hold from the start.
 export const DEFAULT_VARIETY = 'signal';
+// A page that names no variety plays this one now and then.
+export const RARE = { variety: 'punch', odds: 0.1 };
+// ?intro=<variety> forces one, for checks.
+function pickVariety() {
+  const q = new URLSearchParams(location.search).get('intro');
+  if (q && VARIETIES[q]) return q;
+  return Math.random() < RARE.odds ? RARE.variety : DEFAULT_VARIETY;
+}
 // Classic's beats; the restyle looks share this one table.
 const CLASSIC = { lead: 4, pop: 9, flash: 16, unfurl: 400, nlLag: 5, subLag: 5, tagLag: 5, tagNlLag: 5, sndLag: 5, readBase: 1000, readPer: 15, readCap: 2200, wipe: 400, fade: 600 };
 // A look restyles Classic: look names its CSS block, style holds sizes and places.
@@ -253,10 +262,9 @@ export const VARIETIES = {
     label: 'Glitch: bands slip, then lock', group: 'New',
     timing: { flash: 10 }, flash: 'jitter', reveal: 'glitch', exit: 'glitch', read: true,
   },
-  punch: {
-    label: 'Punch: rings close in, lines zoom out of blur', group: 'New',
-    timing: { unfurl: 260, wipe: 280 }, flash: 'rings', reveal: 'punch', exit: 'punch', read: true,
-  },
+  // Punch: its own motion in Signal's look; it plays one time in ten (Tom, 2026-11-25).
+  punch: look('signal', 'Punch: rings close in, lines zoom out of blur, in Signal’s look', { tagY: 0, tagNlY: 0, blur: 60, dim: 0.3 },
+    { group: 'Shipped', stack: true, ink: true, fonts: { fd: SLAB, fn: 'B612', fs: 'B612', fsn: 'B612' }, timing: { ...CLASSIC, unfurl: 260, wipe: 280 }, flash: 'rings', reveal: 'punch', exit: 'punch' }),
   squad: {
     label: 'Squad: the emblem stands left, lines type in beside it, a bar sweeps it off', group: 'New',
     timing: { flash: 8, nlLag: 2, subLag: 2, tagLag: 2, tagNlLag: 2, sndLag: 2, wipe: 300 },
@@ -422,6 +430,66 @@ export function fitIntro(root, T) {
   }
 }
 
+// The block's box at rest, in the intro's pixels: every line but the foot.
+// Text lines count by their glyphs, so a wide empty box adds nothing.
+function blockBox(text, R) {
+  let l = Infinity, r = -Infinity, t = Infinity, b = -Infinity;
+  for (const el of text.children) {
+    if (el.matches('.intro-foot') || !el.offsetHeight) continue;
+    const rg = document.createRange();
+    rg.selectNodeContents(el);
+    const g = el.matches('.intro-badge') ? el.getBoundingClientRect() : rg.getBoundingClientRect(), e = el.getBoundingClientRect();
+    if (!g.width) continue;
+    l = Math.min(l, g.left); r = Math.max(r, g.right); t = Math.min(t, e.top, g.top); b = Math.max(b, e.bottom, g.bottom);
+  }
+  return { l: l - R.left, r: r - R.left, t: t - R.top, b: b - R.top };
+}
+// Places the logo, the lines and the access row as one block.
+// Its middle sits at 47 % of the height, its box centred, clear of the foot.
+// It runs before the flash, so the logo holds its point through every beat.
+// The copy starts at full size and shrinks only when the block cannot fit.
+export function placeBlock(root) {
+  const text = root.querySelector('.intro-text');
+  const big = text?.querySelector('.intro-badge') || text?.querySelector('.intro-name');
+  if (!text || !big) return;
+  for (const p of ['--origin', '--origin-x', '--dx']) root.style.removeProperty(p);
+  const posed = [text, big].filter(el => el.style.transform), held = posed.map(el => el.style.transform);
+  posed.forEach(el => { el.style.transform = ''; });
+  try {
+    const R = root.getBoundingClientRect(), H = R.height, W = R.width, gap = Math.min(30, Math.max(16, 0.028 * H));
+    // A hidden probe resolves --origin to pixels.
+    let probe = root.querySelector('.intro-probe');
+    if (!probe) { probe = Object.assign(document.createElement('i'), { className: 'intro-probe' }); root.append(probe); }
+    const origin = probe.offsetHeight;
+    // The foot: the highest of the tech tags, the loader, the foot's lines and the number.
+    const foots = [...root.querySelectorAll('.intro-tech, .intro-loader, .intro-foot .intro-tag, .intro-foot .intro-num, .intro > .intro-num')]
+      .map(el => el.getBoundingClientRect()).filter(r => r.height > 0).map(r => r.top - R.top);
+    const floor = Math.min(H, ...foots) - gap, ceil = 0.06 * H;
+    text.style.removeProperty('--copy-k');
+    const k = () => +(text.style.getPropertyValue('--copy-k') || 1);
+    // A word wider than its line shrinks the copy.
+    for (let i = 0; i < 3; i++) {
+      const wide = Math.min(1, ...[...text.children].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
+      if (wide >= 1) break;
+      text.style.setProperty('--copy-k', Math.max(0.4, k() * wide).toFixed(3));
+    }
+    for (let i = 0; i < 5; i++) {
+      const box = blockBox(text, R), h = box.b - box.t;
+      // A block taller than the room shrinks its copy; the logo keeps its size.
+      if (h > floor - ceil + 1 && k() > 0.4) { text.style.setProperty('--copy-k', Math.max(0.4, k() * (floor - ceil) / h).toFixed(3)); continue; }
+      const want = Math.min(floor - h / 2, Math.max(ceil + h / 2, 0.47 * H));
+      root.style.setProperty('--origin', `${(origin + want - (box.t + box.b) / 2).toFixed(1)}px`);
+      root.style.setProperty('--dx', `${(W / 2 - (box.l + box.r) / 2).toFixed(1)}px`);
+      break;
+    }
+    // The column scales about the logo's centre, in the column's own box.
+    const t = text.getBoundingClientRect(), g = big.getBoundingClientRect();
+    root.style.setProperty('--origin-x', `${(g.left + g.width / 2 - t.left).toFixed(1)}px`);
+  } finally {
+    posed.forEach((el, i) => { el.style.transform = held[i]; });
+  }
+}
+
 // ready is a promise; a fixed-hold variety holds at least T.hold ms before it clears.
 // id, done and gate let the intro lab play any toy; pages leave them out.
 // gate(phase) is awaited as each phase shows, so the lab can pause there.
@@ -439,9 +507,10 @@ export function fitIntro(root, T) {
  * @property {boolean} [textFlash]
  * @property {boolean} [classic]
  * @property {Record<string, string> | null} [fill] Lines the lab fills in Static mode.
+ * @property {boolean} [access] The access row, tech tags and block placement. The lab builds its own.
  */
 /** @param {IntroOptions} [options] */
-export async function intro({ ready = Promise.resolve(), min, timing = {}, id, gate = () => {}, soundNote = SOUND_NOTE, variety = DEFAULT_VARIETY, nameFlash = false, textFlash = false, classic = false, fill = null } = {}) {
+export async function intro({ ready = Promise.resolve(), min, timing = {}, id, gate = () => {}, soundNote = SOUND_NOTE, variety = pickVariety(), nameFlash = false, textFlash = false, classic = false, fill = null, access = true } = {}) {
   const root = /** @type {HTMLElement | null} */ (document.querySelector('.intro'));
   if (!root) return;
   const V = VARIETIES[variety] || VARIETIES[DEFAULT_VARIETY];
@@ -505,12 +574,34 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     nameEl.after(cls);
   }
 
+  // The access row: the toy's flags, then Best with sound on its own line below.
+  // Tech tags sit in the bottom-left corner; the loader sits at the foot's centre.
+  let row = null, loader = null;
+  if (access && info) {
+    injectSprite();
+    root.style.setProperty('--acc-ink', inkOf(info.accent));
+    const f = flagsHTML(info.access);
+    if (f || info.sound) {
+      row = Object.assign(document.createElement('span'), { className: 'intro-snd acc acc--line' });
+      row.innerHTML = (f ? `<span class="acc-flags">${f}</span>` : '') + (info.sound ? `<span class="acc-i acc-snd">${glyph('sound')}<b>Best with sound</b></span>` : '');
+      text.append(row);
+    }
+    const tech = techHTML(info.tech);
+    if (tech) root.append(Object.assign(document.createElement('div'), { className: 'intro-tech', innerHTML: tech }));
+    loader = Object.assign(document.createElement('div'), { className: 'intro-loader' });
+    root.append(loader);
+    // The intro is hidden from screen readers; the flags stay on the page for them.
+    const said = flagsText(info.access);
+    if (said && !document.getElementById('intro-access')) document.body.append(Object.assign(document.createElement('p'), { id: 'intro-access', className: 'intro-sr', textContent: `This toy has: ${said}.` }));
+  }
+
   if (RM.matches) {
     // Reduced motion: no flash, the name fades in and out.
+    if (access) placeBlock(root);
     await play(text, p => ({ opacity: p }), 300);
     // A slow load shows a still line and one word at the foot; nothing moves.
     const foot = Object.assign(document.createElement('span'), { className: 'intro-wait', textContent: 'Loading' });
-    root.append(foot);
+    (loader || root).append(foot);
     await Promise.all([held, loadHold(loadLine(root, foot, true), frames(1200))]);
     await play(root, p => ({ opacity: 1 - p }), 300);
     root.remove();
@@ -539,7 +630,11 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   }
   // A toy with sound ends its titles with a quiet headphones line.
   let snd = null;
-  if (info?.sound && (soundNote.glyph || soundNote.words)) {
+  if (row) {
+    snd = row;
+    // The sound line waits for its row, then lands with its own Signal flash.
+    row.classList.add('snd-wait');
+  } else if (info?.sound && (soundNote.glyph || soundNote.words)) {
     snd = document.createElement('span');
     snd.className = 'intro-snd';
     const icon = soundNote.glyph ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 15v-3a8 8 0 0 1 16 0v3" fill="none" stroke="currentColor" stroke-width="2.6"/><rect x="2.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/><rect x="16.5" y="13.5" width="5" height="8" rx="1.2" fill="currentColor"/></svg>' : '';
@@ -547,8 +642,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     text.append(snd);
   }
   const big = badge || name;
-  // The load line sits at the foot of the flash box; it shows only for a slow load.
-  const line = loadLine(root, big);
+  // The load line sits on the loader, or at the foot of the flash box; it shows only for a slow load.
+  const line = loadLine(root, loader || big);
   // The subtitles and the notes sit at the foot, away from the logo.
   if (!V.layout) {
     const make = (tag, className) => Object.assign(document.createElement(tag), { className });
@@ -556,7 +651,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     // A stacked look keeps the subtitles in the column.
     if (!V.stack) foot.append(...text.querySelectorAll('.intro-tag'));
     if (num) left.append(num);
-    notes.append(left, ...(snd ? [snd] : []));
+    // The access row stays in the column; the old sound line goes to the foot.
+    notes.append(left, ...(snd && !row ? [snd] : []));
     foot.append(notes);
     text.append(foot);
   }
@@ -570,8 +666,9 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
   [[cls, T.clsY], [name, T.nameY], [nl, T.nlY], [text.querySelector('.intro-tag:not(.intro-tag--nl)'), T.tagY], [text.querySelector('.intro-tag--nl'), T.tagNlY], [snd, T.sndY]]
     .forEach(([el, y]) => { if (el && y) el.style.translate = `0 ${y}cqh`; });
   // The logo never moves: CSS pins it to one point on the screen.
-  fitIntro(root, T);
-  document.fonts?.ready.then(() => fitIntro(root, T));
+  const fit = () => { fitIntro(root, T); if (access) placeBlock(root); };
+  fit();
+  document.fonts?.ready.then(fit);
   // A try-out: the name can share the flash, boxed and blown up with the mark.
   const both = nameFlash && badge;
   const box = on => {
@@ -644,6 +741,8 @@ export async function intro({ ready = Promise.resolve(), min, timing = {}, id, g
     if (!first) await wait(lags[k]);
     first = false;
     last = R.open(lines[k], T);
+    // The sound line flashes once, two frames after its row has opened.
+    if (lines[k] === row) Promise.resolve(last).then(() => wait(2)).then(() => { row.classList.remove('snd-wait'); row.querySelector('.acc-i.acc-snd')?.classList.add('flashin'); });
   }
   await last;
   await gate('lines');

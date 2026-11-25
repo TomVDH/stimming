@@ -1,6 +1,6 @@
 # Access: smart icons and an access record per toy
 
-Status: active · bean `stimming-9ex4` (spike)
+Status: active · bean `stimming-9ex4` (spike). Built (stimming-fibc): the data (steps 1, 2026-11-25 code audit of every toy) and the intro row (step 4). Open: the gate and Calm, the menu glyphs, the flash meter, ColorSym.
 
 Tom, 2026-11-24: "we also need a system of smart icons and accessibility ... we want epilepsy, motor and accessibility issues -- colorsym can be useful here".
 
