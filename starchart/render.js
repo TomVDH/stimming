@@ -2,8 +2,9 @@
 // Two light channels: red holds hot plasma, green holds cool plasma.
 // Passes: the disk and corona, the strands (additive, optically thin), bloom, light rays, the final.
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
-import { TRI_VS, program, linked, target, free, bind, tri, to, uniforms } from '../shared/gl.js';
+import { TRI_VS, program, linked, target, free, bind, tri, to, uniforms, nextFrame } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
+import { idle } from '../shared/stim.js';
 import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES, STARS } from './sun.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
 import { FLARE } from '../shared/flare.js';
@@ -1344,24 +1345,29 @@ const RAYS = `${HEAD}
 uniform sampler2D uSrc;
 uniform vec2 uC;
 uniform float uThr;
+// The steps this frame: RAY_N at most; the slowest rung takes fewer.
+uniform int uRayN;
 in vec2 vUv;
 out vec4 o;
 void main() {
   vec2 dir = uC - vUv;
   float len = min(length(dir) * 0.5, 0.45);
-  vec2 d = normalize(dir + 1e-6) * len / float(${RAY_N});
+  vec2 d = normalize(dir + 1e-6) * len / float(uRayN);
   vec2 uv = vUv;
   vec3 s = vec3(0.0);
   float w = 1.0;
+  // Fewer steps fade faster each step, so the glow keeps its reach.
+  float fall = pow(0.955, float(${RAY_N}) / float(uRayN));
   for (int i = 0; i < ${RAY_N}; i++) {
+    if (i >= uRayN) break;
     vec3 c = texture(uSrc, clamp(uv, 0.0, 1.0)).rgb;
     s += max(c - uThr, 0.0) * w;
-    w *= 0.955;
+    w *= fall;
     uv += d;
   }
   // A smooth glow only: no screen-fixed spokes; the volumes carry the structure.
   // 0.7 holds the mean light the spokes gave.
-  o = vec4(s / float(${RAY_N}) * 0.7, 1.0);
+  o = vec4(s / float(uRayN) * 0.7, 1.0);
 }`;
 
 /* ---------- volume: raymarched dust and haze round the star ---------- */
@@ -1626,6 +1632,8 @@ uniform sampler3D uNoise;
 // The haze and corona bake; uBaked is 1 once it holds the current star.
 uniform sampler3D uBake;
 uniform float uBaked;
+// The share of the march's steps; below 1 on the slowest rung.
+uniform float uVolK;
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime, uDens, uDust, uLight, uCorona, uBend;
@@ -1753,12 +1761,14 @@ void main() {
   // The bake carries the haze and the corona: more steps, and no dither to hide.
   // A binary's gas and a pulsar's beams still march live, with the dither.
   bool bk = uBaked > 0.0 && !bin && !lh;
-  int N = bk ? 72 : bin || lh ? 48 : 32;
+  int N = int(float(bk ? 72 : bin || lh ? 48 : 32) * uVolK + 0.5);
   // A ray that passes outside the reach meets nothing.
   if (r > reach) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
   float dt = (z0 - z1) / float(N);
   // Interleaved gradient noise, stepped each frame so no pattern holds still.
-  float j = bk ? 0.5 : fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
+  // The baked march on fewer steps takes a still dither, so no slices show.
+  float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+  float j = bk ? (uVolK < 1.0 ? ign : 0.5) : fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
   float T = 1.0;
   float acc = 0.0, accG = 0.0, accL = 0.0;
   for (int i = 0; i < 72; i++) {
@@ -2479,7 +2489,18 @@ void main() {
 }`;
 
 // opts.fluid: the fluid probe (?fluid) builds its programs and grid.
+// Resolves when the GPU has run all work sent so far; the main thread stays free.
+async function settled(gl) {
+  const f = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  gl.flush();
+  try {
+    while (!gl.isContextLost() && gl.clientWaitSync(f, 0, 0) === gl.TIMEOUT_EXPIRED) await nextFrame();
+  } finally { gl.deleteSync(f); }
+}
+
+// opts.step: called once per load phase, for the intro's load line.
 export async function makeRender(gl, opts = {}) {
+  const step = opts.step || (() => {});
   if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('no float targets');
   // The disk pass's versions: compiled on demand, the first star's before the first frame.
   const par = gl.getExtension('KHR_parallel_shader_compile');
@@ -2511,12 +2532,17 @@ export async function makeRender(gl, opts = {}) {
     return was && skyReady(was) ? was.q : null;
   }
   // Compiles the versions for these stars in idle time, one at a time.
+  // busy: true while the page moves; a compile waits for a still moment.
   let warming = Promise.resolve();
-  function warm(ids) {
+  function warm(ids, busy = () => false) {
+    // Without parallel compile a link blocks the page; each star compiles on its pick.
+    if (!par) return warming;
     for (const id of ids) {
       const B = STARS[id];
       if (!B) continue;
       warming = warming.then(async () => {
+        while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
+        await idle(2000);
         const e = skyStart(bandOn.get(B) || starOn(B));
         while (!gl.isContextLost() && !skyReady(e)) await new Promise(r => setTimeout(r, 120));
       });
@@ -2537,6 +2563,7 @@ export async function makeRender(gl, opts = {}) {
     final: program(gl, TRI_VS, FINAL),
     ...(opts.fluid ? fluidPrograms(gl) : {}),
   });
+  step();
   const empty = gl.createVertexArray();
   const bloom = bloomChain(gl, { max: 5 });
   const fluid = opts.fluid ? makeFluid(gl, P, empty) : null;
@@ -2605,6 +2632,8 @@ export async function makeRender(gl, opts = {}) {
   }
   // The bake runs during the load, at the house bend, so no star waits for it.
   rebake({ bend: 1 });
+  // Each bake finishes on the GPU before the next starts, so the intro keeps its frames.
+  await settled(gl); step();
   // The holes' cloud bake: made once at load; no hole changes it.
   const holeB = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_3D, holeB);
@@ -2630,6 +2659,7 @@ export async function makeRender(gl, opts = {}) {
     }
     gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
   }
+  await settled(gl); step();
 
   // The quasar's bakes: the band and the clouds, each made once at load.
   function qbakeTex(depth, which) {
@@ -2659,6 +2689,7 @@ export async function makeRender(gl, opts = {}) {
     return t;
   }
   const bandB = qbakeTex(QB.d, 0), blrB = qbakeTex(QC.d, 1);
+  await settled(gl); step();
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // Black hole detail: below 1 the holes' sky pass draws to holeT, made on first use.
@@ -2823,6 +2854,7 @@ export async function makeRender(gl, opts = {}) {
       bind(gl, r, 'uSrc', 0, hdr);
       gl.uniform2fv(r.u.uC, v.centre);
       gl.uniform1f(r.u.uThr, 0.45);
+      gl.uniform1i(r.u.uRayN, Math.round(RAY_N * (v.march ?? 1)));
       tri(gl, rays, empty);
     } else clearTo(rays, 0, 0, 0, 0);
 
@@ -2838,6 +2870,7 @@ export async function makeRender(gl, opts = {}) {
     gl.bindTexture(gl.TEXTURE_3D, bakeT);
     gl.uniform1i(vp.u.uBake, 1);
     gl.uniform1f(vp.u.uBaked, 1);
+    gl.uniform1f(vp.u.uVolK, v.march ?? 1);
     gl.uniform1i(vp.u.uNoise, 0);
     gl.uniform4fv(vp.u.uView, v.view);
     gl.uniform1f(vp.u.uTime, v.time % 9600);
@@ -2941,5 +2974,8 @@ export async function makeRender(gl, opts = {}) {
     pp.i = 1 - pp.i;
     pp.fresh = false;
   }
+  // The first star's version links before the first frame, so the intro never lifts on black.
+  while (!gl.isContextLost() && !skyReady(first)) await nextFrame();
+  step();
   return { resize, frame, data, warm, ready: () => skyReady(first) };
 }

@@ -108,7 +108,7 @@ Every toy page that uses them carries this importmap, word for word:
 | Reduced motion | No ambient drift; gestures still answer, more softly |
 
 - Budgets: 30 fps or better. First frame under 3 s on a cold load (`tools/loadtime.mjs`). The toy's own files under 1 MB; more needs Tom's yes. Idle: no rAF loop and no running audio nodes.
-- Slow-frame step: after 4 s, a frame-time average above 1/38 s for 2 s steps down one rung (pixel ratio, then effect buffers, then counts). It never steps up and never writes `stimming.quality`. On High it falls back to Standard.
+- Slow-frame step: after 4 s, a frame-time average above 1/38 s for 2 s steps down one rung (pixel ratio, then effect buffers, then counts). It never steps up live and never writes `stimming.quality`. A toy may remember its rung per device and lower it after sustained fast frames, for the next visit only (Tom, 2026-11-25). On High it falls back to Standard.
 - Same frame: a shift of 1/255 on a few pixels. A larger change needs Tom's look.
 
 ## Errors

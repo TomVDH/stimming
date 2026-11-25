@@ -4,7 +4,12 @@
 // It speaks the card's language (Tom, 2026-11-24): no box, the name flashes, each line wipes on.
 // It stands in the view's open sky, as the card does: setView names the view.
 
-import { ARTICLES, EGG_TEXT } from './articles.js';
+// The article text loads after the first frame, off the cold load.
+let TEXT = null, loading = null;
+/** Loads the article text once; the page calls it in idle time. */
+export function loadArticles() {
+  return (loading ||= import('./articles.js').then(m => (TEXT = m)));
+}
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 // One film frame at 30 fps, in ms.
@@ -91,9 +96,12 @@ export function makeArticle(o) {
   document.head.append(link);
 
   let box = null, shown = null, view = 'full';
+  // A press before the text has loaded waits for it; a new press or close drops it.
+  let waiting = 0;
   const timers = new Set();
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
   function close() {
+    waiting = 0;
     if (!box) return;
     for (const t of timers) clearTimeout(t);
     timers.clear();
@@ -111,7 +119,12 @@ export function makeArticle(o) {
    */
   function open(id, c) {
     close();
-    const a = ARTICLES[id];
+    if (!TEXT) {
+      const k = waiting = Math.random() + 1;
+      loadArticles().then(() => { if (waiting === k) open(id, c); }, err => { waiting = 0; console.warn('Star Chart: article text', err); });
+      return;
+    }
+    const a = TEXT.ARTICLES[id];
     box = h('aside', 'sl-art');
     box.dataset.view = view;
     // The bar holds the star's colour as its target; the article takes it at once.
@@ -174,7 +187,7 @@ export function makeArticle(o) {
     }
     // The object's eggs stand in their own section, after the source (Tom, 2026-11-25).
     // Each egg: what to do, what it is, then its background.
-    const eggs = EGG_TEXT[id] ?? [];
+    const eggs = TEXT.EGG_TEXT[id] ?? [];
     if (eggs.length) {
       const head = h('h3', 'a-eggs', 'Easter eggs');
       body.append(head);
@@ -214,7 +227,7 @@ export function makeArticle(o) {
 
   return {
     open, close,
-    isOpen: () => !!box,
+    isOpen: () => !!box || !!waiting,
     get shown() { return shown; },
     /** Names the view, so the article stands in its open sky: long, wide, full or far. */
     setView(v) { view = v; if (box) box.dataset.view = v; },

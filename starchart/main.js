@@ -2,7 +2,7 @@
 // Loops rise and drain; giant prominences stand over the limb.
 // A tap flares a region or lifts a prominence off; a drag turns the sun.
 // Plan: docs/plans/starchart.md. Toy doc: docs/toys/starchart.md.
-import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
+import { initPage, whenVisible, pageReady, buildSteps, later, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
@@ -16,7 +16,7 @@ import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
 import { makeCard, CARD_STYLES } from './card.js';
-import { makeArticle } from './article.js';
+import { makeArticle, loadArticles } from './article.js';
 import { cardLines } from './facts.js';
 
 // Dev shows always on this toy (Tom, 2026-11-24): the address gains ?dev before the bar reads it.
@@ -190,6 +190,8 @@ function promInView() {
 
 let gl = null, ren = null, raf = 0, timer = 0, visible = true, last = 0, frameNo = 0, calm = reduced();
 let cssW = 1, cssH = 1, started = false, lastInput = 0, drifting = 1;
+// True while the last frame moved by input or an event; idle work waits on it.
+let busy = false;
 
 /* ---------- the view: a telescope, so an orthographic projection ---------- */
 const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
@@ -492,7 +494,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get rate() { return [turn.pick, 10 ** turn.lr]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get rate() { return [turn.pick, 10 ** turn.lr]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; }, get rung() { return D.rung; }, get frameTime() { return D.frameTime; }, get load() { return performance.getEntriesByType('mark').filter(m => m.name.startsWith('stim:')).map(m => [m.name, Math.round(m.startTime)]); } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -776,6 +778,7 @@ const rail = makeRail({
 const card = makeCard({ stage });
 // The article: the second i opens it over the card (Tom, 2026-11-24).
 const article = makeArticle({ stage });
+later(loadArticles);
 let cardStar = null;
 // The card plays once the view is within a hair of the full star, once per arrival (Tom, 2026-11-24).
 // A heavy zoom creeps for seconds at the end; the card need not wait for the creep.
@@ -847,7 +850,8 @@ addEventListener('keydown', e => {
   } else return;
   e.preventDefault();
 });
-const introDone = playIntro({ ready: pageReady() });
+// A slow machine compiles for many seconds; the intro holds for it.
+const introDone = playIntro({ ready: pageReady(15000) });
 // Any key is a gesture here: I, L, S and the zoom keys wake the sound too.
 const kit = audioKit({ sleepMs: 3000 });
 const snd = makeSound(kit, id => ui?.setting?.(id)?.value);
@@ -858,7 +862,17 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 // The S stars round Sagittarius A*: a 2D layer just above the GL canvas.
 const sst = makeSStars(canvas);
-const D = detail({ maxDpr: 2, budget: 2.6e6, steps: 2, settle: 2, onChange: () => resize(true) });
+// ?rung=N pins the ladder for QA: no watch, no memory.
+const PIN = new URLSearchParams(location.search).get('rung');
+const pinned = PIN !== null && PIN !== '';
+// Each new rung is stored, so this device's next visit starts there.
+const D = detail({ maxDpr: 2, budget: 2.6e6, steps: 3, settle: 2, onChange: (lv, rung) => { if (!pinned) store.set('rung', rung); resize(true); } });
+// Steps the ladder down to n before the first frame.
+const seedRung = n => { for (let i = 0; i < n && D.rung < n; i++) D.drop(); };
+const savedRung = store.get('rung');
+seedRung(clamp(Math.round(Number(pinned ? PIN : savedRung) || 0), 0, 3));
+// Fast frames at a stored rung lower the next visit's rung by one; never live.
+let fastT = 0, eased = false;
 
 let sizeKey = '';
 function resize(force = false) {
@@ -1253,6 +1267,8 @@ function makeFrame() {
   } else { f.bin.fill(0); f.binD.fill(0); f.binN.fill(0); f.gas.fill(0); }
   f.data = ren.data;
   f.bloomLevels = D.rung >= 2 ? 3 : 5;
+  // The slowest rung marches the haze and the light rays in fewer steps.
+  f.march = D.rung >= 3 ? 0.56 : 1;
   f.frameNo = calm ? 0 : frameNo;
   f.sc = Math.max(1, view.H / 900);
   // The detail ladder can drop the resolution mid-zoom; the grain follows CSS pixels.
@@ -1515,9 +1531,17 @@ function frame(now) {
     if (voice) snd.spin?.(egg.rate / SPIN_PERIOD, shown); else if (spinning) snd.spin?.(0, shown);
     spinning = voice;
     draw();
-    D.frame(dt);
+    // Only back-to-back lively frames count: drift runs at 30 fps by design, and so does a Dev cap.
+    if (!pinned && busy && !period) {
+      D.frame(dt);
+      if (!eased && D.rung > 0) {
+        fastT = D.frameTime < 1 / 55 ? fastT + dt : 0;
+        if (fastT > 20) { store.set('rung', D.rung - 1); eased = true; }
+      }
+    }
     frameNo++;
     lively = zooming || turning || swaying || settling || adapting || dipping || glowing || sFading || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    busy = lively;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
@@ -1715,7 +1739,7 @@ async function setup() {
   gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
   if (!gl) throw new Error('no webgl2');
   // The renderer compiles the disk pass for the star on screen first.
-  ren = await makeRender(gl, { fluid: FLUID, star: st.star });
+  ren = await makeRender(gl, { fluid: FLUID, star: st.star, step: built });
   sizeKey = '';
 }
 onContextLoss(canvas, {
@@ -1725,12 +1749,23 @@ onContextLoss(canvas, {
 });
 
 mark('build');
+// The load line: programs, three bakes, the first star's pass, the first frame.
+const built = buildSteps(6);
 try {
   await setup();
   // The first frame is a picture: loops at every stage of their lives.
   resize(true);
   draw();
   gl.finish();
+  // No stored rung: a second, timed frame guesses where this machine starts.
+  if (!pinned && savedRung === null) {
+    const t0 = performance.now();
+    draw();
+    gl.finish();
+    const ms = performance.now() - t0;
+    seedRung(ms > 150 ? 2 : ms > 60 ? 1 : 0);
+  }
+  built();
   canvas.classList.add('on');
   mark('first-frame');
   await introDone;
@@ -1739,8 +1774,10 @@ try {
   // Once the intro has gone, the view glides in from far out; the card plays when it settles.
   setTimeout(glideIn, 400);
   // The other stars' disk passes compile in idle time, nearest in the list first.
+  // They start after the glide in and wait while the star moves, so no compile hitches it.
   const at = PICKS.findIndex(x => x.value === st.star);
-  ren.warm?.(PICKS.map((x, i) => [x.value, Math.min(Math.abs(i - at), PICKS.length - Math.abs(i - at))]).sort((a, b) => a[1] - b[1]).map(x => x[0]));
+  const order = PICKS.map((x, i) => [x.value, Math.min(Math.abs(i - at), PICKS.length - Math.abs(i - at))]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+  setTimeout(() => ren?.warm?.(order, () => busy || !visible), 400 + GLIDE_MS);
 } catch (err) {
   console.error(err);
   fail.removeAttribute('hidden');
