@@ -36,3 +36,5 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [x] Opaque cards (Tom: "they need to be opaque"): the body's alpha ramps to 1; past 25 km haze tints a twister toward the horizon's colour instead of showing the bake through it
 - [x] Mixed mode (Tom: "renderd in front / close -- and cards far"): the live march within 80 km, cards past it
 - [x] Marched near (Tom: "fully marched ones for the close ones"): `twVol()` marches the spike's density and backlight within 60 km, at the cards' girth and colours; tip twisters taper; the wall cloud and dust widen to the cards' girth (Tom: "the big one is strange": its top met a flat ceiling)
+- [x] Marched near, cards far is the default (Tom: "Yes, make default"); cards bake on the first approach to the void; BC5 packing one mip level a frame
+- [x] Flicker and vertical streaks (Tom's screenshot): card frames read at an explicit mip level from the distance

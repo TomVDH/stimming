@@ -85,8 +85,9 @@ const TUNE_DEF = {
   // Window timings, in seconds or as rates.
   // The far view bakes from this many km out; 0 marches every ray in full.
   bake: 25,
-  // The upper void's twisters: the live march, or flipbook cards (Tom, 2026-11-24).
-  twMode: 'live', cardK: 3, twMix: 60,
+  // The upper void's twisters: marched near and cards far by default (Tom, 2026-11-24).
+  // The relief march and all cards stay in Dev.
+  twMode: 'mixed', cardK: 3, twMix: 60,
   tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
 // An effect's level: its depth value, none, or full.
@@ -325,10 +326,10 @@ async function setup() {
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
   T.map = target(gl, 1024, 1024);
   bloom = bloomChain(gl);
-  if (TUNE.twMode !== 'live') makeCards();
 }
 
 // Bakes the flipbook cards in the background, one frame each animation frame.
+// It starts when the eye first nears the upper void, so a stay over the tops costs nothing.
 function makeCards() {
   if (cards || cardsJob || !P) return;
   cardsJob = (async () => {
@@ -593,6 +594,7 @@ function render(dt) {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
     gl.uniform1i(u.uWall, 5);
+    if (!cards && TUNE.twMode !== 'live' && S.alt < 12) makeCards();
     twisterUniforms(S.tC, twA, twB, twC);
     // Cards and marched twisters have the cards' girth: the wall cloud and the dust widen to match.
     if (cards && TUNE.twMode !== 'live') for (let i = 0; i < TW_MAX; i++) { twC[i * 4 + 2] *= CARD_MS; twC[i * 4 + 3] *= CARD_MS; }
@@ -616,6 +618,7 @@ function render(dt) {
   }
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
+  gl.uniform1f(u.uPixA, 2 * Math.hypot(...b.up) / Math.hypot(...b.fwd) / T.march.h);
   gl.uniform1f(u.uT, S.tC);
   gl.uniform1f(u.uTMap, S.tMap);
   gl.uniform1f(u.uSteps, Math.min(400, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt)))));

@@ -76,6 +76,8 @@ uniform vec4 uTwC[${TW_MAX}];
 // 2 the full march within uTwMix km of the eye and cards past it.
 // uCardK scales the cards' light to the void's.
 uniform float uTwCard, uCardK, uTwMix;
+// The angle one march pixel spans, in radians.
+uniform float uPixA;
 ${TW_SHAPE}
 // The axis sways slowly; the top sways most.
 vec2 twAxis(float Y, int v, float ph) {
@@ -366,7 +368,9 @@ vec4 twCard(int i, vec3 ro, vec3 rd, float ta, float tb, inout float tF) {
   vec2 rt = vec2(-n.y, n.x);
   vec2 vT = vec2(dot(p.xz - A.xy, rt) / (2.0 * CD_FX * s * A.z) + 0.5, (h - B.x) / (CD_FY * s));
   if (vT.x < 0.0 || vT.x > 1.0 || vT.y < 0.0 || vT.y > 1.0) return vec4(0.0);
-  vec4 c = card(int(A.w + 0.5) % 4, vT, uT, B.w, B.z);
+  // The mip level from the distance: frame texels over a pixel's width at t (Tom, 2026-11-24: flicker).
+  float lod = log2(max(1.0, t * uPixA * CD_W / (2.0 * CD_FX * s * A.z)));
+  vec4 c = card(int(A.w + 0.5) % 4, vT, uT, B.w, B.z, lod);
   if (c.a < 1e-3) return vec4(0.0);
   // The void's light sets the card's level; the hue stays the card's own.
   c.rgb *= dot(lut(h).rgb, vec3(0.3, 0.5, 0.2)) * uCardK;
@@ -482,6 +486,7 @@ export const CARD_W = 1024, CARD_H = Math.round(CARD_W * CARD_FY / (2 * CARD_FX)
 // How fast a column swallows the light behind it: the body goes dark, the rim glows.
 const CARD_OD = 8;
 const CARD_K = `const float CD_FX = ${CARD_FX.toFixed(1)}, CD_FY = ${CARD_FY.toFixed(1)}, CD_MS = ${CARD_MS.toFixed(2)};
+const float CD_W = ${CARD_W.toFixed(1)}, CD_H = ${CARD_H.toFixed(1)};
 const int CD_NF = ${CARD_NF};`;
 // The bake: the spike's march, lit from behind, seen square on.
 // A frame keeps light and alpha only; card() adds the colour.
@@ -637,7 +642,8 @@ vec3 cardTint(float Lu, float f) {
   return mix(tint, tint * vec3(0.8, 1.05, 0.9), smoothstep(0.55, 0.85, f));
 }
 // v: the variety. t: the time in s. ph: the twister's phase. spin: its spin in rad/s.
-vec4 card(int v, vec2 vT, float t, float ph, float spin) {
+// lod is the mip level: the caller works it out, since a read in a branch has no derivatives.
+vec4 card(int v, vec2 vT, float t, float ph, float spin, float lod) {
   // Half the twister's spin: massive columns turn slowly (Tom, 2026-11-24).
   float ft = fract(t * spin * 0.5 / 6.2831853 + ph * 0.1) * float(CD_NF);
   int f0 = int(ft), f1 = (f0 + 1) % CD_NF;
@@ -658,8 +664,8 @@ vec4 card(int v, vec2 vT, float t, float ph, float spin) {
   vec2 c = vec2(0.0);
   for (int k = 0; k < 2; k++) {
     vec2 u = uv - vec2(0.0, 0.035 * (k == 0 ? p0 : p1));
-    vec2 ca = texture(uBook, vec3(u, float(v * CD_NF + f0))).rg;
-    vec2 cb = texture(uBook, vec3(u, float(v * CD_NF + f1))).rg;
+    vec2 ca = textureLod(uBook, vec3(u, float(v * CD_NF + f0)), lod).rg;
+    vec2 cb = textureLod(uBook, vec3(u, float(v * CD_NF + f1)), lod).rg;
     c += mix(ca, cb, fract(ft)) * (k == 0 ? 1.0 - wf : wf);
   }
   float f = vT.y * CD_FY / 24.0;
@@ -752,6 +758,12 @@ export async function bakeCards(gl, prog, { wait = () => new Promise(r => setTim
       gl.compressedTexSubImage3D(gl.TEXTURE_2D_ARRAY, l, 0, 0, k, w, h, 1, RG.COMPRESSED_RED_GREEN_RGTC2_EXT, new Uint8Array(view.buffer, 0, n * 4));
       bytes += n * 4;
     }
+    // One mip level a frame, so the packing never stalls a frame.
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    await wait();
+    gl.useProgram(prog.enc.p);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.activeTexture(gl.TEXTURE0);
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.deleteFramebuffer(fb);
