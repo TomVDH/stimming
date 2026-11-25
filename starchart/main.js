@@ -11,7 +11,7 @@ import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { glyph } from './glyphs.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
@@ -1019,6 +1019,8 @@ const cssAt = (x, y) => [((x - view.cx) / view.hw * 0.5 + 0.5) * cssW, (0.5 - (y
 const MERCURY_REACH = 70;
 function startEgg(x, y, rare = false) {
   let kind = EGGS[st.star];
+  // Far out, the Sun's hold plays the pale blue dot.
+  if (kind === 'carrington' && farAt(cam.z) > DOT_FAR) { egg = makeBlueDot(); return true; }
   const m = mercury();
   if (kind === 'carrington' && m.on) {
     const [mx, my] = cssAt(m.x, m.y);
@@ -1071,6 +1073,8 @@ function stepEgg(dt, holding) {
     if (egg.t >= DIM_END) egg = null;
   } else if (egg.kind === 'sunshine') {
     if (egg.t >= SHIP_END) { egg.stop?.(); egg = null; }
+  } else if (egg.kind === 'bluedot') {
+    if (egg.t >= DOT_END) egg = null;
   }
 }
 // The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
@@ -1091,7 +1095,7 @@ const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
   regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(4 * MAX_FLARES), flB: new Float32Array(4 * MAX_FLARES),
   sat: new Float32Array(4 * MAX_FLARES), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
-  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), shimmer: 0, lens: 0,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), dot: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), beat: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
@@ -1262,6 +1266,13 @@ function makeFrame() {
     f.ship.set([sx, sy, size, sh.w * (1 - weight('wide'))]);
     f.ship2.set([sh.heading, sh.tilt, sh.glint, 0]);
   } else f.ship.fill(0);
+  // The pale blue dot: a ray of scattered light beside the star, one pale blue pixel in it.
+  // The dot stands a fifth of the frame off the star, across the ray's line.
+  if (egg?.kind === 'bluedot') {
+    const b = blueDot(egg), [ox, oy] = px(0, 0), H = view.H, a = -0.36;
+    const nx = -Math.sin(a), ny = Math.cos(a), dx = Math.cos(a), dy = Math.sin(a);
+    f.dot.set([ox + nx * 0.2 * H + dx * 0.16 * H, oy + ny * 0.2 * H + dy * 0.16 * H, b.ray, b.dot]);
+  } else f.dot.fill(0);
   // The pulsar's magnetic axis, in the view frame.
   if (star.beam) f.beam.set([...toView(magNow()), star.beam]); else f.beam.fill(0);
   // The pulsar is the lighthouse on true physics (Tom, 2026-11-24): the striped wind, no torus or jets.

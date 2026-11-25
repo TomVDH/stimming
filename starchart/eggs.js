@@ -3,6 +3,7 @@
 // Betelgeuse: the Great Dimming of 2019 to 2020.
 // Pulsar: the Vela pulsar's true voice, 11.19 pulses a second.
 // Sun, a hold on Mercury: a ship's distress beacon, then the ship in transit.
+// Sun, a hold far out: the pale blue dot, one pixel in a ray of scattered light.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -91,6 +92,22 @@ export function sunshine(egg) {
   const tilt = 0.32 + 0.12 * Math.sin(t * 0.22);
   const glint = Math.exp(-(((t - 13) / 0.7) ** 2));
   return { x: egg.x0 + SHIP_V * t, w, heading: Math.PI - 0.12, tilt, glint };
+}
+
+/* ---------- the pale blue dot (Tom, 2026-11-25) ---------- */
+// Voyager 1, 14 February 1990: the earth, one pixel in a ray of scattered sunlight.
+export const DOT_END = 26;
+// A hold this far out plays it, on farAt's scale from 0 to 1.
+export const DOT_FAR = 0.6;
+export function makeBlueDot() {
+  return { kind: 'bluedot', t: CUE - HOLD };
+}
+/** The ray and the dot, each a weight from 0 to 1. */
+export function blueDot(egg) {
+  const t = egg.t, out = 1 - sstep(20, DOT_END, t);
+  const ray = (t < 0 ? 0.35 * sstep(CUE - HOLD, 0, t) : 0.35 + 0.65 * sstep(0, 3, t)) * out;
+  const dot = sstep(4, 5.5, t) * out;
+  return { ray, dot };
 }
 
 /* ---------- the Vela pulsar's true voice ---------- */

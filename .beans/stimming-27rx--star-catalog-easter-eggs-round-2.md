@@ -3,8 +3,9 @@
 title: 'Star catalog: easter eggs, round 2'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-25T03:44:55Z
-updated_at: 2026-11-25T03:44:55Z
+updated_at: 2026-11-25T09:35:54Z
 parent: stimming-e35i
 ---
 
@@ -13,5 +14,8 @@ Tom, 2026-11-24: refine the easter eggs. Round 1 is stimming-239r: Carrington (S
 - [ ] Propose new eggs that fit the objects; Tom picks
 - [x] Sun: a ship in transit beside Mercury with a distress beacon, after Sunshine (Tom, 2026-11-24)
 - [ ] Tom's look and ear on the ship
+- [x] Sun, far out: the pale blue dot, after Voyager 1 (Tom picked the top 3 of docs/plans/starchart-eggs.md, 2026-11-25; Tom: good)
+- [ ] Epsilon Aurigae: the slab, lying flat at 1:4 (Tom, 2026-11-25)
+- [ ] Vega: primes
 - [ ] Build each pick, shown live
 - [ ] Doc: Eggs section true

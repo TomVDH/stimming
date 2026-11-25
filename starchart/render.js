@@ -1903,6 +1903,8 @@ uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, u
 uniform vec2 uBodyK;
 // The Sun's egg: the ship's x, y and size in pixels and weight; heading, shield slant, glint.
 uniform vec4 uShip, uShip2;
+// The pale blue dot: its x and y in pixels, the ray's weight, the dot's weight.
+uniform vec4 uDot;
 uniform vec3 uHal, uStreak;
 // The far lens's sway with the mouse, -1 to 1 on each axis.
 uniform vec2 uSway;
@@ -2297,6 +2299,23 @@ vec3 ship(vec3 c, vec2 fc) {
   float star4 = uShip2.z * (exp(-abs(e.y) * 40.0) * exp(-abs(e.x) * 1.5) + exp(-abs(e.x) * 40.0) * exp(-abs(e.y) * 1.5));
   return c * (1.0 - cov * uShip.w) + gold * (rim * 0.5 + star4 * 1.5) * uShip.w;
 }
+// The pale blue dot: a long, soft band of scattered light at a slant, and one pale blue pixel in it.
+vec3 blueDot(vec3 c, vec2 fc) {
+  if (uDot.z <= 0.0) return c;
+  const float A = -0.36;
+  vec2 d = vec2(cos(A), sin(A)), n = vec2(-d.y, d.x);
+  vec2 e = (fc - uDot.xy) / uRes.y;
+  float across = dot(e, n), along = dot(e, d);
+  // Wide and soft across, faintly banded along its length, fading toward the frame's ends.
+  float band = exp(-pow(across / 0.045, 2.0)) * (0.75 + 0.25 * vn(vec3(along * 9.0, across * 40.0, 3.0)));
+  band *= smoothstep(1.1, 0.2, abs(along + 0.1));
+  c += grade(vec2(0.9, 0.1)) * band * 0.11 * uDot.z * max(1.0 - c, 0.0);
+  // One CSS pixel, pale blue, with a breath of glow.
+  vec2 q = (fc - uDot.xy) / max(1.0, uDpr);
+  float px = step(abs(q.x), 0.5) * step(abs(q.y), 0.5);
+  float glow = exp(-dot(q, q) / 4.0) * 0.7;
+  return c + vec3(0.55, 0.72, 1.0) * (px * 1.6 + glow) * uDot.w;
+}
 void main() {
   // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
   vec2 weave = (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes;
@@ -2379,6 +2398,7 @@ void main() {
   c = body(c, fc, uBodyA, uBodyK.x);
   c = body(c, fc, uBodyB, uBodyK.y);
   c = ship(c, fc);
+  c = blueDot(c, fc);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
   // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
@@ -2816,6 +2836,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(f.u.uBodyB, v.bodyB);
     gl.uniform2fv(f.u.uBodyK, v.bodyK);
     if (v.ship) { gl.uniform4fv(f.u.uShip, v.ship); gl.uniform4fv(f.u.uShip2, v.ship2); }
+    if (v.dot) gl.uniform4fv(f.u.uDot, v.dot);
     gl.uniform1f(f.u.uLens, v.lens);
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
