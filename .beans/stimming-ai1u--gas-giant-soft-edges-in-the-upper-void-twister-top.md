@@ -39,3 +39,5 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [x] Marched near, cards far is the default (Tom: "Yes, make default"); cards bake on the first approach to the void; BC5 packing one mip level a frame
 - [x] Flicker and vertical streaks (Tom's screenshot): card frames read at an explicit mip level from the distance
 - [x] Rolling rebake (Tom: "Yes, rolling rebake"): a back cube builds one strip a frame, swaps, cross-fades over 1.5 s; about 0.2 ms a frame, 98 MB more; `?qa` `__gg.noRoll` holds it
+- [x] Ceiling funnels as a fourth Dev mode (Tom: "the cloud layer warped down as a contiguous piece"): `ceilFunnel()` in the cloud density; light taps jittered on funnels to end the ceiling-shadow bands
+- [ ] Funnel walls need billow detail

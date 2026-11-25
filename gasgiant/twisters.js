@@ -73,7 +73,8 @@ uniform vec4 uTwA[${TW_MAX}];
 uniform vec4 uTwB[${TW_MAX}];
 uniform vec4 uTwC[${TW_MAX}];
 // Dev (Tom, 2026-11-24): 0 draws the relief march, 1 flipbook cards,
-// 2 the full march within uTwMix km of the eye and cards past it.
+// 2 the full march within uTwMix km of the eye and cards past it,
+// 3 ceiling funnels in the cloud density, with no twister layers.
 // uCardK scales the cards' light to the void's.
 uniform float uTwCard, uCardK, uTwMix;
 // The angle one march pixel spans, in radians.
@@ -105,6 +106,42 @@ float twSag(vec2 xz) {
     g = max(g, exp(-dot(d, d) / (C.z * C.z)));
   }
   return 9.0 * g;
+}
+// Ceiling funnels (Tom, 2026-11-24: "the cloud layer warped down as a contiguous piece").
+// At each twister the ceiling's own cloud is pulled down to the floor, as in Tornado alley.
+// n1 and n2 are the deck's noise at p, so the funnel's wall rags as the ceiling does.
+// tw takes the funnel light's terms: side to the light, depth, height, on.
+float ceilFunnel(vec3 p, float h, vec4 n1, vec4 n2, out vec4 tw) {
+  float res = 0.0;
+  tw = vec4(0.0);
+  for (int i = 0; i < ${TW_MAX}; i++) {
+    vec4 A = uTwA[i], B = uTwB[i];
+    if (B.y <= 0.0) continue;
+    // 1.5 is the cards' girth, CARD_MS.
+    float s = B.y / TW_H, w = A.z * 1.5;
+    vec2 d0 = (p.xz - A.xy) / s;
+    if (dot(d0, d0) > 900.0) continue;
+    float Y = (h - B.x) / s, f = clamp(Y / TW_H, 0.0, 1.0);
+    int v = int(A.w + 0.5) % 4;
+    vec2 q = d0 - twAxis(Y, v, B.w);
+    float rr = length(q);
+    // A tip twister narrows to a point at its foot.
+    float R = twRad(Y, v) * w * (A.w > 3.5 ? pow(smoothstep(0.0, 0.45, f), 0.8) : 1.0);
+    float edge = R * (0.7 + 0.5 * n1.b + 0.35 * (n2.r - 0.5));
+    if (rr > edge * 1.3 + 0.5) continue;
+    // The wall swirls on angle and log radius, as in Tornado alley, so it never winds up.
+    float a = atan(q.y, q.x) - uT * B.z - 2.0 * log(max(rr, 0.05));
+    float sw = textureLod(uVol, vec3(cos(a) * 0.4 + A.x * 0.013, Y / 14.0 - uT * 0.01, sin(a) * 0.4 + A.y * 0.013), 0.0).r;
+    float twd = smoothstep(edge * 1.25 + 0.3, edge * 0.5, rr) * (0.35 + 0.9 * sw);
+    // The foot thins into the deck, or into the air over a tip.
+    twd *= mix(0.45, 1.0, smoothstep(0.0, 0.15, f));
+    if (twd > res) {
+      res = twd;
+      vec3 lt = deepLight(normalize(p - PC));
+      tw = vec4(dot(q / max(rr, 1e-3), normalize(lt.xz + 1e-5)), clamp(rr / (edge * 1.25 + 0.3), 0.0, 1.0), f, 1.0);
+    }
+  }
+  return res;
 }
 // The dust heap round each twister's foot: its height over the floor, in km.
 float twDust(vec2 xz) {

@@ -640,6 +640,19 @@ float dens(vec3 p, float lod, float fine, float full) {
         gBounceC = pal(vd.w);
       }
       float sd = stormsIn(p, h, vd.x, vd.y, vd.z, vk.x, vk.y, vk.z);
+      // @seg upper
+      // Dev mode 3: the upper void's twisters are the ceiling's own cloud, pulled down.
+      if (vd.z == 3.1 && uTwCard > 2.5) {
+        vec4 tw2;
+        float fd2 = ceilFunnel(p, h, n1, n2, tw2);
+        if (fd2 > sd) {
+          sd = fd2; gTw = tw2;
+          // Its own light terms, so none of the ceiling's switch on or off with height.
+          // The floor's light reaches up under the flare, as under the ceiling.
+          gUnder = 0.35 * smoothstep(0.55, 0.95, tw2.z); gDeep = -1.0; gFold = 0.0; gFace = 1.0;
+        }
+      }
+      // @end
       if (sd <= d) gTw = vec4(0.0);
       if (sd > d) {
         d = sd;
@@ -671,8 +684,9 @@ float topDens(vec3 q) {
 }
 // Optical depth toward the light over four growing taps, to 33 km.
 // A low sun needs the reach: a 6 km head throws a 34 km shadow.
-float lightOD(vec3 p, vec3 ld, float lod) {
-  float od = 0.0, st = 1.2;
+// j shifts the taps along the light by up to one step; 0 keeps them fixed.
+float lightOD(vec3 p, vec3 ld, float lod, float j) {
+  float od = 0.0, st = 1.2 * (1.0 + j);
   bool cheap = lod > 0.8 && altOf(p) > 0.0;
   for (int j = 0; j < 4; j++) {
     p += ld * st;
@@ -789,7 +803,10 @@ void main() {
         if (deep > 0.0) ld = normalize(mix(ld, upv, smoothstep(1.5, 4.0, deep)));
         // Fire's smoke: Beer, multiple scatter, powder, a shadow ambient.
         // Far clouds in the decks take a mean depth; far ones seen from above take none.
-        float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod) : inWin ? 3.0 : 0.0);
+        // A funnel's smooth wall shows the taps as bands where the ceiling enters each one.
+        // Its taps shift per pixel, and the frame history blends them smooth.
+        float lj = tw.w > 0.5 ? fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 7.31, vec2(0.06711056, 0.00583715)))) : 0.0;
+        float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod, lj) : inWin ? 3.0 : 0.0);
         float beer = exp(-tau);
         // The multiple-scatter term carries the light into the cloud, so thin parts glow.
         float lit = beer + uTune.x * exp(-0.22 * tau);
