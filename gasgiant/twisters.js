@@ -72,6 +72,10 @@ uniform mediump sampler2DArray uWall;
 uniform vec4 uTwA[${TW_MAX}];
 uniform vec4 uTwB[${TW_MAX}];
 uniform vec4 uTwC[${TW_MAX}];
+// Dev (Tom, 2026-11-24): 0 draws the live march, 1 flipbook cards,
+// 2 the live march within uTwMix km of the eye and cards past it.
+// uCardK scales the cards' light to the void's.
+uniform float uTwCard, uCardK, uTwMix;
 ${TW_SHAPE}
 // The axis sways slowly; the top sways most.
 vec2 twAxis(float Y, int v, float ph) {
@@ -168,9 +172,12 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
     // Short skips keep the soft edge whole; a far edge widens to a pixel, so it does not stipple.
     float st = r > Rw ? max((r - Rw) * s * 0.4, fine) : fine;
     float soft = (0.5 + 0.6 * f) * (v == 2 ? 1.6 : 1.0) * w + t * 0.003 / s;
-    // The top thins into the ceiling's wall cloud; the foot thins into its dust.
+    // The foot thins into its dust.
     float foot = mix(smoothstep(0.0, 0.12, f), mix(0.3, 1.0, smoothstep(0.0, 0.1, f)), gr);
-    float dd = smoothstep(0.0, soft, Rw - r) * wl.g * 1.8 * (1.0 - 0.75 * smoothstep(0.84, 0.98, f)) * foot;
+    // The top fades out in the wall cloud, so the march's ceiling shows through (Tom, 2026-11-24).
+    // The wall's noise rags the fade, so it draws no level line.
+    float top = 1.0 - smoothstep(0.68, 0.86, f + 0.3 * (wl.a - 0.5));
+    float dd = smoothstep(0.0, soft, Rw - r) * wl.g * 1.8 * top * foot;
     if (dd > 0.002) {
       // The wall's normal: the radial way, tipped by the wall's slope round and up.
       vec4 wx;
@@ -205,7 +212,7 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
       float chord = dc > 0.0 ? max(0.0, -qd + sqrt(dc)) : 0.0;
       float thru = exp(-chord * s / max(length(ld.xz), 0.3) * 1.1) * phL;
       // The colour blends into the ceiling's only where the top meets it.
-      vec3 alb = mix(alb0 * mix(vec3(1.0), vec3(0.92, 0.88, 1.08), f), ceilC, 0.6 * smoothstep(0.88, 0.99, f));
+      vec3 alb = mix(alb0 * mix(vec3(1.0), vec3(0.92, 0.88, 1.08), f), ceilC, 0.7 * smoothstep(0.6, 0.84, f));
       vec3 Lc = alb * (key * (tl * 1.8 + rim * 0.8 + thru * 2.8) + amb * 1.5);
       for (int j = 0; j < 4; j++) {
         vec4 fl = uFlash[j];
@@ -224,6 +231,38 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
   }
   return vec4(col, 1.0 - Tt);
 }
+// One flipbook card along the ray: a vertical plane through the twister, square to the view.
+// card() needs CARD_GL ahead of this code. tF is where the card shows, or -1.
+vec4 twCard(int i, vec3 ro, vec3 rd, float ta, float tb, inout float tF) {
+  vec4 A = uTwA[i], B = uTwB[i];
+  float s = B.y / TW_H;
+  vec2 n = normalize(uFwd.xz + vec2(0.0, 1e-5));
+  float dn = dot(rd.xz, n);
+  if (dn < 1e-4) return vec4(0.0);
+  float t = dot(A.xy - ro.xz, n) / dn;
+  if (t < ta || t > tb) return vec4(0.0);
+  vec3 p = ro + rd * t;
+  float h = altOf(p);
+  vec2 rt = vec2(-n.y, n.x);
+  vec2 vT = vec2(dot(p.xz - A.xy, rt) / (2.0 * CD_FX * s * A.z) + 0.5, (h - B.x) / (CD_FY * s));
+  if (vT.x < 0.0 || vT.x > 1.0 || vT.y < 0.0 || vT.y > 1.0) return vec4(0.0);
+  vec4 c = card(int(A.w + 0.5) % 4, vT, uT, B.w, B.z);
+  if (c.a < 1e-3) return vec4(0.0);
+  // The void's light sets the card's level; the hue stays the card's own.
+  c.rgb *= dot(lut(h).rgb, vec3(0.3, 0.5, 0.2)) * uCardK;
+  // Flashes light it from inside; alpha stands in for thickness, so thin parts glow most.
+  float fk = 0.0;
+  for (int j = 0; j < 4; j++) {
+    vec4 fl = uFlash[j];
+    if (fl.w <= 0.0) continue;
+    vec3 fq = fl.xyz - p;
+    float d2 = dot(fq, fq);
+    fk += fl.w * (1.8 * exp(-d2 / 60.0) + 0.5 * exp(-sqrt(d2) / 14.0));
+  }
+  c.rgb += mix(pal(0.5), vec3(0.85), 0.35) * FLASH_C * fk * c.a * (1.0 - 0.55 * c.a);
+  if (tF < 0.0 && c.a > 0.03) tF = t;
+  return c;
+}
 // One layer over another, both premultiplied.
 vec4 twOver(vec4 f, vec4 b) { return vec4(f.rgb + (1.0 - f.a) * b.rgb, f.a + (1.0 - f.a) * b.a); }
 // The twisters along the ray in two layers, each at its own depth, so the march puts clouds between them.
@@ -237,7 +276,8 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tA, out vec4 cB, o
   for (int i = 0; i < ${TW_MAX}; i++) {
     if (uTwB[i].y <= 0.0 || float(i) < uTwLo || float(i) >= uTwHi) continue;
     float tf = -1.0;
-    vec4 r = twister(i, ro, rd, ta, tb, jit, tf);
+    bool asCard = uTwCard > 0.5 && (uTwCard < 1.5 || length(uTwA[i].xy - ro.xz) > uTwMix);
+    vec4 r = asCard ? twCard(i, ro, rd, ta, tb, tf) : twister(i, ro, rd, ta, tb, jit, tf);
     if (tf < 0.0) continue;
     // A nearer one takes layer A; the old A joins layer B in depth order.
     if (tA < 0.0 || tf < tA) {
@@ -307,4 +347,289 @@ export function twisterUniforms(t, a, b, c) {
     const tz = k * 2.4 * Math.sin(5.0) + 0.7 * Math.cos(t * 0.04 + ph * 1.3 + 2);
     c.set([x + tx * s, z + tz * s, s * e.w * radAt(0.9, e.v) * 1.4, e.tip ? 0 : s * e.w * radAt(0, e.v) * 2.4], i * 4);
   });
+}
+
+/* ---------- Flipbook cards: the spike's backlit twister, baked (Tom, 2026-11-24) ---------- */
+// A frame holds x from -CARD_FX to CARD_FX km and y from 0 to CARD_FY km, in the shape frame.
+// The top fades out by 0.86 of the height, so the frame stops at 0.9.
+// CARD_MS scales the girth (Tom, 2026-11-24: "more massive"); the frame widens to hold it.
+export const CARD_MS = 1.5, CARD_FX = 16, CARD_FY = 21.6;
+// 32 pixels a km; 12 frames a turn, neighbours cross-fade; one set per variety.
+export const CARD_W = 1024, CARD_H = Math.round(CARD_W * CARD_FY / (2 * CARD_FX) / 4) * 4, CARD_NF = 12, CARD_NV = 3;
+// How fast a column swallows the light behind it: the body goes dark, the rim glows.
+const CARD_OD = 8;
+const CARD_K = `const float CD_FX = ${CARD_FX.toFixed(1)}, CD_FY = ${CARD_FY.toFixed(1)}, CD_MS = ${CARD_MS.toFixed(2)};
+const int CD_NF = ${CARD_NF};`;
+// The bake: the spike's march, lit from behind, seen square on.
+// A frame keeps light and alpha only; card() adds the colour.
+export const CARD_BAKE_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform float uT, uOd;
+uniform int uV;
+${CARD_K}
+int gV = 0;
+const float H = 24.0, PI = 3.14159265;
+float h13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
+float vn3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(h13(i), h13(i + vec3(1, 0, 0)), f.x), mix(h13(i + vec3(0, 1, 0)), h13(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(h13(i + vec3(0, 0, 1)), h13(i + vec3(1, 0, 1)), f.x), mix(h13(i + vec3(0, 1, 1)), h13(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p, int oct) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 6; i++) { if (i >= oct) break; s += a * vn3(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
+  return s;
+}
+vec2 axisAt(float y) {
+  float f = y / H, b = gV == 1 ? 0.45 : gV == 2 ? 1.25 : 1.0;
+  return b * vec2(4.2 * sin(f * 3.0 + 0.3) * f, 2.4 * sin(f * 3.8 + 1.2) * f);
+}
+float radAt(float y) {
+  float f = clamp(y / H, 0.0, 1.0), fl = pow(smoothstep(0.7, 1.0, f), 2.0);
+  if (gV == 1) return CD_MS * (1.5 + 4.4 * pow(f, 1.2) + 3.0 * exp(-f * 10.0) + 4.5 * fl);
+  if (gV == 2) return CD_MS * (0.42 + 1.5 * pow(f, 2.2) + 1.1 * exp(-f * 20.0) + 6.5 * fl);
+  return CD_MS * (0.55 + 2.4 * pow(f, 1.6) + 2.2 * exp(-f * 16.0) + 6.0 * fl);
+}
+// The spike's density, with one change: one turn of uT loops the wall.
+float dens(vec3 p, int oct) {
+  if (p.y < 0.0 || p.y > H) return 0.0;
+  vec2 q = p.xz - axisAt(p.y);
+  float r = length(q), R = radAt(p.y);
+  if (r > R * 1.7 + 0.8) return 0.0;
+  float f = p.y / H;
+  float a = atan(q.y, q.x) - uT * 2.0 * PI - f * 6.0;
+  vec3 c = vec3(cos(a) * 1.4, sin(a) * 1.4, p.y * 0.3);
+  float n = fbm(c * 1.7 + vec3(0.0, 0.0, r * 0.4), oct);
+  float hel = 0.5 + 0.5 * cos(2.0 * a + p.y * 0.9);
+  float ph = (p.y / 2.6 - uT * 2.0) * 2.0 * PI + a + 1.4 * sin(a + p.y * 0.25) + n * 4.0;
+  float bands = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(ph));
+  float rough = gV == 2 ? 0.25 : gV == 1 ? 0.8 : 1.0, bandK = gV == 2 ? 0.35 : gV == 1 ? 0.6 : 1.0;
+  float edge = R * (0.62 + (1.0 - rough) * 0.32 + 0.5 * n * rough + 0.32 * hel * rough + 0.26 * bands * bandK) - r;
+  // The rope's edge stays tight, so it has a dense core to shade.
+  float d = smoothstep(0.0, (0.5 + 0.6 * f) * (gV == 2 ? 0.9 : 1.0), edge);
+  float skirt = 1.0 - smoothstep(0.02, 0.16, f);
+  d *= mix(1.0, smoothstep(0.35, 0.75, n + 0.2 * hel), skirt * 0.8);
+  d *= mix(1.0, smoothstep(0.3, 0.7, n), smoothstep(0.75, 1.0, f) * 0.7);
+  // The top fades out raggedly, as the toy's tops do in the wall cloud.
+  d *= 1.0 - smoothstep(0.68, 0.86, f + 0.3 * (n - 0.5));
+  return d * (0.6 + 0.5 * mix(0.5, n, rough) + 0.35 * bands * bandK + 0.2 * hel);
+}
+float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * mu, 1.5)); }
+float phase(float mu) { return mix(hg(mu, 0.75), hg(mu, -0.2), 0.3) * 4.0 * PI; }
+void main() {
+  gV = uV;
+  // The spike's light from behind: the eye looks along -z, the light comes toward it.
+  vec3 L = normalize(vec3(-0.25, 0.35, -0.9));
+  vec3 Lc = vec3(0.85, 1.0, 0.95) * 1.1;
+  // Parallel rays: a card has no perspective of its own.
+  vec3 ro = vec3((vUv.x - 0.5) * 2.0 * CD_FX, vUv.y * CD_FY, CD_FX), rd = vec3(0.0, 0.0, -1.0);
+  // The frame keeps light and alpha only; the card shader adds the colour.
+  float lum = 0.0;
+  float T = 1.0;
+  float t = 0.12 * h13(vec3(gl_FragCoord.xy, 3.0 + uT));
+  for (int i = 0; i < 400; i++) {
+    if (t > 2.0 * CD_FX || T < 0.01) break;
+    vec3 p = ro + rd * t;
+    float d = dens(p, 6);
+    if (d > 0.002) {
+      float od = 0.0, st = 0.25;
+      vec3 q = p;
+      for (int j = 0; j < 8; j++) { q += L * st; od += dens(q, 4) * st; st *= 1.45; }
+      float f = p.y / H;
+      // A thicker light path darkens the body; only thin edges pass the light.
+      // The thin rope takes twice the rate, or the light passes all of it.
+      od = od * uOd * (gV == 2 ? 2.0 : 1.0) + smoothstep(0.55, 1.0, f) * 1.5;
+      float mu = dot(rd, L);
+      float sunL = exp(-od) * phase(mu) + 0.15 * exp(-od * 0.25) * phase(mu * 0.5) + 0.03 * exp(-od * 0.1);
+      vec2 qa = p.xz - axisAt(p.y);
+      float depth = max(0.0, 1.0 - length(qa) / radAt(p.y));
+      float amb = mix(0.04, 0.09, f) * exp(-depth * 1.6);
+      float a = 1.0 - exp(-d * 6.0 * 0.08);
+      lum += T * (sunL + amb) * a;
+      T *= 1.0 - a;
+    }
+    t += 0.08;
+  }
+  // Premultiplied; the square root spends the 8 bits on the darks.
+  o = vec4(sqrt(max(lum, 0.0) / 4.0), 1.0 - T, 0.0, 1.0);
+}`;
+export const CARD_ENC_FS = /* glsl */`#version 300 es
+precision highp float;
+precision highp int;
+precision highp usampler2D;
+uniform highp sampler2DArray uSrc;
+uniform int uLayer, uLevel;
+uniform ivec2 uSize;
+out uvec4 o;
+// One BC4 block from 16 values in 0 to 255; it returns the low and high words.
+uvec2 bc4(float v[16]) {
+  float lo = 255.0, hi = 0.0;
+  for (int i = 0; i < 16; i++) { lo = min(lo, v[i]); hi = max(hi, v[i]); }
+  uint r0 = uint(hi), r1 = uint(lo);
+  uvec2 w = uvec2(r0 | (r1 << 8u), 0u);
+  for (int i = 0; i < 16; i++) {
+    // Steps from the high end: 0 is r0, 7 is r1, 1 to 6 sit between.
+    uint k = hi > lo ? uint(floor((hi - v[i]) / (hi - lo) * 7.0 + 0.5)) : 0u;
+    uint idx = k == 0u ? 0u : k == 7u ? 1u : k + 1u;
+    uint b = 16u + 3u * uint(i);
+    if (b + 3u <= 32u) w.x |= idx << b;
+    else if (b >= 32u) w.y |= idx << (b - 32u);
+    else { w.x |= idx << b; w.y |= idx >> (32u - b); }
+  }
+  return w;
+}
+void main() {
+  ivec2 bp = ivec2(gl_FragCoord.xy) * 4;
+  float r[16], g[16];
+  for (int i = 0; i < 16; i++) {
+    ivec2 p = min(bp + ivec2(i % 4, i / 4), uSize - 1);
+    vec4 s = texelFetch(uSrc, ivec3(p, uLayer), uLevel);
+    r[i] = floor(s.r * 255.0 + 0.5);
+    g[i] = floor(s.g * 255.0 + 0.5);
+  }
+  o = uvec4(bc4(r), bc4(g));
+}`;
+// One card at its own uv, 0 to 1 across and up: premultiplied colour and alpha.
+// The frames turn, the funnel bends and sways, the wall climbs, and the top and the foot fade.
+export const CARD_GL = /* glsl */`
+${CARD_K}
+uniform mediump sampler2DArray uBook;
+float cdH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float cdN(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(cdH(i), cdH(i + vec2(1, 0)), f.x), mix(cdH(i + vec2(0, 1)), cdH(i + vec2(1, 1)), f.x), f.y);
+}
+// v: the variety. t: the time in s. ph: the twister's phase. spin: its spin in rad/s.
+vec4 card(int v, vec2 vT, float t, float ph, float spin) {
+  // Half the twister's spin: massive columns turn slowly (Tom, 2026-11-24).
+  float ft = fract(t * spin * 0.5 / 6.2831853 + ph * 0.1) * float(CD_NF);
+  int f0 = int(ft), f1 = (f0 + 1) % CD_NF;
+  // A lateral warp bends the funnel in a slow S (Tom, 2026-11-24).
+  // The foot stays put; the bend grows with height and drifts over minutes.
+  vec2 uv = vT;
+  float lift = smoothstep(0.0, 0.7, vT.y);
+  uv.x += lift * (0.07 * sin(vT.y * 2.6 + ph + t * 0.035) + 0.03 * sin(vT.y * 5.3 - t * 0.06 + ph * 2.3));
+  // A faster sway on top of it; the top swings most.
+  uv.x += vT.y * (0.014 * sin(vT.y * 3.6 + t * 0.11 + ph) + 0.007 * sin(vT.y * 8.5 - t * 0.19 + ph * 1.7));
+  // A slow churn moves the edges; it climbs with the collars.
+  vec2 nq = vec2(vT.x * 7.0, vT.y * 11.0 - t * 0.05) + ph;
+  uv += vec2(0.006, 0.004) * (vec2(cdN(nq), cdN(nq + 17.3)) - 0.5);
+  // Alpha flow: two copies scroll up on half-offset phases and cross-fade.
+  // The wall seems to climb, with no jump when a copy resets.
+  float fp = t / 24.0 + ph * 0.1, p0 = fract(fp), p1 = fract(fp + 0.5);
+  float wf = abs(p0 * 2.0 - 1.0);
+  vec2 c = vec2(0.0);
+  for (int k = 0; k < 2; k++) {
+    vec2 u = uv - vec2(0.0, 0.035 * (k == 0 ? p0 : p1));
+    vec2 ca = texture(uBook, vec3(u, float(v * CD_NF + f0))).rg;
+    vec2 cb = texture(uBook, vec3(u, float(v * CD_NF + f1))).rg;
+    c += mix(ca, cb, fract(ft)) * (k == 0 ? 1.0 - wf : wf);
+  }
+  // Colour by light, in the void's greens (Tom, 2026-11-24): deep jade cores, mint rims.
+  float f = vT.y * CD_FY / 24.0;
+  float L = c.r * c.r * 4.0, Lu = L / max(c.g, 1e-3);
+  vec3 body = mix(vec3(0.1, 0.26, 0.21), vec3(0.18, 0.24, 0.3), smoothstep(0.5, 0.95, f));
+  vec3 lit = mix(vec3(0.5, 0.95, 0.74), vec3(0.84, 1.0, 0.9), smoothstep(0.3, 1.2, Lu));
+  vec3 tint = mix(body, lit, smoothstep(0.02, 0.6, Lu));
+  // The foot takes the floor's green; the top takes the ceiling's.
+  tint = mix(tint, tint * vec3(0.7, 1.15, 0.9), 1.0 - smoothstep(0.05, 0.3, f));
+  tint = mix(tint, tint * vec3(0.8, 1.05, 0.9), smoothstep(0.55, 0.85, f));
+  vec3 rgb = tint * (L + 0.05 * c.g);
+  // Alpha gradients mask the top and the foot (Tom, 2026-11-24).
+  // A slow wobble across the card keeps each fade off a straight line.
+  float wb = 0.025 * sin(vT.x * 23.0 + ph * 0.9) + 0.015 * sin(vT.x * 61.0 + ph * 0.5);
+  float mask = smoothstep(0.01, 0.17, vT.y + wb) * (1.0 - smoothstep(0.72, 0.97, vT.y + wb));
+  // The warp must not pull the frame's edge into view.
+  mask *= smoothstep(0.0, 0.03, uv.x) * smoothstep(1.0, 0.97, uv.x);
+  // The body is opaque (Tom, 2026-11-24); only the soft edge lets light through.
+  float a = smoothstep(0.04, 0.45, c.g);
+  return vec4(rgb / max(c.g, 1e-3) * a, a) * mask;
+}`;
+
+/**
+ * Bakes the card frames and packs them as BC5 where the browser has RGTC.
+ * The programs come from CARD_BAKE_FS and CARD_ENC_FS, linked.
+ * @param {WebGL2RenderingContext} gl
+ * @param {{ bake: any, enc: any }} prog
+ * @param {{ wait?: () => Promise<any>, raw?: boolean }} [opt] wait runs between frames; raw keeps RG8.
+ */
+export async function bakeCards(gl, prog, { wait = () => new Promise(r => setTimeout(r, 0)), raw = false } = {}) {
+  const W = CARD_W, H = CARD_H, N = CARD_NV * CARD_NF;
+  const LV = Math.floor(Math.log2(Math.max(W, H))) + 1;
+  const arrayTex = fmt => {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, t);
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, LV, fmt, W, H, N);
+    for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D_ARRAY, k, v);
+    return t;
+  };
+  const rawTex = arrayTex(gl.RG8), fb = gl.createFramebuffer(), px = new Uint8Array(4);
+  const t0 = performance.now();
+  // Four bands a frame, so no draw trips the driver's timeout.
+  const TL = 4;
+  for (let v = 0; v < CARD_NV; v++) for (let f = 0; f < CARD_NF; f++) {
+    gl.useProgram(prog.bake.p);
+    gl.uniform1f(prog.bake.u.uOd, CARD_OD);
+    gl.uniform1i(prog.bake.u.uV, v);
+    gl.uniform1f(prog.bake.u.uT, f / CARD_NF);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, rawTex, 0, v * CARD_NF + f);
+    gl.viewport(0, 0, W, H);
+    gl.enable(gl.SCISSOR_TEST);
+    for (let j = 0; j < TL; j++) {
+      gl.scissor(0, Math.floor(j * H / TL), W, Math.ceil(H / TL));
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    }
+    gl.disable(gl.SCISSOR_TEST);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    await wait();
+  }
+  // Mipmaps keep far cards from shimmering.
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, rawTex);
+  gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
+  const bakeMs = performance.now() - t0;
+  let bytes = 0;
+  for (let l = 0, w = W, h = H; l < LV; l++, w = Math.max(1, w >> 1), h = Math.max(1, h >> 1)) bytes += w * h * 2 * N;
+  // BC5: the GPU packs each 4x4 block; the blocks come back and upload as a compressed texture.
+  const RG = !raw && gl.getExtension('EXT_texture_compression_rgtc');
+  if (!RG) { gl.deleteFramebuffer(fb); return { tex: rawTex, fmt: 'RG8', bytes, bakeMs, encMs: 0 }; }
+  const e0 = performance.now();
+  const tex = arrayTex(RG.COMPRESSED_RED_GREEN_RGTC2_EXT);
+  const bw0 = Math.ceil(W / 4), bh0 = Math.ceil(H / 4);
+  const blk = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, blk);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA32UI, bw0, bh0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, blk, 0);
+  gl.useProgram(prog.enc.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.uniform1i(prog.enc.u.uSrc, 0);
+  const buf = new Uint32Array(bw0 * bh0 * 4);
+  bytes = 0;
+  for (let l = 0, w = W, h = H; l < LV; l++, w = Math.max(1, w >> 1), h = Math.max(1, h >> 1)) {
+    const bw = Math.ceil(w / 4), bh = Math.ceil(h / 4), n = bw * bh * 4;
+    gl.viewport(0, 0, bw, bh);
+    gl.uniform1i(prog.enc.u.uLevel, l);
+    gl.uniform2i(prog.enc.u.uSize, w, h);
+    for (let k = 0; k < N; k++) {
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, rawTex);
+      gl.uniform1i(prog.enc.u.uLayer, k);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const view = buf.subarray(0, n);
+      gl.readPixels(0, 0, bw, bh, gl.RGBA_INTEGER, gl.UNSIGNED_INT, view);
+      gl.bindTexture(gl.TEXTURE_2D_ARRAY, tex);
+      gl.compressedTexSubImage3D(gl.TEXTURE_2D_ARRAY, l, 0, 0, k, w, h, 1, RG.COMPRESSED_RED_GREEN_RGTC2_EXT, new Uint8Array(view.buffer, 0, n * 4));
+      bytes += n * 4;
+    }
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+  gl.deleteTexture(blk);
+  gl.deleteTexture(rawTex);
+  return { tex, fmt: 'BC5', bytes, bakeMs, encMs: performance.now() - e0 };
 }

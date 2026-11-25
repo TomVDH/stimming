@@ -353,20 +353,28 @@ export function fitIntro(root, T) {
   text.style.removeProperty('--copy-k');
   const badge = root.dataset.layout ? null : text.querySelector('.intro-badge');
   const foot = text.querySelector('.intro-foot');
+  // A refit can land in the pop; the fit measures the box at rest.
+  // No paint comes before the restore, so nothing shows.
+  const posed = [text, badge].filter(el => el?.style.transform), held = posed.map(el => el.style.transform);
+  posed.forEach(el => { el.style.transform = ''; });
   let k = 1;
-  for (let i = 0; i < 4; i++) {
-    const r = root.getBoundingClientRect(), t = text.getBoundingClientRect();
-    const top = badge ? badge.getBoundingClientRect().bottom : t.top;
-    const last = foot ? foot.previousElementSibling : text.lastElementChild;
-    // The subtitle's Y knob can lift it above the foot, so it sets the limit.
-    const lifted = foot?.querySelector('.intro-tag') || foot;
-    const limit = foot ? Math.min(foot.getBoundingClientRect().top, lifted.getBoundingClientRect().top) - 16 : r.bottom - 24;
-    const tall = Math.max(0.1, limit - top) / Math.max(1, last.getBoundingClientRect().bottom - top);
-    // A word wider than its box overflows; the title then shrinks too.
-    const wide = Math.min(1, ...[...text.children, ...(foot?.children || [])].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
-    if (tall >= 1 && wide >= 1) break;
-    k = Math.max(0.4, k * Math.min(tall, wide));
-    text.style.setProperty('--copy-k', k.toFixed(3));
+  try {
+    for (let i = 0; i < 4; i++) {
+      const r = root.getBoundingClientRect(), t = text.getBoundingClientRect();
+      const top = badge ? badge.getBoundingClientRect().bottom : t.top;
+      const last = foot ? foot.previousElementSibling : text.lastElementChild;
+      // The subtitle's Y knob can lift it above the foot, so it sets the limit.
+      const lifted = foot?.querySelector('.intro-tag') || foot;
+      const limit = foot ? Math.min(foot.getBoundingClientRect().top, lifted.getBoundingClientRect().top) - 16 : r.bottom - 24;
+      const tall = Math.max(0.1, limit - top) / Math.max(1, last.getBoundingClientRect().bottom - top);
+      // A word wider than its box overflows; the title then shrinks too.
+      const wide = Math.min(1, ...[...text.children, ...(foot?.children || [])].map(el => el.clientWidth && el.scrollWidth > el.clientWidth ? el.clientWidth / el.scrollWidth : 1));
+      if (tall >= 1 && wide >= 1) break;
+      k = Math.max(0.4, k * Math.min(tall, wide));
+      text.style.setProperty('--copy-k', k.toFixed(3));
+    }
+  } finally {
+    posed.forEach((el, i) => { el.style.transform = held[i]; });
   }
 }
 
