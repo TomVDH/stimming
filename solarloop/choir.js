@@ -1001,6 +1001,18 @@ export function tapBus(ac, { out, hall, track = n => n }) {
       route(sh, pan * 0.5, 0.4, room, 0.8 * p.dist, p.stack);
       live.glow.push({ g: sh, h, end: h.end });
     },
+    // A star switch: every sounding tap and its echo fade out over len s, so nothing bleeds into the next star.
+    fadeAll(at = ac.currentTime, len = 1.5) {
+      for (const list of [live.blast, live.glow]) {
+        for (const { g, h } of list) {
+          g.gain.cancelScheduledValues(at);
+          g.gain.setValueAtTime(g.gain.value, at);
+          g.gain.linearRampToValueAtTime(0, at + len);
+          for (const o of h.oscs) { try { (o.o || o).stop(at + len + 0.1); } catch { /* stopped */ } }
+        }
+        list.length = 0;
+      }
+    },
     // The newest blast and glow, for the lab's graph.
     get last() { return { blast: live.blast.at(-1)?.h, glow: live.glow.at(-1)?.h }; },
     // Changes the taps that sound now: levels, sources, the glow's notes and shape.

@@ -155,7 +155,8 @@ export function makeSound(kit, opt = () => undefined) {
 
   // The switch crossfade: the old voice leaves over XOUT s, the new one enters over XIN s.
   // The new voice waits XWAIT s, so it rises out of the wipe's dark point.
-  const XOUT = 7, XIN = 6, XWAIT = 0.25;
+  // 5 s out keeps two dense choirs from piling up (Tom: careful with bleed).
+  const XOUT = 5, XIN = 6, XWAIT = 0.4;
   // A quarter sine in, a quarter cosine out: the two powers sum to one.
   function ease(prm, at, dur, up) {
     const n = 96, c = new Float32Array(n), from = up ? 0 : prm.value;
@@ -176,6 +177,8 @@ export function makeSound(kit, opt = () => undefined) {
     const t = ac.currentTime + 0.01;
     // A star switch crossfades at equal power: the old voice eases out, the new one in (Tom).
     if (drone && drone.ac === ac) {
+      // Taps from the last star and their echoes taper out first, so they do not bleed.
+      if (taps && taps.ac === ac) taps.bus.fadeAll(t, 1.5);
       for (const x of [drone.g, drone.gc]) ease(x.gain, t, XOUT, false);
       for (const o of drone.os) { try { o.stop(t + XOUT + 0.5); } catch { /* stopped */ } }
     }
