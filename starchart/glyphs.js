@@ -41,6 +41,8 @@ const DRAW = {
   spotted: () => body(32, 32, 20) + spot(25, 30, 4) + spot(37, 40, 3) + spot(41, 26, 2),
   belt: () => ring(32, 32, 31, 9, -12, 0) + body(32, 32, 16) + ring(32, 32, 31, 9, -12, 1),
   runaway: () => body(36, 33, 18) + line('M12 10 Q2 33 12 56', 3),
+  // Mira: the giant, its bow ahead and its tail streaming back.
+  tail: () => line('M30 27 Q14 22 0 28 M30 37 Q14 42 0 36', 1.5) + body(38, 32, 15) + line('M52 13 Q63 32 52 51', 3),
   hyper: () => body(40, 32, 16) + line('M24 28 L0 22 M24 36 L2 44', 1.5),
   giant: () => body(32, 32, 22) + spot(40, 40, 7) + spot(20, 38, 3.5) + spot(36, 18, 2.5),
   cocoon: () => halo(32, 32, 31) + body(32, 32, 18, { dim: 1 }),
@@ -66,7 +68,7 @@ const DRAW = {
 export const KIND = {
   sun: 'main', proxima: 'main', epseri: 'main', procyon: 'main', sirius: 'main',
   vega: 'spinner', regulus: 'spinner', zetaoph: 'runaway', xxtri: 'spotted', fomalhaut: 'belt', s5hvs1: 'hyper',
-  arcturus: 'giant', rigel: 'giant', betelgeuse: 'giant', vycma: 'giant', st218: 'giant',
+  arcturus: 'giant', rigel: 'giant', betelgeuse: 'giant', mira: 'tail', vycma: 'giant', st218: 'giant',
   wohg64: 'cocoon', tzo: 'core', quasi: 'quasi',
   luhman: 'brown', wise: 'brown', ttauri: 'proto',
   betalyr: 'interacting', vfts352: 'contact', epsaur: 'darkdisc', wr124: 'wind', wr140: 'shells',

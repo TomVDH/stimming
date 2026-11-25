@@ -578,6 +578,8 @@ uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uGrav, uCloud, uYso;
 // A cool giant's giant cells: limb heave, lobe scale, churn phase, cell light.
 uniform vec4 uLump;
+// A pulsing star's beat: radius swell, light swell, unused, on.
+uniform vec4 uBeat;
 // far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
 uniform float uFar;
 // off: the weight of light round the disk against the disk's own light.
@@ -698,6 +700,8 @@ void main() {
     vec2 dl = P / max(length(P), 1e-4);
     P /= 1.0 + 2.0 * uLump.x * lumpAt(uToSun * vec3(dl, 0.0));
   }
+  // A pulsing star swells and shrinks: the plane scales, so the glow moves with the disk.
+  if (uBeat.w > 0.0) P /= 1.0 + uBeat.x;
   float r = length(P);
   float hot = 0.0, cool = 0.0;
   // The sunspots' shade, applied last so no later light fills them.
@@ -1141,7 +1145,7 @@ void main() {
       if (uPair2.z > 0.0) { cool = 1.3 * L2; hot = 0.0; } else { hot = L2; cool *= 0.2; }
     }
   }
-  o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
+  o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0) * vec4(vec3(1.0 + uBeat.y), 1.0);
 }`;
 
 /* ---------- the disk pass in versions (Tom, 2026-11-25: it crashed Edge and Zen) ---------- */
@@ -1155,6 +1159,7 @@ const SKY_FEATURES = [
   ['uCloud', 'vec4', v => v.band.clouds[0] > 0, B => B.clouds?.[0] > 0],
   ['uYso', 'vec4', v => v.yso[3] > 0, B => B.yso?.[3] > 0],
   ['uLump', 'vec4', v => v.lump[0] > 0, B => B.lump?.[0] > 0],
+  ['uBeat', 'vec4', v => v.beat[3] > 0, B => !!B.beat],
   ['uWind', 'vec4', v => v.band.wind[0] > 0 || v.band.wind[2] > 0, B => B.wind?.[0] > 0 || B.wind?.[2] > 0],
   ['uCore', 'float', v => v.band.core > 0, B => B.core > 0],
   ['uNs', 'vec4', v => v.ns[0] > 0, B => !!B.ns],
@@ -2139,6 +2144,28 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
   return col;
 }
+// Mira's bow shock and tail, in R along its heading; not to scale.
+// The true tail is 13 light years long; uBow.z is the bow's stand-off.
+vec3 miraTail(vec2 q) {
+  float s = uBow.z, d = length(q);
+  // The bow: Wilkin's shape again, its apex s ahead of the star.
+  float t = max(acos(clamp(q.x / max(d, 1e-4), -1.0, 1.0)), 0.02);
+  float rb = s * sqrt(max(3.0 * (1.0 - t / tan(t)), 0.0)) / sin(t);
+  float bw = s * (0.05 + 0.08 * t);
+  float fil = 0.4 + 1.2 * fbm(vec3(q * 5.0 / s, 2.0));
+  float bow = exp(-pow((d - rb) / bw, 2.0)) * exp(-t * 0.9) * fil * smoothstep(2.0, 1.2, t);
+  // The tail: gas the bow sweeps back, a stream that widens and breaks into eddies.
+  float back = -q.x;
+  float bk = max(back, 0.0) / s;
+  // The stream sways slowly as its eddies shed.
+  float yc = q.y - 0.18 * s * sqrt(bk) * sin(bk * 0.5 - uTime * 0.03);
+  float w = s * (0.45 + 0.05 * bk);
+  float core = exp(-pow(yc / w, 2.0)) * smoothstep(-0.3, 1.2, bk) * exp(-bk / 22.0);
+  // Knots drift back with the gas, very slowly; they grow as the stream ages.
+  float kn = fbm(vec3(bk * 0.9 / (1.0 + 0.04 * bk) + uTime * 0.02, yc * 2.0 / s, 7.0));
+  kn = 0.25 + 2.2 * kn * kn * (0.6 + 0.8 * fbm(vec3(bk * 2.5, yc * 4.0 / s, 3.0)));
+  return uBowC * (bow * 1.2 + core * kn * 0.9);
+}
 // A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.
 // The bow shock takes Wilkin's shape: r(t) = R0 sqrt(3 (1 - t cot t)) / sin t, t from the apex.
 vec3 runaway(vec2 P) {
@@ -2155,6 +2182,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // Mira: a bow shock ahead and a long turbulent tail behind, as GALEX saw it in 2007.
+  if (uBow.w > 2.5) return miraTail(q);
   // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
   if (uBow.w > 1.5) return lensScene(q, P / R);
   // A wake: a long faint trail behind, widening, its knots streaming away.
@@ -2265,7 +2294,7 @@ void main() {
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
   // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
   // A lensed far star's scene comes in as the star shrinks to a pip, and draws over it with no seam.
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 && uBow.w < 2.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 || uBow.w > 2.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < ${MAX_FLARES}; k++) {
@@ -2584,6 +2613,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uLump, v.lump);
+    gl.uniform4fv(s.u.uBeat, v.beat);
     gl.uniform1f(s.u.uFar, v.far);
     gl.uniform1f(s.u.uOff, v.off);
     gl.uniform4fv(s.u.uReg, v.regs);

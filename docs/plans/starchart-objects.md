@@ -9,21 +9,21 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 35 |
-| Picked by Tom, not built | 7 |
+| Built, in the tray | 36 |
+| Picked by Tom, not built | 6 |
 | Asked for by Tom, not built | 1 |
 | Offered, no answer | 18 |
 | Offered, not picked | 12 |
 | Parked | 4 |
 
-## Built (35)
+## Built (36)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
 | Group | Bodies |
 |---|---|
 | Stars | Sun, Proxima, Epsilon Eridani, Procyon, Sirius, Vega, Regulus, Zeta Ophiuchi, Fomalhaut, Arcturus |
-| Giants | Rigel, Betelgeuse, VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
+| Giants | Rigel, Mira (`gico`), Betelgeuse, VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
 | Newborn and failed | T Tauri, Luhman 16, WISE 0855 |
 | Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Thorne–Żytkow object (`ye4c`) |
 | Runaways | S5-HVS1 (`q5aa`) |
@@ -35,24 +35,23 @@ Tom's notes on built bodies:
 
 - Sagittarius A*: the S stars orbit it; they show only while the card or the article is open.
 - Earendel and Mothra: the lens must read far more cosmic, with scale and distance. Tom expected the far stars as faint pips on the lensing.
-- Fomalhaut stands in for the J1407b ring model (`l4n7`), after Tom asked for a real ring star.
+- Fomalhaut took the J1407b ring model's place (`l4n7`), after Tom asked for a real ring star; on 2026-11-25 Tom asked for J1407b too.
 - Pulsar: the lighthouse is the default and the only pulsar. Its tray icon was too small.
 - Brown dwarfs: the shading looks cheap. Cygnus X-1: a jump on its bright edge.
 - 3C 273: its performance was poor; the quasar performance bean is done.
 
 ## Picked by Tom, not built
 
-Tom picked these from an object list on 2026-11-24. Four still need him to choose the object.
+Tom picked these from an object list on 2026-11-24. He chose the open objects on 2026-11-25.
 
-| Bean | Object | Open choice |
+| Bean | Object | Tom's choice |
 |---|---|---|
-| `404a` | Supernova remnant | The Crab Nebula or Cassiopeia A |
-| `wcfv` | Planetary nebula | The Ring (M57), the Cat's Eye or the Helix |
-| `br7d` | Cepheid variable | Delta Cephei or Polaris |
-| `gico` | Mira and its 13 light-year tail | None |
+| `404a` | Supernova remnant | The Crab Nebula (2026-11-25) |
+| `wcfv` | Planetary nebula | The Ring Nebula, M57 (2026-11-25) |
+| `br7d` | Cepheid variable | Polaris (2026-11-25) |
 | `7rv1` | Carbon star, R Leporis | None |
 | `j8qg` | Magnetar, SGR 1806-20 and its 2004 giant flare | None; later re-offers met "stars specifically" |
-| `l4n7` | J1407b's giant rings | Fomalhaut took its place; the bean is open |
+| `l4n7` | J1407b's giant rings | Build it too, beside Fomalhaut (2026-11-25) |
 
 ## Asked for by Tom, not built
 

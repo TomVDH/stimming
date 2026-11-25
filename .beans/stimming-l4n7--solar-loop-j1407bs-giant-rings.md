@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T21:55:17Z
-updated_at: 2026-11-25T00:55:33Z
+updated_at: 2026-11-25T09:15:07Z
 parent: stimming-e35i
 ---
 
@@ -18,3 +18,9 @@ Tom, 2026-11-24: picked from the object list. A ring system about 180 million km
 ## Fomalhaut (Tom, 2026-11-24)
 
 "do we have an actual ring star we can pick": swapped in Fomalhaut, a real ringed star, for the J1407b model: a narrow off-centre dust belt, an inner belt and the dust cloud, scaled, glowing thin dust; the rings turn in 3D with a drag. The id j1407 is gone; the new id is fomalhaut.
+
+## J1407b too (Tom, 2026-11-25)
+
+Asked: build the rings too, or close the bean? Tom: "Build the rings too". J1407b comes back as its own body beside Fomalhaut.
+
+- [ ] Look: J1407b's ring system crossing V1400 Centauri, its own body

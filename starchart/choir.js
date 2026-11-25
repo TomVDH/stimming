@@ -231,6 +231,10 @@ TAPNORM.mothra = TAPNORM.betalyr;
 VOICES.earendel = VOICES.rigel;
 NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
+// Mira sings Betelgeuse's choir.
+VOICES.mira = VOICES.betelgeuse;
+NORM.mira = NORM.betelgeuse;
+TAPNORM.mira = TAPNORM.betelgeuse;
 // Powehi sings Sagittarius A*'s choir, lower.
 VOICES.powehi = VOICES.sgra;
 // A preset from a relative's: its sound, with changes; fx lists only the effects to turn on.
@@ -257,9 +261,11 @@ Object.assign(VOICES, {
   earendel: from('wr124', { voice: 0.4, dist: 1, rev: 15, mix: 1.9, bright: 1.35 }),
   // Powehi (M87*): the first black hole imaged. Sagittarius A*'s deep pad, slower and darker.
   powehi: from('sgra', { step: 18, rev: 15, bright: 0.45, det: 16 }),
+  // Mira: a red giant that swells and fades on a slow beat. Betelgeuse's pad, a deeper, slower swell.
+  mira: from('betelgeuse', { swR: 0.05, swD: 0.38 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];

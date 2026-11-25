@@ -74,7 +74,7 @@ function clockOf(key) {
   if (key === 'sgra') return { kind: 's2', days: S2_DAYS, fit: S_RATE };
   if (B.ns) return { kind: 'spin', days: VELA_S / 86400, fit: VELA_S / SPIN_PERIOD };
   // A tidally locked pair turns once per orbit.
-  const days = B.day || B.shells?.orbit || 0;
+  const days = B.day || B.shells?.orbit || B.beat?.days || 0;
   if (!days) return null;
   const f = clamp(Math.log(days / TURN_P[0]) / Math.log(TURN_P[1] / TURN_P[0]));
   const kind = B.day && !B.bin && !B.pair ? 'rot' : 'orb';
@@ -558,7 +558,7 @@ const PICKS = [
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
-  ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
+  ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
@@ -1090,7 +1090,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(4 * MAX_FLARES), flB: new Float32Array(4 * MAX_FLARES),
   sat: new Float32Array(4 * MAX_FLARES), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
+  beam: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), beat: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2), holeV: new Float32Array(4), holeQ: new Float32Array(4),
@@ -1291,6 +1291,13 @@ function makeFrame() {
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
   f.lump.set([star.lump[0], star.lump[1], churn, star.lump[3]]);
+  // A pulsing star beats on its own clock: the light rises fast and fades slowly.
+  // Mira's radius peaks near phase 0.4, after its light.
+  const bt = star.beat;
+  if (bt) {
+    const ph = st.turn / (bt.days * 86400) % 1 * 2 * Math.PI;
+    f.beat.set([bt.swell * Math.cos(ph - 0.8 * Math.PI), bt.light * Math.cos(ph + 0.6 * Math.sin(ph)), 0, 1]);
+  } else f.beat.fill(0);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   // Past the full star the view pulls back; the eye's light values trail the zoom.
   const far = eye.far;

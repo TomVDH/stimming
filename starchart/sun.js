@@ -59,6 +59,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // discE: a dark disc in front, edge on: light, centre, half width, half thickness, in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
+// kind 3, Mira: a bow shock and a long tail; size is the bow's stand-off in R.
+// beat: a pulsing star: the period in days, the radius swell and the light swell, each a fraction.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
 const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
@@ -248,6 +250,18 @@ export const STARS = {
     hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
     disk: [1.9, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
     wide: 'none', long: 'none', root: 164.81,
+  },
+  // Mira: a pulsing red giant, about 330 to 400 suns wide, beating every 332 days.
+  // It ploughs through the gas at 130 km/s: a bow shock ahead, a tail 13 light years long.
+  // The tail is the toy's, not to scale; its blue is GALEX's ultraviolet light.
+  mira: {
+    ...FLARE, day: 0, ribbon: 1.2, bubble: 0.15, lump: [0.05, 1.5, 0.9, 0.35], reach: 3,
+    beat: { days: 332, swell: 0.1, light: 0.45 },
+    bow: { kind: 3, heading: 0.2, size: 2.6, col: [0.55, 0.78, 1] },
+    row: 3, rsun: 332, expo: 1, hotW: 1, coolW: 1.1, loop: 0.25, prom: 0.5, dust: 0.5, rays: 0.8,
+    hal: [1, 0.33, 0.12], streak: [1, 0.52, 0.3],
+    disk: [1.85, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
+    wide: 'none', long: 'none', root: 130.81,
   },
   // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
   vycma: {
