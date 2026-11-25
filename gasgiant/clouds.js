@@ -107,6 +107,8 @@ uniform sampler3D uVol;
 uniform sampler2D uSwirl;
 uniform vec3 uCam, uFwd, uRight, uUp;
 uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
+// A sub-pixel shift each frame; the history pass builds full detail from it.
+uniform vec2 uJit;
 uniform vec4 uFlash[4];
 // Dev tuning: multiple scatter, ambient, bounce, haze reach.
 uniform vec4 uTune;
@@ -665,7 +667,7 @@ ${TW_MARCH}
 // @end
 void main() {
   vec3 ro = uCam;
-  vec2 c = vUv * 2.0 - 1.0;
+  vec2 c = (vUv + uJit) * 2.0 - 1.0;
   vec3 rd = normalize(uFwd + c.x * uRight + c.y * uUp);
   float camH = altOf(ro);
   // The slab of cloud between the top shell and the bottom shell.

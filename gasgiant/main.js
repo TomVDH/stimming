@@ -159,13 +159,18 @@ const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premult
 let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null, wall = null;
 // The march settles over frames: each frame blends into the last one.
 // Thin and far things then read whole instead of boiling into grain.
+// The history is full size; the march shifts its rays a sub-pixel each frame, so detail builds up.
 const HIST_FS = /* glsl */`#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 o;
 uniform sampler2D uCur, uPrev;
 uniform float uK;
-void main() { o = mix(texture(uPrev, vUv), texture(uCur, vUv), uK); }`;
+uniform vec2 uJit;
+void main() { o = mix(texture(uPrev, vUv), texture(uCur, vUv - uJit), uK); }`;
+// Eight sub-pixel shifts in the march's own pixels, Halton 2 and 3.
+const halton = (i, b) => { let f = 1, r = 0; for (; i > 0; i = Math.floor(i / b)) { f /= b; r += f * (i % b); } return r; };
+const JIT = Array.from({ length: 8 }, (_, i) => [halton(i + 1, 2) - 0.5, halton(i + 1, 3) - 0.5]);
 // The last frame's view, for how much new march to take.
 const lastView = { fwd: [0, 0, -1], alt: 0, fresh: true };
 const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4), twC = new Float32Array(TW_MAX * 4);
@@ -303,7 +308,7 @@ function resize(force = false) {
   for (const h of T.hist || []) free(gl, h);
   const mw = Math.max(1, Math.round(W * m.scale)), mh = Math.max(1, Math.round(H * m.scale));
   T.march = target(gl, mw, mh);
-  T.hist = [target(gl, mw, mh), target(gl, mw, mh)];
+  T.hist = [target(gl, W, H), target(gl, W, H)];
   lastView.fresh = true;
   T.scene = target(gl, W, H);
   T.cabin = target(gl, W, H);
@@ -497,6 +502,10 @@ function render(dt) {
   // Over the tops the window opens as wide as in a void.
   gl.uniform1f(u.uWin, 220 + 1380 * Math.max(vk, smooth(14, 30, S.alt)));
   gl.uniform1f(u.uSeed, frameNo % 64);
+  // The sub-pixel shift; none when the march runs at full size.
+  const js = T.march.w < W ? JIT[frameNo % 8] : [0, 0];
+  const jit = [js[0] / T.march.w, js[1] / T.march.h];
+  gl.uniform2fv(u.uJit, jit);
   flashUniform(B, flash);
   // Deep down the eye opens wider; the flashes dim to match, as they show at the water deck.
   const fk = Math.min(1, 2.2 / gainAt(S.lum)) * TUNE.flash;
@@ -513,6 +522,7 @@ function render(dt) {
   bind(gl, P.hist, 'uCur', 0, T.march);
   bind(gl, P.hist, 'uPrev', 1, T.hist[1]);
   gl.uniform1f(P.hist.u.uK, hk);
+  gl.uniform2fv(P.hist.u.uJit, jit);
   tri(gl, T.hist[0], vao);
   T.hist.reverse();
   // Pass 4: the composite.
