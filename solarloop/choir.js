@@ -216,6 +216,10 @@ TAPNORM.wr140 = TAPNORM.wr124;
 VOICES.vfts352 = VOICES.zetaoph;
 NORM.vfts352 = NORM.zetaoph;
 TAPNORM.vfts352 = TAPNORM.zetaoph;
+// XX Trianguli sings Arcturus's choir.
+VOICES.xxtri = VOICES.arcturus;
+NORM.xxtri = NORM.arcturus;
+TAPNORM.xxtri = TAPNORM.arcturus;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

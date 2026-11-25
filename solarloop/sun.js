@@ -54,9 +54,10 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
 // core: a buried neutron star shown in cutaway through the disk.
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
+// starspot: giant spots: weight, the caps' edge latitude, the big spot's latitude and longitude.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
+const FLARE = { starspot: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -335,6 +336,15 @@ export const STARS = {
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],
     wide: 'none', long: 'none', root: 164.81,
+  },
+  // XX Trianguli: an orange giant, 9 to 11 suns wide, blotched with giant spots.
+  // Doppler images show dark polar caps and a spot wider than the whole Sun.
+  xxtri: {
+    ...FLARE, spots: 1.5, day: 24, ribbon: 1.6, bubble: 0.2, starspot: [1, 1.0, 0.75, 0.6],
+    row: 16, rsun: 10, expo: 1, hotW: 1, coolW: 1.1, loop: 0.6, prom: 0.7, dust: 0.1, rays: 0.85,
+    hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
+    disk: [1.85, 1, 0.02, 0.32], disk2: [100, 0.6, 0.4, 0.1], tex: [40, 7, 0.08, 0.7],
+    wide: 'none', long: 'none', root: 196,
   },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */

@@ -41,6 +41,7 @@ export const CHART = {
   quasi: { kind: 'core', t: 4000, cls: 'quasi-star, a model' },
   wr140: { kind: 'shells', t: 70000, cls: 'Wolf-Rayet and O star, colliding winds' },
   vfts352: { kind: 'binary', t: null, cls: 'two O stars in contact' },
+  xxtri: { t: 4620, cls: 'K0 III giant, giant starspots' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.

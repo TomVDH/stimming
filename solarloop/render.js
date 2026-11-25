@@ -480,6 +480,8 @@ uniform vec4 uRing, uRing2, uRing3;
 uniform vec4 uShell;
 // A contact twin: its centre in R in the view, its z sign the near side; w on.
 uniform vec4 uPair;
+// Giant starspots: weight, the caps' edge latitude, the big spot's latitude and longitude.
+uniform vec4 uStarspot;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
 // uBinN: the disc's axis in the view frame.
 uniform vec4 uBin, uBinD, uBinN;
@@ -647,6 +649,18 @@ void main() {
       // The neutron star: a white-hot point and its halo.
       float ns = exp(-x * x / 0.00012) * 6.0 + exp(-x * x / 0.0025) * 1.2;
       hot += uCore * uDisk.x * (0.75 * shell + 0.9 * zone * pulse + ns * pulse);
+    }
+    // XX Trianguli: dark caps round the poles and one spot wider than the Sun.
+    // They sit in the star's frame, so they turn with it.
+    if (uStarspot.x > 0.0) {
+      float lat = asin(clamp(dot(q, uGrav.xyz), -1.0, 1.0));
+      float rag = 0.12 * (fbm(q * 6.0 + 2.0) - 0.5);
+      float cap = smoothstep(uStarspot.y - 0.1, uStarspot.y + 0.05, abs(lat) + rag);
+      vec3 sc = vec3(cos(uStarspot.z) * cos(uStarspot.w), sin(uStarspot.z), cos(uStarspot.z) * sin(uStarspot.w));
+      float sa = acos(clamp(dot(q, sc), -1.0, 1.0)) + 0.15 * (fbm(q * 9.0 + 5.0) - 0.5);
+      // A dark umbra in a ragged penumbra.
+      float spot = max(0.9 * smoothstep(0.3, 0.22, sa), 0.5 * smoothstep(0.5, 0.36, sa));
+      shade *= 1.0 - uStarspot.x * max(0.9 * cap, spot);
     }
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
@@ -1757,6 +1771,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uBeam, v.beam);
     gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
+    gl.uniform4fv(s.u.uStarspot, v.band.starspot);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uLump, v.lump);
