@@ -321,6 +321,9 @@ export const ZOOM = [
   { stop: 'long', near: 1, choir: 0, rumble: 2.3, low: 1, mid: 1, high: 1, melody: 1, fx: 1.3 },
 ];
 export const ZOOM_KEYS = ['choir', 'rumble', 'low', 'mid', 'high', 'melody', 'fx'];
+// The rest mix for an idle toy: layer gains (Tom, 2026-11-25).
+// The low singers hold, so the bass comes forward.
+export const REST = { low: 1, mid: 0.45, high: 0.12, melody: 0.1 };
 // The mix at a nearness, interpolated between stops.
 export function zoomAt(near, keys = ZOOM) {
   const x = clamp(near, keys[0].near, keys[keys.length - 1].near);
@@ -506,7 +509,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   const filt = (type, f, q) => { const b = ac.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
   const src = (o, at) => { o.start(at); os.push(o); return track(o); };
   const lfo = (rate, depth, param) => { const o = ac.createOscillator(); o.frequency.value = rate; const g = G(depth); src(o, t).connect(g).connect(param); return { o, g }; };
-  const n = { pans: [], layers: [], unison: [], leadG: [] };
+  const n = { pans: [], layers: [], unison: [], leadG: [], leadR: [] };
   const layer = { low: 1, mid: 1, high: 1, melody: 1, fx: 1 };
   // The Turn speed against x10k: 1 at x10k, 0.5 at x5k, 0.0001 in real time.
   let turnK = 1;
@@ -660,6 +663,9 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
       const lay = { L, oi, soft, forms: [] };
       if (sweep) { lay.sweepG = G(0); sweep.connect(lay.sweepG).connect(soft.frequency); }
       lay.bus = G(0);
+      // The rest gain sits after the bus, so apply() never sets it.
+      lay.rest = G(1);
+      lay.bus.connect(lay.rest);
       for (const [f, q, a] of FORMANTS) {
         const bp = filt('bandpass', f, q), ga = G(0);
         soft.connect(bp).connect(ga).connect(lay.bus);
@@ -671,13 +677,14 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
         // A flash opens the filter and lifts the vowel.
         wob.open.connect(G(cut0(L) * 0.9)).connect(soft.frequency);
         for (const fm of lay.forms) wob.open.connect(G(fm.f * 0.3)).connect(fm.bp.frequency);
-        lay.bus.connect(wob.trem);
-      } else lay.bus.connect(sw);
+        lay.rest.connect(wob.trem);
+      } else lay.rest.connect(sw);
       n.layers.push(lay);
       // The melody has its own gain, for the zoom's melody layer.
-      const leadG = G(1);
-      leadG.connect(mix);
+      const leadG = G(1), leadR = G(1);
+      leadG.connect(leadR).connect(mix);
       n.leadG.push(leadG);
+      n.leadR.push(leadR);
       const note = (f, a, pan, on = true, dest = mix) => {
         const ng = ac.createGain();
         ng.level = a * L.amp;
@@ -792,6 +799,18 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   };
   // Sets the zoom layers: low, mid, high, melody and fx gains.
   v.setLayers = z => { Object.assign(layer, z); apply(false); };
+  // Moves toward the rest mix: k 1 is rest, 0 is awake.
+  // dur 0 sets the gains at once.
+  v.rest = (k, at, dur) => {
+    const to = (prm, x) => {
+      if (prm.cancelAndHoldAtTime) prm.cancelAndHoldAtTime(at); else { prm.cancelScheduledValues(at); prm.setValueAtTime(prm.value, at); }
+      if (dur > 0) prm.setTargetAtTime(x, at, dur / 3); else prm.setValueAtTime(x, at);
+    };
+    for (const lay of n.layers) to(lay.rest.gain, 1 + (REST[['high', 'mid', 'low'][lay.oi]] - 1) * k);
+    for (const lr of n.leadR) to(lr.gain, 1 + (REST.melody - 1) * k);
+  };
+  // The rest gains now, by layer, for QA.
+  v.restGains = () => ({ high: n.layers.find(l => l.oi === 0)?.rest.gain.value, mid: n.layers.find(l => l.oi === 1)?.rest.gain.value, low: n.layers.find(l => l.oi === 2)?.rest.gain.value, melody: n.leadR[0]?.gain.value });
   // A filter swell: the low pass dips, then opens over swellA s.
   const swell = at => {
     if (!(p.swellAmt > 0)) return;

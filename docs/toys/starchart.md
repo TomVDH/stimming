@@ -287,7 +287,7 @@ Only with `?fluid` in the address. Fire's 3D fluid (`starchart/fluid.js`, a trim
 
 - Lively while a flare, an eruption or an egg runs, a press is held, the zoom moves, a drag turns the star, a target's hover or press light eases or a star switch dips.
 - Drifting at 30 fps: the loops' life cycle.
-- Asleep 60 s after the last input: the drift eases to a stop over 2 s and the loop stops. A target turning under a still mouse is not input, so it never holds the toy awake.
+- Asleep 60 s after the last input: the drift eases to a stop over 2 s and the loop stops. A target turning under a still mouse is not input, so it never holds the toy awake. The sound does not stop with the loop: it keeps its own idle clock (see Sound).
 - A star switch clears every flare and eruption at the dark point: the new star starts calm.
 - Hidden tab: the loop and both clocks stop.
 - Reduced motion: no drift; the loop sleeps at once. A tap still flares, softer (70 percent) and slower (80 percent); the shot noise holds still. The zoom and the star switch jump.
@@ -298,6 +298,13 @@ Only with `?fluid` in the address. Fire's 3D fluid (`starchart/fluid.js`, a trim
 ## Sound
 
 Plays by default (Tom, 2026-11-25); a mute is stored and holds, so a muted boot makes no audio context at all. Any key or a click wakes the sound. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
+
+- The choir's base level is 0.85, 15 percent below the old level; the rumble keeps its level (Tom, 2026-11-25). `CHOIR` in `sound.js`; the Dev Choir level trims on top of it. The lab plays the same chain, so it matches.
+- Left alone, the sound rests, then stops (Tom, 2026-11-25). Its idle clock counts every input and also every mouse move over the stage, so it runs apart from the frame loop. The ramps run on the audio clock, so they add no frame work: one timer checks the idle time.
+  - Rest, from 28 s idle over 10 s: the choir goes down 6 dB and a low pass closes from 20 kHz to 1.4 kHz, so it sounds a little dull. The middle singers go to 0.45, the high singers to 0.12 and the melody to 0.1 (`REST` in `choir.js`). The low singers and the rumble hold, so the bass comes forward.
+  - Cut, at 90 s idle: the voice fades out over the last 4 s, then every sound stops and the context suspends.
+  - Return, on input or a mouse move: the level, the layers and the low pass come back over 8 s. Input during the last fade lifts the voice back over about 2 s. After a cut, a mouse move resumes the context where the page has had a gesture; else a click or a key does. The new voice starts at the rest mix, so it comes back from the bass up.
+  - A hidden tab and mute still stop the sound at once. `?idle=0.1` scales the three times for QA; `__solar.sound` (with `?qa`) reads the stage and the rest gains.
 
 - Awake, the star's voice in two layers (Tom, 2026-11-23). The star sets the key: the larger the star, the lower.
   - The space rumble: a constant, dense, deep surround drone, subtle (Tom, 2026-11-23). It renders once per star into a 24 s stereo loop whose last 3 s crossfade into its start, so it repeats with no seam: two independent deep noise beds, one per side, under twelve low sines round the root two octaves down, each placed across the stereo field. No swells: it holds steady.
@@ -336,7 +343,7 @@ Plays by default (Tom, 2026-11-25); a mute is stored and holds, so a muted boot 
 | Q6 | Reduced motion: clean console; 0 rAF in 2 s at rest; a tap still flares, softer |
 | Q7 | The bar holds only Star (2026-11-24); Activity in Settings; How to play has 7 rows. Star tray as a size ladder (2026-11-24): 1280 x 800 and 375 x 812 in the in-app pane, clean console |
 | Q8 | 1 to 9 and 0, [ and ], S, L (three stops), - and =, the wheel, and Space each do their job; while the chart is open, the toy's keys wait |
-| Q9 | The context runs after a gesture and is suspended once the toy sleeps |
+| Q9 | The context runs after a gesture and is suspended 90 s after the last input or mouse move (2026-11-25) |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |
 
 ## Windows compile (2026-11-25, `stimming-al27`)

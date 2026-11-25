@@ -494,7 +494,7 @@ function regionPoint(rg) {
   return { v: toView(rg.c.map(x => x * (R + rg.span[1] * 0.9))), front: false };
 }
 
-if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get rate() { return [turn.pick, 10 ** turn.lr]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; }, get rung() { return D.rung; }, get frameTime() { return D.frameTime; }, get load() { return performance.getEntriesByType('mark').filter(m => m.name.startsWith('stim:')).map(m => [m.name, Math.round(m.startTime)]); } };
+if (new URLSearchParams(location.search).has('qa')) globalThis.__solar = { st, sun, view, cam, toggleLens, flare: i => flareAt(sun.regions[i ?? 0]), erupt: i => eruptAt(sun.proms[i ?? 0]), get loop() { return { raf, timer, drifting } }, get zoom() { return [cam.z, cam.to]; }, get rate() { return [turn.pick, 10 ** turn.lr]; }, place: z => { cam.z = z; applyView(); return { ...view }; }, get ui() { return ui; }, snap: () => { draw(); const px = new Uint8Array(view.W * view.H * 4); gl.readPixels(0, 0, view.W, view.H, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; }, get shown() { return [shown, dip?.t ?? -1]; }, get egg() { return egg; }, get rung() { return D.rung; }, get sound() { return { state: soundState, rest: snd.rest, gains: snd.restGains, ac: kit.ac?.state }; }, get frameTime() { return D.frameTime; }, get load() { return performance.getEntriesByType('mark').filter(m => m.name.startsWith('stim:')).map(m => [m.name, Math.round(m.startTime)]); } };
 
 /* ---------- dev: post effect knobs, 1 is the house default ---------- */
 // id, group, label, min, max, default.
@@ -1542,19 +1542,17 @@ function frame(now) {
     frameNo++;
     lively = zooming || turning || swaying || settling || adapting || dipping || glowing || sFading || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     busy = lively;
-    if (drifting > 0) { mixSound(); snd.hum(shown); }
+    // A cut voice waits for input; the loop never restarts it.
+    if (drifting > 0) { mixSound(); if (soundState !== 'cut') snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
-    if (again) schedule(lively ? 0 : t0 + (calmMotion() ? 66 : 33) - performance.now()); else rest();
+    // An idle loop just stops; the sound keeps its own clock.
+    if (again) schedule(lively ? 0 : t0 + (calmMotion() ? 66 : 33) - performance.now());
   }
 }
 // The next frame time on the Dev cap's grid.
 let pace = 0;
-function rest() {
-  snd.quiet();
-  kit.rest(() => !raf && !timer && !snd.busy);
-}
 // One frame at most is ever pending, so loops never stack.
 function schedule(delay = 0) {
   if (raf || timer || !visible || !gl || !started) return;
@@ -1567,6 +1565,7 @@ const nearness = () => Math.log(fit.full.hw / view.hw) / Math.log(fit.full.hw / 
 // The eased turn rate goes along, so Beta Lyrae's swell keeps time with its orbit (Tom, 2026-11-24).
 function mixSound() { snd.mixLayers(ui?.setting?.('sndHum')?.value ?? true, ui?.setting?.('sndRumble')?.value ?? true, nearness(), 10 ** turn.lr); }
 function poke() {
+  hear();
   lastInput = performance.now();
   if (!raf && !timer) last = performance.now();
   if (timer) { clearTimeout(timer); timer = 0; }
@@ -1574,6 +1573,50 @@ function poke() {
   schedule();
 }
 function halt() { cancelAnimationFrame(raf); raf = 0; clearTimeout(timer); timer = 0; }
+
+/* ---------- sound idle ---------- */
+// Left alone, the choir rests at 28 s and the sound stops at 90 s (Tom, 2026-11-25).
+// A mouse move counts here, so the sound idles apart from the frame loop.
+// ?idle=0.1 scales the three times for QA.
+const IDLE_K = Number(new URLSearchParams(location.search).get('idle')) || 1;
+const REST_AT = 28 * IDLE_K, CUT_AT = 90 * IDLE_K, CUT_FADE = 4 * IDLE_K;
+// The stage: awake, rest, fade or cut.
+let heardAt = performance.now(), soundT = 0, soundState = 'awake';
+// Input or a mouse move: the sound comes back from where it is.
+function hear() {
+  heardAt = performance.now();
+  if (!started || !visible) return;
+  const was = soundState;
+  soundState = 'awake';
+  if (was === 'fade') snd.unfade();
+  // The page has had a gesture, so the context may resume without a new one.
+  if (was === 'cut' && sound.on && kit.ac?.state === 'suspended' && navigator.userActivation?.hasBeenActive !== false) kit.wake();
+  if (was !== 'awake') { snd.stir(); clearTimeout(soundT); soundT = 0; }
+  // With the loop asleep, the voice starts or extends here.
+  if (sound.on && !raf && !timer && !calm) { mixSound(); snd.hum(shown); }
+  if (!soundT) soundT = setTimeout(soundTick, REST_AT * 1000);
+}
+// One timer: it checks the idle time and arms itself for the next stage.
+function soundTick() {
+  soundT = 0;
+  if (!visible || !sound.on || soundState === 'cut') return;
+  const idle = (performance.now() - heardAt) / 1000;
+  let next = REST_AT;
+  if (idle >= CUT_AT) {
+    soundState = 'cut';
+    snd.quiet();
+    kit.rest(() => !raf && !timer && !snd.busy);
+    return;
+  }
+  if (idle >= CUT_AT - CUT_FADE) {
+    if (soundState !== 'fade') { snd.fade(CUT_AT - idle); soundState = 'fade'; }
+    next = CUT_AT;
+  } else if (idle >= REST_AT) {
+    if (soundState === 'awake') { snd.settle(); soundState = 'rest'; }
+    next = CUT_AT - CUT_FADE;
+  }
+  soundT = setTimeout(soundTick, (next - idle) * 1000 + 20);
+}
 
 /* ---------- pointer: tap flares, drag turns ---------- */
 // A press becomes a drag after 8 px; otherwise a tap.
@@ -1618,7 +1661,7 @@ stage.addEventListener('pointermove', e => {
   if (e.pointerType !== 'mouse') return;
   hoverAt = e.target === canvas || e.target === stage ? local(e) : null;
   readHover();
-  if (farAt(cam.z) > 0) poke();
+  if (farAt(cam.z) > 0) poke(); else hear();
 });
 stage.addEventListener('pointerleave', () => { hoverAt = null; readHover(); poke(); });
 
@@ -1727,11 +1770,11 @@ addEventListener('keydown', e => {
 /* ---------- life cycle ---------- */
 whenVisible(stage, on => {
   visible = on;
-  if (on) { last = performance.now(); schedule(); }
-  else { halt(); pointer.id = null; pointer.drag = false; pressed = null; snd.quiet(); }
+  if (on) { last = performance.now(); schedule(); soundTick(); }
+  else { halt(); pointer.id = null; pointer.drag = false; pressed = null; snd.quiet(); clearTimeout(soundT); soundT = 0; }
 });
 onReducedChange(on => { calm = on; poke(); });
-sound.onChange(on => { if (on) poke(); else snd.quiet(); });
+sound.onChange(on => { if (on) { soundState = 'cut'; poke(); } else { snd.quiet(); clearTimeout(soundT); soundT = 0; } });
 new ResizeObserver(() => resize()).observe(stage);
 ui.onCover?.(() => resize());
 

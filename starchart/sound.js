@@ -177,12 +177,14 @@ export function makeSound(kit, opt = () => undefined) {
   // The zoom mix (choir.js ZOOM): choir and rumble levels and the layer gains by nearness.
   // `near` is 1 on the long lens, 0 on the full star, below 0 zoomed out.
   const dB = x => 10 ** (x / 20);
+  // The choir's base level: 15 percent down, the rumble unchanged (Tom, 2026-11-25).
+  const CHOIR = 0.85;
   // rate: the toy's eased Turn rate (1, 5000 or 10000), from main.js mixSound().
   function mixLayers(hum, rumble, near = 0, rate) {
     if (rate !== undefined) setTurn(rate);
     near = nearOf(near, drone?.band);
     const z = zoomAt(near);
-    const h = hum ? lvl('sndHumLvl') * dB(z.choir) : 0;
+    const h = hum ? CHOIR * lvl('sndHumLvl') * dB(z.choir) : 0;
     const r = rumble ? dB(z.rumble) * lvl('sndRumbleLvl') : 0;
     if (Math.abs(layers.h - h) < 0.01 && Math.abs(layers.lvl - r) < 0.01 && Math.abs(layers.near - near) < 0.01) return;
     Object.assign(layers, { hum, rumble, h, lvl: r, near, z });
@@ -207,6 +209,60 @@ export function makeSound(kit, opt = () => undefined) {
     else { prm.cancelScheduledValues(at - 0.005); prm.setValueAtTime(from, at - 0.005); }
     prm.setValueCurveAtTime(c, at, dur);
   }
+  // The idle rest (Tom, 2026-11-25): the choir thins out and goes down 6 dB.
+  // The rumble holds, so the bass comes forward.
+  // A low pass closes to REST_HZ, so the rest sounds a little dull.
+  const REST_DB = -6, REST_HZ = 1400, OPEN_HZ = 20000, SETTLE = 10, STIR = 8;
+  // The low pass moves by detune, so the sweep is even in pitch.
+  const REST_CENTS = 1200 * Math.log2(REST_HZ / OPEN_HZ);
+  // The ramp on the page clock: from, to, start in s, length in s.
+  let rest = { from: 0, to: 0, at: 0, dur: 0 };
+  const nowS = () => performance.now() / 1000;
+  // The rest level now: 0 awake, 1 at rest.
+  function restAt(t = nowS()) {
+    const r = rest, x = t - r.at;
+    return r.dur > 0 && x < r.dur * 3 ? r.to + (r.from - r.to) * Math.exp(-3 * x / r.dur) : r.to;
+  }
+  const restGain = k => 1 + (dB(REST_DB) - 1) * k;
+  // Sets one drone on the running ramp; a new drone starts where the ramp is.
+  function restDrone(d) {
+    const at = d.ac.currentTime, cur = restAt();
+    const ps = [[d.restC.gain, restGain], [d.restLP.detune, k => REST_CENTS * k]];
+    for (const [p, f] of ps) {
+      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(at); else p.cancelScheduledValues(at);
+      p.setValueAtTime(f(cur), at);
+    }
+    d.voice.rest(cur, at, 0);
+    if (Math.abs(cur - rest.to) < 0.001) return;
+    for (const [p, f] of ps) p.setTargetAtTime(f(rest.to), at, rest.dur / 3);
+    d.voice.rest(rest.to, at, rest.dur);
+  }
+  function restTo(k, dur) {
+    if (rest.to === k) return;
+    rest = { from: restAt(), to: k, at: nowS(), dur };
+    if (drone) restDrone(drone);
+  }
+  // The choir goes to rest over SETTLE s.
+  const settle = () => restTo(1, SETTLE);
+  // The choir comes back over STIR s.
+  const stir = () => restTo(0, STIR);
+  // Fades the voice out over dur s, before a stop.
+  function fade(dur) {
+    if (!drone) return;
+    const t = drone.ac.currentTime;
+    for (const x of [drone.g, drone.gc]) ease(x.gain, t, dur, false);
+  }
+  // Stops a fade and brings the voice back to full over about 2 s.
+  function unfade() {
+    if (!drone) return;
+    const t = drone.ac.currentTime;
+    for (const x of [drone.g, drone.gc]) {
+      const p = x.gain;
+      if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(t); else { p.cancelScheduledValues(t); p.setValueAtTime(p.value, t); }
+      p.setTargetAtTime(1, t, 0.7);
+    }
+  }
+
   function hum(band) {
     const ac = kit.live();
     if (!ac) return;
@@ -237,7 +293,12 @@ export function makeSound(kit, opt = () => undefined) {
     humOn.gain.value = layers.h;
     const gc = ac.createGain();
     ease(gc.gain, t + XWAIT, XIN, true);
-    humOn.connect(gc).connect(kit.out);
+    const restC = ac.createGain();
+    const restLP = ac.createBiquadFilter();
+    restLP.type = 'lowpass';
+    restLP.frequency.value = OPEN_HZ;
+    restLP.Q.value = 0;
+    humOn.connect(restC).connect(restLP).connect(gc).connect(kit.out);
     const voice = choir(ac, { t, base: root * 4, p: preset(band), out: humOn, hall: hallOf(ac), os, track });
     voice.setLayers(layers.z);
     voice.setTurn(turnK);
@@ -264,8 +325,9 @@ export function makeSound(kit, opt = () => undefined) {
       s.start(ac.currentTime + 0.02, Math.random() * LOOP);
       os.push(s);
     });
-    drone = { ac, band, g, gc, os, voice, humOn, rumOn };
+    drone = { ac, band, g, gc, os, voice, humOn, rumOn, restC, restLP };
     me.d = drone;
+    restDrone(drone);
   }
 
   // A prominence lifts off: the brass blast only (Tom).
@@ -418,5 +480,5 @@ export function makeSound(kit, opt = () => undefined) {
     for (const d of [drone, ...leaving]) if (d) drop(d);
     drone = null;
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, tick, beacon, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, tick, beacon, quiet, settle, stir, fade, unfade, get rest() { return restAt(); }, get restGains() { return drone && { choir: drone.restC.gain.value, hz: Math.round(OPEN_HZ * 2 ** (drone.restLP.detune.value / 1200)), layers: drone.voice.restGains?.() }; }, get busy() { return pending > 0; } };
 }
