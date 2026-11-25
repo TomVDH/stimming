@@ -46,6 +46,7 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // res: synth filter Q. fmot: synth filter sweep depth.
 // dist: distance, 0 near, 1 far. gain: Tom's loudness trim for the star, 1 is 0 dB.
 // norm: the measured factor that makes the star as loud as the Sun (NORM below).
+// tapNorm: the same for the star's tap, against the Sun's tap (TAPNORM below).
 // key: semitones up or down from the star's home key.
 // harmony, prog, voicing, melody, move, echo: the song. leadOct: the melody's octave.
 // slowed: the second, slower choir layer. aDrift, chorus, swellA, swellAmt: the analog pad.
@@ -63,7 +64,7 @@ export const SUN = {
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
   glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
   blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1], swTurn: false,
-  wob: 0, wobBend: 8, wobOpen: 0.8, wobTail: 0.8,
+  wob: 0, wobBend: 8, wobOpen: 0.8, wobTail: 0.8, tapNorm: 1,
   fx: fx0(),
 };
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
@@ -151,7 +152,36 @@ export const NORM = {
   qso: 0.08,
   s5hvs1: 0.2,
 };
-for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1 };
+// Tap normalization: each star's blast and glow against the Sun's, measured the same way.
+// K-weighted, blast and glow on the star's key and first chord, 0.1 to 14 s (2026-11-24).
+export const TAPNORM = {
+  sun: 1,
+  zetaoph: 1.08,
+  regulus: 1.05,
+  vega: 1.1,
+  s5hvs1: 0.98,
+  sirius: 1.04,
+  procyon: 1.08,
+  epseri: 1.0,
+  proxima: 0.98,
+  luhman: 0.99,
+  wise: 0.99,
+  ttauri: 1.08,
+  j1407: 1.0,
+  arcturus: 1.24,
+  betalyr: 1.06,
+  rigel: 1.24,
+  betelgeuse: 1.24,
+  vycma: 1.34,
+  wr124: 1.07,
+  siriusb: 0.99,
+  neutron: 1.11,
+  tzo: 1.34,
+  cygx1: 0.99,
+  sgra: 1.41,
+  qso: 1.2,
+};
+for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 
 // The zoom mix, one for all stars: a level and layer gains at each zoom stop.
@@ -867,7 +897,7 @@ export function blast(ac, { t, root, K, len = 6, p = SUN, out, track = n => n })
   env.gain.linearRampToValueAtTime(0.2 * K, t + 0.22);
   env.gain.setTargetAtTime(0.0001, t + 1.1, len / 4);
   const lv = ac.createGain();
-  lv.gain.value = p.blastLvl * BLAST_LVL[p.blastWave];
+  lv.gain.value = p.blastLvl * BLAST_LVL[p.blastWave] * (p.tapNorm ?? 1);
   env.connect(lv).connect(out);
   const lp = ac.createBiquadFilter();
   lp.type = 'lowpass'; lp.Q.value = 3;
@@ -904,7 +934,7 @@ export function blast(ac, { t, root, K, len = 6, p = SUN, out, track = n => n })
 export function glow(ac, { t, root, K, p = SUN, out, notes, track = n => n }) {
   const ns = (p.chord === 'current' && notes) ? notes : CHORDS[p.chord] || CHORDS.major;
   const env = ac.createGain(), lv = ac.createGain();
-  lv.gain.value = p.glowLvl * GLOW_LVL[p.glowWave];
+  lv.gain.value = p.glowLvl * GLOW_LVL[p.glowWave] * (p.tapNorm ?? 1);
   env.connect(lv).connect(out);
   const h = { out: lv, lv, env, K, t0: t + 1.5, oscs: [], root };
   shapeGlow(h, p, t + 1.5);
@@ -952,15 +982,13 @@ function shapeGlow(h, p, from) {
 // The tap bus: every blast and glow passes here, so taps never pile up.
 // One glow sounds at a time: a new tap fades the last one over 2.5 s.
 // One blast sounds at a time: a new one fades the last over 0.5 s.
-// A soft limiter holds a burst of taps near one tap's level.
+// No limiter: Chrome's compressor adds make-up gain, which lifted tap tails by 11 dB.
+// The one-glow and one-blast rule keeps a burst near one tap's level.
 // With stack on, taps pile up with no limit, as before 24 November.
 // o.out: the dry path. o.hall: the echo hall send. o.track: registers sources.
 export function tapBus(ac, { out, hall, track = n => n }) {
-  const lim = ac.createDynamicsCompressor();
-  lim.threshold.value = -30; lim.knee.value = 12; lim.ratio.value = 4;
-  lim.attack.value = 0.03; lim.release.value = 0.8;
   const bus = ac.createGain(), raw = ac.createGain();
-  bus.connect(lim).connect(out);
+  bus.connect(out);
   raw.connect(out);
   const live = { blast: [], glow: [] };
   const prune = (list, t) => { for (let i = list.length - 1; i >= 0; i--) if (list[i].end < t) list.splice(i, 1); };
@@ -1022,12 +1050,12 @@ export function tapBus(ac, { out, hall, track = n => n }) {
     set(p, notes = null) {
       const at = ac.currentTime;
       for (const { h } of live.blast) {
-        h.lv.gain.setTargetAtTime(p.blastLvl * BLAST_LVL[p.blastWave], at, 0.05);
+        h.lv.gain.setTargetAtTime(p.blastLvl * BLAST_LVL[p.blastWave] * (p.tapNorm ?? 1), at, 0.05);
         for (const o of h.oscs) if (o.type !== p.blastWave) o.type = p.blastWave;
         h.vgs.forEach((vg, i) => vg.gain.setTargetAtTime((p.blastMix || SUN.blastMix)[i] ?? 1, at, 0.03));
       }
       for (const { h } of live.glow) {
-        h.lv.gain.setTargetAtTime(p.glowLvl * GLOW_LVL[p.glowWave], at, 0.05);
+        h.lv.gain.setTargetAtTime(p.glowLvl * GLOW_LVL[p.glowWave] * (p.tapNorm ?? 1), at, 0.05);
         const ns = p.chord === 'current' ? notes : CHORDS[p.chord];
         h.oscs.forEach(({ o, vg }, i) => {
           vg.gain.setTargetAtTime((p.glowMix || SUN.glowMix)[i] ?? 1, at, 0.03);
