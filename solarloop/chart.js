@@ -1,9 +1,10 @@
 // Star catalog: the star tray, one ribbon through the groups of bodies (Tom, 2026-11-24).
 // It is a Bar v3 sheet: it mounts in the bar's layer and takes its look.
-// Each object shows a still of the toy itself, baked once by bake.js.
+// Each object shows its kind as a shaded mono icon (Tom, 2026-11-24), from glyphs.js.
 // Inside a group, the objects run smallest to largest.
 
 import { FACTS } from './facts.js';
+import { glyph } from './glyphs.js';
 
 // Star data: the class or stage, and the surface temperature (K).
 // A black hole has no surface temperature: t is null.
@@ -127,9 +128,8 @@ export function makeChart(o) {
       b.style.setProperty('--c', s.colour);
       // Each body stands at its own size, smallest to largest (Tom, 2026-11-24).
       b.style.setProperty('--f', sizeOf(s.rsun).toFixed(3));
-      // The flipbook loads on the first open; until then, or without one, a dot in the star's colour.
       // A non-breaking hyphen keeps a name such as Cygnus X-1 whole.
-      b.innerHTML = `<span class="sl-well"><span class="sl-still"></span></span><span class="sl-name">${s.name.replace(/-/g, '\u2011')}</span>`;
+      b.innerHTML = `<span class="sl-well">${glyph(id)}</span><span class="sl-name">${s.name.replace(/-/g, '\u2011')}</span>`;
       b.setAttribute('aria-label', [s.name, c.cls, fmtT(c.t), fmtR(s.rsun, id)].filter(Boolean).join(', '));
       b.addEventListener('click', async e => {
         // A drag that ends on a body is not a pick.
@@ -243,18 +243,9 @@ export function makeChart(o) {
   ladder.addEventListener('lostpointercapture', endDrag);
 
   // The tray joins the bar's layer, so it takes the bar's ink.
-  // The flipbooks load once, on the first open.
-  let loaded = false;
   function mount() {
     const layer = o.frame.querySelector('.sg-ui');
     if (layer && el.parentElement !== layer) layer.append(glass, el);
-    if (loaded) return;
-    loaded = true;
-    for (const { b, s } of btns) {
-      const src = new URL(`tray/${s.value}.webp`, import.meta.url).href, img = new Image();
-      img.onload = () => { b.querySelector('.sl-still').style.setProperty('--strip', `url("${src}")`); b.classList.add('is-baked'); };
-      img.src = src;
-    }
   }
 
   let closedAt = 0, run = 0;
