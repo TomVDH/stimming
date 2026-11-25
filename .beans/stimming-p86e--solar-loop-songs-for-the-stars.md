@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T20:58:18Z
-updated_at: 2026-11-25T00:44:44Z
+updated_at: 2026-11-25T17:15:04Z
 parent: stimming-oh7b
 ---
 
@@ -38,3 +38,5 @@ Each star gets its own song, shaped in the choir lab and played by the toy. Plan
 - Live tap edits: the glow level set to 0 mid-glow drops it from -22.6 dB to silence at once.
 
 - [x] Glow tapers in and blends (Tom, 2026-11-24: the tap glow was still too loud). S-curve rise over 6 s, arpeggio notes ease in over 0.6 s, peak 0.015. The tap's reverb send no longer divides by norm, so a loud room cannot swamp the choir. GLOWNORM trims the loud stars. Glow lift per star: 0.4 to 1.9 dB (was 0.7 to 18 dB on the neutron star).
+
+- [x] The lab lists Fomalhaut (A3 V) in the main sequence, between Sirius and Procyon, not with the young stars.
