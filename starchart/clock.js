@@ -67,9 +67,11 @@ export function makeClock(o) {
   const hand = document.createElementNS(NS, 'line');
   hand.setAttribute('x1', '0'); hand.setAttribute('y1', '0');
   svg.append(ring, hand);
-  const rate = h('span', 'sl-clock-r'), dot = h('span', 'sl-clock-s'), past = h('span', 'sl-clock-p');
+  // Two equal halves round the dot, so the dot stands over the rail's middle.
+  const left = h('span', 'sl-clock-l'), rate = h('span', 'sl-clock-r'), dot = h('span', 'sl-clock-s'), past = h('span', 'sl-clock-p');
   dot.textContent = '·';
-  el.append(svg, rate, dot, past);
+  left.append(svg, rate);
+  el.append(left, dot, past);
   o.frame.append(el);
 
   let key = '', t0 = 0, until = 0, timer = 0;
