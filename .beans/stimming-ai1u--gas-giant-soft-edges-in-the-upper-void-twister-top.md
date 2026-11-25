@@ -53,3 +53,12 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [ ] Hyper cyclone in the far bake (Tom's batch, 2026-11-24)
 - [ ] Zany structures in the middle distance on the card machinery (Tom's batch, 2026-11-24)
 - [ ] Carry the upper void's tools down the dive: rolling bake in every void (mushball fall, nave, gyre, lightning nest); funnels in the mushball fall; the nave's columns as cards; the gyre's eyewall with the funnel light
+
+## The deep dive plan (Tom, 2026-11-24, not built yet)
+
+Tom: "a space a couple of layers tall where we descend upon a MASSIVE internal cyclone ... then a couple of layers with extram, unimaginable torment before we are DEAD"; "we want to lengthen the cyclone layer a little"; "strange thigns suggestieg of alie nlife"; "cosmic horror -- aboslutely insne".
+
+- Cyclone void -262 to -470 km (replaces gyre, salt, lightning nest, stairs); the glide slows to 0.6, so a held dive spends 1:50 to 2:59 there. Over the crest first, then down beside the wall; bolts bend along its bands.
+- Shear -470 to -540; Crush -540 to -640; the hull fails at about 4:10.
+- Signs of life by depth: light motes (mushball fall), a slick on the glass (water deck), gasbags (shelves), a vast manta among the columns (nave), shapes in the bolt light (cyclone).
+- Cosmic horror candidates: see the session's list (eye of lights, repeated bolt sigil, breathing floor, shadow in the god rays, pane growth that follows the pointer, a second silhouette in the reflection, a last flash of sunlight before black).
