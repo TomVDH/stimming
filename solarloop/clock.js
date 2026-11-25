@@ -144,7 +144,7 @@ export function makeClock(o) {
       const P = c.days * DAY, d = Math.max(0, c.t - t0);
       text(rP[0], KIND[c.kind] || 'P');
       text(rP[1], span(P));
-      text(rS[1], c.rate < 1.5 && c.rate > 0.95 ? '1 s' : span(c.rate));
+      text(rS[1], span(c.rate));
       text(rT[1], `+${elapsed(d)}`);
       text(fac, factor(c.rate));
       dial(c.phase, d / P);

@@ -51,8 +51,8 @@ const st = {
   turn: 34 * SPIN_UP,
   next: 0,
 };
-/* ---------- turn speed: real time, or each star's own speed-up (Tom, 2026-11-24) ---------- */
-// One turn on screen takes 60 to 120 s; a longer true period takes longer.
+/* ---------- turn speed: 5x to 100x of each star's own base (Tom, 2026-11-24) ---------- */
+// At 10x one turn takes 60 to 120 s; a longer true period takes longer.
 const TURN_S = [60, 120], TURN_P = [0.22, 5e4];
 // The S stars' clock: one year in 1.5 s, so S2 laps in about 24 s.
 const S2_DAYS = 16.05 * 365.25, S_RATE = 365.25 * 86400 / YEAR_S;
@@ -60,7 +60,7 @@ const S2_DAYS = 16.05 * 365.25, S_RATE = 365.25 * 86400 / YEAR_S;
 const VELA_S = 0.0893;
 /**
  * The clock that a star shows, or null when nothing on it keeps time.
- * kind: rot, orb, s2 or spin; days: the true period; fit: the sped-up rate.
+ * kind: rot, orb, s2 or spin; days: the true period; fit: the rate at 10x.
  */
 function clockOf(key) {
   const B = STARS[key];
@@ -73,9 +73,10 @@ function clockOf(key) {
   const kind = B.day && !B.bin && !B.pair ? 'rot' : 'orb';
   return { kind, days, fit: days * 86400 / (TURN_S[0] + f * (TURN_S[1] - TURN_S[0])) };
 }
-// id, bar label. Old stored speeds map to the sped-up pick.
-const RATES = [['real', 'Real time'], ['fit', 'Sped up']];
-const turn = { pick: store.get('rate') === 'real' ? 'real' : 'fit', lr: 0, vr: 0, of: '' };
+// id, bar label, times the star's base. Unknown stored speeds fall back to 10x.
+const RATES = [['x5', '5×', 5], ['x10', '10×', 10], ['x50', '50×', 50], ['x100', '100×', 100]];
+const savedRate = RATES.find(r => r[0] === store.get('rate'));
+const turn = { pick: savedRate ? savedRate[0] : 'x10', lr: 0, vr: 0, of: '' };
 // Activity in words (Tom, 2026-11-24): each step and the strength it sets, 0 to 100.
 const ACT_STEPS = [['quiet', 'Quiet', 25], ['active', 'Active', 60], ['stormy', 'Stormy', 95]];
 // The nearest step to a stored strength.
@@ -86,9 +87,9 @@ const calmMotion = () => gv('motion', 'lively') === 'calm';
 const rateText = () => RATES.find(r => r[0] === turn.pick)[1];
 const TURN_ICON = '<svg class="sl-turn" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 3.8v3.4h-3.4"/></svg>';
 const rateLabel = () => `${TURN_ICON}<span>${rateText()}</span>`;
-// The log of the shown star's sped-up rate; 4 when the star keeps no time.
+// The log of a star's rate at 10x; 4 when the star keeps no time.
 const fitLog = key => Math.log10(clockOf(key)?.fit ?? 1e4);
-const rateLog = key => turn.pick === 'real' ? 0 : fitLog(key);
+const rateLog = key => fitLog(key) + Math.log10(RATES.find(r => r[0] === turn.pick)[2] / 10);
 const sun = makeSun();
 // The star on screen: it trails st.star through the switch dip.
 let shown = st.star;
@@ -654,8 +655,10 @@ function clockRead() {
   if (!c) return null;
   const P = c.days * 86400;
   if (c.kind === 'spin') { const t = st.spin * c.fit; return { ...c, rate: c.fit, t, phase: t / P % 1 }; }
-  if (c.kind === 's2') { const t = sYears * 365.25 * 86400; return { ...c, rate: 10 ** turn.lr, t, phase: t / P % 1 }; }
-  return { ...c, rate: 10 ** turn.lr, t: st.turn, phase: st.turn / P % 1 };
+  // The readout shows the picked rate, not the eased one, so its text holds still.
+  const rate = 10 ** rateLog(shown);
+  if (c.kind === 's2') { const t = sYears * 365.25 * 86400; return { ...c, rate, t, phase: t / P % 1 }; }
+  return { ...c, rate, t: st.turn, phase: st.turn / P % 1 };
 }
 // Reduced motion stops the turn, so the clock has nothing to count.
 function showClock() { if (!calm) clock.show(shown, clockRead()); }
@@ -1371,7 +1374,7 @@ function stepTurn(dt) {
     easing = true;
   } else { turn.lr = target; turn.vr = 0; }
   st.turn += dt * drifting * 10 ** turn.lr;
-  // A giant's cells churn with Turn: a lobe lives about 40 s sped up.
+  // A giant's cells churn with Turn: a lobe lives about 40 s at 10x.
   churn += dt * drifting * 0.025 * 10 ** (turn.lr - fitLog(shown)) * STARS[shown].lump[2];
   return easing;
 }

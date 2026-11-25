@@ -15,4 +15,6 @@ Tom, 2026-11-24: "the time compression needs to be revised -- subsession please"
 - [x] Build his pick; show a running build
 - [x] Doc lines true (docs/toys/solarloop.md)
 - [x] Commit on claude/solarloop-time-f59d1a; report the branch
+- [x] Landed on main (Tom: "ensure main gets this")
+- [x] Turn steps 5x, 10x, 50x, 100x of each star's base; the clock holds still (fixed columns, picked rate)
 - [ ] Tom looks at the clock and the turn times
