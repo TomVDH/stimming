@@ -46,7 +46,6 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // grav: the spin axis in the star's frame, and the gravity darkening at its equator.
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
 // yso: a young star's dust disk and jets: its axis in the star's frame, and weight.
-// lump: a cool giant's few giant cells: limb heave (of R), lobe scale, churn pace, cell light.
 // day: the true rotation period in days; the toy runs it 10,000 times faster.
 // spots: sunspot strength; only stars with a convecting surface have them.
 // hole: a black hole's disc tilt toward the eye, disc light, disc heat, lensed star gain.
@@ -56,7 +55,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
+const FLARE = { ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -214,7 +213,7 @@ export const STARS = {
   },
   // Arcturus: an orange giant, 25 suns wide.
   arcturus: {
-    ...FLARE, spots: 0.4, day: 730, bubble: 0.18, lump: [0.015, 2.2, 1.2, 0.15],
+    ...FLARE, spots: 0.4, day: 730, bubble: 0.18,
     row: 16, rsun: 25.4, expo: 1, hotW: 1, coolW: 1.1, loop: 0.45, prom: 0.6, dust: 0.15, rays: 0.85,
     hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
     disk: [1.85, 1, 0.02, 0.32], disk2: [110, 0.6, 0.35, 0.07], tex: [30, 6, 0.05, 0.7],
@@ -240,7 +239,7 @@ export const STARS = {
   },
   // Betelgeuse: a red supergiant, 760 suns wide, with a handful of giant cells.
   betelgeuse: {
-    ...FLARE, day: 13000, ribbon: 1.2, bubble: 0.15, lump: [0.06, 1.4, 1, 0.35],
+    ...FLARE, day: 13000, ribbon: 1.2, bubble: 0.15,
     row: 3, rsun: 764, expo: 1, hotW: 1, coolW: 1.1, loop: 0.3, prom: 0.65, dust: 0.45, rays: 0.8,
     hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
     disk: [1.9, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
@@ -248,7 +247,7 @@ export const STARS = {
   },
   // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
   vycma: {
-    ...FLARE, day: 20000, ribbon: 1, bubble: 0.12, lump: [0.08, 1.6, 0.8, 0.4],
+    ...FLARE, day: 20000, ribbon: 1, bubble: 0.12,
     row: 4, rsun: 1420, expo: 0.95, hotW: 1, coolW: 1.1, loop: 0.18, prom: 0.55, dust: 1, rays: 0.75,
     hal: [0.9, 0.25, 0.1], streak: [1, 0.45, 0.28],
     disk: [1.9, 1.5, 0, 0.16], disk2: [140, 0.45, 0.2, 0.05], tex: [5, 2.5, 0, 0.65],
@@ -258,7 +257,7 @@ export const STARS = {
   // A hole has no surface: the shadow's edge stands where a star's limb would.
   cygx1: {
     ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
-    hole: { tilt: 0.16, light: 0.9, heat: 1.2, stars: 1 }, reach: 3,
+    hole: { tilt: 0.16, light: 0.9, heat: 1.2, stars: 1, vol: { dens: 1, light: 1 } }, reach: 3,
     row: 18, rsun: 9.0e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
     hal: [0.55, 0.7, 1], streak: [0.6, 0.75, 1],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
@@ -267,7 +266,7 @@ export const STARS = {
   // Sagittarius A*: the hole at the centre of our galaxy, 4.3 million suns.
   sgra: {
     ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
-    hole: { tilt: 0.18, light: 0.8, heat: 0.85, stars: 1.2 }, reach: 3,
+    hole: { tilt: 0.18, light: 0.8, heat: 0.85, stars: 1.2, vol: { dens: 1, light: 1 } }, reach: 3,
     row: 17, rsun: 18.3, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
     hal: [1, 0.45, 0.15], streak: [1, 0.7, 0.4],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
@@ -277,7 +276,9 @@ export const STARS = {
   // A blue-white disc and a one-sided jet with knots that travel out.
   qso: {
     ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
-    hole: { tilt: 0.2, light: 0.85, heat: 1.5, stars: 0.8 }, reach: 3, jet: 1.3,
+    // Overhauled (Tom, 2026-11-24): a blazing disc, a dusty torus, broad-line clouds, winds, a helical jet.
+    // The tilt looks over the torus's rim into the nucleus, as a quasar is seen.
+    hole: { tilt: 0.38, light: 1.25, heat: 1.9, stars: 0.8, vol: { dens: 1.3, light: 1.6 }, qso: { torus: 1, clouds: 1, winds: 1 } }, reach: 4.2, jet: 1.3,
     row: 19, rsun: 1100, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
     hal: [0.6, 0.7, 1], streak: [0.7, 0.8, 1],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],

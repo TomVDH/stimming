@@ -76,8 +76,9 @@ const LUTS = [
   // Cygnus X-1: X-ray hot, lilac steel; the approaching side ice blue.
   [['000000', 0], ['06050c', 0.1], ['1a1836', 0.26], ['40467e', 0.44], ['7a88c8', 0.62], ['b8c4f2', 0.78], ['e8eeff', 0.9], ['ffffff', 1]],
   [['000000', 0], ['04080e', 0.12], ['10263c', 0.3], ['2c6a96', 0.5], ['70b4e0', 0.68], ['c4e8ff', 0.84], ['ffffff', 1]],
-  // 3C 273: the big blue bump, pale blue to white; the jet and the near side violet white.
-  [['000000', 0], ['05070c', 0.1], ['16203a', 0.26], ['3c5a8c', 0.44], ['7ea0d4', 0.62], ['c0d6f6', 0.78], ['eef4ff', 0.9], ['ffffff', 1]],
+  // 3C 273: ember to amber white for the dust, the torus rim and the outer disc;
+  // the hot inner disc, the clouds, the winds and the jet take the violet-white ramp.
+  [['000000', 0], ['0c0402', 0.1], ['341006', 0.26], ['7a2e0e', 0.44], ['c8682a', 0.62], ['f4b070', 0.78], ['ffe6c4', 0.9], ['ffffff', 1]],
   [['000000', 0], ['08060e', 0.12], ['221a40', 0.3], ['56489a', 0.5], ['9c90dc', 0.68], ['dcd6fa', 0.84], ['ffffff', 1]],
   // WR 124: violet blue to white in its wind; the nebula glows hydrogen pink.
   [['000000', 0], ['05060e', 0.1], ['161c40', 0.26], ['3a4c9a', 0.44], ['7a8ee0', 0.6], ['bcc8ff', 0.74], ['eef1ff', 0.86], ['ffffff', 1]],
@@ -220,19 +221,102 @@ vec2 holeJet(vec2 b2) {
   vec3 a = vFrame(vec3(0.0, 1.0, 0.0));
   float l2 = max(length(a.xy), 0.05);
   vec2 ax = a.xy / l2;
-  float along = dot(b2, ax), across = abs(b2.x * ax.y - b2.y * ax.x);
+  float along = dot(b2, ax), side = b2.x * ax.y - b2.y * ax.x, across = abs(side);
   // The true distance along the axis; the projection shortens it by l2.
   float d = abs(along) / l2;
   float w = 0.35 + 0.08 * d;
-  float core = exp(-pow(across / (w * 0.35), 2.0)), sheath = exp(-pow(across / w, 2.0));
+  float core = exp(-pow(across / (w * 0.3), 2.0)), sheath = exp(-pow(across / w, 2.0));
   float ld = log(max(d, 1e-3));
   float knots = 0.35 + 2.2 * pow(0.5 + 0.5 * sin(ld * 7.0 - uTime * 0.35), 10.0);
+  // Two helical strands wind round the column, as Kelvin-Helmholtz modes twist real jets.
+  // A strand on the near side of the column shines brighter, so the twist reads in depth.
+  float hel = 0.0;
+  for (int k = 0; k < 2; k++) {
+    float ph = ld * 9.0 - uTime * 0.6 + float(k) * 3.14159;
+    float off = w * 0.55 * sin(ph);
+    hel += exp(-pow((side - off) / (w * 0.13), 2.0)) * (0.45 + 0.55 * max(cos(ph), 0.0));
+  }
   float grain = 0.7 + 0.6 * fbm(vec3(ld * 6.0 - uTime * 0.3, across / w * 2.0, 3.0));
   // It leaves the hole a few radii out and fades slowly, so it reaches past any frame.
-  float L = uJet * (1.4 * core + 0.4 * sheath) * knots * grain * smoothstep(2.0, 6.0, d) * pow(1.0 + d / 8.0, -0.7);
+  float L = uJet * (1.1 * core + 0.3 * sheath + 0.9 * hel) * knots * grain * smoothstep(2.0, 6.0, d) * pow(1.0 + d / 8.0, -0.7);
   // Beaming: the jet toward the eye shines; the counter-jet is all but gone.
   bool near = along * a.z * sign(dot(a.xy, ax)) >= 0.0;
   return near ? vec2(L, 0.0) : vec2(0.0, L * 0.03);
+}
+/* ---------- the volumetric layer round a hole (Tom, 2026-11-24: a light touch) ---------- */
+// After MisterPrada's singularity: soft wisps over the disc, swirling with it, lit by it.
+// A quasar adds a dusty torus with a hot inner rim, broad-line clouds and winds off the disc.
+// uHoleV: on, wisp density, wisp light, the layer's outer bound in Schwarzschild radii.
+// uHoleQ: on, torus, clouds, winds.
+uniform vec4 uHoleV, uHoleQ;
+uniform highp sampler3D uNoise3;
+// Smooth texture noise: one texel is half a Schwarzschild radius at scale 1.
+float hn(vec3 p) {
+  vec3 x = p * 2.0, i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return texture(uNoise3, (i + f + 0.5) / 64.0).r;
+}
+float hn2(vec3 p) { return 0.65 * hn(p) + 0.35 * hn(p.zxy * 2.07 + 5.3); }
+// The gas at a point in the hole's frame: emission (hot, cool) per unit length, and extinction.
+// v: the ray's backward direction, for the Doppler shift.
+vec2 holeVol(vec3 p, vec3 v, out float ext) {
+  ext = 0.0;
+  float r = length(p.xz), y = p.y, R3 = length(p);
+  if (R3 < 1.05) return vec2(0.0);
+  float phi = atan(p.z, p.x);
+  // The disc's light at this radius, shifted as the disc's gas is: what lights the layer.
+  float q = RIN / max(r, RIN);
+  float f = pow(q, 0.75) * pow(max(1.0 - 0.94 * sqrt(q), 0.0), 0.25) / 0.52;
+  float beta = sqrt(0.5 / max(r - 1.0, 0.5));
+  vec3 ph = vec3(-p.z, 0.0, p.x) / max(r, 1e-3);
+  float g = sqrt(max(1.0 - 1.0 / R3, 0.0)) * sqrt(max(1.0 - beta * beta, 0.0)) / (1.0 + beta * dot(ph, v));
+  float blue = smoothstep(0.7, 1.6, pow(f, 1.5) * g * uHole.w);
+  vec2 L = vec2(0.0);
+  // Wisps: a thin turbulent layer over the disc; it shears at the Kepler rate and resets unseen.
+  float H = 0.22 + 0.07 * r;
+  float env = smoothstep(RIN - 0.3, RIN + 1.0, r) * smoothstep(ROUT + 1.0, ROUT - 4.0, r) * exp(-y * y / (2.0 * H * H));
+  if (env > 0.004) {
+    float om = sqrt(0.5 / (r * r * r)), xx = uTime * om / 1.5708;
+    float fa = fract(xx), fb = fract(xx + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
+    float pa = phi - 1.5708 * fa + 2.3 * floor(xx), pb = phi - 1.5708 * fb + 2.3 * floor(xx + 0.5) + 1.7;
+    float na = hn(vec3(cos(pa) * r, y * 2.5, sin(pa) * r) * 0.8);
+    float nb = hn(vec3(cos(pb) * r, y * 2.5, sin(pb) * r) * 0.8 + 11.0);
+    // A high floor: only real clumps, no even haze past the disc.
+    float d = env * smoothstep(0.55, 0.85, mix(nb, na, wa)) * uHoleV.y;
+    float lum = pow(f, 2.2) * g * g * g * uHole.z * uHoleV.z;
+    L += vec2(lum * (1.0 - blue), lum * blue) * d;
+    ext += d * 0.5;
+  }
+  if (uHoleQ.x > 0.0) {
+    // The dusty torus: thick, clumpy, dark; its inner rim glows hot where the disc lights it.
+    float RT = 30.0, a = 7.0;
+    float dt0 = length(vec2(r - RT, y));
+    if (dt0 < a * 1.2) {
+      float n = hn2(vec3(cos(phi) * r, y, sin(phi) * r) * 0.35 + uTime * 0.002);
+      float dd = smoothstep(a, a * 0.5, dt0) * (0.35 + 1.3 * n * n) * uHoleQ.y;
+      ext += dd * 0.9;
+      float rim = exp(-pow((r - (RT - a * 0.75)) / 2.0, 2.0)) * exp(-y * y / 18.0);
+      L.x += dd * rim * 0.9;
+    }
+    // Broad-line clouds: bright clumps orbiting above and below the disc, lit by it.
+    if (r > 12.0 && r < 26.0 && abs(y) < 9.0) {
+      float om = sqrt(0.5 / (r * r * r)) * 0.5;
+      float pc = phi - uTime * om;
+      float n = hn(vec3(cos(pc) * r, y * 1.3, sin(pc) * r) * 0.9);
+      float cl = smoothstep(0.8, 0.9, n) * smoothstep(12.0, 15.0, r) * smoothstep(26.0, 22.0, r) * exp(-y * y / 30.0) * uHoleQ.z;
+      L.y += cl * 0.3 * 14.0 / R3;
+      ext += cl * 0.15;
+    }
+    // Winds: streaks blown off the disc's faces, rising at 30 to 60 degrees and streaming out.
+    float el = atan(abs(y), r);
+    if (r > 4.0 && R3 < 38.0 && el > 0.4 && el < 1.15) {
+      float n = hn(vec3(log(R3) * 6.0 - uTime * 0.25, el * 6.0, phi * 4.0));
+      float w = smoothstep(0.55, 0.8, n) * smoothstep(0.4, 0.6, el) * smoothstep(1.15, 0.9, el) * 6.0 / R3 * uHoleQ.w;
+      L.y += w * 0.12;
+      ext += w * 0.03;
+    }
+  }
+  return L;
 }
 // 1 / r^5 without pow: the trace's inner loop calls it four times a step.
 float ip5(vec3 x) { float r2 = dot(x, x); return 1.0 / (r2 * r2 * sqrt(r2)); }
@@ -248,6 +332,8 @@ vec4 holeTrace(vec2 P) {
   float a0 = (1.0 + dot(normalize(x), v)) / max(b, 1e-3);
   v = normalize(v * cos(a0) - normalize(pp + 1e-6) * sin(a0));
   float hot = 0.0, cool = 0.0, tr = 1.0, gone = 0.0;
+  // White noise per pixel, stepped each frame: the layer's one sample reads as grain, never a pattern.
+  float jv = h13(vec3(gl_FragCoord.xy, floor(uTime * 30.0)));
   if (b < REXIT) {
     vec3 hv = cross(x, v);
     float h2 = dot(hv, hv);
@@ -267,6 +353,23 @@ vec4 holeTrace(vec2 P) {
       vec3 k4 = v + dt * a3, a4 = -1.5 * h2 * xd * ip5(xd);
       x += dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
       v += dt / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
+      // The volumetric layer, sampled three times along the step, jittered per pixel and frame.
+      if (uHoleV.x > 0.0) {
+        float rm = length(mix(x0, x, 0.5)), ym = abs(mix(x0.y, x.y, 0.5));
+        // Only near the disc's plane, or in a quasar's torus and clouds: elsewhere nothing lives.
+        if (rm < uHoleV.w && rm > 2.4 && (ym < 0.8 + 0.22 * rm || (uHoleQ.x > 0.0 && ym < 12.0))) {
+          float seg = dt * length(mix(v0, v, 0.5));
+          for (int k = 0; k < 1; k++) {
+            float tt = jv;
+            float ex;
+            vec2 e = holeVol(mix(x0, x, tt), normalize(mix(v0, v, tt)), ex);
+            hot += tr * e.x * seg;
+            cool += tr * e.y * seg;
+            tr *= exp(-ex * seg);
+          }
+          if (tr < 0.01) break;
+        }
+      }
       // Each crossing of the disc adds light; many crossings make the photon ring.
       if (x0.y * x.y < 0.0) {
         float t = x0.y / (x0.y - x.y);
@@ -308,8 +411,6 @@ uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
-// A cool giant's giant cells: limb heave, lobe scale, churn phase, cell light.
-uniform vec4 uLump;
 // far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
 uniform float uFar;
 // off: the weight of light round the disk against the disk's own light.
@@ -349,20 +450,9 @@ out vec4 o;
 const float R = ${R.toFixed(1)};
 ${NOISE}
 ${HOLE}
-// The cells as slow lobes on the sphere, from about -0.3 to 0.3.
-float lumpAt(vec3 d) {
-  vec3 p = d * uLump.y + vec3(0.0, 0.0, uLump.z);
-  return 0.65 * vn(p) + 0.35 * vn(p * 2.1 + vec3(5.2, 1.3, uLump.z * 0.6)) - 0.5;
-}
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   if (uHole.x > 0.0) { o = holeTrace(P); return; }
-  // A red supergiant heaves: its giant cells push the limb in and out (Tom, 2026-11-24).
-  // The plane warps along each ray from the centre, so the disk and its glow move as one.
-  if (uLump.x > 0.0) {
-    vec2 dl = P / max(length(P), 1e-4);
-    P /= 1.0 + 2.0 * uLump.x * lumpAt(uToSun * vec3(dl, 0.0));
-  }
   float r = length(P);
   float hot = 0.0, cool = 0.0;
   // The sunspots' shade, applied last so no later light fills them.
@@ -401,8 +491,6 @@ void main() {
     // Filaments: dark sinuous lanes of cool plasma seen from above.
     float fil = smoothstep(0.035, 0.0, abs(fbm(q * 5.0 + 3.1) - 0.5)) * smoothstep(0.45, 0.65, fbm(q * 3.0 + 8.0));
     float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
-    // A rising giant cell is hot and bulges; a sinking one is cool and falls back.
-    tex *= 1.0 + 2.0 * uLump.w * lumpAt(q);
     // A brown dwarf: a cloud deck in bands round its spin axis, no granules.
     if (uCloud.x > 0.0) {
       float lat = q.y;
@@ -706,13 +794,13 @@ void main() {
     vec2 d = P / R - uRing.yz;
     float ca = cos(uRing2.x), sa = sin(uRing2.x);
     vec2 e = vec2(ca * d.x + sa * d.y, -sa * d.x + ca * d.y);
-    float rho = length(vec2(e.x, e.y / uRing.w));
+    float rho = length(vec2(e.x, e.y / abs(uRing.w)));
     bool round = uRing2.w > 0.0;
     float rhoR = rho;
     // Map the scaled span onto the true one, so the bands and gaps keep their places.
     if (round) rho = 43.0 + (rho - uRing2.z) / (uRing2.w - uRing2.z) * 86.0;
-    // Seen from a little above the plane, the half below the centre is the near half.
-    float behind = round && e.y > 0.0 && r < R ? 0.0 : 1.0;
+    // The near half is the side the ratio's sign names; the star hides the other.
+    float behind = round && e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
     // At least 37 rings from 0.2 to 0.6 AU: about 43 to 129 star radii.
     float band = smoothstep(41.0, 46.0, rho) * smoothstep(131.0, 124.0, rho);
     // Fine ringlets inside broader rings; sharp edges, as Saturn's show.
@@ -1561,7 +1649,6 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
-    gl.uniform4fv(s.u.uLump, v.lump);
     gl.uniform1f(s.u.uFar, v.far);
     gl.uniform1f(s.u.uOff, v.off);
     gl.uniform4fv(s.u.uReg, v.regs);
@@ -1571,6 +1658,11 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uEgg, v.egg);
     gl.uniform4fv(s.u.uDim, v.dim);
     gl.uniform4fv(s.u.uHole, v.hole);
+    gl.uniform4fv(s.u.uHoleV, v.holeV);
+    gl.uniform4fv(s.u.uHoleQ, v.holeQ);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.uniform1i(s.u.uNoise3, 5);
     gl.uniform4fv(s.u.uWind, v.band.wind);
     gl.uniformMatrix3fv(s.u.uCamM, false, v.camM);
     gl.uniform1f(s.u.uCore, v.band.core);

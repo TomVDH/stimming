@@ -1,11 +1,11 @@
 ---
 # stimming-okof
 title: 'Star catalog: black holes and the quasar in full fidelity'
-status: todo
+status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T22:21:22Z
-updated_at: 2026-11-24T23:46:11Z
+updated_at: 2026-11-25T00:50:22Z
 parent: stimming-e35i
 ---
 
@@ -31,3 +31,7 @@ Starts after the objects chat has added its objects (stimming-mhpz and the quasa
 ## Scope, Tom 2026-11-24: a light touch
 
 "we will minimally add some volumetrics -- i like our current black hole -- we will just add a bit in for depth and fidelity". Keep the current holes as they are. Add a thin layer of raymarched volumetric gas over the existing disc for depth: a few soft cloud wisps that catch the disc's light and bend with the lensing, after MisterPrada/singularity's clouds. No rebuild of the disc, the shadow, the ring or the lensing; the earlier checklist items beyond the volumetric layer are optional, only if Tom asks.
+
+## Built (2026-11-24)
+
+The light-touch layer: soft wisps sampled along the bent ray in the hole trace, after MisterPrada's swirling band (one noise lookup, jitter). In one pass with the quasar's overhaul (vd4z), which shares the trace. Frame time at the full view about 7 to 23 ms with readback, pane hidden.

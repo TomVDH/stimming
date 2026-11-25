@@ -47,6 +47,7 @@ Event horizon's black hole, ported into Solar loop (Tom, 2026-11-24): Cygnus X-1
 - Gravity and Doppler shift the light (g to the fourth power). Hot, approaching gas takes the cool ramp: cream white on Sagittarius A*'s ember gold, ice blue on Cygnus X-1's lilac steel.
 - Stars lie on a far plane behind the hole and are read along the bent ray, so they smear into arcs near the shadow. They come in two scales that cross-fade with the zoom.
 - The long lens frames the shadow's west edge at the equator, where the disc crosses it; the wide view stands back from the same edge. The full view stands three times farther back than a star's, so the whole disc fits, and it keeps its full exposure. Far out the flare grows round the hole; its glow stays off the shadow until the shadow is a few pixels wide.
+- A volumetric layer (Tom, 2026-11-24: "a bit in for depth and fidelity", after MisterPrada's singularity): soft cloud wisps over the disc, sampled along each bent ray as it passes the disc's plane, so they bend with the lensing. They shear at the Kepler rate and reset unseen, catch the disc's own light with its Doppler shift, and dim what lies behind them. One sample a step, jittered per pixel and frame, reads as fine grain. The noise is the volume pass's 3D texture.
 - No loops, prominences, haze, corona, heat shimmer or glare. A tap does nothing yet; dropping a star in comes next.
 
 ## The runaways (bean `stimming-q5aa`)
@@ -94,12 +95,13 @@ A red supergiant with a neutron star sunk into its core, as Kip Thorne and Anna 
 
 ## The quasar (bean `stimming-vd4z`)
 
-3C 273, the first quasar found (Tom, 2026-11-24): a hole of about 260 million suns, feeding hard. It is the black hole trace with a hotter, blue-white disc, and a jet.
+3C 273, the first quasar found (Tom, 2026-11-24): a hole of about 260 million suns, feeding hard. Overhauled (Tom, 2026-11-24: "significantly overhaul"): the black hole trace with the volumetric layer, plus the parts of a quasar's unified model.
 
-- The jet leaves along the hole's spin axis a few radii out and opens about 5 degrees. Knots sit at even steps of log distance, so every zoom shows some, and they travel out. It fades slowly, so it reaches past any frame.
-- Beaming: the jet toward the eye shines; the counter-jet behind the hole keeps 3 percent of its light. The jet's light is mostly the cool ramp, violet white.
-- Far out it reads as its name says, quasi-stellar: a point of light with a jet, as the first plates showed it.
-- Its horizon is about 1,100 suns wide, so it stands beside VY CMa in the tray.
+- A blazing disc: brighter and hotter than the holes', its hot inner part violet white, its outer part amber.
+- A dusty torus round it, about 30 Schwarzschild radii out and 7 thick: clumpy dust that dims what lies behind it, with an inner rim that glows hot where the disc lights it. The orbit tilts about 22 degrees, so the eye looks over the torus's rim into the nucleus, as a quasar is seen; the torus's near half darkens the view below the hole.
+- Broad-line clouds: a few bright clumps orbiting 12 to 26 radii out, above and below the disc. Winds: faint streaks blown off the disc's faces at 30 to 60 degrees, streaming out.
+- The jet leaves along the spin axis a few radii out and opens about 5 degrees. Two helical strands wind round its column, the near strand brighter, so the twist reads in depth; knots sit at even steps of log distance and travel out. Beaming: the jet toward the eye shines; the counter-jet keeps 3 percent.
+- Far out it reads as its name says, quasi-stellar: a point of light with a jet. The full view stands 4.2 times farther back, so the torus fits. Its horizon is about 1,100 suns wide, so it stands beside VY CMa in the tray.
 
 ## Eggs (bean `stimming-239r`)
 
