@@ -632,7 +632,7 @@ const SKY = `${HEAD}
 uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
-uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
+uniform vec4 uDisk, uDisk2, uTex, uBeam, uGrav, uCloud, uYso;
 // A cool giant's giant cells: limb heave, lobe scale, churn phase, cell light.
 uniform vec4 uLump;
 // far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
@@ -652,7 +652,7 @@ uniform mat3 uCamM;
 // A buried neutron star shown in cutaway through the disk.
 uniform float uCore;
 // A neutron star's true physics: on, compactness, the striped wind's light, the light cylinder in R.
-// uNsU, uNsV: the spin's in-plane axes in the view frame, with the spin phase and the magnetic tilt.
+// uNsU, uNsV: the spin's in-plane axes in the view frame; uNsV.w is the magnetic tilt.
 uniform vec4 uNs, uNsU, uNsV;
 // How hard a pulsar's flashes may flash: 1 at its true rate, near 0.2 when fast enough to flicker.
 uniform float uFlashW;
@@ -764,12 +764,6 @@ void main() {
       n = vec3(P / max(r, 1e-4) * sqrt(max(1.0 - cpsi * cpsi, 0.0)), cpsi);
     }
     vec3 q = uToSun * n;
-    // The neutron star's crust turns with its spin, about the spin axis, once per pulse.
-    if (uNs.x > 0.0) {
-      vec3 s = cross(uNsU.xyz, uNsV.xyz);
-      float a = -uNsU.w;
-      q = uToSun * (n * cos(a) + cross(s, n) * sin(a) + s * dot(s, n) * (1.0 - cos(a)));
-    }
     // Granules boil: bright cells, dark lanes; each cell lives about 7 s.
     // Noise bends the cells and blurs the lanes, so they never read as hexagons.
     vec3 gq = q * uTex.x + vec3(0.0, 0.0, tb * 7.5);
@@ -973,31 +967,11 @@ void main() {
     float vis = r < R ? smoothstep(-60.0, 60.0, c.z) : 1.0;
     hot += uDisk2.w * uReg[k].w * vis * exp(-dot(d, d) / (2.0 * 70.0 * 70.0));
   }
-  // A pulsar's two beams: narrow cones from its magnetic poles, swept by the spin.
+  // A pulsar's caps: a pole whose beam faces the eye flares.
+  // The beams themselves light dust in the volume pass, as a lighthouse.
   if (uBeam.w > 0.0) {
     for (int k = 0; k < 2; k++) {
       vec3 b = k == 0 ? uBeam.xyz : -uBeam.xyz;
-      float l2 = length(b.xy);
-      // The star hides the half of a cone that points away behind it.
-      float behind = b.z < 0.0 && r < R ? 0.0 : 1.0;
-      // With true physics the beams stay unseen, as radio beams are; only the pulse shows.
-      if (l2 > 0.02 && uNs.x <= 0.0) {
-        vec2 bd = b.xy / l2;
-        float along = dot(P, bd);
-        if (along > 0.0) {
-          // Depth along the cone: the projection shortens it by l2.
-          float s3 = along / l2;
-          float across = abs(P.x * bd.y - P.y * bd.x);
-          float wid = R * 0.06 + s3 * 0.09 * l2 + s3 * 0.18 * (1.0 - l2);
-          float core = exp(-pow(across / (wid * 0.25), 2.0));
-          float sheath = exp(-pow(across / wid, 2.0));
-          // Bunches of charge stream out along the beam.
-          float grain = 0.6 + 0.8 * fbm(vec3(s3 * 0.003 - uTime * 3.0, across * 0.01, float(k) * 3.0));
-          // The cone starts at the pole, where the axis leaves the surface.
-          float fall = exp(-s3 / 2600.0) * smoothstep(R * l2 * 0.8, R * l2 + 20.0, along);
-          hot += uBeam.w * (1.6 * core + 0.5 * sheath) * grain * fall * behind;
-        }
-      }
       // A beam aimed at the eye: the pole flares in a tight burst.
       // Above 2.5 flashes a second this blends to a steady glow: no photosensitive flicker.
       float face = pow(max(b.z, 0.0), 60.0) * uFlashW;
@@ -1021,30 +995,11 @@ void main() {
       float lat = asin(clamp(dot(xn, s), -1.0, 1.0));
       float phi = atan(dot(xn, uNsV.xyz), dot(xn, uNsU.xyz));
       float wind = (r3 - rl) / rl;
-      float latS = atan(-tan(uNsV.w) * cos(phi - uNsU.w + wind));
+      float latS = atan(-tan(uNsV.w) * cos(phi + wind));
       float w = 0.14 + 0.02 * r3;
       sw += exp(-pow((lat - latS) / w, 2.0)) * smoothstep(rl * 0.85, rl * 1.4, r3) * pow(rl / r3, 1.6) * (0.5 + vn(vec3(r3 * 2.0 - uTime * 0.8, phi * 3.0, 3.0)));
     }
     cool += uNs.z * uDisk.x * 1.6 * sw / 24.0 * 7.0;
-  }
-  // The wind nebula: a torus round the spin equator, and a jet from each spin pole.
-  if (uSpin.w > 0.0 && r > R) {
-    vec2 sp = length(uSpin.xy) > 1e-3 ? normalize(uSpin.xy) : vec2(0.0, 1.0);
-    vec2 e1 = vec2(sp.y, -sp.x);
-    float x = dot(P, e1), y = dot(P, sp);
-    float tilt = max(abs(uSpin.z), 0.12);
-    // The ring seen at a slant: an ellipse, short along the spin axis.
-    float rho = length(vec2(x, y / tilt));
-    float RT = R * 2.3;
-    float tex = 0.5 + fbm(vec3(atan(y / tilt, x) * 3.0, rho * 0.004, uTime * 0.03));
-    // The near half of the torus is brighter: relativistic flow toward the eye.
-    float near = 0.7 + 0.3 * sign(y) * sign(uSpin.z);
-    cool += uSpin.w * 0.4 * exp(-pow((rho - RT) / (RT * 0.16), 2.0)) * tex * near;
-    cool += uSpin.w * 0.12 * exp(-pow((rho - RT * 1.5) / (RT * 0.3), 2.0)) * tex;
-    // The jets wander like a hose under pressure.
-    float wig = 60.0 * sin(abs(y) * 0.004 - uTime * 0.6) * smoothstep(0.0, R * 2.0, abs(y));
-    float jet = exp(-pow((x - wig) / (R * 0.08 + abs(y) * 0.04), 2.0)) * exp(-abs(y) / (R * 3.5)) * smoothstep(R * 0.9, R * 1.5, abs(y));
-    hot += uSpin.w * 0.35 * jet * (0.6 + 0.8 * fbm(vec3(y * 0.004 - uTime * 0.8 * sign(y), x * 0.01, 2.0)));
   }
   // A young star: a ringed dust disk at a slant, and a jet from each pole.
   if (uYso.w > 0.0) {
@@ -2112,9 +2067,6 @@ void main() {
   vec2 uv = vUv + weave;
   vec2 P = uView.xy + (uv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
-  // Gravity bends the light round a neutron star: the sky slides outward at the limb.
-  // The shift never reaches into the disk, so the limb stays single.
-  if (uCam.z > 0.0 && r > R) uv -= normalize(P) * min(uCam.z * 0.08 * R * R / r, (r - R) * 0.75) / uView.zw * 0.5;
   // Heat bends the air above the limb.
   float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
@@ -2365,7 +2317,6 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uDust, v.band.dust);
     gl.uniform1f(s.u.uFull, v.full);
     gl.uniform4fv(s.u.uBeam, v.beam);
-    gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uStarspot, v.band.starspot);
     gl.uniform4fv(s.u.uDiscE, v.band.discE);
