@@ -1851,6 +1851,93 @@ vec3 starfield(vec2 fc) {
   }
   return acc;
 }
+// Hash without Sine, 2 in and 4 out (Dave Hoskins, MIT).
+vec4 hash42(vec2 p) {
+  vec4 q = fract(vec4(p.xyxy) * vec4(0.1031, 0.1030, 0.0973, 0.1099));
+  q += dot(q, q.wzxy + 33.33);
+  return fract((q.xxyz + q.yzzw) * q.zywx);
+}
+// One galaxy: an exponential profile of scale s, axis ratio e, turned by a.
+float galaxy(vec2 q, float s, float e, float a) {
+  vec2 r = vec2(cos(a) * q.x + sin(a) * q.y, -sin(a) * q.x + cos(a) * q.y);
+  r.y /= e;
+  return exp(-length(r) / s);
+}
+// The deep field behind the lens, in the source plane, in R: two layers of hashed galaxies.
+// Far galaxies redden; nearer ones are blue spirals and pale ellipticals.
+vec3 deepField(vec2 b) {
+  vec3 col = vec3(0.0);
+  for (int L = 0; L < 2; L++) {
+    float cell = L == 0 ? 7.0 : 26.0;
+    vec2 g = floor(b / cell);
+    for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+      vec2 id = g + vec2(dx, dy);
+      vec4 h = hash42(id + float(L) * 71.3);
+      if (h.w < (L == 0 ? 0.35 : 0.6)) continue;
+      vec2 c = (id + h.xy) * cell;
+      float sz = cell * (L == 0 ? 0.035 + 0.05 * h.z : 0.05 + 0.06 * h.z);
+      float I = galaxy(b - c, sz, 0.25 + 0.75 * fract(h.z * 7.0), h.x * 6.283);
+      vec3 tint = mix(vec3(0.55, 0.68, 1.0), vec3(1.0, 0.42, 0.28), fract(h.y * 13.0));
+      col += tint * I * (0.12 + 0.35 * fract(h.w * 31.0));
+    }
+  }
+  return col;
+}
+// A point of light as Webb sees it: a soft core and six thin spikes, fixed to the frame.
+float pip(vec2 d, float pw, float len) {
+  float core = exp(-dot(d, d) / (pw * pw * 2.2)) + 0.35 * exp(-length(d) / (pw * 3.0));
+  float sp = 0.0;
+  for (int k = 0; k < 3; k++) {
+    float a = 1.5708 + float(k) * 1.0472;
+    vec2 u = vec2(cos(a), sin(a));
+    float along = abs(dot(d, u)), across = abs(u.x * d.y - u.y * d.x);
+    sp += exp(-across / (pw * 0.45)) * exp(-along / len);
+  }
+  return core + 0.55 * sp;
+}
+// A strong lens round a far star (Tom, 2026-11-24): the light is traced, not drawn.
+// q: the view in R, turned so the lens lies along +x; Pv: the same point unturned, for the spikes.
+// The lens is a singular isothermal sphere uBow.z radii off, its Einstein radius just inside the star:
+// so the star sits by the critical curve, hugely magnified, and shows twice.
+// Each pixel looks back through the lens to the source plane: b = t - tE t/|t|.
+vec3 lensScene(vec2 q, vec2 Pv) {
+  float D = uBow.z, tE = 0.93 * D;
+  vec2 t = q - vec2(D, 0.0);
+  float tl = max(length(t), 1e-3);
+  vec2 b = t - tE * t / tl;
+  float pw = max(length(fwidth(q)), 1e-3);
+  // The host galaxy, round the star's own source position: a clumpy disc in uBowC with blue knots.
+  vec2 bs = vec2(-(D - tE), 0.0);
+  vec2 hq = b - bs - vec2(0.6, 0.9);
+  float host = galaxy(hq, 1.6, 0.7, 0.8);
+  float knots = 0.0;
+  for (int k = 0; k < 7; k++) {
+    vec4 h = hash42(vec2(float(k), 3.7));
+    knots += galaxy(hq - (h.xy - 0.5) * 4.0, 0.25 + 0.3 * h.z, 1.0, 0.0);
+  }
+  vec3 col = uBowC * host * 0.9 + vec3(0.7, 0.8, 1.0) * knots * 0.6;
+  // Every galaxy behind the cluster is bent too: arcs and arclets ring it.
+  col += deepField(b + vec2(13.7, -5.1));
+  // The cluster in front: a giant elliptical at the centre in its own halo, members round it, gold.
+  vec3 gold = vec3(1.0, 0.8, 0.52);
+  col += gold * (1.6 * galaxy(t, 2.4, 0.72, 0.4) + 0.18 * exp(-tl / (0.35 * tE)));
+  for (int k = 0; k < 26; k++) {
+    vec4 h = hash42(vec2(float(k) * 1.37, 9.1));
+    vec2 c = (h.xy - 0.5) * 2.6 * tE * sqrt(h.z);
+    col += gold * galaxy(t - c, 0.35 + 1.1 * h.w * h.w, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
+  }
+  // A few foreground stars of our own galaxy, with Webb's spikes.
+  for (int k = 0; k < 3; k++) {
+    vec4 h = hash42(vec2(float(k) + 41.0, 2.3));
+    vec2 c = vec2((h.x - 0.2) * 2.2 * D, (h.y - 0.5) * 1.6 * D);
+    col += vec3(0.85, 0.9, 1.0) * pip((q - c) * 0.9, pw, 3.0 + 6.0 * h.z) * 0.5 * h.w;
+  }
+  // The star itself, twice: here, burning, and its fainter counter-image past the cluster.
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  col += vec3(1.0) * pip(Pv, pw, 7.0) * 1.4;
+  col += vec3(1.0) * pip(Pv - ax * 2.0 * tE, pw, 4.0) * 0.45;
+  return col;
+}
 // A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.
 // The bow shock takes Wilkin's shape: r(t) = R0 sqrt(3 (1 - t cot t)) / sin t, t from the apex.
 vec3 runaway(vec2 P) {
@@ -1867,18 +1954,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
-  // A lensed arc: the host galaxy smeared along a circle round an unseen lens.
-  // The star sits on the arc; the lens's centre lies uBow.z radii off along the heading.
-  if (uBow.w > 1.5) {
-    vec2 lc = q - vec2(uBow.z, 0.0);
-    float rl = length(lc);
-    float th = atan(lc.y, -lc.x);
-    float band = exp(-pow((rl - uBow.z) / (0.5 + 0.02 * uBow.z), 2.0));
-    float ends = smoothstep(0.45, 0.15, abs(th));
-    // Lensing shears the galaxy's knots along the arc.
-    float kn = 0.3 + 1.2 * pow(fbm(vec3(th * uBow.z * 0.12, (rl - uBow.z) * 1.4, 7.0)), 2.0);
-    return uBowC * band * ends * kn;
-  }
+  // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
+  if (uBow.w > 1.5) return lensScene(q, P / R);
   // A wake: a long faint trail behind, widening, its knots streaming away.
   float back = -q.x;
   float w = 0.35 + 0.035 * back;

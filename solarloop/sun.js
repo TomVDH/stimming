@@ -57,6 +57,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // starspot: giant spots: weight, the caps' edge latitude, the big spot's latitude and longitude.
 // discE: a dark disc in front, edge on: light, centre, half width, half thickness, in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
+// kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
 const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
@@ -364,7 +365,7 @@ export const STARS = {
   mothra: {
     ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 80,
     pair: { at: [2.5, 0.35, 1.2], size: 0.22, neck: 0, cool: 1 },
-    bow: { kind: 2, heading: 0.5, size: 150, col: [1, 0.45, 0.6] },
+    bow: { kind: 2, heading: 0.5, size: 80, col: [1, 0.45, 0.6] },
     row: 28, rsun: 271, expo: 1, hotW: 1, coolW: 1, loop: 0.3, prom: 0, dust: 0.1, rays: 1,
     hal: [1, 0.8, 0.45], streak: [1, 0.85, 0.6],
     disk: [1.7, 0.7, 0.04, 0.3], disk2: [120, 0, 0.3, 0.06], tex: [20, 5, 0.06, 0.55],
@@ -376,7 +377,7 @@ export const STARS = {
   // The full view stands 80 times back: the star is a pip on the Sunrise Arc (Tom, 2026-11-24).
   earendel: {
     ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 80,
-    bow: { kind: 2, heading: 2.6, size: 170, col: [1, 0.38, 0.3] },
+    bow: { kind: 2, heading: 2.6, size: 90, col: [1, 0.38, 0.3] },
     row: 2, rsun: 200, expo: 1, hotW: 1, coolW: 0.8, loop: 0.45, prom: 0.5, dust: 0, rays: 1.15,
     hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
