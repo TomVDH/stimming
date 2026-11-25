@@ -107,6 +107,9 @@ const LUTS = [
   // Mothra: a gold hypergiant; its blue supergiant partner takes the cool ramp.
   [['000000', 0], ['0e0802', 0.1], ['3a2006', 0.26], ['7e4a0c', 0.44], ['c88a1e', 0.62], ['f4c450', 0.78], ['ffe8a8', 0.9], ['fffaee', 1]],
   [['000000', 0], ['02060e', 0.12], ['0c2040', 0.3], ['2a5aa0', 0.5], ['6c9ce8', 0.68], ['b8d4ff', 0.84], ['f4f8ff', 1]],
+  // Powehi: the EHT's ember ring, red to orange gold; the approaching side burns pale gold.
+  [['000000', 0], ['0e0301', 0.1], ['3a0c02', 0.26], ['842806', 0.44], ['d0600e', 0.62], ['f8a030', 0.78], ['ffd88a', 0.9], ['fff6e0', 1]],
+  [['000000', 0], ['0c0602', 0.12], ['36200a', 0.3], ['8a5a1c', 0.5], ['dca450', 0.68], ['fde2a4', 0.84], ['fffbf0', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {

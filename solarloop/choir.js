@@ -231,6 +231,10 @@ TAPNORM.mothra = TAPNORM.betalyr;
 VOICES.earendel = VOICES.rigel;
 NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
+// Powehi sings Sagittarius A*'s choir, lower.
+VOICES.powehi = VOICES.sgra;
+NORM.powehi = NORM.sgra;
+TAPNORM.powehi = TAPNORM.sgra;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

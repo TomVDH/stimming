@@ -45,6 +45,7 @@ export const CHART = {
   epsaur: { kind: 'disc', t: 7750, cls: 'F0 supergiant, eclipsed by a dark disc' },
   mothra: { kind: 'arc', t: 5250, cls: 'yellow hypergiant and blue supergiant, lensed' },
   earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
+  powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.

@@ -380,6 +380,17 @@ export const STARS = {
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
     wide: 'none', long: 'none', root: 155.56,
   },
+  // Powehi (M87*): the first black hole imaged, 6.5 billion suns, in the galaxy Messier 87.
+  // The EHT sees its ring about 17 degrees from face on; the jet leaves near the line of sight.
+  // It feeds slowly, so its disc burns less than the quasar's.
+  powehi: {
+    ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
+    hole: { tilt: 1.27, light: 0.75, heat: 0.7, stars: 1, vol: { dens: 1.1, light: 1 } }, reach: 3, jet: 0.6,
+    row: 29, rsun: 25800, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [1, 0.5, 0.18], streak: [1, 0.72, 0.4],
+    disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    wide: 'none', long: 'none', root: 65.41,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.
