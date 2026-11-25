@@ -4,7 +4,7 @@
 // Output: one RGBA16F target. rgb is the light in front of the sky, a is the cover.
 import { COMMON } from './world.js';
 import { CLOUDS } from '../shared/clouds.js';
-import { TW_DECL, TW_MARCH } from './twisters.js';
+import { TW_DECL, TW_MARCH, CARD_GL } from './twisters.js';
 
 /* ---------- K: Railgun's tiled 3D billow noise (copied from volcano/clouds.js) ---------- */
 const VOL_NOISE = /* glsl */`
@@ -180,7 +180,16 @@ float tower(vec3 p, float h, float flo, float cei, float seed, float nb, float c
   float e = r2.y < 0.34 ? abs(2.0 * g - 1.0) : g;
   float rad = k * (1.6 + 2.4 * r.y) * (0.45 + 1.5 * e * e * e) * (0.75 + 0.5 * nb);
   rad *= r2.y < 0.34 ? 1.0 : r2.y < 0.67 ? 1.0 - smoothstep(0.88, 1.0, g) * 0.8 : smoothstep(0.0, 0.15, g);
-  return on * inside * smoothstep(0.0, 1.6 * k, rad - length(p.xz - c));
+  float dl = rad - length(p.xz - c);
+  // The upper void's towers fray at the rim and fade at each end (Tom, 2026-11-24).
+  // The density climbs over most of the radius, so the rim shows no hard edge.
+  if (seed == 3.1) {
+    float g0 = r2.y < 0.67 ? f / len : (f - 1.0 + len) / len;
+    float ends = smoothstep(-0.06, 0.04, g0) * (1.0 - smoothstep(0.86, 1.0, g0));
+    float rim = smoothstep(-0.2 * rad, 0.9 * rad + 1.6 * k, dl + (nb - 0.5) * rad * 0.8);
+    return on * ends * rim * rim;
+  }
+  return on * inside * smoothstep(0.0, 1.6 * k, dl);
 }
 // Thin sheets stacked from bot up, one in each gap km.
 // Each sheet has its own height, thickness and cover; id names it.
@@ -671,6 +680,7 @@ float lightOD(vec3 p, vec3 ld, float lod) {
 }
 // @seg upper
 // The upper void's twisters: baked walls, lit live (twisters.js).
+${CARD_GL}
 ${TW_MARCH}
 // A twister layer over the baked far view: the haze in front fades it, and behind the bake's
 // first cloud only what shows through counts. fd is that cloud's depth.
@@ -722,8 +732,16 @@ void main() {
     float t = t0 + (0.3 + 0.006 * t0) * fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 5.588, vec2(0.06711056, 0.00583715))));
     vec3 col = vec3(0.0);
     float T = 1.0, tHit = -1.0;
+    // The bake's depth is where the clouds alone reach half cover, so a thin wisp does not hide a twister.
+    float Tc = 1.0, tHalf = -1.0;
     // @seg upper
     // @end
+    // The fog at the window's end, as winEnd adds it.
+    vec4 Lw = lut(camH - 0.15 * min(uWin, 220.0));
+    vec3 fogC = vec3(0.74, 0.8, 0.82) * Lw.rgb * (0.5 + 0.5 * (1.0 - Lw.a));
+    // In a void, what lies near the window's end melts into that fog (Tom, 2026-11-24).
+    // So the far floor draws no hard line against the fog.
+    float fogA = inWin ? 0.4 * uWin : 1e9, fogB = inWin ? uWin : 2e9;
     // sk shrinks the steps after the first hit, so a crisp skin is not stepped over.
     float sk = 1.0;
     bool refined = false;
@@ -820,10 +838,13 @@ void main() {
           float d2 = dot(fq, fq);
           Lc += FLASH_C * f.w * (1.8 * exp(-d2 / 60.0) + 0.5 * exp(-sqrt(d2) / 14.0));
         }
+        Lc = mix(Lc, fogC, smoothstep(fogA, fogB, t) * vw);
         float di = min(ds, 4.0 + 0.004 * t);
         float a = 1.0 - exp(-SIG * dn * di);
         col += T * Lc * a;
         T *= 1.0 - a;
+        Tc *= 1.0 - a;
+        if (tHalf < 0.0 && Tc < 0.5) tHalf = t;
       }
       // Clear gas between the clouds: a thin haze that thickens with depth.
       if (inWin && dn <= 0.003) {
@@ -868,7 +889,7 @@ void main() {
             gs = gs * 0.55 + mix(lut(vo.x + 6.0).rgb, vec3(lum * 1.3), 0.1 + 0.6 * nearK) * sh * phS * 4.0 * uRays;
           }
         }
-        col += T * gs * ag;
+        col += T * mix(gs, fogC, smoothstep(fogA, fogB, t) * vw) * ag;
         // @seg nest
         // In the lightning nest the bolts show: a jagged channel floor to ceiling, and its glow.
         float nk = band(hg, -425.0, -385.0, 2.0);
@@ -919,6 +940,7 @@ void main() {
     }
     res = vec4(col, al);
     if (tHit > 0.0) hitD = tHit;
+    if (uMode > 1.5) hitD = tHalf > 0.0 ? tHalf : 1e4;
     // ?qa view 6: red the cover, green a hit, blue what passes.
     if (uDbg > 5.5 && uDbg < 6.5) res = vec4(al * 0.3, tHit > 0.0 ? 0.3 : 0.0, T * 0.3, 1.0);
   }

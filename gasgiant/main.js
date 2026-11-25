@@ -10,7 +10,7 @@ import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, SWIRL_FS, marchFS, zoneFor } from './clouds.js';
-import { WALL_FS, WALL_W, WALL_H, WALL_N, TW_MAX, twisterUniforms } from './twisters.js';
+import { WALL_FS, WALL_W, WALL_H, WALL_N, TW_MAX, twisterUniforms, CARD_BAKE_FS, CARD_ENC_FS, bakeCards } from './twisters.js';
 import { COMPOSITE_FS, FINAL_FS, BOKEH_FS } from './post.js';
 import { wetGlassMotion } from '../shared/wetglass.js';
 import { CABIN_FS } from './cabin.js';
@@ -85,6 +85,8 @@ const TUNE_DEF = {
   // Window timings, in seconds or as rates.
   // The far view bakes from this many km out; 0 marches every ray in full.
   bake: 25,
+  // The upper void's twisters: the live march, or flipbook cards (Tom, 2026-11-24).
+  twMode: 'live', cardK: 3,
   tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
 // An effect's level: its depth value, none, or full.
@@ -95,6 +97,7 @@ let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const RESIZE = new Set(['pix', 'march', 'cabin']);
 const tune = (id, v) => {
   TUNE[id] = v;
+  if (id === 'twMode' && v === 'cards') makeCards();
   if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
   if (RESIZE.has(id) && P) resize(true);
   BK.gen++;
@@ -123,6 +126,8 @@ const DEV = [
   choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
   choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
   slider('Render', 'bake', 'Bake past, km (0 off)', 0, 200, 5),
+  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards']]),
+  slider('Twisters', 'cardK', 'Card light', 0, 12, 0.1),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
   slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
   slider('Exposure', 'expo', 'Exposure', 0.25, 4, 0.01),
@@ -183,6 +188,8 @@ stage.prepend(canvas);
 const watch = loadWatch(ID, canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null, wall = null;
+// The flipbook cards: baked the first time Dev picks them.
+let cards = null, cardsJob = null;
 // The march settles over frames: each frame blends into the last one.
 // Thin and far things then read whole instead of boiling into grain.
 // The history is full size; the march shifts its rays a sub-pixel each frame, so detail builds up.
@@ -317,6 +324,22 @@ async function setup() {
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
   T.map = target(gl, 1024, 1024);
   bloom = bloomChain(gl);
+  if (TUNE.twMode === 'cards') makeCards();
+}
+
+// Bakes the flipbook cards in the background, one frame each animation frame.
+function makeCards() {
+  if (cards || cardsJob || !P) return;
+  cardsJob = (async () => {
+    const pr = await linked(gl, { bake: program(gl, TRI_VS, CARD_BAKE_FS), enc: program(gl, TRI_VS, CARD_ENC_FS) });
+    gl.bindVertexArray(vao);
+    const r = await bakeCards(gl, pr, { wait: () => new Promise(res => requestAnimationFrame(res)) });
+    for (const q of Object.values(pr)) gl.deleteProgram(q.p);
+    cards = r;
+    // ?qa: the cards' format, size and bake times.
+    if (QS.has('qa')) globalThis.__gg.cards = { fmt: r.fmt, mb: +(r.bytes / 1048576).toFixed(1), bakeMs: Math.round(r.bakeMs), encMs: Math.round(r.encMs) };
+    touch();
+  })();
 }
 
 // The 64 cubed noise volume: one draw per layer into a 3D texture.
@@ -578,6 +601,12 @@ function render(dt) {
     gl.uniform4fv(u.uTwC, twC);
     gl.uniform1f(u.uTwLo, 0);
     gl.uniform1f(u.uTwHi, TW_MAX);
+    // The live march draws until the cards are baked.
+    gl.uniform1f(u.uTwCard, TUNE.twMode === 'cards' && cards ? 1 : 0);
+    gl.uniform1f(u.uCardK, TUNE.cardK);
+    gl.activeTexture(gl.TEXTURE8);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, cards ? cards.tex : wall);
+    gl.uniform1i(u.uBook, 8);
   }
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
