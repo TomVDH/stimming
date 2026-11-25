@@ -52,6 +52,7 @@ export const CHART = {
   mothra: { kind: 'arc', t: 5250, cls: 'yellow hypergiant and blue supergiant, lensed' },
   earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
   powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
+  gargantua: { kind: 'hole', t: null, cls: 'supermassive black hole, after a film' },
 };
 
 const fmtR = (rsun, value) => {
@@ -90,7 +91,7 @@ const GROUPS = [
   ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur']],
   ['Dead stars', ['magnetar', 'neutron', 'crab', 'siriusb', 'ring']],
-  ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi']],
+  ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi', 'gargantua']],
   ['Far and strange', ['quasi', 'earendel', 'mothra']],
 ];
 

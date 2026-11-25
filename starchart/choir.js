@@ -257,6 +257,7 @@ NORM.mira = NORM.betelgeuse;
 TAPNORM.mira = TAPNORM.betelgeuse;
 // Powehi sings Sagittarius A*'s choir, lower.
 VOICES.powehi = VOICES.sgra;
+VOICES.gargantua = VOICES.sgra;
 // A preset from a relative's: its sound, with changes; fx lists only the effects to turn on.
 const from = (id, o = {}) => ({ ...VOICES[id], ...o, oct: o.oct || VOICES[id].oct, fx: o.fx ? fxOn(o.fx) : VOICES[id].fx });
 // The bodies of 2026-11-24 evening (Tom: "the choir tool to have the latest bodies").
@@ -281,6 +282,8 @@ Object.assign(VOICES, {
   earendel: from('wr124', { voice: 0.4, dist: 1, rev: 15, mix: 1.9, bright: 1.35 }),
   // Powehi (M87*): the first black hole imaged. Sagittarius A*'s deep pad, slower and darker.
   powehi: from('sgra', { step: 18, rev: 15, bright: 0.45, det: 16 }),
+  // Gargantua: a film's black hole. Sagittarius A*'s pad, wide and slow.
+  gargantua: from('sgra', { step: 16, rev: 16, bright: 0.5, det: 12 }),
   // Mira: a red giant that swells and fades on a slow beat. Betelgeuse's pad, a deeper, slower swell.
   mira: from('betelgeuse', { swR: 0.05, swD: 0.38 }),
   // R Leporis: a crimson carbon star in its soot. VY CMa's pad, darker, on a slow swell.
@@ -295,13 +298,15 @@ Object.assign(VOICES, {
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];
 }
 NORM.powehi = NORM.sgra;
 TAPNORM.powehi = TAPNORM.sgra;
+NORM.gargantua = NORM.sgra;
+TAPNORM.gargantua = TAPNORM.sgra;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

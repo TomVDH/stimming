@@ -470,6 +470,15 @@ export const STARS = {
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 65.41,
   },
+  // Gargantua: a film's black hole, 100 million suns, its thin disc seen near edge on.
+  gargantua: {
+    ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
+    hole: { tilt: 0.1, light: 1.2, heat: 0.7, stars: 1.3, vol: { dens: 0.6, light: 1.1 } }, reach: 3,
+    row: 29, rsun: 423, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.4,
+    hal: [1, 0.62, 0.3], streak: [1, 0.78, 0.5],
+    disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    wide: 'none', long: 'none', root: 69.3,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.

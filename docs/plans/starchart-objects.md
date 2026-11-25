@@ -9,14 +9,14 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 41 |
+| Built, in the tray | 42 |
 | Picked by Tom, not built | 1 |
-| Asked for by Tom, not built | 1 |
+| Asked for by Tom, not built | 0 |
 | Offered, no answer | 18 |
 | Offered, not picked | 12 |
 | Parked | 4 |
 
-## Built (41)
+## Built (42)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
@@ -28,7 +28,7 @@ All in the tray now. A bean marked open waits for Tom's live look.
 | Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Thorne–Żytkow object (`ye4c`) |
 | Runaways | S5-HVS1 (`q5aa`) |
 | Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`), the Crab Nebula (`404a`), the Ring Nebula (`wcfv`) |
-| Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`) |
+| Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`), Gargantua (`9q7x`) |
 | Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`) |
 
 Tom's notes on built bodies:
@@ -53,7 +53,7 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 
 | Object | What | Tom |
 |---|---|---|
-| Gargantua | The black hole from the film Interstellar | Tom asked for it on 2026-11-25; queued, no bean |
+| None | | |
 
 ## Offered, no answer
 
