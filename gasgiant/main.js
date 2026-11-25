@@ -92,7 +92,7 @@ const TUNE_DEF = {
   bake: 25,
   // The upper void's twisters: marched near and cards far by default (Tom, 2026-11-24).
   // The relief march and all cards stay in Dev.
-  twMode: 'mixed', cardK: 3, twMix: 60,
+  twMode: 'mixed', cardK: 3, twMix: 60, rimK: 1,
   tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
 // An effect's level: its depth value, none, or full.
@@ -135,6 +135,7 @@ const DEV = [
   choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards'], ['mixed', 'Marched near, cards far'], ['funnels', 'Ceiling funnels']]),
   slider('Twisters', 'twMix', 'Marched within, km', 0, 400, 5),
   slider('Twisters', 'cardK', 'Card light', 0, 12, 0.1),
+  slider('Twisters', 'rimK', 'Funnel rim', 0, 3, 0.05),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
   slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
   slider('Exposure', 'expo', 'Exposure', 0.25, 4, 0.01),
@@ -625,6 +626,7 @@ function render(dt) {
     gl.uniform1f(u.uTwCard, TUNE.twMode === 'funnels' ? 3 : !cards ? 0 : TUNE.twMode === 'cards' ? 1 : TUNE.twMode === 'mixed' ? 2 : 0);
     gl.uniform1f(u.uTwMix, TUNE.twMix);
     gl.uniform1f(u.uCardK, TUNE.cardK);
+    gl.uniform1f(u.uRimK, TUNE.rimK);
     gl.activeTexture(gl.TEXTURE8);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, cards ? cards.tex : wall);
     gl.uniform1i(u.uBook, 8);

@@ -77,6 +77,8 @@ uniform vec4 uTwC[${TW_MAX}];
 // 3 ceiling funnels in the cloud density, with no twister layers.
 // uCardK scales the cards' light to the void's.
 uniform float uTwCard, uCardK, uTwMix;
+// The ceiling funnels' rim and back light.
+uniform float uRimK;
 // The angle one march pixel spans, in radians.
 uniform float uPixA;
 ${TW_SHAPE}
@@ -110,7 +112,8 @@ float twSag(vec2 xz) {
 // Ceiling funnels (Tom, 2026-11-24: "the cloud layer warped down as a contiguous piece").
 // At each twister the ceiling's own cloud is pulled down to the floor, as in Tornado alley.
 // n1 and n2 are the deck's noise at p, so the funnel's wall rags as the ceiling does.
-// tw takes the funnel light's terms: side to the light, depth, height, on.
+// tw takes the funnel light's terms: side to the light, depth, height,
+// and 2 plus the wall's facing angle in turns, for a funnel.
 float ceilFunnel(vec3 p, float h, vec4 n1, vec4 n2, out vec4 tw) {
   float res = 0.0;
   tw = vec4(0.0);
@@ -138,7 +141,7 @@ float ceilFunnel(vec3 p, float h, vec4 n1, vec4 n2, out vec4 tw) {
     if (twd > res) {
       res = twd;
       vec3 lt = deepLight(normalize(p - PC));
-      tw = vec4(dot(q / max(rr, 1e-3), normalize(lt.xz + 1e-5)), clamp(rr / (edge * 1.25 + 0.3), 0.0, 1.0), f, 1.0);
+      tw = vec4(dot(q / max(rr, 1e-3), normalize(lt.xz + 1e-5)), clamp(rr / (edge * 1.25 + 0.3), 0.0, 1.0), f, 2.0 + fract(atan(q.y, q.x) / 6.2831853 + 1.0));
     }
   }
   return res;

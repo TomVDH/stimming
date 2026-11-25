@@ -41,3 +41,4 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [x] Rolling rebake (Tom: "Yes, rolling rebake"): a back cube builds one strip a frame, swaps, cross-fades over 1.5 s; about 0.2 ms a frame, 98 MB more; `?qa` `__gg.noRoll` holds it
 - [x] Ceiling funnels as a fourth Dev mode (Tom: "the cloud layer warped down as a contiguous piece"): `ceilFunnel()` in the cloud density; light taps jittered on funnels to end the ceiling-shadow bands
 - [ ] Funnel walls need billow detail
+- [x] Funnels backlit and side-lit (Tom: "side and backlit -- brighter -- rim lighting"): silhouette rim from the wall's facing angle; Dev, Funnel rim

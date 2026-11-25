@@ -845,6 +845,20 @@ void main() {
           float tl = (exp(-tod) + 0.3 * exp(-tod * 0.4) + 0.05 * exp(-tod * 0.16)) / 1.35;
           vec3 amb = (sky + bounce + diffuse * 0.3) * vec3(0.7, 0.85, 1.2) * (0.3 + 0.55 * tw.z) * exp(-max(0.0, 1.0 - tw.y) * 1.6);
           Lc = alb * ((sun + diffuse) * tl * 1.8 + amb * 1.5);
+          // @seg upper
+          // Ceiling funnels are backlit and side-lit (Tom, 2026-11-24): the thin outer wall glows
+          // toward the light behind them, the side to the light lifts, and the body is brighter.
+          if (tw.w > 1.5) {
+            vec3 lb = normalize(normalize(vec3(rd.x, 0.0, rd.z) + 1e-5) + vec3(0.0, 0.35, 0.0));
+            float back = min(clPhase(dot(rd, lb)), 4.0);
+            // The rim is where the view grazes the wall: the silhouette, not the face.
+            float fa = (tw.w - 2.0) * 6.2831853;
+            float graze = 1.0 - abs(dot(vec2(cos(fa), sin(fa)), normalize(rd.xz + 1e-5)));
+            float rim = smoothstep(0.4, 1.0, tw.y) * graze * graze;
+            vec3 lv = L.rgb * mix(1.0, 0.85, L.a) * uTune.y;
+            Lc = Lc * mix(1.0, 1.2, uRimK) + alb * lv * (rim * back * 1.6 + rim * (0.5 + 0.5 * tw.x) * 0.6 + 0.15 * (0.5 + 0.5 * tw.x)) * uRimK;
+          }
+          // @end
         }
         // Shade in the folds takes a bruised violet, never a grey wash.
         Lc *= mix(vec3(1.0), vec3(0.88, 0.8, 1.1), fold * (1.0 - clamp(lit, 0.0, 1.0)) * 0.8);
