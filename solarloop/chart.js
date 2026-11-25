@@ -265,6 +265,9 @@ export function makeChart(o) {
       mount();
       sync();
       el.hidden = false;
+      // The glass reaches only a band above the ribbon, so the star stays in view (Tom, 2026-11-24).
+      const top = el.getBoundingClientRect().top, foot = glass.parentElement.getBoundingClientRect().bottom;
+      glass.style.height = `${Math.round(foot - top + 70)}px`;
       glass.dataset.on = '';
       el.classList.remove('is-closing');
       el.classList.toggle('is-landing', !RM.matches);
