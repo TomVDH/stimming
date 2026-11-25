@@ -603,7 +603,8 @@ export const flareCurve = {
   ribbon: t => sstep(0, 0.1, t) * (0.3 + 0.7 * Math.exp(-t / 2.2)) * Math.exp(-t / 16) * (1 - sstep(30, 42, t)),
   kernel: t => sstep(0, 0.05, t) * Math.exp(-t / 1.5),
   // Slow and vast: the rope fills the frame over about six seconds.
-  ropeH: (t, h0) => h0 + 14 * t + 10 * t * t,
+  // sz: the tap site's scale; a larger site's rope climbs as fast in proportion.
+  ropeH: (t, h0, sz = 1) => h0 + sz * (14 * t + 10 * t * t),
   // The region's own loops: a burst as they reconnect, gone, then back.
   ambient: t => (1 + 1.6 * Math.exp(-t / 0.45)) * (1 - 0.88 * sstep(0.4, 3, t)) + 0.88 * sstep(28, 44, t),
   // Arcade loop j forms at this time: low loops first, then higher.
@@ -756,7 +757,9 @@ function flareStrands(fl, B, out, n) {
   // Two ribbons, one each side of the neutral line, parting as the flare runs.
   // Face-on, the ribbons stand against the bright disk, so they burn harder (Tom, 2026-11-24).
   const face = fl.face || 0;
-  const rib = C.ribbon(t) * B.ribbon * fl.k * (1 + 2.5 * face);
+  // A larger tap site is a larger flare: it burns brighter too.
+  const big = Math.sqrt(rg.sz || 1);
+  const rib = C.ribbon(t) * B.ribbon * fl.k * big * (1 + 2.5 * face);
   if (rib > 0.001) {
     for (const s of [-1, 1]) {
       // Each ribbon bows sideways on the surface, so the pair never runs straight.
@@ -771,9 +774,10 @@ function flareStrands(fl, B, out, n) {
   }
   // The rope lifts off with growing speed and leaves the frame.
   const h0 = rg.span[1] * 0.42;
-  const hr = C.ropeH(t, h0);
+  const sz = rg.sz || 1;
+  const hr = C.ropeH(t, h0, sz);
   // It fades as it climbs, before its legs stretch into long straight lines.
-  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(100, 260, hr)) * fl.k;
+  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(100 * sz, 260 * sz, hr)) * fl.k * big;
   if (ropeI > 0.002) {
     // The rope is a few plasma tubes that braid round one axis and part as it lifts.
     const lift = hr - h0;
@@ -800,7 +804,7 @@ function flareStrands(fl, B, out, n) {
     // Every band sees the snap; then each sees the loop at its own temperature.
     // A newborn loop glows hot and broad, as in 131 A, before it cools into a sharp 171 A loop.
     const hot = clamp((lt - 6.3) / 0.8);
-    const I = (resp(lt) + 0.9 * hot + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
+    const I = (resp(lt) + 0.9 * hot + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * big * (1 + 1.5 * face);
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
     // An arcade loop is one plasma tube; each has its own width, lean and shear.
@@ -818,15 +822,16 @@ function flareStrands(fl, B, out, n) {
 // It carries what a flare needs from a region: its frame, span and length.
 // c is the tapped point in the star's frame; the bipole runs east to west.
 // view: the direction to the eye in the star's frame; the arcade then faces the eye.
-export function makeSite(c, view = null) {
+// sz: the site's scale; a tap at a far view makes a larger flare, so it reads there.
+export function makeSite(c, view = null, sz = 1) {
   // Loops lie across e; with e square to the eye, they stand side-on at the limb.
   let e = view ? cross(view, c) : cross([0, 1, 0], c);
   if (Math.hypot(e[0], e[1], e[2]) < 0.05) e = cross([0, 1, 0], c);
   if (Math.hypot(e[0], e[1], e[2]) < 1e-3) e = [1, 0, 0];
   e = norm(e);
-  // A tap's flare is large, so its arcade reads at the wide view: up to about 85 Mm tall.
+  // A tap's flare is large, so its arcade reads at the wide view: up to about 85 Mm tall at sz 1.
   // Its rope turns nearly square to the eye too, so it lifts as an arch, not as lines.
-  return { c, e, f: cross(c, e), span: [20, 110], len: 140, hk: 1, lastFlare: -1e9, site: true, ropeTurn: view ? 1.35 : ROPE_TURN };
+  return { c, e, f: cross(c, e), span: [20 * sz, 110 * sz], len: 140 * sz, sz, hk: 1, lastFlare: -1e9, site: true, ropeTurn: view ? 1.35 : ROPE_TURN };
 }
 // The flare's pace: slower on every star, and slower still on a large one.
 // The sun runs at 0.75; a supergiant takes about four times as long.
@@ -852,7 +857,7 @@ export function stepFlares(sun, dt) {
 export function flareView(fl, star) {
   const B = STARS[star], C = flareCurve, rg = fl.rg, t = fl.t;
   const h0 = rg.span[1] * 0.42;
-  const hr = C.ropeH(t, h0);
+  const hr = C.ropeH(t, h0, rg.sz || 1);
   return {
     c: rg.c,
     bubble: [0.75 * hr, 0.6 * hr + 14, B.bubble * sstep(0.2, 0.9, t) * Math.exp(-t / 4) * fl.k],

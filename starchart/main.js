@@ -918,7 +918,8 @@ function flareNear(x, y) {
   if (t && d < reach()) { if (prom) eruptAt(t); else flareAt(t); return; }
   const s = diskAt(x, y);
   // The eye's direction in the star's frame: M's third row.
-  if (s) flareAt(makeSite(s, [M[2][0], M[2][1], M[2][2]]));
+  // From the wide view out to the full star, the site grows to 2.2 times, so its arcade reads (Tom, 2026-11-25).
+  if (s) flareAt(makeSite(s, [M[2][0], M[2][1], M[2][2]], 1 + 1.2 * clamp(cam.z - 1)));
 }
 
 /* ---------- hover: the cursor reads the region under it ---------- */
