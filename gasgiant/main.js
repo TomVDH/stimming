@@ -69,6 +69,8 @@ const depthOf = alt => (ALT_TOP - alt) / (ALT_TOP - ALT_DEEP);
 const altOf = d => ALT_TOP - d * (ALT_TOP - ALT_DEEP);
 
 /* ---------- dev tuning ---------- */
+// The far view's bake state (see bakeStrips); Dev changes start a new bake.
+const BK = { N: 1280, tex: null, texD: null, dummy: null, fb: null, ok: false, alt: 0, near: 0, gen: 0, done: -1, at: -1e9, job: null };
 // ?dev shows the Dev sheet: jump to a layer, render sharper, tune the light and the window.
 const TUNE_DEF = {
   cabin: 'on', devPitch: 0, devYaw: 0,
@@ -81,6 +83,8 @@ const TUNE_DEF = {
   // Each window effect: by depth, off, or full.
   fxFrost: 'auto', fxEntry: 'auto', fxWipe: 'auto', fxIce: 'auto', fxWet: 'auto', fxFog: 'auto', fxHeat: 'auto', fxNear: 'auto',
   // Window timings, in seconds or as rates.
+  // The far view bakes from this many km out; 0 marches every ray in full.
+  bake: 25,
   tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
 // An effect's level: its depth value, none, or full.
@@ -93,6 +97,7 @@ const tune = (id, v) => {
   TUNE[id] = v;
   if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
   if (RESIZE.has(id) && P) resize(true);
+  BK.gen++;
   touch();
 };
 const cabinOff = () => QS.has('out') || TUNE.cabin === 'off';
@@ -117,6 +122,7 @@ const DEV = [
   choice('Render', 'pix', 'Pixels', [['auto', 'Auto'], ['native', 'Native']]),
   choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
   choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
+  slider('Render', 'bake', 'Bake past, km (0 off)', 0, 200, 5),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
   slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
   slider('Exposure', 'expo', 'Exposure', 0.25, 4, 0.01),
@@ -191,6 +197,60 @@ void main() { o = mix(texture(uPrev, vUv), texture(uCur, vUv - uJit), uK); }`;
 // Eight sub-pixel shifts in the march's own pixels, Halton 2 and 3.
 const halton = (i, b) => { let f = 1, r = 0; for (; i > 0; i = Math.floor(i / b)) { f /= b; r += f * (i % b); } return r; };
 const JIT = Array.from({ length: 8 }, (_, i) => [halton(i + 1, 2) - 0.5, halton(i + 1, 3) - 0.5]);
+// The far view's bake: a cube map round the eye, marched from the near reach out.
+// It builds in strips over a few frames once the eye hangs still, and again when the eye moves.
+// Each strip averages a few jittered passes, so the bake holds no grain.
+const BK_STRIP = 160, BK_PASS = 3, BK_DRAWS = 6;
+// Cube faces as GL samples them: the major axis, then the s and t axes.
+const FACES = [
+  [[1, 0, 0], [0, 0, -1], [0, -1, 0]], [[-1, 0, 0], [0, 0, 1], [0, -1, 0]],
+  [[0, 1, 0], [1, 0, 0], [0, 0, 1]], [[0, -1, 0], [1, 0, 0], [0, 0, -1]],
+  [[0, 0, 1], [1, 0, 0], [0, -1, 0]], [[0, 0, -1], [-1, 0, 0], [0, -1, 0]],
+];
+function cubeTex(n, fmt) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, t);
+  gl.texStorage2D(gl.TEXTURE_CUBE_MAP, 1, fmt, n, n);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_CUBE_MAP, k, v);
+  return t;
+}
+// Runs a few strips of the bake with the march program M, its uniforms already set for this frame.
+function bakeStrips(M) {
+  const u = M.u, j = BK.job, N = BK.N, strips = Math.ceil(N / BK_STRIP);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, BK.fb);
+  gl.viewport(0, 0, N, N);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+  gl.blendColor(0, 0, 0, 1 / BK_PASS);
+  // The bake must not read itself.
+  for (const unit of [6, 7]) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_CUBE_MAP, BK.dummy); }
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  gl.uniform1f(u.uMode, 2);
+  gl.uniform1f(u.uNear, BK.near);
+  // The twisters stay live; the bake holds none.
+  gl.uniform1f(u.uTwLo, 0);
+  gl.uniform1f(u.uTwHi, 0);
+  gl.uniform4fv(u.uFlash, new Float32Array(16));
+  gl.uniform1f(u.uSteps, Math.min(400, Math.round(Number(u._steps || 200) * 1.5)));
+  for (let d = 0; d < BK_DRAWS && j.f < 6; d++) {
+    const [ma, sa, ta] = FACES[j.f];
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.tex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.texD, 0);
+    gl.scissor(0, j.k * BK_STRIP, N, BK_STRIP);
+    if (j.p === 0) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+    gl.uniform3fv(u.uFwd, ma); gl.uniform3fv(u.uRight, sa); gl.uniform3fv(u.uUp, ta);
+    const js = JIT[(j.p * 3 + 1) % 8];
+    gl.uniform2f(u.uJit, js[0] / N, js[1] / N);
+    gl.uniform1f(u.uSeed, j.p * 23 + j.k * 7 + j.f * 3);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (++j.p >= BK_PASS) { j.p = 0; if (++j.k >= strips) { j.k = 0; j.f++; } }
+  }
+  gl.disable(gl.BLEND);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (j.f >= 6) { BK.job = null; BK.ok = true; BK.done = BK.gen; }
+}
 // The last frame's view, for how much new march to take.
 const lastView = { fwd: [0, 0, -1], alt: 0, fresh: true };
 const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4), twC = new Float32Array(TW_MAX * 4);
@@ -451,7 +511,7 @@ function step(dt) {
     snd.thunder(d, hd.level, clamp(hd.pos[0] / Math.max(d, 1), -1, 1));
   }
   snd.update(dt, Math.abs(S.v), depthOf(S.alt), S.diving);
-  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0 || S.crushDev >= 0 || S.entryDev > 0
+  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0 || S.crushDev >= 0 || S.entryDev > 0 || !!BK.job
     || Math.abs(S.thx - S.hx) + Math.abs(S.thy - S.hy) > 0.002 || S.lean !== S.leanT;
 }
 
@@ -539,7 +599,25 @@ function render(dt) {
   const fk = Math.min(1, 2.2 / gainAt(S.lum)) * TUNE.flash;
   for (let i = 3; i < 16; i += 4) flash[i] *= fk;
   gl.uniform4fv(u.uFlash, flash);
+  // The bake: start one when the eye hangs still and the old one no longer fits; stop it when the eye moves.
+  const settled = !S.diving && Math.abs(S.v) < 0.05 && S.slideTo == null;
+  if (TUNE.bake > 0 && !BK.tex) { BK.tex = cubeTex(BK.N, gl.RGBA16F); BK.texD = cubeTex(BK.N, gl.R16F); BK.dummy = cubeTex(1, gl.RGBA16F); BK.fb = gl.createFramebuffer(); }
+  if (BK.job && (!settled || TUNE.bake <= 0)) { BK.job = null; BK.ok = false; }
+  if (TUNE.bake > 0 && settled && !BK.job && (!BK.ok || Math.abs(S.alt - BK.alt) > 0.1 || BK.done !== BK.gen || BK.near !== TUNE.bake)) {
+    BK.job = { f: 0, k: 0, p: 0 }; BK.ok = false; BK.alt = S.alt; BK.near = TUNE.bake;
+  }
+  const baked = TUNE.bake > 0 && BK.ok && !BK.job && Math.abs(S.alt - BK.alt) < 0.4;
+  gl.uniform1f(u.uMode, baked ? 1 : 0);
+  gl.uniform1f(u.uNear, BK.near);
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, baked ? BK.tex : BK.dummy || null);
+  gl.uniform1i(u.uFar, 6);
+  gl.activeTexture(gl.TEXTURE7);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, baked ? BK.texD : BK.dummy || null);
+  gl.uniform1i(u.uFarD, 7);
+  M.u._steps = Math.min(400, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt))));
   tri(gl, T.march, vao);
+  if (BK.job) bakeStrips(M);
   // Pass 3b: blend into the last frame. A turn, a fast fall or a flash takes more of the new frame.
   const fwl = Math.hypot(...b.fwd), fw = b.fwd.map(x => x / fwl);
   const dA = Math.acos(Math.min(1, fw[0] * lastView.fwd[0] + fw[1] * lastView.fwd[1] + fw[2] * lastView.fwd[2]));

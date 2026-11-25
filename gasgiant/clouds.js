@@ -100,7 +100,9 @@ const MARCH_SRC = /* glsl */`#version 300 es
 precision highp float;
 precision highp sampler3D;
 in vec2 vUv;
-out vec4 o;
+layout(location = 0) out vec4 o;
+// The far view's first cloud depth, for the bake.
+layout(location = 1) out vec4 oD;
 uniform sampler2D uMap, uLut;
 uniform sampler3D uVol;
 // The top deck's baked swirls: SWIRL_FS.
@@ -111,6 +113,10 @@ uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
 uniform vec2 uJit;
 // The twisters this pass draws, by index: from uTwLo up to uTwHi.
 uniform float uTwLo, uTwHi;
+// uMode 0 marches the whole ray. 1 marches to uNear and reads the baked far view past it.
+// 2 bakes the far view: it marches from uNear on.
+uniform float uMode, uNear;
+uniform samplerCube uFar, uFarD;
 uniform vec4 uFlash[4];
 // Dev tuning: multiple scatter, ambient, bounce, haze reach.
 uniform vec4 uTune;
@@ -666,6 +672,16 @@ float lightOD(vec3 p, vec3 ld, float lod) {
 // @seg upper
 // The upper void's twisters: baked walls, lit live (twisters.js).
 ${TW_MARCH}
+// A twister layer over the baked far view: the haze in front fades it, and behind the bake's
+// first cloud only what shows through counts. fd is that cloud's depth.
+vec4 twFar(vec4 f, float fd, vec4 L, float tL) {
+  if (tL <= 0.0 || L.a < 1e-3) return f;
+  // The glow of the lit haze in front counts as haze too, so the fade runs faster than the gas alone.
+  float th = exp(-max(tL - uNear, 0.0) * 2.5 / (690.0 * uTune.w));
+  // A twister that enters a cloud fades into it over a few km.
+  float k = th * L.a * mix(1.0, 1.0 - f.a, smoothstep(fd - 4.0, fd + 4.0, tL));
+  return vec4(mix(f.rgb, L.rgb / L.a, k), mix(f.a, 1.0, k));
+}
 // @end
 void main() {
   vec3 ro = uCam;
@@ -685,7 +701,20 @@ void main() {
   // A ray that the window cuts ends in fog; one that leaves through the top sees the sky.
   bool winEnd = inWin && uWin < t1;
   if (inWin) t1 = min(t1, uWin);
+  float t0a = t0;
+  bool nearOnly = uMode > 0.5 && uMode < 1.5;
+  // @seg upper
+  // The twisters stay live in every mode but the bake, to the ray's full length.
+  float twT = -1.0, twT2 = -1.0;
+  vec4 twC = vec4(0.0), twC2 = vec4(0.0);
+  if (t1 > t0) twC = twisters(ro, rd, t0, t1, twT, twC2, twT2);
+  // @end
+  if (uMode > 1.5) t0 = max(t0, uNear);
+  if (nearOnly && t1 > uNear) { t1 = uNear; winEnd = false; }
+  // The window fog, the deck's far haze and the aerial perspective belong to the far view.
+  bool tail = !nearOnly;
   vec4 res = vec4(0.0);
+  float hitD = 1e4;
   if (t1 > t0) {
     float mu = dot(rd, SUN);
     float ph = clPhase(mu);
@@ -694,9 +723,6 @@ void main() {
     vec3 col = vec3(0.0);
     float T = 1.0, tHit = -1.0;
     // @seg upper
-    float twT, twT2;
-    vec4 twC2;
-    vec4 twC = twisters(ro, rd, t0, t1, twT, twC2, twT2);
     // @end
     // sk shrinks the steps after the first hit, so a crisp skin is not stepped over.
     float sk = 1.0;
@@ -860,10 +886,12 @@ void main() {
       t += ds * (dn > 0.003 ? 1.0 : 1.6);
     }
     // @seg upper
-    // Layers past the march's end go on in depth order.
-    if (twT2 > 0.0 && twT2 < twT) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
-    if (twT > 0.0) { col += T * twC.rgb; T *= 1.0 - twC.a; }
-    if (twT2 > 0.0) { col += T * twC2.rgb; T *= 1.0 - twC2.a; }
+    // Layers past the march's end go on in depth order; past the near reach they go over the bake.
+    if (!nearOnly) {
+      if (twT2 > 0.0 && twT2 < twT) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
+      if (twT > 0.0) { col += T * twC.rgb; T *= 1.0 - twC.a; twT = -1.0; }
+      if (twT2 > 0.0) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
+    }
     // @end
     // Inside the decks, the medium past the window is fog of the same light.
     if (winEnd && t >= t1 - 0.01 && T > 0.02) {
@@ -876,7 +904,7 @@ void main() {
     vec3 oc = ro - PC;
     float bq = dot(oc, rd);
     float hMin = (bq < 0.0 ? length(oc - rd * bq) : length(oc)) - R;
-    if (!inWin && T > 0.02 && hMin < 22.0 && ((hB.x < hB.y && hB.x > 0.0) || t < t1 - 1.0)) {
+    if (tail && !inWin && T > 0.02 && hMin < 22.0 && ((hB.x < hB.y && hB.x > 0.0) || t < t1 - 1.0)) {
       if (tHit < 0.0) tHit = t1;
       col += T * vec3(0.34, 0.58, 0.6) * 0.62;
       T = 0.0;
@@ -884,16 +912,29 @@ void main() {
     float al = 1.0 - T;
     // Aerial perspective over the deck: far bands fade into the limb's teal, brightest toward the sun.
     // The colour matches the sky's limb haze in sky.js, so the far deck melts into the horizon.
-    if (!inWin && tHit > 0.0) {
-      float hz = 1.0 - exp(-(tHit - t0) / 1100.0);
+    if (tail && !inWin && tHit > 0.0) {
+      float hz = 1.0 - exp(-(tHit - t0a) / 1100.0);
       vec3 hzC = vec3(0.38, 0.66, 0.68) * 0.5 * (0.7 + 0.5 * min(clPhase(dot(rd, SUN)), 3.0));
       col = mix(col, hzC * al, hz * 0.85);
     }
     res = vec4(col, al);
+    if (tHit > 0.0) hitD = tHit;
     // ?qa view 6: red the cover, green a hit, blue what passes.
     if (uDbg > 5.5 && uDbg < 6.5) res = vec4(al * 0.3, tHit > 0.0 ? 0.3 : 0.0, T * 0.3, 1.0);
   }
+  // Past the near reach, the baked far view.
+  if (nearOnly) {
+    vec4 far = texture(uFar, rd);
+    // @seg upper
+    // Twisters past the near reach go over the bake, the farther first.
+    float fd = texture(uFarD, rd).r;
+    far = twFar(far, fd, twC2, twT2);
+    far = twFar(far, fd, twC, twT);
+    // @end
+    res = vec4(res.rgb + (1.0 - res.a) * far.rgb, res.a + (1.0 - res.a) * far.a);
+  }
   o = res;
+  oD = vec4(hitD, 0.0, 0.0, 1.0);
 }`;
 
 // The march in four zone programs, so each links fast and the others link in the background.

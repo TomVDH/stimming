@@ -280,7 +280,8 @@ function seeded(n) {
     spin: 0.08 + 0.14 * rnd(),
   }));
 }
-const SET = [...NEAR, ...seeded(TW_MAX - NEAR.length)];
+const SET = [...NEAR, ...seeded(TW_MAX - NEAR.length)].sort((a, b) => a.d - b.d);
+
 // The foot sinks 1.5 km into the floor; the top reaches the ceiling.
 const FLO = -41.5, HT = 42.5, SH = 24;
 // The shape in JS, as in TW_SHAPE: the bend, the radius.
