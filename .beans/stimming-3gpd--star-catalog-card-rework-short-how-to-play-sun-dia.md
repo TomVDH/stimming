@@ -17,5 +17,7 @@ Tom, 2026-11-24: the hint / controls menu copy is unwieldy; rework the Sun compa
 - [x] i shows the card in any view (overlaps stimming-ew7y's item); a hint to press i again
 - [x] Second i opens the article panel (article.js): text, source link, a photo slot; i, Escape or × shuts it
 - [x] Every object's text, facts checked (articles.js): 35 texts, 45 to 85 words, drafted from each article, checked for copied runs (none over four words) and reviewed; 3C 273's black hole mass and Stephenson 2-18's radius hedged to match the card
-- [ ] Photos: Tom's yes on the download, licences and size; credits on the panel and in CREDITS.md
+- [x] Photos (Tom, 2026-11-24: "dithered images from wikipedia as well as the toy"): 31 Wikimedia photos, each credited under it, in CREDITS.md and on the credits page; S5-HVS1, Beta Lyrae, the Thorne-Zytkow object and Vega's outside photo have none
+- [x] Every object's full article in plain English after Simple English Wikipedia, in our own words (35)
+- [ ] A toy still for every object (10 of 35 so far)
 - [ ] Doc lines; Tom looks

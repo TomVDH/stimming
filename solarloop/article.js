@@ -138,7 +138,7 @@ export function makeArticle(o) {
     const shut = h('button', 'a-hint');
     shut.type = 'button';
     shut.setAttribute('aria-label', 'Close the article');
-    shut.append(h('kbd', null, 'i'), 'close');
+    shut.append(h('kbd', null, 'I'), 'close');
     shut.addEventListener('click', close);
     box.append(shut);
     lines.push(shut);

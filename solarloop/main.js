@@ -76,6 +76,12 @@ function clockOf(key) {
 // id, bar label. Old stored speeds map to the sped-up pick.
 const RATES = [['real', 'Real time'], ['fit', 'Sped up']];
 const turn = { pick: store.get('rate') === 'real' ? 'real' : 'fit', lr: 0, vr: 0, of: '' };
+// Activity in words (Tom, 2026-11-24): each step and the strength it sets, 0 to 100.
+const ACT_STEPS = [['quiet', 'Quiet', 25], ['active', 'Active', 60], ['stormy', 'Stormy', 95]];
+// The nearest step to a stored strength.
+const actStep = a => ACT_STEPS.reduce((b, x) => Math.abs(x[2] - a) < Math.abs(b[2] - a) ? x : b)[0];
+// Settings > Motion: Calm slows the drift and draws it at half the frame rate.
+const calmMotion = () => gv('motion', 'lively') === 'calm';
 // The turn button: a circular arrow, then the rate in words (Tom, 2026-11-24).
 const rateText = () => RATES.find(r => r[0] === turn.pick)[1];
 const TURN_ICON = '<svg class="sl-turn" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 3.8v3.4h-3.4"/></svg>';
@@ -567,7 +573,23 @@ const ui = initPage({ id: ID, bar: {
     { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() },
     { verb: 'info', label: 'Info', key: 'I', onPress: () => infoPress() },
   ],
-  settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
+  // Settings in three groups (Tom, 2026-11-24): the star, the picture, the sound.
+  settings: [
+    // Activity in words: each step sets the loops, spots and flares' strength.
+    { type: 'choice', id: 'activityStep', group: 'Star', label: 'Activity', value: actStep(st.activity),
+      options: ACT_STEPS.map(([value, label]) => ({ value, label })),
+      onPick: v => { st.activity = ACT_STEPS.find(a => a[0] === v)[2]; store.set('activity', st.activity); poke(); } },
+    // The volumes' size: a quarter, half or the full frame (Tom, 2026-11-24).
+    { type: 'choice', id: 'volDetail', group: 'Picture', label: 'Volume detail', hint: 'The haze, corona and cloud volumes: a quarter, half or the full frame size.', value: 'std', persist: true,
+      options: [{ value: 'low', label: 'Low' }, { value: 'std', label: 'Standard' }, { value: 'high', label: 'High' }], onPick: () => resize(true) },
+    // Calm slows the drift and halves its frame rate (Tom, 2026-11-24).
+    { type: 'choice', id: 'motion', group: 'Picture', label: 'Motion', hint: 'Calm slows the surface, loops and prominences, and draws the drift at 15 frames a second.', value: 'lively', persist: true,
+      options: [{ value: 'lively', label: 'Lively' }, { value: 'calm', label: 'Calm' }], onPick: () => poke() },
+    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Choir', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'slider', id: 'sndHumLvl', group: 'Sound', label: 'Choir level', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() },
+    { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'slider', id: 'sndRumbleLvl', group: 'Sound', label: 'Rumble level', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() },
+  ],
   quality: true,
   // Tuning for the people who build the toy; the Dev button always shows here.
   dev: [
@@ -580,9 +602,8 @@ const ui = initPage({ id: ID, bar: {
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
-    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
-    { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
-    ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
+    // The choir and rumble switches and levels live in Settings (Tom, 2026-11-24).
+    ...[['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
     ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
@@ -677,12 +698,12 @@ function arrive() {
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
 // Our Sun stands beside the object at their true ratio; the Sun's own card has none.
-function showCard(hint = false) {
+function showCard(again = false) {
   cardStar = st.star;
   // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
   const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
-  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, hint);
+  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, again);
   showClock();
 }
 // A new card style plays at once when the view rests on the full star.
@@ -731,11 +752,13 @@ function resize(force = false) {
   cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
   const dpr = D.dpr(cssW, cssH);
   const c = ui.cover?.() || { top: 0, bottom: 0 };
-  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung].map(v => Math.round(v * 100)).join();
+  // Settings > Volume detail sets the volumes' size; a slow machine still steps it down one more.
+  const shift = Math.min(3, ({ low: 2, std: 1, high: 0 }[gv('volDetail', 'std')] ?? 1) + (D.rung >= 1 ? 1 : 0));
+  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung, shift].map(v => Math.round(v * 100)).join();
   if (!force && key === sizeKey) return;
   sizeKey = key;
   view.W = Math.round(cssW * dpr); view.H = Math.round(cssH * dpr);
-  ren.resize(view.W, view.H, D.rung >= 1 ? 2 : 1);
+  ren.resize(view.W, view.H, shift);
   fitView(cssW, cssH, c.top || 0, c.bottom || 0);
   draw();
 }
@@ -1205,7 +1228,7 @@ function frame(now) {
   try {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
-    st.time += dt * drifting;
+    st.time += dt * drifting * (calmMotion() ? 0.4 : 1);
     const turning = stepTurn(dt);
     clock.tick(shown, clockRead());
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
@@ -1256,7 +1279,7 @@ function frame(now) {
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
-    if (again) schedule(lively ? 0 : t0 + 33 - performance.now()); else rest();
+    if (again) schedule(lively ? 0 : t0 + (calmMotion() ? 66 : 33) - performance.now()); else rest();
   }
 }
 function rest() {
