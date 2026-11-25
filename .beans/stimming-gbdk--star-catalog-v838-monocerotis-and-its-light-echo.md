@@ -12,8 +12,8 @@ parent: stimming-e35i
 Tom picked it on 2026-11-25 (the impressive one). A red supergiant after a merger; pulled back, the 2002 flash's light echo grows through warped dust shells (runaway kind 7).
 
 - [x] v838Echo, entry and the id in every table
-- [x] Full 48-step 3D volumetric raymarch with Beer-Lambert absorption and baked radial self-shadowing (NBAKE)
+- [x] Rebuilt on 3C 273 QBAKE craft + Hubble v838.webp: 192³ swept Worley-billow volume (`NBAKE`) with two-stage vortex folds, dark cavities, one-step baked inward self-shading, 64-step front-to-back `jq` march, Hubble silver-taupe/copper-rust echo palette, and Monoceros field stars
 - [x] Docs
 - [ ] Tom's live look
 
-Baked (Tom, 2026-11-25): the dust is a 128³ volume baked once on first show (NBAKE); `v838Echo` marches it front to back in 48 steps with light-echo delay `r - z`, K3-style radial self-shadowing, and foreground dust occlusion.
+Baked (Tom, 2026-11-25): 192³ (`NB_N`, matching `bakeT`'s 7.1M voxel fidelity) baked once on first show (`NBAKE`).

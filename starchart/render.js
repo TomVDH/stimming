@@ -1989,8 +1989,8 @@ function noiseVolume(n) {
 
 /* ---------- the nebulae's dust, baked once on first use ---------- */
 // 0 Eta Carinae, 1 V838 Monocerotis, 2 Crab, 3 Ring, 4 Gaia BH1 dust.
-// A cube round the star, 2.8 wide (3.0 for the Ring); the march samples it.
-const NB_N = 128;
+// 192³ matches bakeT's 7.1M voxel fidelity; baked lazily on first show.
+const NB_N = 192;
 const NBAKE = `${HEAD}
 precision highp sampler3D;
 uniform sampler3D uNoise3;
@@ -2004,20 +2004,13 @@ float nbHn(vec3 p) {
   f = f * f * (3.0 - 2.0 * f);
   return texture(uNoise3, (i + f + 0.5) / 64.0).r;
 }
-// Coarse dust density for V838 radial self-shadow taps.
-float v838Coarse(vec3 p) {
-  float r = length(p);
-  float sh = 0.5 + 0.5 * sin(r * 26.0 + 3.2 * fbm(p * 2.6 + 2.0));
-  float cav = smoothstep(0.28, 0.56, fbm(p * 1.9 + vec3(3.1, -2.4, 1.7)));
-  return pow(sh, 2.5) * (0.15 + 0.85 * cav) * smoothstep(1.36, 0.52, r) * smoothstep(0.03, 0.14, r);
-}
-// Hash for 3D Worley cellular cavities in Rayleigh-Taylor filaments.
+// Hash for 3D Worley cellular cavities in nebula dust and filaments.
 vec3 nbHash3(vec3 p) {
   p = fract(p * vec3(0.1031, 0.1030, 0.0973));
   p += dot(p, p.yxz + 33.33);
   return fract((p.xxy + p.yxx) * p.zyx);
 }
-// Returns (F1, F2 - F1): dark hollow cells and lacy filament walls.
+// Returns (F1, F2 - F1): Worley billows and lacy cell walls.
 vec2 nbWorley(vec3 x) {
   vec3 n = floor(x), f = fract(x);
   float d1 = 8.0, d2 = 8.0;
@@ -2031,6 +2024,30 @@ vec2 nbWorley(vec3 x) {
         else if (d < d2) { d2 = d; }
       }
   return vec2(sqrt(d1), sqrt(d2) - sqrt(d1));
+}
+// V838 Monocerotis dust cloudscape: swept Worley billows, combed vortices and dark cavities.
+float v838Dust(vec3 w, out float streakOut, out float mottleOut) {
+  float r3 = length(w);
+  streakOut = 0.5; mottleOut = 0.5;
+  if (r3 < 0.02 || r3 > 1.38) return 0.0;
+  // Two-stage domain warp folds the dust into Hubble's painterly swirling vortices.
+  vec3 w1 = w + 0.34 * (vec3(nbHn(w * 1.1 + 1.1), nbHn(w * 1.1 + 7.3), nbHn(w * 1.1 + 13.7)) - 0.5);
+  vec3 wq = w1 + 0.16 * (vec3(nbHn(w1 * 2.8 + 4.2), nbHn(w1 * 2.8 + 9.5), nbHn(w1 * 2.8 + 15.1)) - 0.5);
+  // Worley billows eroded by smooth texture noise, after 3C 273's torusDust.
+  vec2 wc = nbWorley(wq * 3.1);
+  float nMed = nbHn(wq * 4.2 + 2.4);
+  float nFine = nbHn(wq * 9.5 + 8.1);
+  // Silky combed striations along the folded dust curtains.
+  float rq = length(wq);
+  float comb = 0.5 + 0.5 * sin(rq * 11.0 + nMed * 6.5 + 2.4 * nbHn(wq * 2.2 + 5.7));
+  float wVal = 0.68 * wc.x + 0.32 * nMed;
+  float billow = smoothstep(0.72, 0.24, wVal);
+  // Crisp dark cavities carve deep hollow voids between sweeping dust curtains.
+  float cav = smoothstep(0.3, 0.62, nbHn(w * 1.25 + vec3(3.1, -2.4, 1.7)));
+  float env = smoothstep(1.38, 0.58, r3) * smoothstep(0.02, 0.11, r3);
+  streakOut = clamp(comb * 0.6 + nFine * 0.4, 0.0, 1.0);
+  mottleOut = clamp(nMed * 0.6 + (1.0 - wc.x) * 0.4, 0.0, 1.0);
+  return clamp(billow * (0.45 + 0.85 * comb) * (0.45 + 0.9 * nFine) * (0.08 + 0.92 * cav) * env, 0.0, 1.0);
 }
 // Crab Nebula (M1) filament density at w: thresholded Worley walls eroded by smooth noise.
 float crabFil(vec3 w, out float eOut, out vec3 rtOut) {
@@ -2120,21 +2137,13 @@ void main() {
     float dens = wall + 0.7 * sk;
     o = vec4(dens / 3.0, m, clamp(sk / max(dens, 1e-3), 0.0, 1.0), 1.0);
   } else {
-    // V838 Monocerotis: warped billowing dust shells, cavities and radial shadow.
-    float r3 = length(w);
-    vec3 wq = w + 0.32 * (vec3(fbm(w * 2.6 + 1.1), fbm(w * 2.6 + 7.3), fbm(w * 2.6 + 13.7)) - 0.5);
-    float rq = length(wq), ang = atan(wq.y, wq.x);
-    float sw = fbm(wq * 2.2 + 2.0);
-    float shells = 0.5 + 0.5 * sin(rq * 26.0 + sw * 9.5 + 1.6 * sin(ang * 3.0 + rq * 7.0) * smoothstep(0.0, 0.25, length(wq.xy)));
-    float billow = fbm(wq * 5.5 + 4.3);
-    float fine = fbm(wq * 12.5 + 9.1);
-    float cav = smoothstep(0.28, 0.56, fbm(w * 1.9 + vec3(3.1, -2.4, 1.7)));
-    float mask = pow(shells, 3.2) * (0.35 + 1.45 * billow) + 0.32 * pow(billow, 2.2);
-    float env = smoothstep(1.36, 0.52, r3) * smoothstep(0.03, 0.14, r3);
-    float dens = mask * (0.35 + 1.5 * fine * fine) * (0.12 + 0.88 * cav) * env;
-    // Three taps toward the star bake radial self-shadowing into green.
-    float radTau = (v838Coarse(w * 0.72) + v838Coarse(w * 0.48) + v838Coarse(w * 0.24)) * r3 * 0.42;
-    o = vec4(clamp(dens / 2.2, 0.0, 1.0), clamp(radTau / 1.8, 0.0, 1.0), clamp(billow * 0.65 + fine * 0.35, 0.0, 1.0), 1.0);
+    // V838 Monocerotis: swept Worley dust billows, combed curtains and one-step radial self-shade.
+    float stk, mot;
+    float dens = v838Dust(w, stk, mot);
+    // One step inward toward the central star bakes directional self-shading, as QBAKE does.
+    float s2, m2;
+    float sh = v838Dust(w - normalize(w + 1e-4) * 0.085, s2, m2);
+    o = vec4(dens, sh, mot, stk);
   }
 }`;
 
@@ -2571,53 +2580,60 @@ vec3 einCross(vec2 p) {
   }
   return col;
 }
-// V838 Monocerotis's volumetric light echo, after Hubble (2002 to 2006).
-// Marches baked 128³ dust (NBAKE) front to back; the flash lights voxels at tau = r - z.
-// Unlit foreground dust absorbs light behind it; the echo cycles every 150 s.
+// V838 Monocerotis's volumetric light echo, after Hubble (v838.webp, 2002 to 2006).
+// 64-step front-to-back march through baked 192³ Worley dust billows with one-step self-shading
+// and interleaved gradient noise; the 2002 flash sweeps through the swirling dust at tau = r - z.
 vec3 v838Echo(vec2 pR) {
   vec2 q = pR / uBow.z;
+  float pw = max(length(fwidth(q)), 1e-4);
   float d2 = dot(q, q);
-  if (d2 > 1.92) return vec3(0.0);
+  if (d2 > 1.96) return vec3(0.0);
   float vis = smoothstep(1.2, 6.0, uView.w / R);
   if (vis <= 0.0) return vec3(0.0);
   float cyc = fract(uTime / 150.0);
-  float ct = 0.14 + 1.35 * cyc;
-  float fade = smoothstep(0.0, 0.07, cyc) * smoothstep(1.0, 0.82, cyc);
-  float zMax = sqrt(max(1.92 - d2, 0.0));
+  float ct = 0.18 + 1.35 * cyc;
+  float fade = smoothstep(0.0, 0.06, cyc) * smoothstep(1.0, 0.84, cyc);
+  float zMax = sqrt(max(1.96 - d2, 0.0));
   vec3 acc = vec3(0.0);
   float T = 1.0;
-  const int N = 48;
+  const int N = 64;
   float dt = 2.0 * zMax / float(N);
-  float dither = hash(gl_FragCoord.xy) - 0.5;
+  // Interleaved gradient noise breaks step bands cleanly, as in 3C 273.
+  float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
   for (int i = 0; i < N; i++) {
-    // Front to back so foreground dust darkens the glowing echo behind it.
-    float z = zMax - (float(i) + 0.5 + dither) * dt;
+    // Front to back so dark foreground dust folds occlude the lit echo behind them.
+    float z = zMax - (float(i) + 0.5 + jq) * dt;
     vec3 w = uCamM * vec3(q, z);
     if (any(greaterThan(abs(w), vec3(1.38)))) continue;
     vec4 nb = texture(uNeb, w / 2.8 + 0.5);
-    float dens = nb.r * 2.2;
+    float dens = nb.r;
     if (dens < 0.004) continue;
+    float sh = nb.g, mot = nb.b, stk = nb.a;
     float r3 = max(length(w), 0.03);
-    // Exact light-travel delay for a paraboloid echo facing the observer.
+    // Exact paraboloid light-travel delay facing the observer.
     float age = ct - (r3 - z);
-    float pulse = smoothstep(-0.04, 0.05, age) * smoothstep(0.46, 0.1, age);
-    float e = clamp(age / 0.42, 0.0, 1.0);
-    // Multiple brightness peaks echo the 2002 outburst's blue-to-crimson fade.
-    float ripple = 0.72 + 0.38 * exp(-pow((e - 0.14) / 0.09, 2.0)) + 0.32 * exp(-pow((e - 0.48) / 0.11, 2.0));
-    vec3 col = mix(vec3(0.72, 0.86, 1.0), vec3(1.0, 0.76, 0.46), smoothstep(0.0, 0.38, e));
-    col = mix(col, vec3(0.92, 0.24, 0.08), smoothstep(0.32, 1.0, e));
-    col *= mix(vec3(0.88, 0.94, 1.04), vec3(1.08, 0.88, 0.74), nb.b);
-    // K3-style radial self-shadow, powder and forward-scattering phase.
-    float sh = nb.g * 1.8;
-    float k3Sh = exp(-sh * 2.1) + 0.28 * exp(-sh * 0.55);
-    float powder = 0.55 + 0.45 * (1.0 - exp(-dens * 2.5));
-    float phase = 0.55 + 0.95 * pow(0.5 + 0.5 * (z / r3), 2.2);
-    float core = exp(-r3 * 4.5) * 0.45;
-    vec3 emit = (col * pulse * ripple * fade * 1.75 / (0.07 + r3 * r3) + vec3(0.95, 0.28, 0.1) * core) * k3Sh * powder * phase;
+    // Multi-peak 2002 light curve (two sharp outbursts then a warm copper-red tail).
+    float pulse = smoothstep(-0.05, 0.06, age) * smoothstep(0.76, 0.16, age);
+    float e = clamp(age / 0.72, 0.0, 1.0);
+    float peaks = 0.65 + 0.55 * exp(-pow((e - 0.12) / 0.08, 2.0)) + 0.45 * exp(-pow((e - 0.36) / 0.1, 2.0));
+    // Hubble palette: silver-blue leading rim, warm ash-taupe folds, copper-rust interior.
+    vec3 col = mix(vec3(0.76, 0.86, 0.98), vec3(0.92, 0.84, 0.74), smoothstep(0.0, 0.34, e));
+    col = mix(col, vec3(0.94, 0.42, 0.18), smoothstep(0.3, 0.92, e));
+    col = mix(col * 0.72, col * vec3(1.08, 0.98, 0.9), stk);
+    // One-step directional self-shading per billow (QBAKE style) + forward-scattering phase.
+    float billowLit = 0.07 + 1.5 * exp(-2.2 * sh);
+    float phase = 0.55 + 0.95 * pow(0.5 + 0.5 * (z / r3), 2.0);
+    // Warm copper glow from the central red supergiant + cool smoky outer scatter.
+    vec3 starGlow = vec3(0.98, 0.44, 0.18) * (0.42 / (0.08 + r3 * r3 * 4.5));
+    vec3 outerMist = mix(vec3(0.34, 0.38, 0.46), vec3(0.66, 0.56, 0.48), mot) * 0.095;
+    vec3 emit = (col * pulse * peaks * fade * 1.45 / (0.1 + r3 * r3) + starGlow + outerMist) * billowLit * phase;
     acc += T * emit * dens * dt * 1.35;
-    T *= exp(-dens * dt * 2.4);
-    if (T < 0.02) break;
+    T *= exp(-dens * dt * 3.1);
+    if (T < 0.015) break;
   }
+  // Monoceros field stars shining through the dark dust cavities and outer veils.
+  vec2 sky = (uCamM * vec3(q, -1.0)).xy;
+  acc += ophStars(sky * 1.25, pw * 1.25) * 0.52 * T;
   return acc * vis;
 }
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
