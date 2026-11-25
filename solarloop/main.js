@@ -10,6 +10,7 @@ import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, 
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
+import { glyph } from './glyphs.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
@@ -57,7 +58,10 @@ const savedRate = RATES.find(r => r[0] === store.get('rate'));
 // rate eases to its target on a log scale, so a switch never jolts the star.
 const turn = { pick: savedRate ? savedRate[0] : 'x10k', lr: 0, vr: 0 };
 turn.lr = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
-const rateLabel = () => `Turn · ${RATES.find(r => r[0] === turn.pick)[1]}`;
+// The turn button: a circular arrow, then the rate in words (Tom, 2026-11-24).
+const rateText = () => RATES.find(r => r[0] === turn.pick)[1];
+const TURN_ICON = '<svg class="sl-turn" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 3.8v3.4h-3.4"/></svg>';
+const rateLabel = () => `${TURN_ICON}<span>${rateText()}</span>`;
 const sun = makeSun();
 // The star on screen: it trails st.star through the switch dip.
 let shown = st.star;
@@ -505,7 +509,17 @@ const PICKS = [
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
 // The bar's label: the star with its swatch.
-const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
+// The star button: the star's own tray icon in its colour, then its name (Tom, 2026-11-24: no square).
+const starLabel = () => {
+  const p = PICKS.find(x => x.value === st.star);
+  return glyph(p.value).replace('<svg class="sl-glyph"', `<svg class="sl-glyph sl-bar-glyph" style="color: color-mix(in oklch, ${p.colour}, white 25%)"`) + `<span>${p.name}</span>`;
+};
+// i shows the card in any view; again, while the card stands, the article; again, it shuts.
+function infoPress() {
+  if (article.isOpen()) article.close();
+  else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
+  else showCard(true);
+}
 const zoomText = z => z > 2.02 ? `full ${pullText(z)}` : VIEWS[Math.round(z)];
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
@@ -526,7 +540,12 @@ function pickStar(v) {
 }
 const ui = initPage({ id: ID, bar: {
   // The bar holds only the star (Tom, 2026-11-24); Space and L stay as keys.
-  actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }, { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() }],
+  // The bar holds the star, the turn and the info card (Tom, 2026-11-24).
+  actions: [
+    { verb: 'star', label: starLabel(), onPress: () => chart?.toggle() },
+    { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() },
+    { verb: 'info', label: 'Info', key: 'I', onPress: () => infoPress() },
+  ],
   settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
   quality: true,
   // Tuning for the people who build the toy; the Dev button always shows here.
@@ -560,7 +579,7 @@ const ui = initPage({ id: ID, bar: {
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
 const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
-const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), rate: chipLabel(rateLabel()) };
+const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), rate: chipLabel(rateText()) };
 // The turn button steps through the speeds; the star eases to the new one.
 function cycleRate() {
   const i = RATES.findIndex(r => r[0] === turn.pick);
@@ -653,11 +672,8 @@ addEventListener('keydown', e => {
   else if (e.key === ' ') flareNext();
   else if (e.key === 'l' || e.key === 'L') toggleLens();
   // i shows the card in any view; again, while the card stands, the article; again, it shuts.
-  else if (e.key === 'i' || e.key === 'I') {
-    if (article.isOpen()) article.close();
-    else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
-    else showCard(true);
-  } else if (e.key === 'Escape' && article.isOpen()) article.close();
+  else if (e.key === 'i' || e.key === 'I') infoPress();
+  else if (e.key === 'Escape' && article.isOpen()) article.close();
   else if (step) {
     const at = PICKS.findIndex(x => x.value === st.star);
     pickStar(PICKS[(at + step + PICKS.length) % PICKS.length].value);

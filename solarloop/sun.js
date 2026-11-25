@@ -158,7 +158,7 @@ export const STARS = {
     ...FLARE, day: 5.5,
     row: 7, rsun: 1.71, expo: 1, hotW: 1, coolW: 1, loop: 0.45, prom: 0.5, dust: 0, rays: 1,
     hal: [0.75, 0.8, 1], streak: [0.7, 0.8, 1],
-    disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.4, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
+    disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.1, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
     wide: 'none', long: 'none', root: 293.66,
   },
   // Procyon: an F star, twice the sun's width, cream white.
