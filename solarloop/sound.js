@@ -315,11 +315,54 @@ export function makeSound(kit, opt = () => undefined) {
     send(ac, pad, 0.5);
   }
 
+  // The Sun's egg: a ship's distress beacon, three pips and a pause on a radio hiss (Tom, 2026-11-24).
+  // It runs len s from now and pans to Mercury; the returned function ends it early.
+  const BEACON_HZ = 1180, BEACON_EVERY = 2.6, BEACON_LVL = 0.035;
+  function beacon(pan, len) {
+    const ac = kit.live();
+    if (!ac) return null;
+    const t = ac.currentTime + 0.02, end = t + len;
+    const g = voice(ac, pan);
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(BEACON_LVL, t + 2.4);
+    g.gain.setValueAtTime(BEACON_LVL, end - 4);
+    g.gain.linearRampToValueAtTime(0, end);
+    // A narrow radio band: the pips and the hiss share it.
+    const band = filt(ac, 'bandpass', 1500, 2.5);
+    band.connect(g);
+    const hiss = ac.createGain();
+    hiss.gain.value = 0.18;
+    const src = noise(ac, t, len, 1);
+    src.connect(hiss).connect(band);
+    const gate = ac.createGain();
+    gate.gain.value = 0;
+    const tone = osc(ac, 'square', BEACON_HZ, t, len);
+    tone.connect(gate).connect(band);
+    // Three short pips, then a pause.
+    for (let at = t + 0.6; at < end - 1; at += BEACON_EVERY) {
+      for (let k = 0; k < 3; k++) {
+        const a = at + k * 0.24;
+        gate.gain.setValueAtTime(0, a);
+        gate.gain.linearRampToValueAtTime(1, a + 0.01);
+        gate.gain.setValueAtTime(1, a + 0.11);
+        gate.gain.linearRampToValueAtTime(0, a + 0.12);
+      }
+    }
+    send(ac, g, 0.5);
+    return () => {
+      const n = ac.currentTime;
+      g.gain.cancelScheduledValues(n);
+      g.gain.setValueAtTime(g.gain.value, n);
+      g.gain.linearRampToValueAtTime(0, n + 0.4);
+      for (const x of [src, tone]) { try { x.stop(n + 0.45); } catch { /* ended */ } }
+    };
+  }
+
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     spinRate = 0;
     drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, beacon, quiet, get busy() { return pending > 0; } };
 }

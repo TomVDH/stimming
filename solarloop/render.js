@@ -1746,6 +1746,8 @@ uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
 uniform vec4 uSat[2];
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, uFx5;
 uniform vec2 uBodyK;
+// The Sun's egg: the ship's x, y and size in pixels and weight; heading, shield slant, glint.
+uniform vec4 uShip, uShip2;
 uniform vec3 uHal, uStreak;
 // The far lens's sway with the mouse, -1 to 1 on each axis.
 uniform vec2 uSway;
@@ -1966,6 +1968,33 @@ vec3 body(vec3 c, vec2 fc, vec4 b, float kind) {
   vec3 rimC = light * 0.6;
   return c * (1.0 - disc * b.w) + (lit * disc + rimC * rim * 0.8) * b.w;
 }
+float sdBox(vec2 p, vec2 b) { vec2 d = abs(p) - b; return length(max(d, 0.0)) + min(max(d.x, d.y), 0.0); }
+float sdSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }
+// A ship in transit, black on the disk: a slanted sunshield, a spine, modules and a payload block.
+// The shield's rim catches the light round its edge; a glint flashes as it turns.
+vec3 ship(vec3 c, vec2 fc) {
+  if (uShip.w <= 0.0) return c;
+  float s = uShip.z;
+  vec2 e = (fc - uShip.xy) / s;
+  float ca = cos(uShip2.x), sa = sin(uShip2.x);
+  vec2 p = vec2(ca * e.x + sa * e.y, -sa * e.x + ca * e.y);
+  // The shield is a disc seen at a slant: an ellipse, its long axis across the heading.
+  float tl = uShip2.y;
+  float dS = (length(p / vec2(tl, 1.0)) - 1.0) * tl;
+  // The spine trails behind the shield; two modules ride it; the payload is the block at its end.
+  float dP = sdSeg(p, vec2(0.0), vec2(3.4, 0.0)) - 0.045;
+  dP = min(dP, sdBox(p - vec2(1.1, 0.0), vec2(0.12, 0.18)));
+  dP = min(dP, sdBox(p - vec2(1.8, 0.0), vec2(0.08, 0.3)));
+  dP = min(dP, sdBox(p - vec2(3.05, 0.0), vec2(0.42, 0.34)) - 0.03);
+  float d = min(dS, dP);
+  float aa = 1.0 / s;
+  float cov = smoothstep(aa, -aa, d);
+  vec3 gold = grade(vec2(2.5, 0.0)) * vec3(1.25, 1.0, 0.6);
+  float rim = exp(-pow(dS / (1.6 / s + 0.015), 2.0)) * (0.35 + 6.0 * uShip2.z);
+  // The glint throws a short cross of light off the rim.
+  float star4 = uShip2.z * (exp(-abs(e.y) * 40.0) * exp(-abs(e.x) * 1.5) + exp(-abs(e.x) * 40.0) * exp(-abs(e.y) * 1.5));
+  return c * (1.0 - cov * uShip.w) + gold * (rim * 0.5 + star4 * 1.5) * uShip.w;
+}
 void main() {
   // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
   vec2 weave = (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes;
@@ -2048,6 +2077,7 @@ void main() {
   vec2 fc = uv * uRes;
   c = body(c, fc, uBodyA, uBodyK.x);
   c = body(c, fc, uBodyB, uBodyK.y);
+  c = ship(c, fc);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
   // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
@@ -2364,6 +2394,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(f.u.uBodyA, v.bodyA);
     gl.uniform4fv(f.u.uBodyB, v.bodyB);
     gl.uniform2fv(f.u.uBodyK, v.bodyK);
+    if (v.ship) { gl.uniform4fv(f.u.uShip, v.ship); gl.uniform4fv(f.u.uShip2, v.ship2); }
     gl.uniform1f(f.u.uLens, v.lens);
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
