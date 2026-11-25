@@ -12,6 +12,7 @@ import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
+import { makeClock } from './clock.js';
 import { makeCard, CARD_STYLES } from './card.js';
 import { cardLines } from './facts.js';
 mark('libs');
@@ -528,6 +529,7 @@ function cycleRate() {
   turn.pick = RATES[(i + 1) % RATES.length][0];
   store.set('rate', turn.pick);
   setLabel(labels.rate, rateLabel());
+  showClock();
   poke();
 }
 function setLabel(el, html) { if (el && el.innerHTML !== html) el.innerHTML = html; }
@@ -538,8 +540,15 @@ const chart = makeChart({
   get: () => st.star,
   onPick: pickStar,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
-  onOpen: on => { if (on) { rail.hide(); card.clear(); } },
+  onOpen: on => { if (on) { rail.hide(); card.clear(); clock.hide(); } },
 });
+// The time clock: the star's time passing, in days and weeks, for a while (Tom, 2026-11-24).
+const clock = makeClock({
+  frame: stage.closest('.stim-frame') || stage.parentElement,
+  cover: () => ui.cover?.() || { top: 58, bottom: 56 },
+});
+// Reduced motion stops the turn, so the clock has nothing to count.
+function showClock() { if (!calm) clock.show(st.turn, RATES.find(r => r[0] === turn.pick)[2]); }
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
   mid: NOTCH,
@@ -581,6 +590,7 @@ function showCard() {
   const pick = PICKS.find(x => x.value === st.star);
   const sun = { d: horizonR / B.rsun * cssH / view.hh, max: cssH * 0.3, ratio: 1 / B.rsun, colour: pick.colour };
   card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun);
+  showClock();
 }
 // A new card style plays at once when the view rests on the full star.
 function replayCard() {
@@ -1078,6 +1088,7 @@ function frame(now) {
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
     st.time += dt * drifting;
     const turning = stepTurn(dt);
+    clock.tick(st.turn, 10 ** turn.lr);
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
     const swaying = stepSway(dt);

@@ -1,4 +1,4 @@
-// Solar loop: the zoom rail. A dashed left half for the close views, a pip at the full star,
+// Star catalog: the zoom rail. A dashed left half for the close views, a pip at the full star,
 // and a plain right half for the pull-back (Tom, 2026-11-24). No words.
 // It shows while the zoom moves and leaves 1.4 s after it stops.
 // A tap on the line glides the zoom there.
