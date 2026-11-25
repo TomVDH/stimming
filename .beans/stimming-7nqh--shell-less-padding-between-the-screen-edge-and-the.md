@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-25T08:25:34Z
-updated_at: 2026-11-25T08:29:51Z
+updated_at: 2026-11-25T08:49:02Z
 ---
 
 Tom, 2026-11-25: reduce the padding between the viewport edge and the toy viewport. Shared change; Tom's words are the yes.
@@ -19,3 +19,7 @@ Tom, 2026-11-25: reduce the padding between the viewport edge and the toy viewpo
 ## Summary of Changes
 
 Body side gutters in shared/stim.css go from 16px to 8px; safe-area insets stay. No toy overrides it, so all toys get it (Tom: all toys). DESIGN.md gutter token and page line match.
+
+## Follow-up (Tom, 2026-11-25)
+
+Top and bottom margins match the sides: .wrap top 8px, .stim2 .wrap bottom 8px, stim.js fit margin 8px.

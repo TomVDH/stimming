@@ -157,7 +157,7 @@ function fitStage() {
     }
     const s = stage.getBoundingClientRect();
     const below = bar ? bar.getBoundingClientRect().bottom - s.bottom : 0;
-    document.documentElement.style.setProperty('--chrome', `${Math.ceil(s.top + scrollY + below + 20)}px`);
+    document.documentElement.style.setProperty('--chrome', `${Math.ceil(s.top + scrollY + below + 8)}px`);
   };
   const ro = new ResizeObserver(fit);
   [document.querySelector('header'), bar].forEach(el => el && ro.observe(el));
