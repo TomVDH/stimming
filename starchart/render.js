@@ -2069,6 +2069,63 @@ float gaiaDust(vec3 w, out float wispOut, out float colOut) {
   colOut = clamp(nMed * 0.65 + nFine * 0.35, 0.0, 1.0);
   return clamp(billow * (0.22 + 0.78 * band) * (0.12 + 0.88 * rift) * (0.5 + 0.8 * nFine) * env, 0.0, 1.0);
 }
+// Eta Carinae Homunculus dust: two Worley-cauliflower lobes and a streaked equatorial skirt.
+float etaDust(vec3 w, out float mOut, out float skOut) {
+  mOut = 0.5; skOut = 0.0;
+  if (length(w) > 1.38) return 0.0;
+  // Bipolar axis leans 41 degrees from the line of sight, matching Hubble etacar.webp.
+  vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
+  float a = dot(w, AX);
+  vec3 pe = w - a * AX;
+  float rho = length(pe);
+  vec3 lc = w - sign(a) * 0.52 * AX;
+  float la = dot(lc, AX);
+  float sh = length(vec2(la / 0.52, length(lc - la * AX) / 0.45));
+  // Cauliflower Worley billows with crisp dark crevices (3C 273 QBAKE craft).
+  vec3 wq = w + 0.08 * (vec3(nbHn(w * 3.5 + 1.0), nbHn(w * 3.5 + 6.0), nbHn(w * 3.5 + 11.0)) - 0.5);
+  vec2 c1 = nbWorley(wq * 5.8);
+  vec2 c2 = nbWorley(wq * 12.0 + 3.7);
+  float nF = nbHn(wq * 8.5 + 7.2);
+  // Crisp billowing lumps separated by dark ink-like dust veins.
+  float lump = smoothstep(0.76, 0.22, 0.65 * c1.x + 0.35 * c2.x) * smoothstep(0.02, 0.14, c1.y);
+  float cauli = clamp(lump * (0.55 + 0.85 * nF), 0.0, 1.0);
+  // Thick cauliflower lobe shell plus thinner inner dust fill so each lobe reads solid.
+  float wall = exp(-pow((sh - 0.98) / 0.11, 2.0)) * (0.12 + 1.15 * cauli);
+  wall += 0.32 * smoothstep(0.98, 0.48, sh) * cauli;
+  // Equatorial skirt: thin sheet in the waist plane, radially streaked.
+  float sk = exp(-pow(a / 0.042, 2.0)) * smoothstep(1.32, 0.32, rho) * smoothstep(0.08, 0.28, rho);
+  float stk = nbHn(pe / max(rho, 1e-3) * 6.5 + vec3(0.0, 0.0, rho * 1.4));
+  sk *= 0.18 + 1.35 * smoothstep(0.38, 0.76, stk);
+  float dens = clamp(wall + 0.65 * sk, 0.0, 1.0);
+  mOut = clamp(cauli * 0.7 + nF * 0.3, 0.0, 1.0);
+  skOut = clamp(sk / max(dens, 1e-3), 0.0, 1.0);
+  return dens;
+}
+// Ring Nebula (M57) barrel gas: radially combed Worley globules and glowing cavity fill.
+float ringGas(vec3 w, out float shOut, out float fillOut) {
+  shOut = 0.5; fillOut = 0.0;
+  if (length(w) > 1.48) return 0.0;
+  vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
+  vec3 U = normalize(cross(AX, vec3(0.0, 1.0, 0.0))), V = cross(AX, U);
+  vec3 b = vec3(dot(w, U), dot(w, V), dot(w, AX));
+  float rc = length(b.xy), sh = length(vec3(b.xy, b.z * 0.62));
+  shOut = clamp(sh / 1.6, 0.0, 1.0);
+  vec3 nd = b / max(length(b), 1e-3);
+  // Radially stretched Worley filaments and cometary knots, after JWST ring.webp.
+  vec3 rq = nd * 5.2 + vec3(0.0, 0.0, log(sh + 0.08) * 1.1);
+  vec2 wc = nbWorley(rq);
+  float stk = nbHn(nd * 7.5 + vec3(0.0, 0.0, log(sh + 0.06) * 1.4));
+  float m = nbHn(b * 2.2 + 1.0);
+  float glob = smoothstep(0.72, 0.2, 0.62 * wc.x + 0.38 * (1.0 - stk));
+  float lace = smoothstep(0.24, 0.04, wc.y + 0.16 * (m - 0.5));
+  float ring = exp(-pow((rc - 0.74) / 0.12, 2.0)) * exp(-pow(b.z / 0.48, 2.0));
+  float wall = exp(-pow((sh - 0.82) / 0.11, 2.0)) * 0.34;
+  float dens = clamp((ring + wall) * (0.28 + 1.25 * glob + 0.65 * lace) * (0.65 + 0.55 * m), 0.0, 1.0);
+  // Translucent inner cavity clouds of ionized helium and oxygen.
+  float fill = 0.24 * smoothstep(0.84, 0.18, sh) * (0.45 + 0.85 * nbHn(b * 2.8 + 4.3));
+  fillOut = clamp(fill / 0.32, 0.0, 1.0);
+  return dens;
+}
 // Crab Nebula (M1) filament density at w: thresholded Worley walls eroded by smooth noise.
 float crabFil(vec3 w, out float eOut, out vec3 rtOut) {
   vec3 rt = vec3(0.82 * w.x + 0.57 * w.y, -0.57 * w.x + 0.82 * w.y, w.z);
@@ -2107,20 +2164,12 @@ void main() {
     float ion = clamp((e - 0.34) * 0.75 + 0.42 * (patchN - 0.44) + 0.14 * rt.y, 0.0, 1.0);
     o = vec4(fil, syn, ion, sh);
   } else if (uWhich == 3) {
-    // The Ring: a prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
-    vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
-    vec3 U = normalize(cross(AX, vec3(0.0, 1.0, 0.0))), V = cross(AX, U);
-    vec3 b = vec3(dot(w, U), dot(w, V), dot(w, AX));
-    float rc = length(b.xy), sh = length(vec3(b.xy, b.z * 0.62));
-    float ring = exp(-pow((rc - 0.72) / 0.1, 2.0)) * exp(-pow(b.z / 0.45, 2.0));
-    float wall = exp(-pow((sh - 0.8) / 0.1, 2.0)) * 0.3;
-    // Streaks, as in WR 124's wind: fine across the sky, long along each radius.
-    vec3 nd = b / max(length(b), 1e-3);
-    float stk = fbm(nd * 9.0 + vec3(0.0, 0.0, log(sh + 0.05) * 1.4));
-    float m = fbm(b * 2.0 + 1.0);
-    float dens = (ring + wall) * (0.3 + 1.4 * smoothstep(0.3, 0.75, stk)) * (0.6 + 0.6 * m);
-    float fill = 0.16 * smoothstep(0.85, 0.2, sh) * (0.6 + 0.8 * m);
-    o = vec4(dens / 2.8, sh / 2.0, fill / 0.3, 1.0);
+    // Ring Nebula (M57): radially combed Worley globules, cavity fill and one-step inward self-shade.
+    float shR, fill;
+    float dens = ringGas(w, shR, fill);
+    float sh2, f2;
+    float shade = ringGas(w - normalize(w + 1e-4) * 0.085, sh2, f2);
+    o = vec4(dens, shR, fill, shade);
   } else if (uWhich == 4) {
     // Gaia BH1 in Ophiuchus: Worley dust billows, lacy cirrus and one-step self-shade toward the star.
     float wisp, colM;
@@ -2129,28 +2178,12 @@ void main() {
     float sh = gaiaDust(w - normalize(w + 1e-4) * 0.09, w2, c2);
     o = vec4(dens, sh, wisp, colM);
   } else if (uWhich == 0) {
-    // The axis leans about 41 degrees from the line of sight.
-    vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
-    float a = dot(w, AX);
-    vec3 pe = w - a * AX;
-    float rho = length(pe);
-    // Each lobe is a thin shell round a centre 0.52 out on the axis, a little longer than wide.
-    vec3 lc = w - sign(a) * 0.52 * AX;
-    float la = dot(lc, AX);
-    float sh = length(vec2(la / 0.5, length(lc - la * AX) / 0.44));
-    // Fine cells over broad ones: Hubble's mottled, cauliflower dust.
-    // Its finest octave stays above two voxels, so the bake keeps it.
-    float m = 0.5 * fbm(w * 4.0 + 3.0) + 0.35 * fbm(w * 11.0 + 7.0) + 0.15 * fbm(w * 19.0 + 11.0);
-    float mc = pow(smoothstep(0.3, 0.72, m), 1.5);
-    float wall = exp(-pow((sh - 1.0) / 0.1, 2.0)) * (0.1 + 2.3 * mc);
-    // Dust fills each lobe too, thinner than its wall, so the lobes read solid.
-    wall += 0.4 * smoothstep(1.0, 0.55, sh) * mc;
-    // The skirt: a thin sheet in the waist plane, streaked along each radius.
-    float sk = exp(-pow(a / 0.04, 2.0)) * smoothstep(1.3, 0.35, rho) * smoothstep(0.08, 0.3, rho);
-    float stk = fbm(pe / max(rho, 1e-3) * 9.0 + vec3(0.0, 0.0, rho * 1.5));
-    sk *= 0.15 + 1.4 * smoothstep(0.45, 0.75, stk);
-    float dens = wall + 0.7 * sk;
-    o = vec4(dens / 3.0, m, clamp(sk / max(dens, 1e-3), 0.0, 1.0), 1.0);
+    // Eta Carinae Homunculus: Worley-cauliflower lobes, skirt and one-step inward self-shade.
+    float m, sk;
+    float dens = etaDust(w, m, sk);
+    float m2, s2;
+    float shade = etaDust(w - normalize(w + 1e-4) * 0.075, m2, s2);
+    o = vec4(dens, m, sk, shade);
   } else {
     // V838 Monocerotis: swept Worley dust billows, combed curtains and one-step radial self-shade.
     float stk, mot;
@@ -2449,37 +2482,7 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
   return col;
 }
-// Eta Carinae's Homunculus, after Hubble: two dusty lobes and a thin equatorial skirt.
-// uBow.z R is a lobe's far tip; not to scale: the true nebula is about 0.6 light years long.
-// The dust is baked once (NBAKE); the march keeps a transmittance, so the near lobe hides the far one.
-vec3 etaNeb(vec2 pR) {
-  vec2 q = pR / uBow.z;
-  float d = length(q);
-  if (d > 1.7) return vec3(0.0);
-  vec3 acc = vec3(0.0);
-  float T = 1.0;
-  const int N = 48;
-  float dt = 3.2 / float(N);
-  for (int i = 0; i < N; i++) {
-    vec3 w = uCamM * vec3(q, -1.6 + (float(i) + 0.5) * dt);
-    if (any(greaterThan(abs(w), vec3(1.38)))) continue;
-    // The baked dust: density, its mottle and its share of skirt.
-    vec4 nb = texture(uNeb, w / 2.8 + 0.5);
-    float dens = nb.r * 3.0;
-    if (dens < 0.004) continue;
-    // Tan and cream dust, paler in the skirt; the light falls off away from the star.
-    vec3 c = mix(vec3(0.5, 0.24, 0.13), vec3(1.0, 0.7, 0.44), smoothstep(0.3, 0.8, nb.g));
-    c = mix(c, vec3(0.95, 0.85, 0.72), nb.b * 0.6);
-    c *= 0.55 / (0.25 + length(w));
-    acc += T * c * dens * dt * 2.8;
-    T *= exp(-dens * dt * 3.0);
-    if (T < 0.02) break;
-  }
-  // The outer ejecta: faint red knots of gas rich in nitrogen, round the lobes.
-  float oe = exp(-pow((d - 1.3) / 0.22, 2.0)) * 0.16 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
-  return acc + vec3(1.0, 0.3, 0.2) * oe;
-}
-// Dense Ophiuchus star field in world sky coordinates, bent by Gaia BH1.
+// Dense background star field in world sky coordinates, bent by Gaia BH1 or seen through nebula gaps.
 vec3 ophStars(vec2 sky, float pw) {
   vec3 acc = vec3(0.0);
   for (int L = 0; L < 2; L++) {
@@ -2500,6 +2503,49 @@ vec3 ophStars(vec2 sky, float pw) {
     }
   }
   return acc;
+}
+// Eta Carinae's Homunculus, after Hubble (etacar.webp): two Worley-cauliflower lobes and waist glow.
+// 64-step front-to-back march through baked 192³ dust with one-step self-shading and jq dithering.
+vec3 etaNeb(vec2 pR) {
+  vec2 q = pR / uBow.z;
+  float pw = max(length(fwidth(q)), 1e-4);
+  float vis = smoothstep(1.2, 6.0, uView.w / R);
+  float d2 = dot(q, q);
+  if (vis <= 0.0 || d2 > 2.2) return vec3(0.0);
+  float zMax = sqrt(max(2.2 - d2, 0.0));
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  const int N = 64;
+  float dt = 2.0 * zMax / float(N);
+  float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+  vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
+  for (int i = 0; i < N; i++) {
+    // Front to back so the near dusty lobe truly hides the far lobe and waist behind it.
+    float z = zMax - (float(i) + 0.5 + jq) * dt;
+    vec3 w = uCamM * vec3(q, z);
+    if (any(greaterThan(abs(w), vec3(1.38)))) continue;
+    vec4 nb = texture(uNeb, w / 2.8 + 0.5);
+    float dens = nb.r, mot = nb.g, sk = nb.b, sh = nb.a;
+    float r3 = max(length(w), 0.04);
+    // Electric blue-cyan UV light bursting out of Eta Carinae's pinched waist (etacar.webp).
+    float waist = exp(-r3 * 5.2) * exp(-abs(dot(w, AX)) * 4.5);
+    if (dens < 0.004 && waist < 0.004) continue;
+    // One-step directional self-shading: warm lit cauliflower faces beside deep dark crevices.
+    float selfSh = 0.07 + 1.55 * exp(-2.3 * sh);
+    vec3 dustC = mix(vec3(0.38, 0.21, 0.17), vec3(0.96, 0.74, 0.62), smoothstep(0.25, 0.82, mot));
+    dustC = mix(dustC, vec3(0.95, 0.86, 0.78), sk * 0.55);
+    // Scattered blue-white waist light tints the inner throat of both lobes.
+    dustC += vec3(0.32, 0.68, 1.0) * waist * 1.4;
+    vec3 emit = dustC * (0.68 / (0.2 + r3 * r3 * 0.9)) * selfSh * dens + vec3(0.38, 0.72, 1.0) * waist * 1.65;
+    acc += T * emit * dt * 1.65;
+    T *= exp(-dens * dt * 4.4);
+    if (T < 0.015) break;
+  }
+  // Faint red nitrogen outer ejecta knots and Carina stars through deep space.
+  float d = sqrt(d2);
+  float oe = exp(-pow((d - 1.28) / 0.2, 2.0)) * 0.14 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
+  vec2 sky = (uCamM * vec3(q, -1.0)).xy;
+  return (acc + vec3(1.0, 0.28, 0.2) * oe + ophStars(sky * 1.3, pw * 1.3) * 0.35 * T) * vis;
 }
 // Gaia BH1's dormant black hole, orbiting uBow.z R out in Ophiuchus (after NOIRLab gaiabh1.webp).
 // 56-step front-to-back march over baked 192³ Worley dust with one-step self-shading and jq dithering;
@@ -2659,31 +2705,45 @@ vec3 v838Echo(vec2 pR) {
   acc += ophStars(sky * 1.25, pw * 1.25) * 0.52 * T;
   return acc * vis;
 }
-// The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
-// A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
-// Each ray marches its baked gas (NBAKE) in the camera's frame, so a drag turns the barrel.
-// Oxygen glows blue-green inside; hydrogen and nitrogen glow red at the rim.
+// The Ring Nebula (M57), after JWST (ring.webp), uBow.z R out; not to scale.
+// 56-step front-to-back march over baked 192³ Worley globules with one-step self-shading and jq dithering.
 vec3 ringNeb(vec2 pR) {
   vec2 q = pR / uBow.z;
-  float d = length(q);
-  if (d > 1.8) return vec3(0.0);
+  float pw = max(length(fwidth(q)), 1e-4);
+  float vis = smoothstep(1.2, 6.0, uView.w / R);
+  float d2 = dot(q, q);
+  if (vis <= 0.0 || d2 > 2.4) return vec3(0.0);
+  float zMax = sqrt(max(2.4 - d2, 0.0));
   vec3 acc = vec3(0.0);
-  const int N = 40;
-  float dt = 3.2 / float(N);
+  float T = 1.0;
+  const int N = 56;
+  float dt = 2.0 * zMax / float(N);
+  float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
   for (int i = 0; i < N; i++) {
-    vec3 w = uCamM * vec3(q, -1.6 + (float(i) + 0.5) * dt);
+    // Front to back so cometary knots and ring walls occlude the cavity and far rim.
+    float z = zMax - (float(i) + 0.5 + jq) * dt;
+    vec3 w = uCamM * vec3(q, z);
     if (any(greaterThan(abs(w), vec3(1.48)))) continue;
-    // The baked gas (NBAKE): density, the shell's radius and the thin fill.
     vec4 nb = texture(uNeb, w / 3.0 + 0.5);
-    float dens = nb.r * 2.8, sh = nb.g * 2.0, fill = nb.b * 0.3;
-    // Oxygen blue-green inside, yellow, then hydrogen and nitrogen red at the rim.
-    vec3 c = mix(vec3(0.25, 0.85, 0.75), vec3(0.95, 0.85, 0.35), smoothstep(0.55, 0.75, sh));
-    c = mix(c, vec3(1.0, 0.2, 0.16), smoothstep(0.7, 0.88, sh)) * (1.0 + 0.5 * smoothstep(0.7, 0.9, sh));
-    acc += (c * dens + vec3(0.2, 0.75, 0.8) * fill) * dt;
+    float dens = nb.r, sh = nb.g * 1.6, fill = nb.b * 0.32, shade = nb.a;
+    if (dens < 0.004 && fill < 0.004) continue;
+    // One-step directional self-shading: blazing inner faces, deeper coral-red outer knots.
+    float selfSh = 0.14 + 1.35 * exp(-2.1 * shade);
+    // JWST M57 palette: aqua-mint inner rim, creamy ivory-gold ring body, coral-red outer edge.
+    vec3 c = mix(vec3(0.32, 0.88, 0.78), vec3(0.96, 0.92, 0.72), smoothstep(0.54, 0.72, sh));
+    c = mix(c, vec3(0.96, 0.26, 0.24), smoothstep(0.7, 0.9, sh)) * (1.0 + 0.35 * smoothstep(0.7, 0.9, sh));
+    // Deep turquoise-royal-blue ionized helium and oxygen interior fill.
+    vec3 cavC = mix(vec3(0.12, 0.45, 0.82), vec3(0.24, 0.78, 0.76), smoothstep(0.2, 0.72, sh));
+    acc += T * (c * dens * selfSh * 1.45 + cavC * fill * 1.15) * dt;
+    T *= exp(-(dens * 2.2 + fill * 0.35) * dt);
+    if (T < 0.015) break;
   }
-  // The faint outer halo of hydrogen loops, as JWST shows it.
-  float halo = exp(-pow((d - 1.4) / 0.2, 2.0)) * 0.12 * (0.3 + 1.4 * fbm(vec3(q * 5.0, 4.0)));
-  return acc * 0.9 + vec3(1.0, 0.3, 0.25) * halo;
+  // Faint outer concentric hydrogen halo loops and radial rays, as JWST shows.
+  float d = sqrt(d2);
+  float rays = 0.55 + 0.45 * sin(atan(q.y, q.x) * 28.0 + 2.0 * fbm(vec3(q * 3.0, 1.0)));
+  float halo = exp(-pow((d - 1.25) / 0.24, 2.0)) * 0.14 * (0.35 + 1.25 * fbm(vec3(q * 4.5, 4.0))) * rays;
+  vec2 sky = (uCamM * vec3(q, -1.0)).xy;
+  return (acc + vec3(0.92, 0.3, 0.32) * halo + ophStars(sky * 1.3, pw * 1.3) * 0.42 * T) * vis;
 }
 // The Crab Nebula (M1), uBow.z R along its long axis; vast over the pinprick pulsar.
 // 64-step front-to-back march over baked 128³ Worley billows with one-step self-shading,
@@ -2916,20 +2976,28 @@ void main() {
   vec2 uv = vUv + weave;
   vec2 P = uView.xy + (uv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
-  // Heat bends the air above the limb.
+  // Massive-scale, slow, two-layer thermal distortion over the limb and corona (Tom, 2026-11-24).
+  // Both layers ride the star and drift slowly outward along the radius; far out they fade.
   float hr = r - R;
-  float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
-  // Its ripples ride the star, so a zoom never drags the limb through a still pattern.
-  // Two ripple sizes cross-fade with the zoom; a ripple stays near 22 CSS pixels.
-  // Far out the shimmer fades: heat haze has no place at that scale (Tom, 2026-11-24).
-  float lev = log2(22.0 * uDpr * 2.0 * uView.z / uRes.x);
-  float k0 = floor(lev), kw = fract(lev);
-  vec2 s0 = P / exp2(k0), s1 = P / exp2(k0 + 1.0) + 3.1;
-  vec2 w0 = vec2(vn(vec3(s0, uTime * 0.3)), vn(vec3(s0 + 7.7, uTime * 0.3))) - 0.5;
-  vec2 w1 = vec2(vn(vec3(s1, uTime * 0.3)), vn(vec3(s1 + 7.7, uTime * 0.3))) - 0.5;
-  // The blend keeps the ripples' strength through the cross-fade.
-  vec2 wob = (w0 * (1.0 - kw) + w1 * kw) / sqrt((1.0 - kw) * (1.0 - kw) + kw * kw);
-  uv += wob * hz * uMix.w * uFx3.z * (1.0 - uCam.w) / uRes;
+  vec2 rad = P / max(r, 1.0);
+  // Layer 1: huge slow convective swells (~115 CSS px) rolling across the limb and deep corona.
+  float hzL = (0.75 * exp(-abs(hr) / 75.0) + 0.65 * exp(-max(hr, 0.0) / 340.0)) * smoothstep(-160.0, 20.0, hr);
+  float levL = log2(115.0 * uDpr * 2.0 * uView.z / uRes.x);
+  float kL = floor(levL), fL = fract(levL);
+  vec2 pL0 = P / exp2(kL) - rad * uTime * 0.06, pL1 = P / exp2(kL + 1.0) - rad * uTime * 0.04 + 3.1;
+  vec2 wL0 = vec2(vn(vec3(pL0, uTime * 0.055)), vn(vec3(pL0 + 7.7, uTime * 0.055))) - 0.5;
+  vec2 wL1 = vec2(vn(vec3(pL1, uTime * 0.055)), vn(vec3(pL1 + 7.7, uTime * 0.055))) - 0.5;
+  vec2 swell = (wL0 * (1.0 - fL) + wL1 * fL) / sqrt((1.0 - fL) * (1.0 - fL) + fL * fL);
+  // Layer 2: mid-scale slow eddies (~42 CSS px) hugging the blazing limb and inner loops.
+  float hzM = exp(-abs(hr) / 36.0) + 0.35 * exp(-max(hr, 0.0) / 150.0);
+  float levM = log2(42.0 * uDpr * 2.0 * uView.z / uRes.x);
+  float kM = floor(levM), fM = fract(levM);
+  vec2 pM0 = P / exp2(kM) - rad * uTime * 0.14 + 11.3, pM1 = P / exp2(kM + 1.0) - rad * uTime * 0.09 + 14.4;
+  vec2 wM0 = vec2(vn(vec3(pM0, uTime * 0.11)), vn(vec3(pM0 + 5.3, uTime * 0.11))) - 0.5;
+  vec2 wM1 = vec2(vn(vec3(pM1, uTime * 0.11)), vn(vec3(pM1 + 5.3, uTime * 0.11))) - 0.5;
+  vec2 ripple = (wM0 * (1.0 - fM) + wM1 * fM) / sqrt((1.0 - fM) * (1.0 - fM) + fM * fM);
+  vec2 wob = swell * hzL * 1.65 + ripple * hzM * 0.85;
+  uv += wob * uMix.w * uFx3.z * (1.0 - uCam.w) / uRes;
   // The lens splits colour toward the frame's edge.
   vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens) * uFx1.z;
   float kx = kern(gl_FragCoord.xy);

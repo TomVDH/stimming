@@ -15,4 +15,4 @@ Tom picked it on 2026-11-25. A luminous blue variable inside the Homunculus Nebu
 - [x] Docs
 - [ ] Tom's live look
 
-Baked (Tom, 2026-11-25): the dust is a 128³ volume baked once on first show (NBAKE); the march samples it.
+Baked (Tom, 2026-11-25): 192³ Worley-cauliflower lobes (`NBAKE uWhich 0`, 3C 273 craft) with dark crevices, one-step inward self-shading, 64-step front-to-back `jq` march, electric blue-cyan waist glow, streaked skirt, and Carina stars.
