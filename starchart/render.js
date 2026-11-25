@@ -1913,6 +1913,8 @@ uniform vec4 uBow;
 uniform vec3 uBowC;
 // A pulsar's pulse: 1 while a beam crosses the eye, 0 between; below 0 for any other star.
 uniform float uPulse;
+// A magnetar's giant flare: the flash, the fireball's radius in R, its light, the pulsing tail.
+uniform vec4 uQuake;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 // Device pixels per CSS pixel: screen-fixed effects keep their size in CSS pixels.
@@ -2196,6 +2198,22 @@ vec3 runaway(vec2 P) {
   float kn = 0.5 + 0.9 * fbm(vec3(back * 0.15 - uTime * 0.5, q.y * 0.5, 4.0));
   return uBowC * tail * kn;
 }
+// A magnetar's giant flare (SGR 1806-20, 2004): a hard flash, a fireball shell
+// thrown out through the field, and a tail that pulses with the spin.
+vec3 quake(vec2 P, float r) {
+  vec3 hot = vec3(0.78, 0.82, 1.0);
+  float flash = uQuake.x * (0.25 + 1.6 * exp(-r / (8.0 * R)));
+  float rs = uQuake.y * R, w = 0.05 * rs + 0.08 * R;
+  float a = atan(P.y, P.x);
+  // The fireball tears as it goes: knots and gaps, brighter on one side.
+  float n = fbm(vec3(cos(a) * 4.0, sin(a) * 4.0, uQuake.y * 0.6));
+  float clump = 2.2 * n * n * (0.55 + 0.45 * cos(a - 2.6));
+  // A thin shell seen in projection: a bright rim and a faint fill inside.
+  float fill = r < rs ? 0.12 * rs / sqrt(max(rs * rs - r * r, 0.0) + w * rs) : 0.0;
+  float shell = (exp(-pow((r - rs) / w, 2.0)) + fill) * uQuake.z * clump;
+  float tail = uQuake.w * exp(-max(r - R, 0.0) / (3.0 * R));
+  return hot * (flash + shell * 0.8) + vec3(0.7, 0.62, 1.0) * tail;
+}
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
   // A black hole's shadow gives no light; its disc, round the shadow, lights the glass.
@@ -2298,6 +2316,7 @@ void main() {
   // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
   // A lensed far star's scene comes in as the star shrinks to a pip, and draws over it with no seam.
   if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 && uBow.w < 2.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 || uBow.w > 2.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
+  if (uQuake.x + uQuake.z + uQuake.w > 0.0) c += quake(P, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < ${MAX_FLARES}; k++) {
@@ -2779,6 +2798,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(f.u.uBow, v.bow);
     gl.uniform3fv(f.u.uBowC, v.bowC);
     gl.uniform1f(f.u.uPulse, v.pulse);
+    gl.uniform4fv(f.u.uQuake, v.quake);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);

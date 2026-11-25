@@ -9,14 +9,14 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 37 |
-| Picked by Tom, not built | 5 |
+| Built, in the tray | 38 |
+| Picked by Tom, not built | 4 |
 | Asked for by Tom, not built | 1 |
 | Offered, no answer | 18 |
 | Offered, not picked | 12 |
 | Parked | 4 |
 
-## Built (37)
+## Built (38)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
@@ -27,7 +27,7 @@ All in the tray now. A bean marked open waits for Tom's live look.
 | Newborn and failed | T Tauri, Luhman 16, WISE 0855 |
 | Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Thorne–Żytkow object (`ye4c`) |
 | Runaways | S5-HVS1 (`q5aa`) |
-| Dead stars | Sirius B, Pulsar (Vela) |
+| Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`) |
 | Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`) |
 | Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`) |
 
@@ -49,7 +49,6 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 | `404a` | Supernova remnant | The Crab Nebula (2026-11-25) |
 | `wcfv` | Planetary nebula | The Ring Nebula, M57 (2026-11-25) |
 | `br7d` | Cepheid variable | Polaris (2026-11-25) |
-| `j8qg` | Magnetar, SGR 1806-20 and its 2004 giant flare | None; later re-offers met "stars specifically" |
 | `l4n7` | J1407b's giant rings | Build it too, beside Fomalhaut (2026-11-25) |
 
 ## Asked for by Tom, not built

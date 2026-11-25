@@ -34,6 +34,7 @@ export const CHART = {
   betalyr: { kind: 'binary', t: 13300, cls: 'B7 II donor, interacting binary' },
   s5hvs1: { t: null, cls: 'A-type hypervelocity star' },
   siriusb: { kind: 'dwarf', t: 25000, cls: 'DA2 white dwarf' },
+  magnetar: { kind: 'magnetar', t: null, cls: 'magnetar, a soft gamma repeater' },
   neutron: { kind: 'pulsar', t: 700000, cls: 'neutron star' },
   cygx1: { kind: 'hole', t: null, cls: 'stellar black hole' },
   sgra: { kind: 'hole', t: null, cls: 'supermassive black hole' },
@@ -52,6 +53,7 @@ export const CHART = {
 
 const fmtR = (rsun, value) => {
   if (value === 'neutron') return '24 km wide';
+  if (value === 'magnetar') return 'about 20 km wide';
   // A black hole's width is its event horizon's.
   if (value === 'cygx1') return 'horizon 125 km wide';
   if (value === 'sgra') return 'horizon 18 suns wide';
@@ -82,7 +84,7 @@ const GROUPS = [
   ['Giants', ['arcturus', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
   ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur']],
-  ['Dead stars', ['neutron', 'siriusb']],
+  ['Dead stars', ['magnetar', 'neutron', 'siriusb']],
   ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi']],
   ['Far and strange', ['quasi', 'earendel', 'mothra']],
 ];

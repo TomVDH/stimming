@@ -58,6 +58,8 @@ const DRAW = {
   // The smallest bodies draw a few pixels wide, so their marks run heavy.
   dwarf: () => halo(32, 32, 28) + dot(32, 32, 12),
   pulsar: () => line('M16 0 L48 64', 6) + dot(32, 32, 14),
+  // A magnetar: a hot point in twisted field loops.
+  magnetar: () => line('M32 22 C12 -2 -4 34 24 40', 2) + line('M32 42 C52 66 68 30 40 24', 2) + dot(32, 32, 12),
   hole: () => ring(32, 34, 31, 7, 0, 0) + hole(32, 32, 14) + ring(32, 34, 31, 7, 0, 1),
   sstars: () => ring(32, 32, 29, 15, 30, 1) + ring(32, 32, 22, 9, -40, 1) + hole(32, 32, 10) + dot(56, 20, 2.5) + dot(14, 42, 2),
   quasar: () => line('M32 0 V20 M32 44 V64', 2.5) + ring(32, 32, 26, 8, 0, 1) + dot(32, 32, 6),
@@ -72,7 +74,7 @@ export const KIND = {
   wohg64: 'cocoon', tzo: 'core', quasi: 'quasi',
   luhman: 'brown', wise: 'brown', ttauri: 'proto',
   betalyr: 'interacting', vfts352: 'contact', epsaur: 'darkdisc', wr124: 'wind', wr140: 'shells',
-  siriusb: 'dwarf', neutron: 'pulsar',
+  siriusb: 'dwarf', neutron: 'pulsar', magnetar: 'magnetar',
   cygx1: 'hole', powehi: 'hole', sgra: 'sstars', qso: 'quasar', earendel: 'arc', mothra: 'arc',
 };
 

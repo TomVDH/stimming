@@ -72,7 +72,7 @@ const VELA_S = 0.0893;
 function clockOf(key) {
   const B = STARS[key];
   if (key === 'sgra') return { kind: 's2', days: S2_DAYS, fit: S_RATE };
-  if (B.ns) return { kind: 'spin', days: VELA_S / 86400, fit: VELA_S / SPIN_PERIOD };
+  if (B.ns) { const s = B.ns.real ?? VELA_S; return { kind: 'spin', days: s / 86400, fit: s / spinOf(B) }; }
   // A tidally locked pair turns once per orbit.
   const days = B.day || B.shells?.orbit || B.beat?.days || 0;
   if (!days) return null;
@@ -429,7 +429,7 @@ function setRot() {
   const B = STARS[shown];
   let S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.turn / (B.day * 86400)) % 1)) : null;
   // A pulsar in true physics turns whole with its spin, so taps, flares and field ride the crust.
-  if (pulsarTurns(B)) S = axisTurn(SPIN, 2 * Math.PI * st.spin / SPIN_PERIOD);
+  if (pulsarTurns(B)) S = axisTurn(SPIN, 2 * Math.PI * st.spin / spinOf(B));
   M = S ? mul(TP, S) : TP;
   // A binary's orbit tilts toward the eye, so its disc shows its face; the eclipses stay partial.
   if (B.bin?.tilt) {
@@ -439,6 +439,8 @@ function setRot() {
 }
 // True for the pulsar: its whole body turns in M.
 const pulsarTurns = B => !!B.ns;
+// One turn on screen, in s: the Vela pulsar's is slowed; a magnetar's is true.
+function spinOf(B) { return B.ns?.spin ?? SPIN_PERIOD; }
 // The magnetic axis in the star's frame: fixed on the body, which turns in M.
 const magNow = () => magAxis(0);
 // A turn by angle a about the axis u (Rodrigues).
@@ -561,7 +563,7 @@ const PICKS = [
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'], ['rlep', 'R Leporis', 'oklch(0.52 0.2 25)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
-  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
+  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['magnetar', 'SGR 1806-20', 'oklch(0.74 0.14 295)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
   ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'], ['qso', '3C 273', 'oklch(0.86 0.06 260)'],
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
@@ -1094,7 +1096,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2), holeV: new Float32Array(4), holeQ: new Float32Array(4),
-  ring: new Float32Array(4), ring2: new Float32Array(4), ring3: new Float32Array(4), shell: new Float32Array(4), pair: new Float32Array(4), pair2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
+  ring: new Float32Array(4), ring2: new Float32Array(4), ring3: new Float32Array(4), shell: new Float32Array(4), pair: new Float32Array(4), pair2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, quake: new Float32Array(4), flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 // The view on the last frame: motion blur maps each pixel to where it stood then.
@@ -1273,6 +1275,20 @@ function makeFrame() {
     f.nsU.set([...toView(u), 0]);
     f.nsV.set([...toView(v), Math.acos(SPIN[2])]);
   } else { f.ns.fill(0); f.nsU.fill(0); f.nsV.fill(0); }
+  // A magnetar's giant flare, every gap s on its own clock; the first comes 8 s after a pick.
+  const qk = star.quake;
+  if (qk) {
+    if (quakeOf !== shown) { quakeOf = shown; quakeFrom = st.time; }
+    const t = ((st.time - quakeFrom - 8) % qk.gap + qk.gap) % qk.gap;
+    // The flash rises in 0.15 s and dies in under a second, as the 2004 spike did.
+    const flash = t < 0.15 ? t / 0.15 : Math.exp(-(t - 0.15) / 0.35);
+    const ring = Math.exp(-t / 2) * (1 - Math.exp(-t / 0.1));
+    // The tail beats with the spin: the hot spot turns toward the eye and away.
+    const beat = 0.5 + 0.5 * Math.cos(2 * Math.PI * st.spin / spinOf(star));
+    const tail = 0.6 * Math.exp(-t / 30) * beat * beat * clamp((t - 1) / 2);
+    const k = qk.light * (calm ? 0.35 : 1);
+    f.quake.set([flash * k, 1 + 3.5 * (1 - Math.exp(-t / 1.5)), ring * k, tail * k]);
+  } else { f.quake.fill(0); quakeOf = ''; }
   // Every pulsar flash, near or far, keeps under 2.5 flashes a second: fast spins blend to a glow.
   const flashRate = (egg?.kind === 'voice' ? egg.rate : 1) / SPIN_PERIOD;
   f.flashW = star.beam ? 1 - 0.8 * clamp((flashRate - 1.5) / 1) : 1;
@@ -1344,6 +1360,8 @@ function makeFrame() {
   f.shimmer = calm || hole ? 0 : 2.2 * view.W / cssW;
   return f;
 }
+// The magnetar's flare clock: the star it runs for, and when it started.
+let quakeOf = '', quakeFrom = 0;
 // The view the card and the article last stood in.
 let infoView = '';
 function draw() {

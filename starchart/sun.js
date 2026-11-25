@@ -42,7 +42,8 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // loop, prom: loop and prominence light. dust: a clumpy envelope of ejecta.
 // rays: light shaft gain. hal: halation tint. streak: lens streak tint.
 // wide, long: the scale body beside the limb and the one in transit.
-// field, beam: a neutron star's field lines and pulsar beams.
+// field, beam: a neutron star's field lines and pulsar beams. twist: the field's twist, in radians.
+// quake: a magnetar's giant flare: the gap between flares in s, its light.
 // oblate: how much wider the equator is than the poles, seen side-on.
 // grav: the spin axis in the star's frame, and the gravity darkening at its equator.
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
@@ -76,6 +77,19 @@ export const STARS = {
     // A mottled crust with a strong swirl scale, so its turn reads at a glance.
     disk: [0.75, 0.55, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [24, 3, 0, 0.35],
     wide: 'none', long: 'none', root: 440,
+  },
+  // SGR 1806-20: a magnetar, the strongest known magnetic field, about 10^15 gauss.
+  // It turns every 7.56 s, drawn at true speed; no beams sweep the eye.
+  // Its twisted field snaps in starquakes: the giant flare of 27 December 2004.
+  // spin: one turn on screen in s; real: the true spin in s.
+  magnetar: {
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 2.2, twist: 0.9, beam: 0,
+    ns: { u: 0.34, rl: 3, wind: 0, beam: 0, spin: 7.56, real: 7.55592 },
+    quake: { gap: 45, light: 1 },
+    row: 5, rsun: 1.44e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.9,
+    hal: [0.7, 0.6, 1], streak: [0.7, 0.65, 1],
+    disk: [0.85, 0.6, 0.2, 0.3], disk2: [60, 0, 0, 0], tex: [18, 2.5, 0, 0.35],
+    wide: 'none', long: 'none', root: 349.23,
   },
   // WR 124: a Wolf-Rayet star, twelve suns wide, hidden in its own dense wind.
   // The wind's clumps stream out; the nebula M1-67 shows as the view pulls back.
@@ -719,7 +733,9 @@ function fieldStrands(time, B, out, n) {
     const th = [0.95, 0.7, 0.5][shell] + 0.12 * (q(2) - 0.5);
     const ring = add(scale(u, Math.cos(ph)), v, Math.sin(ph));
     const A = norm(add(scale(m, Math.cos(th)), ring, Math.sin(th)));
-    const Bf = norm(add(scale(m, -Math.cos(th)), ring, Math.sin(th)));
+    // A twisted field: each line's far foot turns round the axis.
+    const ringB = B.twist ? add(scale(u, Math.cos(ph + B.twist)), v, Math.sin(ph + B.twist)) : ring;
+    const Bf = norm(add(scale(m, -Math.cos(th)), ringB, Math.sin(th)));
     // A dipole line from colatitude th rises to R over sin squared.
     const h = R * (1 / Math.sin(th) ** 2 - 1);
     const I = B.field * [0.16, 0.11, 0.07][shell] * (0.5 + 0.5 * q(4));
