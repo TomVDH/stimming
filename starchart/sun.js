@@ -263,6 +263,17 @@ export const STARS = {
     disk: [1.85, 1.3, 0, 0.3], disk2: [150, 0.6, 0.3, 0.05], tex: [7, 3, 0, 0.8],
     wide: 'none', long: 'none', root: 130.81,
   },
+  // R Leporis, Hind's Crimson Star: a carbon star about 710 to 910 suns wide.
+  // Soot in its air filters out the blue; it is reddest when dimmest.
+  // It beats every 427 days, its light swinging more than its size.
+  rlep: {
+    ...FLARE, day: 0, ribbon: 1, bubble: 0.12, lump: [0.06, 1.5, 0.8, 0.4],
+    beat: { days: 427, swell: 0.06, light: 0.5 },
+    row: 30, rsun: 800, expo: 1, hotW: 1, coolW: 1.1, loop: 0.15, prom: 0.45, dust: 0.9, rays: 0.7,
+    hal: [1, 0.2, 0.12], streak: [1, 0.35, 0.25],
+    disk: [1.8, 1.4, 0, 0.18], disk2: [140, 0.45, 0.2, 0.05], tex: [6, 2.6, 0, 0.7],
+    wide: 'none', long: 'none', root: 116.54,
+  },
   // VY Canis Majoris: a red hypergiant, 1420 suns wide, in its own dust.
   vycma: {
     ...FLARE, day: 20000, ribbon: 1, bubble: 0.12, lump: [0.08, 1.6, 0.8, 0.4],

@@ -558,7 +558,7 @@ const PICKS = [
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
-  ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
+  ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'], ['rlep', 'R Leporis', 'oklch(0.52 0.2 25)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],

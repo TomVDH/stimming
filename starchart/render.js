@@ -110,6 +110,9 @@ const LUTS = [
   // Powehi: the EHT's ember ring, red to orange gold; the approaching side burns pale gold.
   [['000000', 0], ['0e0301', 0.1], ['3a0c02', 0.26], ['842806', 0.44], ['d0600e', 0.62], ['f8a030', 0.78], ['ffd88a', 0.9], ['fff6e0', 1]],
   [['000000', 0], ['0c0602', 0.12], ['36200a', 0.3], ['8a5a1c', 0.5], ['dca450', 0.68], ['fde2a4', 0.84], ['fffbf0', 1]],
+  // R Leporis: soot filters out the blue; a drop of blood, never white.
+  [['000000', 0], ['0a0001', 0.1], ['2a0105', 0.28], ['60030a', 0.46], ['9c0810', 0.62], ['d01212', 0.76], ['ee3018', 0.88], ['ff5e3c', 1]],
+  [['000000', 0], ['080102', 0.12], ['1e0405', 0.3], ['44090a', 0.5], ['761612', 0.68], ['b0321e', 0.84], ['e0603e', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {

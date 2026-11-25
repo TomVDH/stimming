@@ -68,7 +68,7 @@ const DRAW = {
 export const KIND = {
   sun: 'main', proxima: 'main', epseri: 'main', procyon: 'main', sirius: 'main',
   vega: 'spinner', regulus: 'spinner', zetaoph: 'runaway', xxtri: 'spotted', fomalhaut: 'belt', s5hvs1: 'hyper',
-  arcturus: 'giant', rigel: 'giant', betelgeuse: 'giant', mira: 'tail', vycma: 'giant', st218: 'giant',
+  arcturus: 'giant', rigel: 'giant', betelgeuse: 'giant', mira: 'tail', rlep: 'giant', vycma: 'giant', st218: 'giant',
   wohg64: 'cocoon', tzo: 'core', quasi: 'quasi',
   luhman: 'brown', wise: 'brown', ttauri: 'proto',
   betalyr: 'interacting', vfts352: 'contact', epsaur: 'darkdisc', wr124: 'wind', wr140: 'shells',

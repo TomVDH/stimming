@@ -231,6 +231,10 @@ TAPNORM.mothra = TAPNORM.betalyr;
 VOICES.earendel = VOICES.rigel;
 NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
+// R Leporis sings VY CMa's choir.
+VOICES.rlep = VOICES.vycma;
+NORM.rlep = NORM.vycma;
+TAPNORM.rlep = TAPNORM.vycma;
 // Mira sings Betelgeuse's choir.
 VOICES.mira = VOICES.betelgeuse;
 NORM.mira = NORM.betelgeuse;
@@ -263,9 +267,11 @@ Object.assign(VOICES, {
   powehi: from('sgra', { step: 18, rev: 15, bright: 0.45, det: 16 }),
   // Mira: a red giant that swells and fades on a slow beat. Betelgeuse's pad, a deeper, slower swell.
   mira: from('betelgeuse', { swR: 0.05, swD: 0.38 }),
+  // R Leporis: a crimson carbon star in its soot. VY CMa's pad, darker, on a slow swell.
+  rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];
