@@ -1,6 +1,6 @@
 # Solar loop, now Star Chart (`starchart`)
 
-Status: done as an MVP, 2026-11-23; the cinema pass, the long lens and the stars (below) done the same day; waits on Tom. Bean `stimming-e35i`. Toy doc: `docs/toys/solarloop.md`. Idea 238, group C: "Plasma loops rise off the sun's edge; tap for a flare."
+Status: done; on the main shelf since 2026-11-24 as Star Chart, number 75, series Vistas (Tom). The MVP, the cinema pass, the long lens and the stars (below) were done 2026-11-23. Bean `stimming-e35i`. Toy doc: `docs/toys/starchart.md`. Idea 238, group C: "Plasma loops rise off the sun's edge; tap for a flare."
 
 ## The hero moment
 
