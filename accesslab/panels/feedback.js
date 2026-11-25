@@ -100,7 +100,7 @@ const STYLE = `
 
 const MARKUP = `<div class="inv" id="inv">
   <header>
-    <h1 id="title">Toy</h1>
+    <h1 id="invTitle">Toy</h1>
     <div class="seg" role="group" aria-label="Build" id="builds">
       <button type="button" data-b="fresh" aria-pressed="true">Fresh</button>
       <button type="button" data-b="classic">Classic</button>
@@ -438,7 +438,7 @@ function select(/** @type {string} */ id) {
   rec = recordFor(id);
   rec.snapshot = snapshot(id);
   const t = toys[id];
-  $('title').replaceChildren(t.name, Object.assign(document.createElement('small'), { textContent: t.version ? `${id} · v${t.version}` : id }));
+  $('invTitle').replaceChildren(t.name, Object.assign(document.createElement('small'), { textContent: t.version ? `${id} · v${t.version}` : id }));
   $('builds').hidden = !t.legacy;
   if (!t.legacy) rec.build = 'fresh';
   showFrame();
@@ -637,7 +637,7 @@ async function overview() {
   $('inv').classList.add('ov');
   // The hidden toy stops, so the overview does no per-frame work.
   /** @type {HTMLIFrameElement} */ ($('frame')).src = 'about:blank';
-  $('title').replaceChildren('Overview', Object.assign(document.createElement('small'), { textContent: 'libraries and modules, every toy' }));
+  $('invTitle').replaceChildren('Overview', Object.assign(document.createElement('small'), { textContent: 'libraries and modules, every toy' }));
   const out = $('overview');
   // Eight pages at a time; each toy is read once per visit.
   let n = 0;
