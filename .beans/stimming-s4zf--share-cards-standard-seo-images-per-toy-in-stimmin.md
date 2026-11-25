@@ -1,11 +1,11 @@
 ---
 # stimming-s4zf
 title: 'Share cards: standard SEO images per toy in Stimming''s style'
-status: draft
+status: in-progress
 type: feature
 priority: normal
 created_at: 2026-11-25T08:58:17Z
-updated_at: 2026-11-25T19:25:01Z
+updated_at: 2026-11-25T19:29:05Z
 parent: stimming-0cau
 ---
 
@@ -18,7 +18,7 @@ Each toy gets one og:image (1200 x 630) made from its data: name, full-colour me
 - [ ] Ask Tom: which pages get one (toys, menu, labs); main-shelf toys have cards now
 - [x] Ask Tom: the source of the icon: the live menu tile, the emblem, or both
 - [x] Spike: a generator script in tools/ and three sample cards for Tom
-- [ ] Meta tags: og:image, twitter:card per toy page (touches every toy page: Tom's yes, own worktree and PR)
+- [x] Meta tags: og:image, twitter:card per toy page (touches every toy page: Tom's yes, own worktree and PR)
 - [ ] Pages: the cards publish with the site
 - [x] Bench: a share-card view that renders a toy's 1200 x 630 card from the chosen icon
 
@@ -31,3 +31,5 @@ Each toy gets one og:image (1200 x 630) made from its data: name, full-colour me
 - Tom, 2026-11-25, round 2 (bench session): the whole wordmark in its rainbow colours; one-line titles; the subtext (motto) in B612; the tech badges on the card. The sample now has a 72 px grid: wordmark and badges in the head row, icon, label, title and subtext in the foot block, the art lined up on its own edge. accesslab/access-data.js exports TAG and TAG_NAME for the badges.
 
 - Tom, 2026-11-25: the icon is the emblem as a luminance mask in white ("the luminosity mask ones, not the gradient ones"); the tech tags minimal, small at the title's cap line. tools/sharecards.mjs writes all 73 main-shelf cards to shared/cards/<id>.jpg (4.9 MB, 121 KB at most). The Share tab is stimming-a8j0. Open: the meta tags (Tom's yes, own worktree and PR), and the cards publish once pushed.
+
+- Tom, 2026-11-25: "Yes, add the tags". tools/ogtags.mjs writes one marked block after <title> on all 73 main-shelf pages: og:type, site_name, title, description (the motto, or a plain line), url, image with its size and alt, twitter:card summary_large_image. A rerun replaces the block. Branch feature/stimming-s4zf, merge by PR.

@@ -65,6 +65,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | Commit and push | `tools/commit.sh -m "<Area>: what (bean-id)" [--hunks <patch>] -- <paths>` |
 | Collate the toy inventory | `node tools/inventory.mjs` (writes `docs/inventory.json`) |
 | Share cards (og:image) | `npx -y -p playwright@1.63.0 node tools/sharecards.mjs [id ...]` with the dev server up (writes `shared/cards/<id>.jpg`) |
+| Share tags on toy pages | `node tools/ogtags.mjs [id ...]` after the cards (writes the og:* and twitter:card block after each toy's `<title>`) |
 | Work items | `beans prime` |
 
 ## Where things live
