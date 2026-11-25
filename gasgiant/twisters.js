@@ -84,7 +84,7 @@ float twGround(vec2 xz) {
   vec4 nw = textureLod(uVol, vec3(xz.x, -40.0, xz.y) / 1300.0 + vec3(0.3, 0.1, 0.7), 0.0);
   vec3 q = vec3(xz.x, -100.0, xz.y) + (nw.xyz - 0.5) * 110.0;
   vec4 nc = textureLod(uVol, vec3(0.6 * q.x + 0.8 * q.z, -160.0, 0.8 * q.x - 0.6 * q.z) / 157.0 + vec3(0.11, 0.0, 0.53), 0.0);
-  return smoothstep(0.3, 0.48, 1.0 - nc.a) * (1.0 - breakAt(xz, 7.7, 0.0));
+  return smoothstep(0.18, 0.36, 1.0 - nc.a) * (1.0 - breakAt(xz, 7.7, 0.0));
 }
 // How far the ceiling sags at xz, in km: a wall cloud round each twister's top.
 float twSag(vec2 xz) {
@@ -150,9 +150,9 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
   vec3 ceilC = mix(pal(0.05), vec3(0.8), 0.25);
   float Tt = 1.0, shk = -1.0;
   // The fine step grows with distance, to about a pixel of the march.
-  float fine = max(0.08 * s, ta * 0.0016);
+  float fine = max(0.08 * s, ta * 0.0012);
   float t = ta + jit * fine;
-  for (int k = 0; k < 80; k++) {
+  for (int k = 0; k < 96; k++) {
     if (t > tb || Tt < 0.03) break;
     vec3 p = ro + rd * t;
     float h = altOf(p), Y = (h - B.x) / s, f = Y / TW_H;
@@ -160,11 +160,12 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
     vec2 q = (p.xz - A.xy) / s - twAxis(Y, v, ph);
     float r = length(q), R = twR(Y, v, w, ph) * mix(pow(smoothstep(0.0, 0.45, f), 0.8), 1.0, gr);
     // Far from the column, step by the gap to its widest wall.
-    if (r > R * 1.8) { t += max((r - R * 1.8) * s * 0.6, fine); continue; }
+    if (r > R * 1.8) { t += max((r - R * 1.8) * s * 0.5, fine); continue; }
     vec4 wl;
     float Rw = twWall(q, Y, v, R, spin, wl);
-    float st = r > Rw ? max((r - Rw) * s * 0.6, fine) : fine;
-    float soft = (0.5 + 0.6 * f) * (v == 2 ? 1.6 : 1.0) * w;
+    // Short skips keep the soft edge whole; a far edge widens to a pixel, so it does not stipple.
+    float st = r > Rw ? max((r - Rw) * s * 0.4, fine) : fine;
+    float soft = (0.5 + 0.6 * f) * (v == 2 ? 1.6 : 1.0) * w + t * 0.003 / s;
     // The top thins into the ceiling's wall cloud; the foot thins into its dust.
     float foot = mix(smoothstep(0.0, 0.12, f), mix(0.3, 1.0, smoothstep(0.0, 0.1, f)), gr);
     float dd = smoothstep(0.0, soft, Rw - r) * wl.g * 1.8 * (1.0 - 0.75 * smoothstep(0.84, 0.98, f)) * foot;
@@ -219,7 +220,8 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tF) {
   tF = -1.0;
   vec3 c = vec3(0.0);
   float Tt = 1.0;
-  float jit = fract(sin(dot(gl_FragCoord.xy + uSeed * 7.0, vec2(41.3, 289.1))) * 43758.5453);
+  // Interleaved gradient noise: an even spread, with less grain than a hash.
+  float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 5.588, vec2(0.06711056, 0.00583715))));
   for (int i = 0; i < ${TW_MAX}; i++) {
     if (uTwB[i].y <= 0.0) continue;
     vec4 r = twister(i, ro, rd, ta, tb, jit, tF);

@@ -191,7 +191,9 @@ float gyreEye(vec2 xz) { return 1.0 - smoothstep(110.0, 135.0, length(xz - GY_C)
 // soft widens the edge: light through a thick deck spreads into a penumbra.
 float breakAt(vec2 xz, float seed, float soft) {
   vec4 v = textureLod(uVol, vec3(xz / 260.0 + vec2(uT * 0.00004, fract(seed * 0.71)), fract(seed * 0.37)), 0.0);
-  float b = smoothstep(0.64 - soft, 0.72 + 0.3 * soft, v.a + 0.1 * (v.r - 0.5));
+  // The brown deck under the upper void stays mostly closed (Tom, 2026-11-24).
+  float th = seed == 7.7 ? 0.08 : 0.0;
+  float b = smoothstep(0.64 + th - soft, 0.72 + th + 0.3 * soft, v.a + 0.1 * (v.r - 0.5));
   // Under the top deck, narrow rifts 2 to 8 km across let shafts in close by.
   // Two crossed scales hide the noise tile's repeat.
   if (seed == 3.1) {
@@ -447,7 +449,7 @@ float dens(vec3 p, float lod, float fine, float full) {
     // @seg brown
     if (h > -50.0) {
       // The brown deck: a floor above, a ceiling below, a few breaks.
-      float cov = smoothstep(0.3, 0.48, 1.0 - nc.a + 0.08 * (nb - 0.5));
+      float cov = smoothstep(0.18, 0.36, 1.0 - nc.a + 0.08 * (nb - 0.5));
       float sh = min(-40.0 + 3.0 * (nb - 0.5) - h, (h + 52.0) * 0.8);
       d = smoothstep(0.0, 1.6 + lod, sh) * cov * 0.85 * (1.0 - breakAt(p.xz, 7.7, 0.0));
       gAlb = mix(pal(0.34), pal(0.6), n1.a);
@@ -799,8 +801,15 @@ void main() {
           + 500.0 * band(hg, -230.0, -158.0, 6.0) + 700.0 * band(hg, -360.0, -262.0, 6.0)
           + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -425.0, 6.0) + 300.0 * band(hg, -425.0, -385.0, 3.0) + 40.0 * step(hg, -500.0);
         float sg = 1.0 / (mfp * uTune.w);
-        float ag = 1.0 - exp(-sg * ds * 1.6);
         vec3 gs = lut(hg).rgb * vec3(0.38, 0.42, 0.44);
+        // Under the top deck: white haze near the eye, the void's green bleeding in far off.
+        float nearK = 1.0 - smoothstep(8.0, 110.0, t);
+        if (hg > -42.0 && hg < 0.0) {
+          float lw = dot(lut(hg).rgb, vec3(0.3, 0.5, 0.2));
+          sg += nearK * nearK / (420.0 * uTune.w);
+          gs = mix(lut(hg).rgb * vec3(0.36, 0.72, 0.5), vec3(lw * 0.66), nearK * nearK);
+        }
+        float ag = 1.0 - exp(-sg * ds * 1.6);
         // God rays: in a void the gas glows where light falls through a break.
         // The shafts glow most when the eye looks toward the light.
         vec2 vo = voidOver(hg);
@@ -819,9 +828,11 @@ void main() {
             float hue = textureLod(uVol, vec3(p.xz / 340.0, 0.47), 0.0).b;
             vec3 rc = mix(vec3(1.0, 0.88, 0.72), mix(vec3(0.86, 0.62, 1.0), vec3(0.55, 0.84, 1.0), smoothstep(0.35, 0.65, hue)), smoothstep(0.05, 0.7, fall));
             float lum = dot(lut(vo.x + 6.0).rgb, vec3(0.3, 0.5, 0.2));
+            // Far off, the shafts take the void's green too.
+            rc = mix(rc, normalize(lut(hg).rgb * vec3(0.36, 0.72, 0.5)) * 1.5, smoothstep(60.0, 420.0, t) * 0.75);
             col += T * rc * lum * shT * phS * min(ds, 6.0) * 0.02 * uRays * (1.0 - 0.7 * fall);
-            // The haze keeps its glow in the light, pale rather than green, so the far void stays bright.
-            gs = gs * 0.55 + mix(lut(vo.x + 6.0).rgb, vec3(lum * 1.3), 0.6) * sh * phS * 4.0 * uRays;
+            // The haze glows in the light: pale near the eye, green far off.
+            gs = gs * 0.55 + mix(lut(vo.x + 6.0).rgb, vec3(lum * 1.3), 0.1 + 0.6 * nearK) * sh * phS * 4.0 * uRays;
           }
         }
         col += T * gs * ag;
