@@ -1316,6 +1316,14 @@ out vec4 o;
 const float R = ${R.toFixed(1)};
 ${NOISE}
 float hash(vec2 p) { p = fract(p * vec2(443.897, 441.423)); p += dot(p, p.yx + 19.19); return fract((p.x + p.y) * p.x); }
+// PCG3D (Jarzynski and Olano 2020): three independent 32-bit draws.
+uvec3 pcg3(uvec3 v) {
+  v = v * 1664525u + 1013904223u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  v ^= v >> 16u;
+  v.x += v.y * v.z; v.y += v.z * v.x; v.z += v.x * v.y;
+  return v;
+}
 // The kernel's white core, added to the hot light before the grade.
 float kern(vec2 fc) {
   float s = 0.0;
@@ -1587,10 +1595,11 @@ void main() {
   // Film grain: even gaussian noise, one CSS pixel per grain, one strength over the whole frame (Tom, 2026-11-24).
   // A new frame of it 24 times a second; it holds still while the toy sleeps.
   vec2 gi = floor(gl_FragCoord.xy / max(1.0, uDpr));
-  // The frame count wraps, so the hash keeps its precision.
-  float gf = mod(floor(uTime * 24.0), 64.0) * 17.0;
-  // Four uniform draws sum to a near gaussian; the scale gives it a unit spread.
-  float gr = (hash(gi + gf) + hash(gi + gf + 31.7) + hash(gi + gf + 63.1) + hash(gi + gf + 97.3) - 2.0) * 1.732;
+  // An integer hash per grain and frame keeps full precision, so no pattern repeats.
+  uvec3 gh = pcg3(uvec3(uvec2(gi), uint(floor(uTime * 24.0))));
+  // Box-Muller turns two uniform draws into one true gaussian of unit spread.
+  vec2 gu = (vec2(gh.xy >> 8u) + 0.5) / 16777216.0;
+  float gr = clamp(sqrt(-2.0 * log(gu.x)) * cos(6.2831853 * gu.y), -4.0, 4.0);
   c += gr * uFilm.x * 0.9 * uFx3.x;
   o = vec4(clamp(c, 0.0, 1.0) * uDip, 1.0);
 }`;
