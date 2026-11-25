@@ -118,7 +118,7 @@ float twWall(vec2 q, float Y, int v, float R, float spin, out vec4 wl) {
   wl = textureLod(uWall, vec3(fract(an / 6.2831853), f, float(v)), 0.0);
   return R * wl.r * 1.8;
 }
-// One twister along the ray: premultiplied light and alpha. tF takes its first hit.
+// One twister along the ray: premultiplied light and alpha. tF is where it first shows, or -1.
 vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout float tF) {
   vec4 A = uTwA[i], B = uTwB[i];
   int v = int(A.w + 0.5) % 4;
@@ -172,7 +172,6 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
     float foot = mix(smoothstep(0.0, 0.12, f), mix(0.3, 1.0, smoothstep(0.0, 0.1, f)), gr);
     float dd = smoothstep(0.0, soft, Rw - r) * wl.g * 1.8 * (1.0 - 0.75 * smoothstep(0.84, 0.98, f)) * foot;
     if (dd > 0.002) {
-      tF = tF < 0.0 ? t : min(tF, t);
       // The wall's normal: the radial way, tipped by the wall's slope round and up.
       vec4 wx;
       float ca = cos(0.03), sa = sin(0.03);
@@ -218,25 +217,38 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
       float aa = 1.0 - exp(-6.0 * dd * st);
       col += Tt * Lc * aa;
       Tt *= 1.0 - aa;
+      // Its depth is where it first shows: faint fringe does not count.
+      if (tF < 0.0 && Tt < 0.97) tF = t;
     }
     t += st;
   }
   return vec4(col, 1.0 - Tt);
 }
-// Every twister along the ray, front to back. tF is the first hit, or -1.
-vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tF) {
-  tF = -1.0;
-  vec3 c = vec3(0.0);
-  float Tt = 1.0;
+// One layer over another, both premultiplied.
+vec4 twOver(vec4 f, vec4 b) { return vec4(f.rgb + (1.0 - f.a) * b.rgb, f.a + (1.0 - f.a) * b.a); }
+// The twisters along the ray in two layers, each at its own depth, so the march puts clouds between them.
+// Layer A is the nearest twister; layer B holds the rest. A depth of -1 means none.
+vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tA, out vec4 cB, out float tB) {
+  tA = -1.0; tB = -1.0;
+  vec4 cA = vec4(0.0);
+  cB = vec4(0.0);
   // Interleaved gradient noise: an even spread, with less grain than a hash.
   float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 5.588, vec2(0.06711056, 0.00583715))));
   for (int i = 0; i < ${TW_MAX}; i++) {
-    if (uTwB[i].y <= 0.0) continue;
-    vec4 r = twister(i, ro, rd, ta, tb, jit, tF);
-    c += Tt * r.rgb;
-    Tt *= 1.0 - r.a;
+    if (uTwB[i].y <= 0.0 || float(i) < uTwLo || float(i) >= uTwHi) continue;
+    float tf = -1.0;
+    vec4 r = twister(i, ro, rd, ta, tb, jit, tf);
+    if (tf < 0.0) continue;
+    // A nearer one takes layer A; the old A joins layer B in depth order.
+    if (tA < 0.0 || tf < tA) {
+      if (tA > 0.0) { cB = tB < 0.0 || tA < tB ? twOver(cA, cB) : twOver(cB, cA); tB = tB < 0.0 ? tA : min(tA, tB); }
+      cA = r; tA = tf;
+    } else {
+      cB = tB < 0.0 || tf < tB ? twOver(r, cB) : twOver(cB, r);
+      tB = tB < 0.0 ? tf : min(tf, tB);
+    }
   }
-  return vec4(c, 1.0 - Tt);
+  return cA;
 }`;
 
 /* ---------- The set in the upper void ---------- */

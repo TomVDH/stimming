@@ -109,6 +109,8 @@ uniform vec3 uCam, uFwd, uRight, uUp;
 uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
 // A sub-pixel shift each frame; the history pass builds full detail from it.
 uniform vec2 uJit;
+// The twisters this pass draws, by index: from uTwLo up to uTwHi.
+uniform float uTwLo, uTwHi;
 uniform vec4 uFlash[4];
 // Dev tuning: multiple scatter, ambient, bounce, haze reach.
 uniform vec4 uTune;
@@ -692,8 +694,9 @@ void main() {
     vec3 col = vec3(0.0);
     float T = 1.0, tHit = -1.0;
     // @seg upper
-    float twT;
-    vec4 twC = twisters(ro, rd, t0, t1, twT);
+    float twT, twT2;
+    vec4 twC2;
+    vec4 twC = twisters(ro, rd, t0, t1, twT, twC2, twT2);
     // @end
     // sk shrinks the steps after the first hit, so a crisp skin is not stepped over.
     float sk = 1.0;
@@ -704,6 +707,7 @@ void main() {
       // @seg upper
       // The march reaches a twister: it covers what lies behind it.
       if (twT > 0.0 && t >= twT) { col += T * twC.rgb; T *= 1.0 - twC.a; twT = -1.0; }
+      if (twT2 > 0.0 && t >= twT2) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
       // @end
       vec3 p = ro + rd * t;
       float ds = min(inWin ? 0.3 + grow * t : 0.3 + 0.0075 * t, cap + (0.004 + 0.006 * vw) * t) * sk;
@@ -856,7 +860,10 @@ void main() {
       t += ds * (dn > 0.003 ? 1.0 : 1.6);
     }
     // @seg upper
+    // Layers past the march's end go on in depth order.
+    if (twT2 > 0.0 && twT2 < twT) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
     if (twT > 0.0) { col += T * twC.rgb; T *= 1.0 - twC.a; }
+    if (twT2 > 0.0) { col += T * twC2.rgb; T *= 1.0 - twC2.a; }
     // @end
     // Inside the decks, the medium past the window is fog of the same light.
     if (winEnd && t >= t1 - 0.01 && T > 0.02) {

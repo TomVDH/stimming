@@ -510,9 +510,14 @@ function render(dt) {
     twisterUniforms(S.tC, twA, twB, twC);
     // ?qa: __gg.noTw = true hides them, to time the march without them.
     if (globalThis.__gg?.noTw) { twB.fill(0); twC.fill(0); }
+    // ?qa: __gg.twOnly = i shows only twister i.
+    const only = globalThis.__gg?.twOnly;
+    if (only != null) for (let i = 0; i < TW_MAX; i++) if (i !== only) { twB[i * 4 + 1] = 0; twC.fill(0, i * 4, i * 4 + 4); }
     gl.uniform4fv(u.uTwA, twA);
     gl.uniform4fv(u.uTwB, twB);
     gl.uniform4fv(u.uTwC, twC);
+    gl.uniform1f(u.uTwLo, 0);
+    gl.uniform1f(u.uTwHi, TW_MAX);
   }
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
