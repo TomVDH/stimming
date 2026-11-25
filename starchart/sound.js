@@ -156,6 +156,19 @@ export function makeSound(kit, opt = () => undefined) {
   const GLUE = 0.6;
   let bed = null;
   let drone = null;
+  // Voices that fade out after a star switch.
+  const leaving = new Set();
+  // A stopped choir that stays connected costs as much as a live one.
+  // Each old voice disconnects when its fade ends.
+  function drop(d) {
+    leaving.delete(d);
+    for (const x of [d.g, d.gc]) x.disconnect();
+  }
+  // Runs fn when the audio clock passes `at`; a suspended context waits.
+  function when(ac, at, fn) {
+    const tick = () => ac.state === 'closed' || ac.currentTime >= at ? fn() : setTimeout(tick, Math.max(50, (at - ac.currentTime) * 1000));
+    tick();
+  }
   // Which layers sound: the Dev toggles set them.
   const layers = { hum: true, rumble: true, h: 1, lvl: 1, near: 0, z: zoomAt(0) };
   // The toy's Turn speed against x10k: an orbit swell (swTurn) keeps pace with it.
@@ -206,8 +219,11 @@ export function makeSound(kit, opt = () => undefined) {
     if (drone && drone.ac === ac) {
       // Taps from the last star and their echoes taper out first, so they do not bleed.
       if (taps && taps.ac === ac) taps.bus.fadeAll(t, 1.5);
-      for (const x of [drone.g, drone.gc]) ease(x.gain, t, XOUT, false);
-      for (const o of drone.os) { try { o.stop(t + XOUT + 0.5); } catch { /* stopped */ } }
+      const old = drone;
+      for (const x of [old.g, old.gc]) ease(x.gain, t, XOUT, false);
+      for (const o of old.os) { try { o.stop(t + XOUT + 0.5); } catch { /* stopped */ } }
+      leaving.add(old);
+      when(ac, t + XOUT + 0.5, () => drop(old));
     }
     const root = keyOf(band) / 2;
     const os = [];
@@ -361,8 +377,9 @@ export function makeSound(kit, opt = () => undefined) {
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     spinRate = 0;
-    drone = null;
     for (const n of live) { try { n.stop(); } catch { /* not started */ } }
+    for (const d of [drone, ...leaving]) if (d) drop(d);
+    drone = null;
   }
   return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, beacon, quiet, get busy() { return pending > 0; } };
 }
