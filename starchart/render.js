@@ -1905,9 +1905,58 @@ function noiseVolume(n) {
   return out;
 }
 
+/* ---------- the nebulae's dust, baked once on first use ---------- */
+// 0 the Homunculus round Eta Carinae, 1 V838 Monocerotis's dust shells.
+// A cube 2.8 wide round the star, in the nebula's own units, in the dust's frame; the march samples it.
+const NB_N = 128;
+const NBAKE = `${HEAD}
+uniform int uWhich;
+uniform float uLayer;
+out vec4 o;
+${NOISE}
+void main() {
+  vec3 w = (vec3(gl_FragCoord.xy / ${NB_N}.0, uLayer) * 2.0 - 1.0) * 1.4;
+  if (uWhich == 0) {
+    // The axis leans about 41 degrees from the line of sight.
+    vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
+    float a = dot(w, AX);
+    vec3 pe = w - a * AX;
+    float rho = length(pe);
+    // Each lobe is a thin shell round a centre 0.52 out on the axis, a little longer than wide.
+    vec3 lc = w - sign(a) * 0.52 * AX;
+    float la = dot(lc, AX);
+    float sh = length(vec2(la / 0.5, length(lc - la * AX) / 0.44));
+    // Fine cells over broad ones: Hubble's mottled, cauliflower dust.
+    // Its finest octave stays above two voxels, so the bake keeps it.
+    float m = 0.5 * fbm(w * 4.0 + 3.0) + 0.35 * fbm(w * 11.0 + 7.0) + 0.15 * fbm(w * 19.0 + 11.0);
+    float mc = pow(smoothstep(0.3, 0.72, m), 1.5);
+    float wall = exp(-pow((sh - 1.0) / 0.1, 2.0)) * (0.1 + 2.3 * mc);
+    // Dust fills each lobe too, thinner than its wall, so the lobes read solid.
+    wall += 0.4 * smoothstep(1.0, 0.55, sh) * mc;
+    // The skirt: a thin sheet in the waist plane, streaked along each radius.
+    float sk = exp(-pow(a / 0.04, 2.0)) * smoothstep(1.3, 0.35, rho) * smoothstep(0.08, 0.3, rho);
+    float stk = fbm(pe / max(rho, 1e-3) * 9.0 + vec3(0.0, 0.0, rho * 1.5));
+    sk *= 0.15 + 1.4 * smoothstep(0.45, 0.75, stk);
+    float dens = wall + 0.7 * sk;
+    o = vec4(dens / 3.0, m, clamp(sk / max(dens, 1e-3), 0.0, 1.0), 1.0);
+  } else {
+    float r3 = length(w);
+    // A warp turns the shells into eddies, as in Hubble's pictures.
+    vec3 wq = w + 0.3 * (vec3(fbm(w * 3.5 + 1.0), fbm(w * 3.5 + 7.0), fbm(w * 3.5 + 13.0)) - 0.5);
+    float rq = length(wq), ang = atan(wq.y, wq.x);
+    float sw = fbm(wq * 2.5 + 2.0);
+    float shells = 0.5 + 0.5 * sin(rq * 34.0 + sw * 10.0 + 1.5 * sin(ang * 3.0 + rq * 8.0) * smoothstep(0.0, 0.2, length(wq.xy)));
+    float fine = 0.7 * fbm(wq * 12.0 + 5.0) + 0.3 * fbm(wq * 29.0 + 9.0);
+    float dens = pow(shells, 6.0) * (0.2 + 2.2 * fine * fine) * smoothstep(1.3, 0.6, r3) * smoothstep(0.02, 0.12, r3);
+    o = vec4(dens / 2.5, 0.0, 0.0, 1.0);
+  }
+}`;
+
 /* ---------- final: heat bend, grade, volume, bodies, lens, film ---------- */
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
+// A nebula's baked dust, or the noise when no nebula shows.
+uniform highp sampler3D uNeb;
 uniform vec4 uSat[${MAX_FLARES}];
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, uFx5;
 uniform vec2 uBodyK;
@@ -2192,42 +2241,29 @@ vec3 lensScene(vec2 q, vec2 Pv) {
 }
 // Eta Carinae's Homunculus, after Hubble: two dusty lobes and a thin equatorial skirt.
 // uBow.z R is a lobe's far tip; not to scale: the true nebula is about 0.6 light years long.
-// The dust scatters the star's light; the march keeps a transmittance, so the near lobe hides the far one.
+// The dust is baked once (NBAKE); the march keeps a transmittance, so the near lobe hides the far one.
 vec3 etaNeb(vec2 pR) {
   vec2 q = pR / uBow.z;
   float d = length(q);
   if (d > 1.7) return vec3(0.0);
-  // The axis leans about 41 degrees from the line of sight.
-  vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
   vec3 acc = vec3(0.0);
   float T = 1.0;
-  const int N = 24;
+  const int N = 48;
   float dt = 3.2 / float(N);
   for (int i = 0; i < N; i++) {
     vec3 w = uCamM * vec3(q, -1.6 + (float(i) + 0.5) * dt);
-    float a = dot(w, AX);
-    vec3 pe = w - a * AX;
-    float rho = length(pe);
-    // Each lobe is a thin shell round a centre 0.52 out on the axis, a little longer than wide.
-    vec3 lc = w - sign(a) * 0.52 * AX;
-    float la = dot(lc, AX);
-    float sh = length(vec2(la / 0.5, length(lc - la * AX) / 0.44));
-    // Fine cells over broad ones: Hubble's mottled, cauliflower dust.
-    float m = 0.6 * fbm(w * 4.0 + 3.0) + 0.4 * fbm(w * 13.0 + 7.0);
-    float wall = exp(-pow((sh - 1.0) / 0.11, 2.0)) * (0.25 + 1.6 * m * m);
-    // Dust fills each lobe too, thinner than its wall, so the lobes read solid.
-    wall += 0.35 * smoothstep(1.0, 0.55, sh) * m;
-    // The skirt: a thin sheet in the waist plane, streaked along each radius.
-    float sk = exp(-pow(a / 0.035, 2.0)) * smoothstep(1.3, 0.35, rho) * smoothstep(0.08, 0.3, rho);
-    float stk = fbm(pe / max(rho, 1e-3) * 6.0 + vec3(0.0, 0.0, rho * 1.5));
-    sk *= 0.15 + 1.4 * smoothstep(0.45, 0.75, stk);
-    float dens = wall + 0.7 * sk;
+    if (any(greaterThan(abs(w), vec3(1.38)))) continue;
+    // The baked dust: density, its mottle and its share of skirt.
+    vec4 nb = texture(uNeb, w / 2.8 + 0.5);
+    float dens = nb.r * 3.0;
+    if (dens < 0.004) continue;
     // Tan and cream dust, paler in the skirt; the light falls off away from the star.
-    vec3 c = mix(vec3(0.5, 0.24, 0.13), vec3(1.0, 0.7, 0.44), smoothstep(0.3, 0.8, m));
-    c = mix(c, vec3(0.95, 0.85, 0.72), clamp(sk / max(dens, 1e-3), 0.0, 1.0) * 0.6);
+    vec3 c = mix(vec3(0.5, 0.24, 0.13), vec3(1.0, 0.7, 0.44), smoothstep(0.3, 0.8, nb.g));
+    c = mix(c, vec3(0.95, 0.85, 0.72), nb.b * 0.6);
     c *= 0.55 / (0.25 + length(w));
-    acc += T * c * dens * dt * 2.2;
+    acc += T * c * dens * dt * 2.8;
     T *= exp(-dens * dt * 3.0);
+    if (T < 0.02) break;
   }
   // The outer ejecta: faint red knots of gas rich in nitrogen, round the lobes.
   float oe = exp(-pow((d - 1.3) / 0.22, 2.0)) * 0.16 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
@@ -2295,22 +2331,17 @@ vec3 v838Echo(vec2 pR) {
   float ct = 0.08 + 1.15 * cyc;
   float fade = smoothstep(0.0, 0.08, cyc) * smoothstep(1.0, 0.8, cyc);
   vec3 acc = vec3(0.0);
-  for (int k = 0; k < 5; k++) {
+  for (int k = 0; k < 10; k++) {
     // Earlier light lies on a larger paraboloid; the flash turned from blue-white to deep red.
-    float e = float(k) / 4.0;
+    float e = float(k) / 9.0;
     float cc = max(ct - 0.3 * e, 0.02);
     vec3 w = uCamM * vec3(q, d2 / (2.0 * cc) - 0.5 * cc);
     float r3 = length(w);
     if (r3 > 1.3) continue;
-    // The dust: nested shells the star blew off long before, broken into swirls and eddies.
-    // A warp turns the shells into eddies, as in Hubble's pictures.
-    vec3 wq = w + 0.3 * (vec3(fbm(w * 3.5 + 1.0), fbm(w * 3.5 + 7.0), fbm(w * 3.5 + 13.0)) - 0.5);
-    float rq = length(wq), ang = atan(wq.y, wq.x);
-    float sw = fbm(wq * 2.5 + 2.0);
-    float shells = 0.5 + 0.5 * sin(rq * 34.0 + sw * 10.0 + 1.5 * sin(ang * 3.0 + rq * 8.0) * smoothstep(0.0, 0.2, length(wq.xy)));
-    float dens = pow(shells, 6.0) * (0.2 + 2.2 * pow(fbm(wq * 12.0 + 5.0), 2.0)) * smoothstep(1.3, 0.6, r3) * smoothstep(0.02, 0.12, r3);
+    // The baked dust: nested shells warped into eddies (NBAKE).
+    float dens = texture(uNeb, w / 2.8 + 0.5).r * 2.5;
     // Scattered light falls with the square of the distance from the star.
-    acc += mix(vec3(0.7, 0.85, 1.0), vec3(1.0, 0.32, 0.1), e) * dens / (0.05 + r3 * r3) * 0.09;
+    acc += mix(vec3(0.7, 0.85, 1.0), vec3(1.0, 0.32, 0.1), e) * dens / (0.05 + r3 * r3) * 0.045;
   }
   return acc * fade;
 }
@@ -2713,6 +2744,7 @@ export async function makeRender(gl, opts = {}) {
     bake: program(gl, TRI_VS, BAKE),
     hbake: program(gl, TRI_VS, HBAKE),
     qbake: program(gl, TRI_VS, QBAKE),
+    nbake: program(gl, TRI_VS, NBAKE),
     blur: program(gl, TRI_VS, BLUR),
     acc: program(gl, TRI_VS, ACC),
     final: program(gl, TRI_VS, FINAL),
@@ -2848,6 +2880,29 @@ export async function makeRender(gl, opts = {}) {
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // Black hole detail: below 1 the holes' sky pass draws to holeT, made on first use.
+  // A nebula's dust, baked the first time its star shows: kind 6 Eta Carinae, kind 7 V838 Monocerotis.
+  const nebT = {};
+  function nebTex(which) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, t);
+    gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RGBA8, NB_N, NB_N, NB_N);
+    for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    const b = P.nbake;
+    gl.useProgram(b.p);
+    gl.uniform1i(b.u.uWhich, which);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
+    gl.viewport(0, 0, NB_N, NB_N);
+    gl.bindVertexArray(empty);
+    for (let k = 0; k < NB_N; k++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, t, 0, k);
+      gl.uniform1f(b.u.uLayer, (k + 0.5) / NB_N);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
+    return t;
+  }
   let holeS = 1, holeT = null;
   // The haze history is empty until a first frame fills it.
   let histOk = false;
@@ -2899,6 +2954,9 @@ export async function makeRender(gl, opts = {}) {
   // v: view, rot, toSun, time, band (the star), regs, flares, sat, count, bloom, frame, centre, bodies, lens.
   function frame(v) {
     if (!hdr) return;
+    // A nebula's dust bakes once, the first time its star shows.
+    const nk = v.bow[0] > 0 ? Math.round(v.bow[3]) : 0;
+    if ((nk === 6 || nk === 7) && !nebT[nk]) nebT[nk] = nebTex(nk - 6);
     gl.disable(gl.BLEND);
     if (fluid && v.fluid) fluid.step(v.fluid.step);
     // The star's disk version; a frame waits while it still compiles.
@@ -3069,6 +3127,9 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, f, 'uRays', 2, rays);
     bind(gl, f, 'uLut', 3, lutT);
     bind(gl, f, 'uVol', 4, volH);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_3D, nebT[nk] || noise);
+    gl.uniform1i(f.u.uNeb, 5);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
     gl.uniform4fv(f.u.uView, v.view);
