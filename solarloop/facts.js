@@ -44,6 +44,7 @@ export const FACTS = {
   cygx1: { type: 'stellar black hole', latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years', found: '1964' },
   sgra: { type: 'supermassive black hole', latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null, found: '1974' },
   qso: { type: 'quasar', latin: null, cat: 'HIP 60936', mass: 'about 260 million suns', turn: null, mag: 12.9, wide: 'its horizon, about 1,100 suns', dist: 'about 2.4 billion light years', age: null, found: '1963, as a quasar' },
+  st218: { type: 'red supergiant, perhaps a hypergiant', name: 'Stephenson 2-18', latin: null, cat: 'IRAS 18363−0607', turn: null, mag: null, wide: 'about 1,840 suns', dist: 'about 19,000 light years', age: null, found: '1988', wiki: 'https://en.wikipedia.org/wiki/Stephenson_2_DFK_1' },
   neutron: { type: 'pulsar, a spinning neutron star', name: 'The Vela pulsar', latin: 'PSR B0833−45', cat: 'PSR J0835−4510', turn: '0.089 seconds', mag: 23.6, wide: '24 km', dist: 'about 940 light years', age: 'about 11,000 years', found: '1968' },
 };
 

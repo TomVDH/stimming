@@ -92,6 +92,9 @@ const LUTS = [
   // Beta Lyrae: a blue-white giant; the disc, the stream and the jets glow warm white.
   [['000000', 0], ['03070d', 0.1], ['0e2036', 0.26], ['2a5888', 0.44], ['6a9ed6', 0.62], ['b4d4f6', 0.78], ['eaf4ff', 0.9], ['ffffff', 1]],
   [['000000', 0], ['0c0806', 0.12], ['32241a', 0.3], ['7a5a40', 0.5], ['caa07a', 0.68], ['f2dcc0', 0.84], ['fffaf2', 1]],
+  // Stephenson 2-18: oxblood, the coolest here; its brightest light stays a dull orange.
+  [['000000', 0], ['0a0101', 0.1], ['220403', 0.28], ['4e0c05', 0.46], ['86180a', 0.64], ['c23a14', 0.8], ['f07a42', 0.92], ['ffcaa8', 1]],
+  [['000000', 0], ['0c0203', 0.12], ['2a0709', 0.3], ['5a1412', 0.5], ['943222', 0.68], ['d0683e', 0.84], ['f8d8c4', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {

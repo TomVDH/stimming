@@ -196,6 +196,10 @@ export const GLOWNORM = {
   j1407: 0.68,
   cygx1: 0.67,
 };
+// Stephenson 2-18 sings VY CMa's choir; its root in sound.js sits lower.
+VOICES.st218 = VOICES.vycma;
+NORM.st218 = NORM.vycma;
+TAPNORM.st218 = TAPNORM.vycma;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

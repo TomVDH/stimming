@@ -36,6 +36,7 @@ export const CHART = {
   cygx1: { kind: 'hole', t: null, cls: 'stellar black hole' },
   sgra: { kind: 'hole', t: null, cls: 'supermassive black hole' },
   qso: { kind: 'quasar', t: null, cls: 'quasar' },
+  st218: { t: 3200, cls: 'red supergiant, the largest known' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.

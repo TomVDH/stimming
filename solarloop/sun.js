@@ -284,6 +284,15 @@ export const STARS = {
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 73.42,
   },
+  // Stephenson 2-18: the largest known star, about 1,840 suns wide, 3,200 K.
+  // It sheds mass fast, so its dust is the thickest here; few, broad cells.
+  st218: {
+    ...FLARE, day: 25000, ribbon: 0.9, bubble: 0.1, lump: [0.1, 1.2, 0.7, 0.45],
+    row: 24, rsun: 1840, expo: 0.9, hotW: 1, coolW: 1.1, loop: 0.14, prom: 0.5, dust: 1.25, rays: 0.7,
+    hal: [0.85, 0.2, 0.1], streak: [1, 0.4, 0.26],
+    disk: [1.9, 1.6, 0, 0.14], disk2: [150, 0.45, 0.2, 0.05], tex: [4, 2, 0, 0.75],
+    wide: 'none', long: 'none', root: 98,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.
