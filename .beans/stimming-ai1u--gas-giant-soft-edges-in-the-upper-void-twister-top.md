@@ -62,3 +62,4 @@ Tom: "a space a couple of layers tall where we descend upon a MASSIVE internal c
 - Shear -470 to -540; Crush -540 to -640; the hull fails at about 4:10.
 - Signs of life by depth: light motes (mushball fall), a slick on the glass (water deck), gasbags (shelves), a vast manta among the columns (nave), shapes in the bolt light (cyclone).
 - Cosmic horror candidates: see the session's list (eye of lights, repeated bolt sigil, breathing floor, shadow in the god rays, pane growth that follows the pointer, a second silhouette in the reflection, a last flash of sunlight before black).
+- Tom's picks from the second round (2026-11-24): wrong light (god rays rise from below the floor for a few seconds, upper decks); the murmuration (billions of light motes swirl into one vast shape that turns its head toward the capsule, shelves or nave); glyphs in the cracks (the pane's cracks branch into script-like shapes, shear).
