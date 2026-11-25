@@ -31,6 +31,8 @@ const S = {
   alt: ALT_TOP, v: 0, diving: false, slideTo: null,
   yaw: 0, pitch: 0, tMap: 2600, tC: 0, lum: 1, shake: 0, wipe: 0, tWipe: 0, tGlass: 0, melt: 0,
   wispY: 0, crush: -1, crackLvl: 0,
+  // Dev previews: a crush with no return to the top, and an entry burn.
+  crushDev: -1, entryDev: 0,
   // The head, after Window seat: hover sway (hx, hy to targets thx, thy) and the lean to the glass (lean to leanT).
   hx: 0, hy: 0, thx: 0, thy: 0, lean: 0, leanT: 0,
 };
@@ -76,7 +78,13 @@ const TUNE_DEF = {
   ms: 0.38, amb: 1, bounce: 0.3, haze: 1, rays: 1,
   flash: 1,
   near: 1, wet: 1, fogK: 1, cracks: 'depth',
+  // Each window effect: by depth, off, or full.
+  fxFrost: 'auto', fxEntry: 'auto', fxWipe: 'auto', fxIce: 'auto', fxWet: 'auto', fxFog: 'auto', fxHeat: 'auto', fxNear: 'auto',
+  // Window timings, in seconds or as rates.
+  tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
+// An effect's level: its depth value, none, or full.
+const fx = (id, v) => (TUNE[id] === 'off' ? 0 : TUNE[id] === 'on' ? 1 : v);
 const TUNE = { ...TUNE_DEF };
 let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 // Render rows change the targets, so they resize.
@@ -123,6 +131,18 @@ const DEV = [
   slider('Window', 'wet', 'Drops', 0, 2, 0.01),
   slider('Window', 'fogK', 'Pane fog', 0, 2, 0.01),
   choice('Window', 'cracks', 'Cracks', [['depth', 'By depth'], ['off', 'Off'], ['full', 'Full']]),
+  ...[['fxFrost', 'Frost'], ['fxEntry', 'Entry glow'], ['fxWipe', 'Wipes'], ['fxIce', 'Rime'], ['fxWet', 'Rain and drops'], ['fxFog', 'Pane fog'], ['fxHeat', 'Heat shimmer'], ['fxNear', 'Near fog']]
+    .map(([id, l]) => choice('Window effects', id, l, [['auto', 'By depth'], ['off', 'Off'], ['on', 'Full']])),
+  slider('Window timing', 'tCrush', 'Crush, s', 0.5, 8, 0.1),
+  slider('Window timing', 'tWipe', 'Wipe rise, s', 0.1, 3, 0.05),
+  slider('Window timing', 'wipeSpeed', 'Wipe speed', 0.2, 3, 0.05),
+  slider('Window timing', 'melt', 'Frost melt, per s', 0.1, 3, 0.05),
+  slider('Window timing', 'frostBack', 'Frost back, per s', 0.05, 1, 0.01),
+  slider('Window timing', 'jolt', 'Crack jolt', 0, 3, 0.05),
+  slider('Window timing', 'rushK', 'Near fog rush', 0.2, 3, 0.05),
+  { type: 'button', group: 'Window play', label: 'Crush', text: 'Play', onClick: () => { S.crushDev = 0; touch(); } },
+  { type: 'button', group: 'Window play', label: 'Entry burn', text: 'Play', onClick: () => { S.entryDev = 1; touch(); } },
+  { type: 'button', group: 'Window play', label: 'Crack jolt', text: 'Play', onClick: () => { S.shake += TUNE.jolt; touch(); } },
   { type: 'button', group: 'Reset', label: 'All dev values', text: 'Defaults', onClick: () => { for (const [id, v] of Object.entries(TUNE_DEF)) ui.setting('gg_' + id)?.set(v, true); } },
 ];
 
@@ -395,32 +415,35 @@ function step(dt) {
   // The wipes: veils rush up the glass in the air, faster with the fall.
   const inAir = smooth(40, 10, S.alt) * (1 - smooth(-100, -130, S.alt));
   const wp = inAir * (0.3 + 0.6 * clamp(S.v / 6, 0, 1)) * (frozen ? 0.4 : 1);
-  S.wipe += (wp - S.wipe) * (1 - Math.exp(-dt / 0.6));
-  S.tWipe += sdt * (frozen ? 0 : 0.08 + 0.45 * clamp(S.v / 5, 0, 1));
+  S.wipe += (wp - S.wipe) * (1 - Math.exp(-dt / TUNE.tWipe));
+  S.tWipe += sdt * (frozen ? 0 : 0.08 + 0.45 * clamp(S.v / 5, 0, 1)) * TUNE.wipeSpeed;
   S.tGlass += sdt * (frozen ? 0 : 1);
   const heat = smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1);
-  S.melt = S.alt > 245 && !S.diving ? Math.max(0, S.melt - dt * 0.2) : Math.min(1, S.melt + heat * dt * 0.8);
+  S.melt = S.alt > 245 && !S.diving ? Math.max(0, S.melt - dt * TUNE.frostBack) : Math.min(1, S.melt + heat * dt * TUNE.melt);
   // The head eases toward its targets, so moves feel bodily.
   const kh = 1 - Math.exp(-dt / 0.25);
   S.hx += (S.thx - S.hx) * kh; S.hy += (S.thy - S.hy) * kh;
   S.lean += (S.leanT - S.lean) * (1 - Math.exp(-dt / 0.35));
   if (Math.abs(S.leanT - S.lean) < 1e-4) S.lean = S.leanT;
   // The near fog streams up past the glass, faster with the fall.
-  S.wispY += sdt * (3 + 50 * clamp(S.v / 5, 0, 1));
+  S.wispY += sdt * (3 + 50 * clamp(S.v / 5, 0, 1)) * TUNE.rushK;
   wgm.step(sdt, Math.min(60, Math.abs(S.v) * 10));
   // Each new crack jolts the capsule.
   const lvl = Math.floor(stressAt(S.alt) * 12);
-  if (lvl > S.crackLvl && !frozen) S.shake += 0.8;
+  if (lvl > S.crackLvl && !frozen) S.shake += TUNE.jolt;
   S.crackLvl = lvl;
   // The crush: at the floor of the dive the hull fails; 2.5 s later the toy wakes at the top.
   if (S.crush < 0 && S.alt <= ALT_DEEP + 0.01) S.crush = 0;
   if (S.crush >= 0) {
-    S.crush += dt / 2.5;
+    S.crush += dt / TUNE.tCrush;
     if (S.crush >= 1) {
       S.crush = -1; S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.diving = false; S.lum = luma(lightAt(S.alt)); S.melt = 0;
       B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); saveSpot();
     }
   }
+  // Dev previews run on their own clocks and leave the dive alone.
+  if (S.crushDev >= 0) { S.crushDev += dt / TUNE.tCrush; if (S.crushDev >= 1) S.crushDev = -1; }
+  S.entryDev = Math.max(0, S.entryDev - dt / 4);
   const b = basis();
   stepBolts(B, dt, { alt: S.alt, aim: aimOnDeck(b), soft: frozen, live: timeK > 0, deck: deckAt(S.alt) });
   for (const hd of B.heard.splice(0)) {
@@ -428,7 +451,7 @@ function step(dt) {
     snd.thunder(d, hd.level, clamp(hd.pos[0] / Math.max(d, 1), -1, 1));
   }
   snd.update(dt, Math.abs(S.v), depthOf(S.alt), S.diving);
-  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0
+  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0 || S.crushDev >= 0 || S.entryDev > 0
     || Math.abs(S.thx - S.hx) + Math.abs(S.thy - S.hy) > 0.002 || S.lean !== S.leanT;
 }
 
@@ -552,7 +575,7 @@ function render(dt) {
   // Against the window: the near fog's place, its density, and the brightest flash in capsule metres.
   gl.uniform3f(c.uWispP, 0, -S.wispY, 0);
   const inDeck = deckAt(S.alt);
-  gl.uniform1f(c.uNear, Math.min(1, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1) * TUNE.near));
+  gl.uniform1f(c.uNear, fx('fxNear', Math.min(1, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1))) * TUNE.near);
   const fd = [flash[0], flash[1] - S.alt, flash[2]], fl = Math.hypot(...fd) || 1;
   const fc = k => (fd[0] * b[k][0] + fd[1] * b[k][1] + fd[2] * b[k][2]) / fl * 25;
   gl.uniform3f(c.uFlashP, fc('X'), fc('Y'), fc('Z'));
@@ -561,11 +584,12 @@ function render(dt) {
   gl.uniform1f(c.uFlow, wgm.flow);
   gl.uniform1f(c.uAir, wgm.speed);
   // No base fog: clear glass stays sharp.
-  gl.uniform1f(c.uFog, (0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt)) * TUNE.fogK);
-  gl.uniform1f(c.uIce, smooth(-1, 2, S.alt) * (1 - smooth(20, 23, S.alt)));
+  gl.uniform1f(c.uFog, fx('fxFog', 0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt)) * TUNE.fogK);
+  gl.uniform1f(c.uIce, fx('fxIce', smooth(-1, 2, S.alt) * (1 - smooth(20, 23, S.alt))));
   // Stress bows and cracks the pane; the crush shatters it, with no white burst under reduced motion.
   gl.uniform1f(c.uStress, TUNE.cracks === 'off' ? 0 : TUNE.cracks === 'full' ? 1 : stressAt(S.alt));
-  gl.uniform1f(c.uCrush, S.crush < 0 ? 0 : frozen ? 0.3 + 0.7 * S.crush : S.crush);
+  const cr = Math.max(S.crush, S.crushDev);
+  gl.uniform1f(c.uCrush, cr < 0 ? 0 : frozen ? 0.3 + 0.7 * cr : cr);
   gl.uniform3fv(c.uEye, b.eye);
   gl.uniformMatrix3fv(c.uLook, false, b.lookM);
   gl.uniform2fv(c.uTan, b.tan);
@@ -573,16 +597,16 @@ function render(dt) {
   // With no frame the clouds fill the screen; bloom and shake stay.
   gl.uniform1f(c.uFrame, cabinOff() ? 0 : 1);
   gl.uniform1f(c.uTime, S.tGlass);
-  gl.uniform1f(c.uWipe, S.wipe);
+  gl.uniform1f(c.uWipe, fx('fxWipe', S.wipe));
   // Entry heat melts the frost; it forms again only near the top.
-  gl.uniform1f(c.uFrost, smooth(40, 120, S.alt) * (1 - S.melt));
+  gl.uniform1f(c.uFrost, fx('fxFrost', smooth(40, 120, S.alt) * (1 - S.melt)));
   // Rain and drops below the white deck, heaviest in the decks, gone under the last deck.
-  gl.uniform1f(c.uWet, Math.min(1, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)) * TUNE.wet));
+  gl.uniform1f(c.uWet, fx('fxWet', Math.min(1, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)))) * TUNE.wet);
   gl.uniform1f(c.uRush, clamp(S.v / 5, 0, 1));
-  gl.uniform1f(c.uHeat, frozen ? 0 : smooth(-80, -130, S.alt));
+  gl.uniform1f(c.uHeat, frozen ? 0 : fx('fxHeat', smooth(-80, -130, S.alt)));
   gl.uniform1f(c.uAsp, W / H);
   // Entry: the plasma glows while the capsule falls fast, high up.
-  const entry = smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1);
+  const entry = fx('fxEntry', Math.max(S.entryDev, smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1)));
   gl.uniform1f(c.uEntry, entry);
   gl.uniform1f(c.uDeck, deckAt(S.alt) * (frozen ? 0.5 : 1));
   gl.uniform1f(c.uFlash, Math.min(2.5, (flash[3] + flash[7] * 0.5) / (S.alt > 0 ? 400 : 1.2)));

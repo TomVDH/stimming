@@ -198,10 +198,16 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
       vec3 amb = L.rgb * (0.05 + 0.1 * (1.0 - L.a)) * vec3(0.7, 0.85, 1.2) * (0.3 + 0.55 * f) * exp(-(1.0 - depth) * 1.6);
       amb += lut(B.x + 3.0).rgb * 0.12 * (1.0 - f) * max(0.0, -N.y + 0.3) * uTune.z;
       // Rim: the thin grazing edge glows toward the light.
-      float rim = pow(1.0 - abs(dot(N, rd)), 3.0) * depth * depth * phL;
+      float rim = pow(1.0 - abs(dot(N, rd)), 3.0) * depth * phL;
+      // Volumetric backlight: the light behind shines through what column lies toward it.
+      // The path to the wall along the light's level way gives the depth; thin edges glow, the core stays dark.
+      vec2 lh = normalize(ld.xz + 1e-5);
+      float qd = dot(q, lh), dc = Rw * Rw - (r * r - qd * qd);
+      float chord = dc > 0.0 ? max(0.0, -qd + sqrt(dc)) : 0.0;
+      float thru = exp(-chord * s / max(length(ld.xz), 0.3) * 1.1) * phL;
       // The colour blends into the ceiling's only where the top meets it.
       vec3 alb = mix(alb0 * mix(vec3(1.0), vec3(0.92, 0.88, 1.08), f), ceilC, 0.6 * smoothstep(0.88, 0.99, f));
-      vec3 Lc = alb * (key * (tl * 1.8 + rim * 1.0) + amb * 1.5);
+      vec3 Lc = alb * (key * (tl * 1.8 + rim * 0.8 + thru * 2.8) + amb * 1.5);
       for (int j = 0; j < 4; j++) {
         vec4 fl = uFlash[j];
         if (fl.w <= 0.0) continue;
