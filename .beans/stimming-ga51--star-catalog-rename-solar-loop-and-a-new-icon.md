@@ -30,5 +30,5 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 ## Spectral Sightings (Tom, 2026-11-24: "Spectral Sightings is the new name of the TOY")
 
 - [x] Name: Spectral Sightings; toys.json, the menu tile, the page title, intro and heading, the choir lab title, the toy doc; the folder and address stay solarloop
-- [ ] Dutch name: proposed Spectrale waarnemingen (spɛkˈtraːlə ˈʋaːrneːmɪŋə); Tom confirms
-- [ ] The round 4 pick (A or D) becomes the toy's emblem and favicon
+- [x] Dutch name: Sterrenkaart (ˈstɛrəkaːrt), a star chart (Tom: "what is a good name for a star chart")
+- [x] Tom picks round 4 A, the star in haze: the menu tile and its hook, the intro emblem (shared/emblems/solarloop.svg) and the favicon (tools/favicons.mjs, Playwright 1.63.0)
