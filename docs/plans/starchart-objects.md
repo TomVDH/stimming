@@ -9,14 +9,14 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 39 |
-| Picked by Tom, not built | 3 |
+| Built, in the tray | 40 |
+| Picked by Tom, not built | 2 |
 | Asked for by Tom, not built | 1 |
 | Offered, no answer | 18 |
 | Offered, not picked | 12 |
 | Parked | 4 |
 
-## Built (39)
+## Built (40)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
@@ -27,7 +27,7 @@ All in the tray now. A bean marked open waits for Tom's live look.
 | Newborn and failed | T Tauri, Luhman 16, WISE 0855 |
 | Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Thorne–Żytkow object (`ye4c`) |
 | Runaways | S5-HVS1 (`q5aa`) |
-| Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`), the Crab Nebula (`404a`) |
+| Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`), the Crab Nebula (`404a`), the Ring Nebula (`wcfv`) |
 | Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`) |
 | Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`) |
 
@@ -37,6 +37,7 @@ Tom's notes on built bodies:
 - Earendel and Mothra: the lens must read far more cosmic, with scale and distance. Tom expected the far stars as faint pips on the lensing.
 - Fomalhaut took the J1407b ring model's place (`l4n7`), after Tom asked for a real ring star; on 2026-11-25 Tom asked for J1407b too.
 - Pulsar: the lighthouse is the default and the only pulsar. Its tray icon was too small.
+- Crab Nebula: "looks cheap"; it needs volumetrics, scale and pizzazz (`8ljj`).
 - Brown dwarfs: the shading looks cheap. Cygnus X-1: a jump on its bright edge.
 - 3C 273: its performance was poor; the quasar performance bean is done.
 
@@ -46,7 +47,6 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 
 | Bean | Object | Tom's choice |
 |---|---|---|
-| `wcfv` | Planetary nebula | The Ring Nebula, M57 (2026-11-25) |
 | `br7d` | Cepheid variable | Polaris (2026-11-25) |
 | `l4n7` | J1407b's giant rings | Build it too, beside Fomalhaut (2026-11-25) |
 

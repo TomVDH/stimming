@@ -1917,6 +1917,8 @@ uniform vec3 uBowC;
 uniform float uPulse;
 // A magnetar's giant flare: the flash, the fireball's radius in R, its light, the pulsing tail.
 uniform vec4 uQuake;
+// The camera's turn: a nebula that hangs in space turns with a drag.
+uniform mat3 uCamM;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 // Device pixels per CSS pixel: screen-fixed effects keep their size in CSS pixels.
@@ -2151,6 +2153,40 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
   return col;
 }
+// The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
+// A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
+// Each ray marches through it in the camera's frame, so a drag turns the barrel.
+// Oxygen glows blue-green inside; hydrogen and nitrogen glow red at the rim.
+vec3 ringNeb(vec2 pR) {
+  vec2 q = pR / uBow.z;
+  float d = length(q);
+  if (d > 1.8) return vec3(0.0);
+  vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
+  vec3 U = normalize(cross(AX, vec3(0.0, 1.0, 0.0))), V = cross(AX, U);
+  vec3 acc = vec3(0.0);
+  const int N = 20;
+  float dt = 3.2 / float(N);
+  for (int i = 0; i < N; i++) {
+    vec3 w = uCamM * vec3(q, -1.6 + (float(i) + 0.5) * dt);
+    vec3 b = vec3(dot(w, U), dot(w, V), dot(w, AX));
+    float rc = length(b.xy), sh = length(vec3(b.xy, b.z * 0.62));
+    // The dense ring round the waist, and the barrel's thin walls.
+    float ring = exp(-pow((rc - 0.72) / 0.1, 2.0)) * exp(-pow(b.z / 0.45, 2.0));
+    float wall = exp(-pow((sh - 0.8) / 0.1, 2.0)) * 0.3;
+    // Dense knots stud the ring; a slower churn breaks it into clouds.
+    float kn = vn(b * 15.0 + 3.0);
+    float m = fbm(b * 3.0 + 1.0);
+    float dens = (ring + wall) * (0.35 + 1.8 * kn * kn) * (0.5 + m);
+    vec3 c = mix(vec3(0.25, 0.85, 0.75), vec3(0.95, 0.85, 0.35), smoothstep(0.55, 0.75, sh));
+    c = mix(c, vec3(1.0, 0.2, 0.16), smoothstep(0.7, 0.88, sh)) * (1.0 + 0.5 * smoothstep(0.7, 0.9, sh));
+    // The thin oxygen fill inside the barrel.
+    float fill = 0.16 * smoothstep(0.85, 0.2, sh) * (0.6 + 0.8 * m);
+    acc += (c * dens + vec3(0.2, 0.75, 0.8) * fill) * dt;
+  }
+  // The faint outer halo of hydrogen loops, as JWST shows it.
+  float halo = exp(-pow((d - 1.4) / 0.2, 2.0)) * 0.12 * (0.3 + 1.4 * fbm(vec3(q * 5.0, 4.0)));
+  return acc * 0.9 + vec3(1.0, 0.3, 0.25) * halo;
+}
 // The Crab Nebula, in R along its long axis; not to scale: the true nebula is 11 light years wide.
 // A blue synchrotron glow from the pulsar's wind fills an oval cage of red and gold filaments.
 // The helium torus crosses the pulsar; a faint jet leaves along its axis.
@@ -2213,6 +2249,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // The Ring Nebula: a barrel of glowing gas round a white dwarf, marched in 3D.
+  if (uBow.w > 4.5) return ringNeb(P / R);
   // The Crab Nebula: the pulsar's wind nebula in its cage of filaments.
   if (uBow.w > 3.5) return crabNeb(q);
   // Mira: a bow shock ahead and a long turbulent tail behind, as GALEX saw it in 2007.
@@ -2846,6 +2884,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform3fv(f.u.uBowC, v.bowC);
     gl.uniform1f(f.u.uPulse, v.pulse);
     gl.uniform4fv(f.u.uQuake, v.quake);
+    gl.uniformMatrix3fv(f.u.uCamM, false, v.camM);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);

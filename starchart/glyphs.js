@@ -58,6 +58,8 @@ const DRAW = {
   // The smallest bodies draw a few pixels wide, so their marks run heavy.
   dwarf: () => halo(32, 32, 28) + dot(32, 32, 12),
   pulsar: () => line('M16 0 L48 64', 6) + dot(32, 32, 14),
+  // A planetary nebula: a thick glowing ring round a hot point.
+  planetary: () => halo(32, 32, 30) + `<ellipse cx="32" cy="32" rx="22" ry="18" stroke="${I}" stroke-width="8" opacity="0.5"/>` + `<ellipse cx="32" cy="32" rx="22" ry="18" stroke="${I}" stroke-width="2.5" opacity="0.85"/>` + dot(32, 32, 3),
   // A supernova remnant: a ragged filament cage round a bright point.
   remnant: () => halo(32, 32, 27) + line('M8 30 Q20 12 36 10 Q54 14 58 32 Q54 50 34 54 Q14 52 8 30', 2) + line('M18 28 Q30 22 44 30 M24 42 Q34 36 46 42', 1.2) + dot(32, 32, 3.5),
   // A magnetar: a hot point in twisted field loops.
@@ -76,7 +78,7 @@ export const KIND = {
   wohg64: 'cocoon', tzo: 'core', quasi: 'quasi',
   luhman: 'brown', wise: 'brown', ttauri: 'proto',
   betalyr: 'interacting', vfts352: 'contact', epsaur: 'darkdisc', wr124: 'wind', wr140: 'shells',
-  siriusb: 'dwarf', neutron: 'pulsar', magnetar: 'magnetar', crab: 'remnant',
+  siriusb: 'dwarf', neutron: 'pulsar', magnetar: 'magnetar', crab: 'remnant', ring: 'planetary',
   cygx1: 'hole', powehi: 'hole', sgra: 'sstars', qso: 'quasar', earendel: 'arc', mothra: 'arc',
 };
 

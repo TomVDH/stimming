@@ -61,6 +61,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
 // kind 3, Mira: a bow shock and a long tail; size is the bow's stand-off in R.
+// kind 5, the Ring Nebula: a barrel marched in 3D; size is its outer edge in R.
 // kind 4, the Crab Nebula: its filament cage round the pulsar; size is the half length in R.
 // beat: a pulsing star: the period in days, the radius swell and the light swell, each a fraction.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
@@ -78,6 +79,16 @@ export const STARS = {
     // A mottled crust with a strong swirl scale, so its turn reads at a glance.
     disk: [0.75, 0.55, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [24, 3, 0, 0.35],
     wide: 'none', long: 'none', root: 440,
+  },
+  // The Ring Nebula (M57): a white dwarf of 125,000 K in the gas it blew off 1,600 years ago.
+  // The nebula stands 24 R out here; the true ring is about 1 light year wide.
+  ring: {
+    ...FLARE, day: 1, rain: 0, bubble: 0.1, reach: 18,
+    bow: { kind: 5, heading: 0, size: 24, col: [0.3, 0.85, 0.75] },
+    row: 6, rsun: 0.02, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1,
+    hal: [0.55, 0.85, 1], streak: [0.55, 0.85, 1],
+    disk: [1.2, 0.3, 0.2, 0.4], disk2: [40, 0.1, 0, 0], tex: [80, 6, 0, 0.6],
+    wide: 'none', long: 'none', root: 369.99,
   },
   // The Crab Nebula: the remnant of the supernova of 1054, round the Crab pulsar.
   // The pulsar turns 30 times a second; on screen it turns in 0.3 s, so its beams blend to a glow.
