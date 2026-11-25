@@ -27,6 +27,14 @@ body.is-full .is-bar { position: fixed; left: 0; right: 0; bottom: 8px; z-index:
 .is-strip { position: absolute; left: 14px; top: 12px; z-index: 5; display: flex; flex-wrap: wrap; gap: 2px; font: 800 10px/1 var(--slab); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); filter: drop-shadow(0 0 2px var(--ink)); }
 .is-strip span { padding: 5px 7px; }
 .is-strip span.on { background: #fff; color: var(--bg); }
+/* Load simulation: the shell's five stages, read out in the stage's top-right corner. */
+.is-load { position: absolute; right: 14px; top: 12px; z-index: 5; display: flex; gap: 2px; font: 800 10px/1 var(--slab); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); filter: drop-shadow(0 0 2px var(--ink)); }
+.is-load span { padding: 5px 7px; }
+.is-load span.on { background: #fff; color: var(--bg); }
+.is-load span.done { color: var(--fg); }
+.is-load b { padding: 5px 7px; color: var(--fg); font-weight: 800; }
+/* A trial for the load-states epic: the stage in words, under the flash box's load line. */
+.intro-stage { position: absolute; left: 50%; top: calc(100% + 0.7em); translate: -50% 0; white-space: nowrap; font: 800 clamp(10px, 1.3cqw, 13px)/1 var(--slab); letter-spacing: 0.12em; text-transform: uppercase; color: #fff; opacity: 0.72; pointer-events: none; }
 .is-gate { position: absolute; inset: 0; z-index: 4; display: none; align-content: center; justify-items: start; gap: 16px; padding: 0 clamp(20px, 8%, 120px);
   background: oklch(0.1 0.01 275 / 0.3); -webkit-backdrop-filter: blur(36px) brightness(0.42); backdrop-filter: blur(36px) brightness(0.42); }
 .is-gate.on { display: grid; }
@@ -144,6 +152,7 @@ function barHTML() {
     + sl + [['stack', 'List'], ['line', 'Line'], ['rail', 'Rail']].map(([v, l]) => `<button class="w" type="button" data-l="${v}" aria-pressed="${S.layout === v}">${l}</button>`).join('')
     + sl + [['centre', 'Centre'], ['bl', 'Bottom left'], ['left', 'Left']].map(([v, l]) => `<button class="w" type="button" data-al="${v}" aria-pressed="${(S.align || 'centre') === v}" title="Alignment">${l}</button>`).join('')
     + sl + [['og', 'OG'], ['mono', 'Mono'], ['gradient', 'Gradient'], ['flat', 'Flat']].map(([v, l]) => `<button class="w" type="button" data-ic="${v}" aria-pressed="${(S.ic || 'gradient') === v}" title="Icon colour">${l}</button>`).join('')
+    + sl + [[0, 'Load now'], [3000, '3 s'], [8000, '8 s'], [20000, '20 s']].map(([ms, l]) => `<button class="w" type="button" data-slow="${ms}" aria-pressed="${(S.slow || 0) === ms}" title="Simulated load">${l}</button>`).join('') + w('words', 'Stage words', !!S.stageWords)
     + sl + w('gate', 'Gate', !S.noGate) + w('calm', 'Calm', !!S.calm) + w('hold', 'Hold', !!S.hold)
     + sl + w('knobs', 'Knobs', !$('.is-knobs')?.hidden) + w('full', document.body.classList.contains('is-full') ? 'Leave full screen' : 'Full screen') + w('replay', 'Replay');
 }
@@ -172,7 +181,6 @@ function knobsHTML() {
   const t = TT(), own = S.tune[S.variety] || {};
   const opt = (/** @type {string} */ k, /** @type {string} */ l) => `<button class="w" type="button" data-o="${k}" aria-pressed="${!!S[k]}">${l}</button>`;
   return `<div class="bar">${opt('static', 'Static')}${opt('nameFlash', 'Name flash')}${opt('textFlash', 'Text flash')}${opt('classic', 'Classic')}</div>`
-    + `<div class="bar">${[0, 5000, 10000, 20000].map((ms, i) => `${i ? '<span class="sl">/</span>' : ''}<button class="w" type="button" data-slow="${ms}" aria-pressed="${(S.slow || 0) === ms}">${ms ? `Load ${ms / 1000}s` : 'Load now'}</button>`).join('')}</div>`
     + `<div class="bar"><button class="w" type="button" data-o="reset">Reset ${vName(S.variety)}</button></div>`
     + Object.entries(KNOBS).map(([g, list]) => `<button class="grp" type="button" data-g="${g}" aria-expanded="${S.group === g}">${g}</button>`
       + (S.group === g ? `<div class="rows">${Object.entries(list).map(([k, [lo, hi, st, u]]) =>
@@ -194,6 +202,34 @@ const ask = (/** @type {number} */ my) => new Promise(res => {
   g.addEventListener('click', on);
 });
 const PHASES = ['gate', ...MADE.PHASES, 'toy'];
+// The shell's load stages and where each starts on the load line (shared/stim.js STAGE_AT).
+const STAGES = /** @type {[string, number, string][]} */ ([['shell', 0, 'Shell'], ['libs', 0.05, 'Libraries'], ['build', 0.3, 'Building'], ['first-frame', 0.95, 'First frame']]);
+const STEPS = 8;
+// Which stage a share of the load is in, with the build's step.
+function stageAt(/** @type {number} */ u) {
+  let i = 0;
+  while (i + 1 < STAGES.length && u >= STAGES[i + 1][1]) i++;
+  const [name, from, word] = STAGES[i];
+  const step = name === 'build' ? Math.min(STEPS, Math.floor(((u - from) / (STAGES[i + 1][1] - from)) * STEPS) + 1) : 0;
+  return { i, name, word: step ? `${word} ${step} / ${STEPS}` : word };
+}
+// The corner readout: each stage, the one now in white, then the share.
+function loadInfo(/** @type {number | null} */ u) {
+  const el = /** @type {HTMLElement | null} */ (document.querySelector('.is-load'));
+  if (!el) return;
+  if (u === null) { el.innerHTML = ''; return; }
+  const st = stageAt(u);
+  el.innerHTML = STAGES.map(([n, , w], k) => `<span class="${k === st.i ? 'on' : k < st.i ? 'done' : ''}">${k === st.i ? st.word : w}</span>`).join('') + `<b>${Math.round(u * 100)}%</b>`;
+}
+// The stage words sit under the flash box; the engine's load line is at its foot.
+function stageWords(/** @type {HTMLElement} */ root, /** @type {number | null} */ u) {
+  let w = /** @type {HTMLElement | null} */ (root.querySelector('.intro-stage'));
+  if (!S.stageWords || u === null || u >= 1) { w?.remove(); return; }
+  const badge = root.querySelector('.intro-badge') || root.querySelector('.intro-wait');
+  if (!badge) return;
+  if (!w) { w = document.createElement('span'); w.className = 'intro-stage'; badge.append(w); }
+  w.textContent = stageAt(u).word;
+}
 const strip = (/** @type {string} */ now) => { const el = $('.is-strip'); if (el) el.innerHTML = PHASES.map(p => `<span class="${p === now ? 'on' : ''}">${p}</span>`).join(''); };
 // Puts the row where the layout wants it, then refits the copy.
 const place = (/** @type {HTMLElement} */ root, /** @type {HTMLElement} */ row) => {
@@ -267,6 +303,7 @@ async function run() {
   if (!stage) return;
   $('.is-bar').innerHTML = barHTML();
   stage.querySelector('.intro')?.remove();
+  loadInfo(null);
   $('.is-gate').classList.remove('on');
   placeOg();
   const img = /** @type {HTMLImageElement} */ (stage.querySelector('img'));
@@ -315,8 +352,19 @@ async function run() {
   // Slow load holds the toy back and feeds the load line.
   let ready = Promise.resolve();
   if (S.slow) {
+    // A simulated load: the five stages in order, the build in eight steps.
     const t0 = performance.now();
-    ready = new Promise(res => { const tick = () => { if (my !== gen) return; const u = (performance.now() - t0) / S.slow; MADE.progress(Math.min(u, 1)); if (u >= 1) res(undefined); else setTimeout(tick, 200); }; tick(); });
+    ready = new Promise(res => {
+      const tick = () => {
+        if (my !== gen) return;
+        const u = Math.min(1, (performance.now() - t0) / S.slow);
+        (calm ? CALM : MADE).progress(u);
+        loadInfo(u);
+        stageWords(root, u);
+        if (u >= 1) { res(undefined); setTimeout(() => { if (my === gen) loadInfo(null); }, 900); } else setTimeout(tick, 100);
+      };
+      tick();
+    });
   }
   await (calm ? CALM : MADE).intro({ id: it.id, gate, soundNote: { glyph: false, words: ' ', nudge: false }, timing: { ...(S.tune[S.variety] || {}) }, ready, variety: S.variety, fill,
     nameFlash: !!S.nameFlash, textFlash: !!S.textFlash, classic: !!S.classic, min: calm && (S.hold || S.static) ? 1e9 : undefined });
@@ -371,6 +419,8 @@ export default {
       if (ds.a === 'vprev') S.variety = VARS[(vi + VARS.length - 1) % VARS.length];
       if (ds.a === 'vnext') S.variety = VARS[(vi + 1) % VARS.length];
       if (ds.a === 'gate') S.noGate = !S.noGate;
+      if (ds.a === 'words') S.stageWords = !S.stageWords;
+      if (ds.slow !== undefined && !b.closest('.is-knobs')) S.slow = +ds.slow;
       if (ds.a === 'calm') S.calm = !S.calm;
       if (ds.a === 'hold') S.hold = !S.hold;
       if (ds.a === 'knobs') { const k = $('.is-knobs'); k.hidden = !k.hidden; k.innerHTML = knobsHTML(); }
@@ -410,7 +460,7 @@ export default {
     item = it;
     try { S.always = localStorage.getItem('stimming.accesslab.calm') === '1'; } catch { S.always = false; }
     host.innerHTML = '<div class="is-wrap">'
-      + `<div class="is-stage"><img alt=""><div class="is-strip"></div><div class="is-og" hidden><iframe title="Menu tile" scrolling="no" src="${ROOT}index.html?lab"></iframe></div>`
+      + `<div class="is-stage"><img alt=""><div class="is-strip"></div><div class="is-load" aria-live="polite"></div><div class="is-og" hidden><iframe title="Menu tile" scrolling="no" src="${ROOT}index.html?lab"></iframe></div>`
       + `<div class="is-gate">${glyph('flash')}<div class="t">Fast flashing light</div><div class="bar"><button class="w" type="button" data-go="calm">Play calm</button><span class="sl">/</span><button class="w" type="button" data-go="made">Play as made</button></div>`
       + `<label><input type="checkbox" data-always${S.always ? ' checked' : ''}> Always calm</label></div></div>`
       + '<div class="bar is-bar"></div>'
