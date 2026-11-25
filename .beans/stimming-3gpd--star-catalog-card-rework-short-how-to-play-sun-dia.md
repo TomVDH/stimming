@@ -16,6 +16,6 @@ Tom, 2026-11-24: the hint / controls menu copy is unwieldy; rework the Sun compa
 - [x] Units as symbols (R☉, M☉, K, ly, AU)
 - [x] i shows the card in any view (overlaps stimming-ew7y's item); a hint to press i again
 - [x] Second i opens the article panel (article.js): text, source link, a photo slot; i, Escape or × shuts it
-- [ ] Every object's text, facts checked (articles.js)
+- [x] Every object's text, facts checked (articles.js): 35 texts, 45 to 85 words, drafted from each article, checked for copied runs (none over four words) and reviewed; 3C 273's black hole mass and Stephenson 2-18's radius hedged to match the card
 - [ ] Photos: Tom's yes on the download, licences and size; credits on the panel and in CREDITS.md
 - [ ] Doc lines; Tom looks
