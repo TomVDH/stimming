@@ -149,7 +149,7 @@ The swatch kinds `cocoon`, `core`, `shells`, `disc` and `arc` draw as plain star
 
 ## Eggs (bean `stimming-239r`)
 
-A still press of 3 s on four stars plays a real event or a nod from that star (Tom, 2026-11-23). From 0.6 s the event builds; a release before 3 s runs it back out and does not flare. Each egg also plays on its own, about once per 25 minutes awake, but never under reduced motion. The code is in `eggs.js`.
+A still press of 3 s on five bodies plays a real event or a nod from that star (Tom, 2026-11-23). From 0.6 s the event builds; a release before 3 s runs it back out and does not flare. Each egg also plays on its own, about once per 25 minutes awake, but never under reduced motion. The code is in `eggs.js`.
 
 | Star | Egg | What happens |
 |---|---|---|
@@ -159,6 +159,7 @@ A still press of 3 s on four stars plays a real event or a nod from that star (T
 | Sun, a hold on Mercury | A ship in transit, after Sunshine (Tom, 2026-11-24; no film name on screen) | Only while Mercury is on the disk: a hold within 70 CSS pixels of it. From the cue a distress beacon sounds with sound on, three short pips and a pause on a radio hiss, panned to Mercury. At 3 s a ship of our own design crosses the disk just north of Mercury, black against the light: a slanted sunshield disc leading, a long spine with two modules, a payload block at the end. Its shield rim catches gold light, and at 13 s a turn throws a glint. It is drawn larger than true so it reads (at least 5 CSS pixels for the shield). Gone by 38 s. A rare egg on the Sun is this one or Carrington, at even odds |
 | Sun, a hold far out (Tom, 2026-11-25) | The pale blue dot, after Voyager 1's picture of 1990 | Only past about x16 (`DOT_FAR`, on the zoom's far scale); nearer in, the hold plays Carrington. A faint warm band of scattered light crosses the frame at a slant beside the Sun, and at 4 s one pale blue CSS pixel with a small glow lights inside it, a fifth of the frame from the Sun. Both hold to 20 s and are gone by 26 s. Final pass only (`uDot`); no sound of its own. A rare egg on the Sun far out is always this one |
 | Vega (Tom, 2026-11-25) | Primes, after Contact | Vega's light pulses in groups of 2, 3, 5, 7, 11 and 13, one pulse every 0.4 s (under three flashes a second), a 1.4 s pause between groups, about 22 s in all: the exposure lifts by up to 45 percent per pulse, 25 under reduced motion. With sound on, each pulse plays one soft sine note, a pentatonic step higher for each group (`prime` in `sound.js`, Dev switch Egg: primes). No shader change |
+| Cygnus X-1 (Tom, 2026-11-25) | A probe at the horizon | A hold anywhere on the stage. A small probe, a dark speck with a beacon, falls in from the upper left at 4.5 shadow radii: it speeds up, then slows as it nears the shadow, swinging about 45 degrees round it (`probe` in `eggs.js`). Its beacon blinks once a second in its own time; the blinks come slower as its redshift g falls, and the light turns from blue-white to deep red and dims. It never crosses: it freezes as a red ember just outside the shadow's edge and fades out by 36 s. Each blink plays a short pip at 880 Hz times g (`pip` in `sound.js`, Dev switch Egg: probe beacon). Final pass only (`uProbe`); light bending of the probe is left out. Reduced motion: the beacon holds steady |
 
 ## The stars
 

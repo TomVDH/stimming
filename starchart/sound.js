@@ -324,6 +324,17 @@ export function makeSound(kit, opt = () => undefined) {
     send(ac, pad, 0.8);
   }
 
+  // The probe's beacon: a short pip at the shifted pitch, quieter as it reddens.
+  function pip(f, level) {
+    const ac = kit.live();
+    if (!ac || !on('sndProbe') || !(level > 0.01)) return;
+    const t = ac.currentTime + 0.01;
+    const g = voice(ac, 0);
+    env(g, t, 0.035 * level, 0.008, 0.12);
+    osc(ac, 'sine', f, t, 0.2).connect(g);
+    send(ac, g, 0.6);
+  }
+
   // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
@@ -395,5 +406,5 @@ export function makeSound(kit, opt = () => undefined) {
     for (const d of [drone, ...leaving]) if (d) drop(d);
     drone = null;
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, beacon, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, beacon, quiet, get busy() { return pending > 0; } };
 }

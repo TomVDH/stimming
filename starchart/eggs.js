@@ -5,6 +5,7 @@
 // Sun, a hold on Mercury: a ship's distress beacon, then the ship in transit.
 // Sun, a hold far out: the pale blue dot, one pixel in a ray of scattered light.
 // Vega: its light pulses in prime counts, after Contact.
+// Cygnus X-1: a probe falls in, slows, reddens and freezes at the shadow's edge.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -20,7 +21,7 @@ export const CUE = 0.6;
 // An egg comes on its own about once per this many awake seconds.
 export const RARE = 25 * 60;
 // The star that holds each egg.
-export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice', vega: 'primes' };
+export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice', vega: 'primes', cygx1: 'probe' };
 
 /* ---------- the Carrington flare ---------- */
 // Carrington and Hodgson saw two white kernels flash over a huge spot group.
@@ -131,6 +132,31 @@ export function primes(egg) {
     if (d < 1.2) l = Math.max(l, Math.min(1, d / 0.05) * Math.exp(-d / 0.14));
   }
   return l;
+}
+
+/* ---------- a probe at the horizon (Tom, 2026-11-25) ---------- */
+// A far watcher never sees a falling probe cross: it slows, reddens and fades at the edge.
+export const PROBE_END = 36;
+// Its distance in shadow radii: 4.5 at the start, 1 at the edge.
+const PROBE_FROM = 4.5, PROBE_T = 6;
+export function makeProbe() {
+  return { kind: 'probe', t: CUE - HOLD, ph: 0, beat: 0 };
+}
+/** The probe at its clock: distance s, angle, redshift g (1 far out, 0 at the edge), weight. */
+export function probe(egg) {
+  const u = Math.max(egg.t, 0) / PROBE_T, k = 1 / (1 + u * u * u);
+  const s = 1 + (PROBE_FROM - 1) * k;
+  const g = Math.sqrt(1 - 1 / (s + 0.035));
+  const w = (egg.t < 0 ? sstep(CUE - HOLD, 0, egg.t) : 1) * (1 - sstep(PROBE_END - 6, PROBE_END, egg.t));
+  return { s, a: 2.35 - 0.8 * (1 - k), g, w };
+}
+/** One step: the beacon blinks once a second in its own time, slower as g falls; true on a new blink. */
+export function stepProbe(egg, dt) {
+  egg.ph += dt * probe(egg).g;
+  const beat = Math.floor(egg.ph);
+  const blink = beat > egg.beat;
+  egg.beat = beat;
+  return blink;
 }
 
 /* ---------- the Vela pulsar's true voice ---------- */

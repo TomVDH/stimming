@@ -1905,6 +1905,8 @@ uniform vec2 uBodyK;
 uniform vec4 uShip, uShip2;
 // The pale blue dot: its x and y in pixels, the ray's weight, the dot's weight.
 uniform vec4 uDot;
+// The probe at the horizon: x, y and size in pixels, weight; redshift g and the beacon's blink.
+uniform vec4 uProbe, uProbe2;
 uniform vec3 uHal, uStreak;
 // The far lens's sway with the mouse, -1 to 1 on each axis.
 uniform vec2 uSway;
@@ -2354,6 +2356,17 @@ vec3 blueDot(vec3 c, vec2 fc) {
   float glow = exp(-dot(q, q) / 4.0) * 0.7;
   return c + vec3(0.55, 0.72, 1.0) * (px * 1.6 + glow) * uDot.w;
 }
+// The probe: a dark speck against the ring's light, its beacon reddening and fading with g.
+vec3 probe(vec3 c, vec2 fc) {
+  if (uProbe.w <= 0.0) return c;
+  vec2 q = (fc - uProbe.xy) / uProbe.z;
+  float body = smoothstep(1.2, 0.8, length(q * vec2(1.0, 1.6)));
+  c *= 1.0 - 0.85 * body * uProbe.w;
+  float g = uProbe2.x;
+  vec3 lamp = mix(vec3(1.0, 0.12, 0.04), vec3(0.75, 0.9, 1.0), smoothstep(0.25, 0.9, g));
+  float glow = exp(-dot(q, q) / 0.6) + 0.25 * exp(-dot(q, q) / 6.0);
+  return c + lamp * glow * (0.3 + 0.7 * g) * (0.35 + 1.6 * uProbe2.y) * uProbe.w;
+}
 void main() {
   // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
   vec2 weave = (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes;
@@ -2437,6 +2450,7 @@ void main() {
   c = body(c, fc, uBodyB, uBodyK.y);
   c = ship(c, fc);
   c = blueDot(c, fc);
+  c = probe(c, fc);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
   // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
@@ -2875,6 +2889,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform2fv(f.u.uBodyK, v.bodyK);
     if (v.ship) { gl.uniform4fv(f.u.uShip, v.ship); gl.uniform4fv(f.u.uShip2, v.ship2); }
     if (v.dot) gl.uniform4fv(f.u.uDot, v.dot);
+    if (v.probe) { gl.uniform4fv(f.u.uProbe, v.probe); gl.uniform4fv(f.u.uProbe2, v.probe2); }
     gl.uniform1f(f.u.uLens, v.lens);
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);

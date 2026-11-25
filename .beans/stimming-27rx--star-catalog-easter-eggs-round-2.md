@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-25T03:44:55Z
-updated_at: 2026-11-25T09:41:09Z
+updated_at: 2026-11-25T09:48:19Z
 parent: stimming-e35i
 ---
 
@@ -17,5 +17,6 @@ Tom, 2026-11-24: refine the easter eggs. Round 1 is stimming-239r: Carrington (S
 - [x] Sun, far out: the pale blue dot, after Voyager 1 (Tom picked the top 3 of docs/plans/starchart-eggs.md, 2026-11-25; Tom: good)
 - [x] Epsilon Aurigae: the slab, dropped (Tom, 2026-11-25: the flat slab did not read as the reference)
 - [x] Vega: primes (Tom: good, 2026-11-25)
+- [x] Cygnus X-1: a probe at the horizon (Tom: good, 2026-11-25)
 - [ ] Build each pick, shown live
 - [ ] Doc: Eggs section true
