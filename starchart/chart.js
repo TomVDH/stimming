@@ -152,7 +152,9 @@ export function makeChart(o) {
         open(false);
       });
       b.addEventListener('pointerenter', () => tell(s));
-      b.addEventListener('focus', () => { tell(s); centre(b); });
+      // Only keyboard focus glides the body to the middle (Tom, 2026-11-25).
+      // A press focuses the tile too; a glide then would move it from under the pointer, and the click would miss.
+      b.addEventListener('focus', () => { tell(s); if (b.matches(':focus-visible')) centre(b); });
       b.addEventListener('pointerleave', () => tell());
       row.append(b);
       btns.push({ b, s, g: gi });
@@ -246,9 +248,11 @@ export function makeChart(o) {
   let drag = null, dragged = false;
   ladder.addEventListener('pointerdown', e => {
     touching = e.pointerType !== 'mouse';
-    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    // Any press stops the ribbon where it stands, so the tile under the pointer stays there.
     stop();
+    clearTimeout(wheelT);
     pos = ladder.scrollLeft;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     drag = { x: e.clientX, start: pos, id: e.pointerId, samples: [[e.timeStamp, e.clientX]] };
     dragged = false;
   });
