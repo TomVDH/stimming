@@ -666,12 +666,12 @@ function arrive() {
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
 // Our Sun stands beside the object at their true ratio; the Sun's own card has none.
-function showCard(hint = false) {
+function showCard(again = false) {
   cardStar = st.star;
   // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
   const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
-  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, hint);
+  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, again);
   showClock();
 }
 // A new card style plays at once when the view rests on the full star.

@@ -11,6 +11,8 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const HOLD = 6000;
 // One film frame at the menu's 30 fps, in ms.
 const FRAME = 1000 / 30;
+// The i hint comes on this long after the card's last line, in ms.
+const TIP_AFTER = 700;
 export const CARD_STYLES = [['intro', 'Intro'], ['stamp', 'Stamp'], ['caption', 'Caption']];
 
 const h = (tag, cls, text) => {
@@ -73,6 +75,7 @@ export function makeCard(o) {
       at += 3 * FRAME;
     }
     later(fade, at + HOLD);
+    return at;
   }
   // Stamp: the box lands in three frames, then the lines come on.
   function stamp({ name, lines }) {
@@ -81,6 +84,7 @@ export function makeCard(o) {
     let at = 6 * FRAME;
     for (const el of lines) { later(() => el.classList.remove('is-shut'), at); at += 2 * FRAME; }
     later(fade, at + HOLD);
+    return at;
   }
   // The caption's lines: the name, the type and formal name, then rows padded so values line up.
   const captionLines = c => [
@@ -88,7 +92,8 @@ export function makeCard(o) {
     ...c.rows.map(([k, v]) => [`${k.padEnd(11)}${v}`, 'e2 e3']),
   ];
   // Caption: each line types on in the monospace face, the name slowly and the facts fast.
-  function caption(c) {
+  // done runs when the last line has typed on.
+  function caption(c, done) {
     const cl = captionLines(c), text = cl.map(([t]) => t);
     const lines = cl.map(([, cls]) => box.appendChild(h('p', cls)));
     const cur = h('span', 'cur', '█');
@@ -99,6 +104,7 @@ export function makeCard(o) {
       if (ci < text[li].length) return later(type, li === 0 ? 40 + Math.random() * 30 : 14 + Math.random() * 10);
       if (++li < lines.length) { ci = 0; return later(type, li === 1 ? 260 : 90); }
       later(() => cur.remove(), 1600);
+      later(done, TIP_AFTER);
       later(fade, HOLD);
     };
     type();
@@ -143,9 +149,9 @@ export function makeCard(o) {
      * @param {{ name: string, type: string, latin: string | null, rows: [string, string][] }} c
      * @param {string} style One of CARD_STYLES.
      * @param {{ k: number } | null} sun The object's radius in R☉ beside our Sun, or null on the Sun.
-     * @param {boolean} hint Shows the hint to press i again for the article.
+     * @param {boolean} again The i key opened it: the hint says press i again.
      */
-    show(c, style = 'intro', sun = null, hint = false) {
+    show(c, style = 'intro', sun = null, again = false) {
       clear();
       box = h('div', `sl-card sl-card--${style}`);
       box.dataset.view = view;
@@ -157,21 +163,22 @@ export function makeCard(o) {
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
       }
+      // The i key's hint stands under the facts on every card (Tom, 2026-11-24).
+      // It comes on a little after the card's last line.
+      const tip = h('p', 'c-hint');
+      tip.append(h('kbd', null, 'I'), again ? 'again for the article' : 'for the article');
+      const open = () => tip.classList.remove('is-shut');
       if (style === 'caption') {
         if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
-        else caption(c);
+        else caption(c, open);
+        box.append(tip);
       } else {
         const parts = build(c);
-        if (RM.matches) later(fade, HOLD);
-        else if (style === 'stamp') stamp(parts); else intro(parts);
-      }
-      // The i key's hint shows under the facts, a beat after the card (Tom, 2026-11-24).
-      if (hint) {
-        const tip = h('p', 'c-hint');
-        tip.append(h('kbd', null, 'i'), ' again for the article');
         box.append(tip);
-        if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
+        if (RM.matches) later(fade, HOLD);
+        else { const end = style === 'stamp' ? stamp(parts) : intro(parts); later(open, end + TIP_AFTER); }
       }
+      if (!RM.matches) tip.classList.add('is-shut');
     },
     fade,
     clear,
