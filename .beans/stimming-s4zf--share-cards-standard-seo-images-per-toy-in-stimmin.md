@@ -5,7 +5,7 @@ status: draft
 type: feature
 priority: normal
 created_at: 2026-11-25T08:58:17Z
-updated_at: 2026-11-25T18:16:16Z
+updated_at: 2026-11-25T18:27:15Z
 parent: stimming-0cau
 ---
 
@@ -24,3 +24,5 @@ Each toy gets one og:image (1200 x 630) made from its data: name, full-colour me
 ## Notes
 
 - Tom, 2026-11-25: part of the new toy bench. The cards come from the icon the bench picks. The bench session has the handoff.
+
+- Tom, 2026-11-25: the look is set from a sample (docs/qa/share-cards/preview.html): the live full-colour menu tile, the askew menu wordmark, Iosevka name and motto, a faint still under an arced mask, the subtitle only when the toy has one. Cut: Dutch name, number, accent bars, heavy gradients. Next, in the bench: random lit letters, icon and image that do not compete, subtitle in B612, better title blending, and whether the card takes the intro or Signal style.
