@@ -2,7 +2,7 @@
 // Two light channels: red holds hot plasma, green holds cool plasma.
 // Passes: the disk and corona, the strands (additive, optically thin), bloom, light rays, the final.
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
-import { TRI_VS, program, linked, target, free, bind, tri, to } from '../shared/gl.js';
+import { TRI_VS, program, linked, target, free, bind, tri, to, uniforms } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
 import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES } from './sun.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
@@ -1711,10 +1711,13 @@ in vec2 vUv;
 out vec4 o;
 void main() {
   vec2 back = (vUv * uMv.xy + uMv.zw - vUv) * uBlur;
-  vec3 c = vec3(0.0);
-  // Eight taps across the move, centred on this frame.
-  for (int i = 0; i < 8; i++) c += texture(uSrc, vUv + back * (float(i) / 7.0 - 0.5)).rgb;
-  c /= 8.0;
+  // Eight taps across the move, centred on this frame; with no blur, one.
+  vec3 c = texture(uSrc, vUv).rgb;
+  if (uBlur > 0.0) {
+    c = vec3(0.0);
+    for (int i = 0; i < 8; i++) c += texture(uSrc, vUv + back * (float(i) / 7.0 - 0.5)).rgb;
+    c /= 8.0;
+  }
   o = vec4(mix(c, texture(uPrev, vUv).rgb, uBlend), 1.0);
 }`;
 // Copies a texture to the screen.
@@ -2205,8 +2208,6 @@ export async function makeRender(gl, opts = {}) {
     blur: program(gl, TRI_VS, BLUR),
     acc: program(gl, TRI_VS, ACC),
     final: program(gl, TRI_VS, FINAL),
-    post: program(gl, TRI_VS, POST),
-    copy: program(gl, TRI_VS, COPY),
     ...(opts.fluid ? fluidPrograms(gl) : {}),
   });
   const empty = gl.createVertexArray();
@@ -2308,6 +2309,15 @@ export async function makeRender(gl, opts = {}) {
   let histOk = false;
   // The post targets: the final picture and two history frames, made only while a post option is on.
   let post = null;
+  // The post programs compile on first use: an option at 0 costs nothing, not even a compile.
+  let postP = null;
+  function postProgs() {
+    if (!postP) {
+      postP = { post: program(gl, TRI_VS, POST), copy: program(gl, TRI_VS, COPY) };
+      uniforms(gl, postP.post); uniforms(gl, postP.copy);
+    }
+    return postP;
+  }
   function freePost() { if (post) { free(gl, post.src); free(gl, post.h[0]); free(gl, post.h[1]); post = null; } }
   function postTargets() {
     if (!post) {
@@ -2522,10 +2532,12 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(f.u.uDip, v.dip ?? 1);
     gl.uniform1f(f.u.uRow, B.row);
     // v.post: blur, blend and the move map; with both off the final pass draws to the screen.
-    const pp = v.post && (v.post.blur > 0 || v.post.blend > 0) ? postTargets() : (freePost(), null);
+    // With both options at 0, main sends no post: no pass, no target, no program.
+    if (!v.post && post) freePost();
+    const pp = v.post ? postTargets() : null;
     tri(gl, pp ? pp.src : null, empty);
     if (!pp) return;
-    const q = P.post, prev = pp.h[pp.i], next = pp.h[1 - pp.i];
+    const PP = postProgs(), q = PP.post, prev = pp.h[pp.i], next = pp.h[1 - pp.i];
     gl.useProgram(q.p);
     bind(gl, q, 'uSrc', 0, pp.src);
     bind(gl, q, 'uPrev', 1, prev);
@@ -2534,7 +2546,7 @@ export async function makeRender(gl, opts = {}) {
     // The first frame has no history to blend.
     gl.uniform1f(q.u.uBlend, pp.fresh ? 0 : v.post.blend);
     tri(gl, next, empty);
-    const c = P.copy;
+    const c = PP.copy;
     gl.useProgram(c.p);
     bind(gl, c, 'uSrc', 0, next);
     tri(gl, null, empty);

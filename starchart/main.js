@@ -1026,13 +1026,24 @@ const frameState = {
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 // The view on the last frame: motion blur maps each pixel to where it stood then.
-const was = { cx: 0, cy: 0, hw: 1, hh: 1 };
+const was = { cx: 0, cy: 0, hw: 1, hh: 1, ok: false };
+// The move map for a frame with no blur: each pixel stays where it is.
+const NO_MOVE = [1, 1, 0, 0];
 function makeFrame() {
   const f = frameState;
   // Dev frame blending and motion blur (Tom, 2026-11-24); both off by default.
-  const mv = [view.hw / was.hw, view.hh / was.hh, (view.cx - view.hw - was.cx) / (2 * was.hw) + 0.5, (view.cy - view.hh - was.cy) / (2 * was.hh) + 0.5];
-  f.post = { blur: Number(gv('motionBlur', 0)), blend: Number(gv('frameBlend', 0)), mv };
-  Object.assign(was, { cx: view.cx, cy: view.cy, hw: view.hw, hh: view.hh });
+  // At 0 an option is off: no post data, so no pass, and no move worked out (Tom, 2026-11-25).
+  const blur = Number(gv('motionBlur', 0)), blend = Number(gv('frameBlend', 0));
+  if (blur > 0) {
+    // The first blurred frame has no last view: it starts with none.
+    if (!was.ok) Object.assign(was, { cx: view.cx, cy: view.cy, hw: view.hw, hh: view.hh, ok: true });
+    const mv = [view.hw / was.hw, view.hh / was.hh, (view.cx - view.hw - was.cx) / (2 * was.hw) + 0.5, (view.cy - view.hh - was.cy) / (2 * was.hh) + 0.5];
+    Object.assign(was, { cx: view.cx, cy: view.cy, hw: view.hw, hh: view.hh });
+    f.post = { blur, blend, mv };
+  } else {
+    was.ok = false;
+    f.post = blend > 0 ? { blur: 0, blend, mv: NO_MOVE } : null;
+  }
   f.view.set([view.cx, view.cy, view.hw, view.hh]);
   setRot();
   // Column-major: the rot columns are M's columns; toSun is M transposed.
