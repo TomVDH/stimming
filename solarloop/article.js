@@ -1,10 +1,14 @@
 // Star catalog: the article, a short read on the object (Tom, 2026-11-24).
-// The second i opens it; i, Escape or the close button shuts it.
+// The second i opens it; i, Escape or its close hint shuts it.
 // The text is our own, its facts checked against the Wikipedia article it links.
+// It speaks the card's language (Tom, 2026-11-24): no box, the name flashes, each line wipes on.
+// It stands in the view's open sky, as the card does: setView names the view.
 
 import { ARTICLES } from './articles.js';
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
+// One film frame at 30 fps, in ms.
+const FRAME = 1000 / 30;
 
 const h = (tag, cls, text) => {
   const el = document.createElement(tag);
@@ -14,7 +18,7 @@ const h = (tag, cls, text) => {
 };
 
 /**
- * Builds the article panel on the stage.
+ * Builds the article on the stage.
  * @param {{ stage: HTMLElement }} o
  */
 export function makeArticle(o) {
@@ -23,15 +27,19 @@ export function makeArticle(o) {
   link.href = new URL('article.css', import.meta.url).href;
   document.head.append(link);
 
-  let box = null;
-  let shown = null;
+  let box = null, shown = null, view = 'full';
+  const timers = new Set();
+  const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
   function close() {
     if (!box) return;
+    for (const t of timers) clearTimeout(t);
+    timers.clear();
     const el = box;
     box = null; shown = null;
     if (RM.matches) { el.remove(); return; }
+    // It leaves in three film frames.
     el.classList.add('out');
-    setTimeout(() => el.remove(), 400);
+    setTimeout(() => el.remove(), 3 * FRAME + 20);
   }
 
   /**
@@ -42,14 +50,11 @@ export function makeArticle(o) {
     close();
     const a = ARTICLES[id];
     box = h('aside', 'sl-art');
+    box.dataset.view = view;
     box.setAttribute('aria-label', `${c.name}: article`);
-    // The stage's taps and drags stay off the panel.
+    // The stage's taps and drags stay off the article.
     for (const ev of ['pointerdown', 'wheel']) box.addEventListener(ev, e => e.stopPropagation());
-    const shut = h('button', 'a-close', '×');
-    shut.type = 'button';
-    shut.setAttribute('aria-label', 'Close the article');
-    shut.addEventListener('click', close);
-    box.append(shut);
+    const lines = [];
     if (a?.photo) {
       const fig = h('figure', 'a-photo');
       const img = h('img');
@@ -58,21 +63,56 @@ export function makeArticle(o) {
       img.decoding = 'async';
       fig.append(img, h('figcaption', null, a.photo.credit));
       box.append(fig);
+      lines.push(fig);
     }
-    box.append(h('h2', 'a-name', c.name), h('p', 'a-type', c.type));
-    for (const para of (a?.text ?? '').split('\n\n').filter(Boolean)) box.append(h('p', 'a-text', para));
+    const name = h('h2', 'a-name', c.name);
+    const type = h('p', 'a-type', c.type);
+    box.append(name, type);
+    lines.push(type);
+    // The text scrolls inside its own column when it runs long.
+    const body = h('div', 'a-body');
+    for (const para of (a?.text ?? '').split('\n\n').filter(Boolean)) {
+      const p = h('p', 'a-text', para);
+      body.append(p);
+      lines.push(p);
+    }
+    box.append(body);
     if (c.wiki) {
       const src = h('p', 'a-src');
       const at = h('a', null, 'Wikipedia ↗');
       at.href = c.wiki; at.target = '_blank'; at.rel = 'noopener';
-      src.append('Facts checked against ', at);
+      src.append(h('span', 'a-k', 'Source'), at);
       box.append(src);
+      lines.push(src);
     }
+    // The close hint is a button too, so a pointer can shut the article.
+    const shut = h('button', 'a-hint');
+    shut.type = 'button';
+    shut.setAttribute('aria-label', 'Close the article');
+    shut.append(h('kbd', null, 'i'), 'close');
+    shut.addEventListener('click', close);
+    box.append(shut);
+    lines.push(shut);
     o.stage.append(box);
     shown = id;
-    if (!RM.matches) requestAnimationFrame(() => box?.classList.add('in'));
-    else box.classList.add('in');
+    if (RM.matches) return;
+    // The name flashes in a white box, then each line wipes on behind a white bar, as the card's do.
+    [name, ...lines].forEach(el => el.classList.add('is-shut'));
+    later(() => { name.classList.remove('is-shut'); name.classList.add('is-flash'); }, 0);
+    later(() => name.classList.remove('is-flash'), 7 * FRAME);
+    let at = 11 * FRAME;
+    for (const el of lines) {
+      later(() => { el.classList.remove('is-shut'); el.classList.add('is-wipe'); }, at);
+      later(() => el.classList.remove('is-wipe'), at + 3 * FRAME);
+      at += 3 * FRAME;
+    }
   }
 
-  return { open, close, isOpen: () => !!box, get shown() { return shown; } };
+  return {
+    open, close,
+    isOpen: () => !!box,
+    get shown() { return shown; },
+    /** Names the view, so the article stands in its open sky: long, wide, full or far. */
+    setView(v) { view = v; if (box) box.dataset.view = v; },
+  };
 }

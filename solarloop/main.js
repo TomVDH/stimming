@@ -170,6 +170,8 @@ const cam = {
   v: 0, va: 0, moving: false,
   // The opening's or a switch's glide in, or false; its card waits for rest.
   glide: false,
+  // True while a magnet's quick catch runs.
+  snap: false,
   // The nearest stop names the framing.
   get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
 };
@@ -264,8 +266,9 @@ function toggleLens() {
 }
 // The wheel, a pinch and the - and = keys move the zoom by dz.
 // Magnet notches: a pause near a stop settles the zoom on it (Tom, 2026-11-24).
-// The full star's shows on the rail; the quarter's and the half's are hidden.
-const NOTCH = 2, NOTCH_REACH = 0.3, MAGNETS = [0, 1, NOTCH];
+// All three show on the rail: the full star's large, the quarter's and the half's small (Tom, 2026-11-24).
+const NOTCH = 2, NOTCH_REACH = 0.4, MAGNETS = [0, 1, NOTCH];
+// A magnet catches 0.16 s after the input pauses, and settles in half the time (Tom: snappier).
 // Sticky stops (Tom, 2026-11-24): the full star on the way in, the half view both ways.
 // A gesture that crosses one stops there; a later, separate gesture goes on.
 // Each entry: the stop, then the travel that it catches (-1 in, +1 out).
@@ -297,14 +300,15 @@ function zoomBy(dz) {
     // A magnet pulls ahead, so it never undoes an inward step.
     // The full star also pulls back a small overshoot on the way out.
     const m = MAGNETS.find(n => Math.abs(cam.to - n) < NOTCH_REACH && ((n - cam.to) * dz >= 0 || (n === NOTCH && dz > 0)));
-    if (m != null && cam.to !== m) springTo(m);
-  }, 300);
+    if (m != null && cam.to !== m) { springTo(m); cam.snap = true; }
+  }, 160);
 }
 // Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
   z = clamp(z, 0, Z_MAX);
-  // A glide-in ends at any new target.
+  // A glide-in ends at any new target, and so does a magnet's quick catch.
   cam.glide = false;
+  cam.snap = false;
   // A move away from the full star fades the star card.
   if (z !== NOTCH) card?.fade();
   // A new move starts: note where it began, and let its arrival play the card again.
@@ -333,7 +337,7 @@ const ZOOM_IN = 1.4;
 // Steps both followers; true while the zoom moves.
 // Steps the two followers toward the target.
 function stepFollow(dt) {
-  const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1);
+  const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1) * (cam.snap ? 0.5 : 1);
   [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
   [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
   cam.z = clamp(cam.z, 0, Z_MAX);
@@ -586,6 +590,7 @@ function showClock() { if (!calm) clock.show(st.turn, RATES.find(r => r[0] === t
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
   mid: NOTCH,
+  notches: [0, 1],
   max: Z_MAX,
   text: zoomText,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
@@ -614,6 +619,8 @@ function arrive() {
     if (performance.now() < restAt + CARD_REST) return;
   }
   if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
+  // An open article holds the card back; the card would stand over it.
+  if (article.isOpen()) return;
   cam.arrived = true;
   showCard();
 }
@@ -1105,9 +1112,14 @@ function makeFrame() {
   f.shimmer = calm || hole ? 0 : 2.2 * view.W / cssW;
   return f;
 }
+// The view the card and the article last stood in.
+let infoView = '';
 function draw() {
   if (!ren) return;
   ren.frame(makeFrame());
+  // The card and the article stand in the open sky of the view in hand.
+  const iv = cam.z > NOTCH + 0.3 ? 'far' : cam.mode;
+  if (iv !== infoView) { infoView = iv; card.setView(iv); article.setView(iv); }
   sst.draw({ on: shown === 'sgra', light: dipLight(), view, w: cssW, h: cssH, dpr: view.H / Math.max(1, cssH), R, cam: camView, rot: M, tilt: STARS[shown].hole?.tilt ?? 0, far: farAt(cam.z) });
 }
 
