@@ -304,6 +304,16 @@ export const STARS = {
     disk: [1.9, 0.6, 0.06, 0.2], disk2: [150, 0.4, 0.2, 0.05], tex: [4, 2, 0, 0.45],
     wide: 'none', long: 'none', root: 103.83,
   },
+  // A quasi-star: a model from the early universe, 8,200 to 40,700 suns wide.
+  // A black hole at its heart feeds on the envelope instead of fusion.
+  // Drawn in cutaway, as the Thorne-Zytkow object is; 18,000 suns sits between the models.
+  quasi: {
+    ...FLARE, day: 50000, ribbon: 1, bubble: 0.1, core: 2, lump: [0.05, 1.8, 0.6, 0.3],
+    row: 26, rsun: 18000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.2, prom: 0.5, dust: 0.3, rays: 0.9,
+    hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
+    disk: [1.85, 1.2, 0, 0.3], disk2: [160, 0.6, 0.3, 0.05], tex: [3, 1.6, 0, 0.7],
+    wide: 'none', long: 'none', root: 87.31,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.

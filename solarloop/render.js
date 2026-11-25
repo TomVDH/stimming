@@ -98,6 +98,9 @@ const LUTS = [
   // WOH G64: a dust-veiled glow, rust to amber gold; the torus burnt orange.
   [['000000', 0], ['0e0402', 0.1], ['341004', 0.26], ['782a06', 0.44], ['c45a12', 0.62], ['f09a2e', 0.78], ['ffd27a', 0.9], ['fff4d8', 1]],
   [['000000', 0], ['0e0402', 0.12], ['361204', 0.3], ['74300a', 0.5], ['b85818', 0.68], ['e89048', 0.84], ['fde2c0', 1]],
+  // The quasi-star: a crimson envelope, the heart burning gold to white.
+  [['000000', 0], ['100202', 0.1], ['3a0804', 0.26], ['821c08', 0.44], ['cc4a12', 0.6], ['f8922e', 0.75], ['ffd890', 0.88], ['fffaf0', 1]],
+  [['000000', 0], ['100204', 0.12], ['3a0a12', 0.3], ['7a1e1c', 0.5], ['c04a30', 0.68], ['f09060', 0.84], ['fff0e4', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -613,7 +616,17 @@ void main() {
     // A Thorne-Zytkow object in cutaway: the envelope thins toward the middle, so the inside shows.
     // Within: a white-gold core zone, a ragged burning shell, the neutron star at the heart.
     // The neutron star is drawn far larger than its true 20 km.
-    if (uCore > 0.0) {
+    // uCore 2 is a quasi-star: a black hole at the heart, and no burning shell.
+    if (uCore > 1.5) {
+      float x = r / R;
+      float pulse = 0.8 + 0.2 * sin(uTime * 0.5) * sin(uTime * 0.17 + 2.0);
+      hot *= 1.0 - 0.6 * smoothstep(0.9, 0.1, x);
+      // Gas falling into the hole heats the whole inside, brightest near the middle.
+      float heat = exp(-x * x / 0.07) * (0.55 + 0.9 * fbm(q * 5.0 + vec3(0.0, 0.0, tb * 2.0)));
+      // A blazing infall ring hugs the hole's shadow.
+      float ring = exp(-pow((x - 0.034) / 0.011, 2.0)) * 5.0 + exp(-x * x / 0.006) * 0.8;
+      hot = (hot + uDisk.x * (1.1 * heat + ring) * pulse) * smoothstep(0.02, 0.027, x);
+    } else if (uCore > 0.0) {
       float x = r / R;
       float pulse = 0.75 + 0.25 * sin(uTime * 0.7) * sin(uTime * 0.23 + 1.0);
       hot *= 1.0 - uCore * 0.7 * smoothstep(0.9, 0.15, x);
