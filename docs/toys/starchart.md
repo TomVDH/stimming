@@ -53,7 +53,7 @@ Event horizon's black hole, ported into Solar loop (Tom, 2026-11-24): Cygnus X-1
 
 ## The S stars (bean `stimming-bw0w`)
 
-Sagittarius A* carries the S stars, the cluster that weighed the hole (Tom, 2026-11-24). Twenty-two stars on their published orbits: S1, S2, S4, S8, S9, S12, S13, S14, S17, S18, S21, S29, S31, S38, S39, S55, S60, S62, S175, S4711, S4714 and S4716.
+Sagittarius A* carries the S stars, the cluster that weighed the hole (Tom, 2026-11-24). They show only while the star card or the article stands (Tom, 2026-11-25): they fade in over 0.8 s and out over 3 s once both close; reduced motion shows and hides them at once. Faded out, they do no work: no step and no draw. Twenty-two stars on their published orbits: S1, S2, S4, S8, S9, S12, S13, S14, S17, S18, S21, S29, S31, S38, S39, S55, S60, S62, S175, S4711, S4714 and S4716.
 
 - Elements: GRAVITY 2022 for S2, S29, S38 and S55; Peißker et al. 2022 for S4716; Peißker et al. 2020 for S62, S4711 and S4714; Gillessen et al. 2017 for the rest. The orientation is the sky's: north up, east to the left, as the pictures from the earth show them; S2 runs clockwise.
 - Not to scale (Tom, 2026-11-24: "lets try not to scale"). One scale for every orbit, so each keeps its true shape: S2's far point stands 20 hole radii out, about 460 times closer than in nature. A deep plunge (S4714, S62, S175) rounds off at 1.15 hole radii, just outside the photon ring.

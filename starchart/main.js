@@ -658,6 +658,18 @@ const clock = makeClock({
 });
 // The S stars' years since this visit began.
 let sYears = 0;
+// The S stars show only while the card or the article stands (Tom, 2026-11-25).
+// sVis fades in over 0.8 s and out over 3 s; at 0 the S stars do no work at all.
+let sVis = 0;
+const S_IN = 0.8, S_OUT = 3;
+// Steps the fade; true while it moves.
+function stepSVis(dt) {
+  const want = shown === 'sgra' && (card.isOpen() || article.isOpen()) ? 1 : 0;
+  if (sVis === want) return false;
+  // Reduced motion shows or hides them at once.
+  sVis = calm ? want : want > sVis ? Math.min(1, sVis + dt / S_IN) : Math.max(0, sVis - dt / S_OUT);
+  return sVis !== want;
+}
 // What the clock reads now: the shown star's clock, rate, time and phase.
 function clockRead() {
   const c = clockOf(shown);
@@ -1233,7 +1245,8 @@ function draw() {
   // The card and the article stand in the open sky of the view in hand.
   const iv = cam.z > NOTCH + 0.3 ? 'far' : cam.mode;
   if (iv !== infoView) { infoView = iv; card.setView(iv); article.setView(iv); }
-  sst.draw({ on: shown === 'sgra', light: dipLight(), view, w: cssW, h: cssH, dpr: view.H / Math.max(1, cssH), R, cam: camView, rot: M, tilt: STARS[shown].hole?.tilt ?? 0, far: farAt(cam.z) });
+  // Hidden S stars cost nothing: draw only clears the layer once, then returns at once.
+  sst.draw({ on: shown === 'sgra' && sVis > 0, light: dipLight() * sVis, view, w: cssW, h: cssH, dpr: view.H / Math.max(1, cssH), R, cam: camView, rot: M, tilt: STARS[shown].hole?.tilt ?? 0, far: farAt(cam.z) });
 }
 
 // The fluid's step and draw for this frame: the box stands under the prominence, radial up.
@@ -1281,7 +1294,9 @@ function frame(now) {
     stepFlares(sun, dt * flarePace(STARS[shown]) * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
     // The S stars follow Turn; each visit starts their clock again.
-    if (shown === 'sgra') { const k = dt * drifting * 10 ** (turn.lr - fitLog('sgra')); sst.step(k); sYears += k / YEAR_S; } else { sst.reset(); sYears = 0; }
+    // The S stars step only while they show; the clock's years go on regardless.
+    if (shown === 'sgra') { const k = dt * drifting * 10 ** (turn.lr - fitLog('sgra')); if (sVis > 0) sst.step(k); sYears += k / YEAR_S; } else { sst.reset(); sYears = 0; }
+    const sFading = stepSVis(dt);
     if (FLUID) {
       // A new framing may show another prominence: the fluid moves to it.
       if (!fluidRun || fluidRun.mode !== cam.mode) { const p = promInView(); if (p) startFluid(p); }
@@ -1316,7 +1331,7 @@ function frame(now) {
     draw();
     D.frame(dt);
     frameNo++;
-    lively = zooming || turning || swaying || settling || adapting || dipping || glowing || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || turning || swaying || settling || adapting || dipping || glowing || sFading || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
     if (drifting > 0) { mixSound(); snd.hum(shown); }
     again = lively || drifting > 0;
   } finally {
