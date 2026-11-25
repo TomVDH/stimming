@@ -149,7 +149,7 @@ The swatch kinds `cocoon`, `core`, `shells`, `disc` and `arc` draw as plain star
 
 ## Eggs (bean `stimming-239r`)
 
-A still press of 3 s on five bodies plays a real event or a nod from that star (Tom, 2026-11-23). From 0.6 s the event builds; a release before 3 s runs it back out and does not flare. Each egg also plays on its own, about once per 25 minutes awake, but never under reduced motion. The code is in `eggs.js`.
+A still press of 3 s on six bodies plays a real event or a nod from that star (Tom, 2026-11-23). From 0.6 s the event builds; a release before 3 s runs it back out and does not flare. Each egg also plays on its own, about once per 25 minutes awake, but never under reduced motion. The code is in `eggs.js`.
 
 | Star | Egg | What happens |
 |---|---|---|
@@ -160,6 +160,7 @@ A still press of 3 s on five bodies plays a real event or a nod from that star (
 | Sun, a hold far out (Tom, 2026-11-25) | The pale blue dot, after Voyager 1's picture of 1990 | Only past about x16 (`DOT_FAR`, on the zoom's far scale); nearer in, the hold plays Carrington. A faint warm band of scattered light crosses the frame at a slant beside the Sun, and at 4 s one pale blue CSS pixel with a small glow lights inside it, a fifth of the frame from the Sun. Both hold to 20 s and are gone by 26 s. Final pass only (`uDot`); no sound of its own. A rare egg on the Sun far out is always this one |
 | Vega (Tom, 2026-11-25) | Primes, after Contact | Vega's light pulses in groups of 2, 3, 5, 7, 11 and 13, one pulse every 0.4 s (under three flashes a second), a 1.4 s pause between groups, about 22 s in all: the exposure lifts by up to 45 percent per pulse, 25 under reduced motion. With sound on, each pulse plays one soft sine note, a pentatonic step higher for each group (`prime` in `sound.js`, Dev switch Egg: primes). No shader change |
 | Cygnus X-1 (Tom, 2026-11-25) | A probe at the horizon | A hold anywhere on the stage. A small probe, a dark speck with a beacon, falls in from the upper left at 4.5 shadow radii: it speeds up, then slows as it nears the shadow, swinging about 45 degrees round it (`probe` in `eggs.js`). Its beacon blinks once a second in its own time; the blinks come slower as its redshift g falls, and the light turns from blue-white to deep red and dims. It never crosses: it freezes as a red ember just outside the shadow's edge and fades out by 36 s. Each blink plays a short pip at 880 Hz times g (`pip` in `sound.js`, Dev switch Egg: probe beacon). Final pass only (`uProbe`); light bending of the probe is left out. Reduced motion: the beacon holds steady |
+| 3C 273 (Tom, 2026-11-25) | The Moon's edge, after Hazard at Parkes, 1962 | A hold at any zoom. The Moon, 1.6 frame heights in radius with its centre 1.3 below the quasar, slides left to right at 0.23 frame heights a second; it shows during the hold. Its face is near black with faint earthshine and darker seas; its limb is sharp. The limb covers the quasar at 4 s and uncovers it about 8 s later; while covered, the quasar's lens flare goes too (`uMoon.w`). Gone by about 21 s. With sound on, a band-passed radio hiss fades in when the hold completes, cuts dead at cover and returns at uncover (`hiss` in `sound.js`, Dev switch Egg: radio hiss). Final pass only |
 
 ## The stars
 

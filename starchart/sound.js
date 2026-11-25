@@ -335,6 +335,29 @@ export function makeSound(kit, opt = () => undefined) {
     send(ac, g, 0.6);
   }
 
+  // 3C 273's radio hiss: in, cut dead when the Moon covers it at cut, back after gap, out after hold.
+  // Returns a stop for an egg cut short.
+  function hiss(cut, gap, hold) {
+    const ac = kit.live();
+    if (!ac || !on('sndHiss')) return null;
+    const t = ac.currentTime + 0.01, len = cut + gap + hold + 3;
+    const g = voice(ac, 0);
+    const lv = 0.05;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(lv, t + 1.5);
+    g.gain.setValueAtTime(lv, t + cut);
+    g.gain.linearRampToValueAtTime(0, t + cut + 0.03);
+    g.gain.setValueAtTime(0, t + cut + gap);
+    g.gain.linearRampToValueAtTime(lv, t + cut + gap + 0.03);
+    g.gain.setValueAtTime(lv, t + cut + gap + hold);
+    g.gain.linearRampToValueAtTime(0, t + len - 0.1);
+    const bp = filt(ac, 'bandpass', 1400, 0.6);
+    bp.connect(g);
+    noise(ac, t, len).connect(bp);
+    send(ac, g, 0.25);
+    return () => { const n = ac.currentTime; g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(g.gain.value, n); g.gain.linearRampToValueAtTime(0, n + 0.3); };
+  }
+
   // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
@@ -406,5 +429,5 @@ export function makeSound(kit, opt = () => undefined) {
     for (const d of [drone, ...leaving]) if (d) drop(d);
     drone = null;
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, beacon, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, hiss, beacon, quiet, get busy() { return pending > 0; } };
 }

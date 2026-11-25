@@ -1907,6 +1907,8 @@ uniform vec4 uShip, uShip2;
 uniform vec4 uDot;
 // The probe at the horizon: x, y and size in pixels, weight; redshift g and the beacon's blink.
 uniform vec4 uProbe, uProbe2;
+// The Moon's edge: its centre and radius in pixels, and how much of the quasar it hides.
+uniform vec4 uMoon;
 uniform vec3 uHal, uStreak;
 // The far lens's sway with the mouse, -1 to 1 on each axis.
 uniform vec2 uSway;
@@ -2367,6 +2369,19 @@ vec3 probe(vec3 c, vec2 fc) {
   float glow = exp(-dot(q, q) / 0.6) + 0.25 * exp(-dot(q, q) / 6.0);
   return c + lamp * glow * (0.3 + 0.7 * g) * (0.35 + 1.6 * uProbe2.y) * uProbe.w;
 }
+// The Moon: a dark disc with a faint earthshine, its limb sharp.
+vec3 moon(vec3 c, vec2 fc) {
+  if (uMoon.z <= 0.0) return c;
+  float d = length(fc - uMoon.xy) - uMoon.z;
+  float aa = max(1.0, uDpr) * 1.2;
+  float cov = smoothstep(aa, -aa, d);
+  if (cov <= 0.0) return c;
+  vec2 m = (fc - uMoon.xy) / uMoon.z;
+  // Maria: darker patches in a grey that barely shows.
+  float maria = fbm(vec3(m * 3.0, 21.0));
+  vec3 shine = vec3(0.028, 0.03, 0.036) * (0.7 + 0.5 * smoothstep(0.35, 0.65, maria));
+  return mix(c, shine, cov);
+}
 void main() {
   // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
   vec2 weave = (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes;
@@ -2443,6 +2458,8 @@ void main() {
     fl += hm * lensFlare(src, 1.6 * uCam.w, fall, FL_BB.y * (1.0 + 2.6 * uCam.w) * (1.0 + 2.0 * grow), 0.42 + 0.2 * uCam.w + grow);
   }
   // Screen blend: the flare washes the frame; light past white stays as it is.
+  // The Moon hides the quasar's flare once its limb covers the source.
+  fl *= 1.0 - uMoon.w;
   c += min(fl, vec3(1.0)) * max(1.0 - c, 0.0);
   // The scale bodies.
   vec2 fc = uv * uRes;
@@ -2451,6 +2468,7 @@ void main() {
   c = ship(c, fc);
   c = blueDot(c, fc);
   c = probe(c, fc);
+  c = moon(c, fc);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
   // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
@@ -2890,6 +2908,7 @@ export async function makeRender(gl, opts = {}) {
     if (v.ship) { gl.uniform4fv(f.u.uShip, v.ship); gl.uniform4fv(f.u.uShip2, v.ship2); }
     if (v.dot) gl.uniform4fv(f.u.uDot, v.dot);
     if (v.probe) { gl.uniform4fv(f.u.uProbe, v.probe); gl.uniform4fv(f.u.uProbe2, v.probe2); }
+    if (v.moon) gl.uniform4fv(f.u.uMoon, v.moon);
     gl.uniform1f(f.u.uLens, v.lens);
     gl.uniform1f(f.u.uFull, v.full);
     gl.uniform4fv(f.u.uCam, v.cam);
