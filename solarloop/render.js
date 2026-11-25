@@ -86,9 +86,9 @@ const LUTS = [
   // The Thorne-Zytkow object: deep crimson to a peach white where the core shows.
   [['000000', 0], ['0e0302', 0.1], ['300a04', 0.27], ['6c1a08', 0.45], ['b23a10', 0.62], ['e8702a', 0.78], ['ffb884', 0.9], ['fff2e6', 1]],
   [['000000', 0], ['120204', 0.1], ['3c0810', 0.3], ['801620', 0.5], ['c8402c', 0.68], ['f4906a', 0.84], ['fff0e6', 1]],
-  // V1400 Centauri: a young orange K star; the ring dust backlit amber tan.
-  [['000000', 0], ['0e0502', 0.1], ['341404', 0.25], ['7c300a', 0.43], ['c85e16', 0.6], ['f4963c', 0.76], ['ffca8e', 0.89], ['fff2e4', 1]],
-  [['000000', 0], ['0a0704', 0.12], ['2a1e10', 0.3], ['6a5030', 0.5], ['b0905e', 0.68], ['e6cfa4', 0.84], ['fff6e8', 1]],
+  // Fomalhaut: an A star, white with a breath of blue; its dust belt a warm grey glow.
+  [['000000', 0], ['05070b', 0.1], ['161c28', 0.26], ['424e66', 0.44], ['8896b4', 0.62], ['c8d2e8', 0.78], ['f2f5ff', 0.9], ['ffffff', 1]],
+  [['000000', 0], ['0a0806', 0.12], ['2a2420', 0.3], ['6a5e54', 0.5], ['b0a294', 0.68], ['e4dcd2', 0.84], ['fffaf4', 1]],
   // Beta Lyrae: a blue-white giant; the disc, the stream and the jets glow warm white.
   [['000000', 0], ['03070d', 0.1], ['0e2036', 0.26], ['2a5888', 0.44], ['6a9ed6', 0.62], ['b4d4f6', 0.78], ['eaf4ff', 0.9], ['ffffff', 1]],
   [['000000', 0], ['0c0806', 0.12], ['32241a', 0.3], ['7a5a40', 0.5], ['caa07a', 0.68], ['f2dcc0', 0.84], ['fffaf2', 1]],
@@ -257,7 +257,34 @@ float hn(vec3 p) {
   return texture(uNoise3, (i + f + 0.5) / 64.0).r;
 }
 float hn2(vec3 p) { return 0.65 * hn(p) + 0.35 * hn(p.zxy * 2.07 + 5.3); }
-// The gas at a point in the hole's frame: emission (hot, cool) per unit length, and extinction.
+// A wisp sheet where the ray crosses it: emission (hot, cool) and extinction for a unit path.
+// layer: 0 above the disc, 1 below, so the two sheets carry different clouds.
+// The noise is smooth and fixed for the frame: no sampling grain.
+vec2 holeWisp(vec3 p, vec3 v, float layer, out float ext) {
+  ext = 0.0;
+  float r = length(p.xz), R3 = length(p);
+  float env = smoothstep(RIN - 0.3, RIN + 1.0, r) * smoothstep(ROUT + 1.0, ROUT - 4.0, r);
+  if (env < 0.004 || R3 < 1.05) return vec2(0.0);
+  float phi = atan(p.z, p.x);
+  float q = RIN / max(r, RIN);
+  float f = pow(q, 0.75) * pow(max(1.0 - 0.94 * sqrt(q), 0.0), 0.25) / 0.52;
+  float beta = sqrt(0.5 / max(r - 1.0, 0.5));
+  vec3 ph = vec3(-p.z, 0.0, p.x) / max(r, 1e-3);
+  float g = sqrt(max(1.0 - 1.0 / R3, 0.0)) * sqrt(max(1.0 - beta * beta, 0.0)) / (1.0 + beta * dot(ph, v));
+  float blue = smoothstep(0.7, 1.6, pow(f, 1.5) * g * uHole.w);
+  // The clouds shear at the Kepler rate and reset unseen, as the disc's streaks do.
+  float om = sqrt(0.5 / (r * r * r)), xx = uTime * om / 1.5708;
+  float fa = fract(xx), fb = fract(xx + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
+  float pa = phi - 1.5708 * fa + 2.3 * floor(xx), pb = phi - 1.5708 * fb + 2.3 * floor(xx + 0.5) + 1.7;
+  float na = hn2(vec3(cos(pa) * r, layer * 7.3, sin(pa) * r) * 0.55);
+  float nb = hn2(vec3(cos(pb) * r, layer * 7.3 + 11.0, sin(pb) * r) * 0.55);
+  // A soft floor: rounded clouds with clear sky between, no speckle.
+  float d = env * smoothstep(0.38, 0.75, mix(nb, na, wa)) * uHoleV.y;
+  float lum = pow(f, 2.2) * g * g * g * uHole.z * uHoleV.z;
+  ext = d * 0.45;
+  return vec2(lum * (1.0 - blue), lum * blue) * d;
+}
+// A quasar's gas at a point in the hole's frame: emission (hot, cool) per unit length, and extinction.
 // v: the ray's backward direction, for the Doppler shift.
 vec2 holeVol(vec3 p, vec3 v, out float ext) {
   ext = 0.0;
@@ -272,21 +299,6 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
   float g = sqrt(max(1.0 - 1.0 / R3, 0.0)) * sqrt(max(1.0 - beta * beta, 0.0)) / (1.0 + beta * dot(ph, v));
   float blue = smoothstep(0.7, 1.6, pow(f, 1.5) * g * uHole.w);
   vec2 L = vec2(0.0);
-  // Wisps: a thin turbulent layer over the disc; it shears at the Kepler rate and resets unseen.
-  float H = 0.22 + 0.07 * r;
-  float env = smoothstep(RIN - 0.3, RIN + 1.0, r) * smoothstep(ROUT + 1.0, ROUT - 4.0, r) * exp(-y * y / (2.0 * H * H));
-  if (env > 0.004) {
-    float om = sqrt(0.5 / (r * r * r)), xx = uTime * om / 1.5708;
-    float fa = fract(xx), fb = fract(xx + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
-    float pa = phi - 1.5708 * fa + 2.3 * floor(xx), pb = phi - 1.5708 * fb + 2.3 * floor(xx + 0.5) + 1.7;
-    float na = hn(vec3(cos(pa) * r, y * 2.5, sin(pa) * r) * 0.8);
-    float nb = hn(vec3(cos(pb) * r, y * 2.5, sin(pb) * r) * 0.8 + 11.0);
-    // A high floor: only real clumps, no even haze past the disc.
-    float d = env * smoothstep(0.55, 0.85, mix(nb, na, wa)) * uHoleV.y;
-    float lum = pow(f, 2.2) * g * g * g * uHole.z * uHoleV.z;
-    L += vec2(lum * (1.0 - blue), lum * blue) * d;
-    ext += d * 0.5;
-  }
   if (uHoleQ.x > 0.0) {
     // The dusty torus: thick, clumpy, dark; its inner rim glows hot where the disc lights it.
     float RT = 30.0, a = 7.0;
@@ -302,8 +314,8 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
     if (r > 12.0 && r < 26.0 && abs(y) < 9.0) {
       float om = sqrt(0.5 / (r * r * r)) * 0.5;
       float pc = phi - uTime * om;
-      float n = hn(vec3(cos(pc) * r, y * 1.3, sin(pc) * r) * 0.9);
-      float cl = smoothstep(0.8, 0.9, n) * smoothstep(12.0, 15.0, r) * smoothstep(26.0, 22.0, r) * exp(-y * y / 30.0) * uHoleQ.z;
+      float n = hn2(vec3(cos(pc) * r, y * 1.3, sin(pc) * r) * 0.45);
+      float cl = smoothstep(0.68, 0.88, n) * smoothstep(12.0, 15.0, r) * smoothstep(26.0, 22.0, r) * exp(-y * y / 30.0) * uHoleQ.z;
       L.y += cl * 0.3 * 14.0 / R3;
       ext += cl * 0.15;
     }
@@ -332,8 +344,8 @@ vec4 holeTrace(vec2 P) {
   float a0 = (1.0 + dot(normalize(x), v)) / max(b, 1e-3);
   v = normalize(v * cos(a0) - normalize(pp + 1e-6) * sin(a0));
   float hot = 0.0, cool = 0.0, tr = 1.0, gone = 0.0;
-  // White noise per pixel, stepped each frame: the layer's one sample reads as grain, never a pattern.
-  float jv = h13(vec3(gl_FragCoord.xy, floor(uTime * 30.0)));
+  // Interleaved gradient noise, fixed in time: a still offset for the quasar's samples.
+  float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   if (b < REXIT) {
     vec3 hv = cross(x, v);
     float h2 = dot(hv, hv);
@@ -353,22 +365,38 @@ vec4 holeTrace(vec2 P) {
       vec3 k4 = v + dt * a3, a4 = -1.5 * h2 * xd * ip5(xd);
       x += dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
       v += dt / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
-      // The volumetric layer, sampled three times along the step, jittered per pixel and frame.
+      // Wisps: two thin sheets of cloud just above and below the disc, shaded where the bent ray
+      // crosses each, so they bend with the lensing and carry no sampling grain.
       if (uHoleV.x > 0.0) {
+        for (int sh = 0; sh < 2; sh++) {
+          float hs = sh == 0 ? 0.5 : -0.5;
+          if ((x0.y - hs) * (x.y - hs) < 0.0) {
+            float t = (x0.y - hs) / (x0.y - x.y);
+            vec3 ps = mix(x0, x, t), ds = normalize(mix(v0, v, t));
+            // A slanted ray stays longer in the sheet.
+            float sl = min(1.0 / max(abs(ds.y), 0.1), 6.0) * 0.6;
+            float ex;
+            vec2 e = holeWisp(ps, ds, float(sh), ex);
+            hot += tr * e.x * sl;
+            cool += tr * e.y * sl;
+            tr *= exp(-ex * sl);
+          }
+        }
+        // A quasar's torus, clouds and winds: four samples a step where they live.
+        // A fixed per-pixel offset breaks step bands into a still, fine dither: no flicker.
         float rm = length(mix(x0, x, 0.5)), ym = abs(mix(x0.y, x.y, 0.5));
-        // Only near the disc's plane, or in a quasar's torus and clouds: elsewhere nothing lives.
-        if (rm < uHoleV.w && rm > 2.4 && (ym < 0.8 + 0.22 * rm || (uHoleQ.x > 0.0 && ym < 12.0))) {
-          float seg = dt * length(mix(v0, v, 0.5));
-          for (int k = 0; k < 1; k++) {
-            float tt = jv;
+        if (uHoleQ.x > 0.0 && rm < uHoleV.w && rm > 4.0 && ym < 12.0) {
+          float seg = dt * length(mix(v0, v, 0.5)) / 4.0;
+          for (int k = 0; k < 4; k++) {
+            float tt = (float(k) + jq) / 4.0;
             float ex;
             vec2 e = holeVol(mix(x0, x, tt), normalize(mix(v0, v, tt)), ex);
             hot += tr * e.x * seg;
             cool += tr * e.y * seg;
             tr *= exp(-ex * seg);
           }
-          if (tr < 0.01) break;
         }
+        if (tr < 0.01) break;
       }
       // Each crossing of the disc adds light; many crossings make the photon ring.
       if (x0.y * x.y < 0.0) {
@@ -801,40 +829,33 @@ void main() {
     cool += neb * (0.16 + 1.0 * kn * kn);
     hot += neb * 0.15 * kn;
   }
-  // A giant ring system: J1407b's 37 rings with their gaps. Tilted, so an ellipse.
-  // uRing2.zw, when set, puts the rings round the star itself, scaled to that span in radii:
-  // the near half crosses the star's face and the star hides the far half (Tom, 2026-11-24).
-  // The drag turns them with the camera; the star's spin leaves them still.
+  // Fomalhaut's dust belts (Tom, 2026-11-24: a real ringed star), scaled from 133 AU to a few radii.
+  // A narrow main belt with a sharp inner edge, its centre a little off the star; a faint inner belt;
+  // and the dust cloud once called Fomalhaut b. The dust is thin: it glows with scattered starlight
+  // and barely dims the star. Tilted, so an ellipse; the star hides the far half.
+  // uRing.yz: the belt's centre in R; uRing.w: the minor ratio, its sign the near half.
+  // uRing2: the major axis's angle, the glow, the inner belt's radius, the main belt's radius.
   if (uRing.x > 0.0) {
     vec2 d = P / R - uRing.yz;
-    float ca = cos(uRing2.x), sa = sin(uRing2.x);
+    float ca = cos(uRing2.x), sa = sin(uRing2.x), k = abs(uRing.w);
     vec2 e = vec2(ca * d.x + sa * d.y, -sa * d.x + ca * d.y);
-    float rho = length(vec2(e.x, e.y / abs(uRing.w)));
-    bool round = uRing2.w > 0.0;
-    float rhoR = rho;
-    // Map the scaled span onto the true one, so the bands and gaps keep their places.
-    if (round) rho = 43.0 + (rho - uRing2.z) / (uRing2.w - uRing2.z) * 86.0;
-    // The near half is the side the ratio's sign names; the star hides the other.
-    float behind = round && e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
-    // At least 37 rings from 0.2 to 0.6 AU: about 43 to 129 star radii.
-    float band = smoothstep(41.0, 46.0, rho) * smoothstep(131.0, 124.0, rho);
-    // Fine ringlets inside broader rings; sharp edges, as Saturn's show.
-    float fine = pow(0.5 + 0.5 * sin(rho * 5.3 + 4.0 * vn(vec3(rho * 0.5, 1.0, 2.0))), 3.0);
-    float rings = 0.55 * smoothstep(0.35, 0.6, vn(vec3(rho * 0.7, 4.0, 1.0))) + 0.45 * fine;
-    // Clear gaps; the widest near 0.4 AU, where a moon may sweep a lane.
-    float gaps = (1.0 - exp(-pow((rho - 86.0) / 2.2, 2.0))) * (1.0 - 0.8 * exp(-pow((rho - 61.0) / 1.2, 2.0))) * (1.0 - 0.7 * exp(-pow((rho - 104.0) / 1.5, 2.0)));
-    float tau = uRing.x * band * gaps * mix(0.08, 1.8, rings * rings) * behind;
-    float T = exp(-tau);
-    hot *= T; cool *= T;
-    // Round the star the rings catch its light, brightest close in: a bright system, not a shadow.
-    if (round) cool += uRing2.y * uDisk.x * uOff * (1.0 - T) * step(R, r) * (0.2 + 0.9 * exp(-(rhoR - uRing2.z) / 1.6));
-    // Starlight scatters forward through the dust: strongest near the star's line.
-    // Over the disk the rings only darken; off it they glow faintly.
-    // Far out a long exposure lifts their sheen, so the whole system shows.
-    float lit = (1.0 - T) * step(R, r) * (0.04 + 0.35 * exp(-(r - R) / (1.5 * R)) + 0.38 * uFar);
-    cool += uRing2.y * uDisk.x * lit;
-    // The ringed body at the centre, when the rings are not the star's: a dim speck.
-    if (!round) hot += 0.4 * uDisk.x * uOff * exp(-dot(d, d) / 0.3);
+    // Back in the belt's own plane, undoing the tilt.
+    vec2 pl = vec2(e.x, e.y / k);
+    float rho = length(pl), rb = uRing2.w;
+    float ang = atan(pl.y, pl.x);
+    // Clumps along the belt, as Hubble and JWST show it.
+    float clump = 0.55 + 0.9 * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
+    float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * 0.1));
+    float inner = 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
+    vec2 cp = vec2(-0.45, 0.72) * rb;
+    float cloud = 0.45 * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
+    float hide = e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
+    // Dust scatters forward: the near half glows a little brighter.
+    float fwd = 0.75 + 0.5 * smoothstep(0.0, -0.8 * rb * k, e.y * sign(uRing.w));
+    float L = ((belt + inner) * clump + cloud) * fwd * hide;
+    cool += uRing.x * uRing2.y * uDisk.x * L * (0.5 * uOff + 0.25 + 0.3 * uFar);
+    // The thin dust over the disk dims it only faintly.
+    hot *= 1.0 - 0.08 * belt * hide * step(r, R);
   }
   hot *= shade;
   // Beta Lyrae's partner: its disc and stream are gas in the volume pass.

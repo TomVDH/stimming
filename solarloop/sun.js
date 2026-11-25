@@ -200,16 +200,15 @@ export const STARS = {
     disk: [1.8, 0.8, 0.08, 0.4], disk2: [70, 1, 0.6, 0.16], tex: [90, 12, 0.18, 0.6],
     wide: 'none', long: 'none', root: 185,
   },
-  // V1400 Centauri: a young K star that a giant ring system crossed in 2007.
-  // The rings, J1407b's, reach 0.6 AU: about 130 star radii from their centre.
-  j1407: {
-    ...FLARE, spots: 1.2, day: 3.2, ribbon: 1.8, sat: 1.1,
-    // Rings round the star itself (Tom, 2026-11-24): a model, J1407b's rings set round their K star.
-    // inner, outer: the rings' span in star radii, scaled down so the whole system frames.
-    ring: { tau: 1, ratio: 0.3, angle: 0.22, glow: 1.4, cx: 0, cy: 0, inner: 1.5, outer: 6 }, reach: 2.4,
-    row: 22, rsun: 1, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.35, dust: 0.1, rays: 0.8,
-    hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
-    disk: [1.8, 0.8, 0.1, 0.38], disk2: [50, 0.9, 0.55, 0.13], tex: [130, 13, 0.18, 0.62],
+  // Fomalhaut: an A star 25 light years off, ringed by a belt of icy dust that Hubble and JWST imaged.
+  fomalhaut: {
+    ...FLARE, day: 1.0, rain: 0.3,
+    // Fomalhaut and its dust belts (Tom, 2026-11-24), scaled from 133 to 158 AU down to 6 radii.
+    // cx, cy: the belt's centre, a little off the star; inner, outer: the inner belt's and main belt's radii.
+    ring: { tau: 1, ratio: 0.41, angle: 0.27, glow: 1.2, cx: 0.55, cy: 0.15, inner: 3.4, outer: 6 }, reach: 2.4,
+    row: 22, rsun: 1.84, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.45, dust: 0, rays: 1,
+    hal: [0.8, 0.85, 1], streak: [0.75, 0.82, 1],
+    disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],
     wide: 'none', long: 'none', root: 196,
   },
   // Arcturus: an orange giant, 25 suns wide.

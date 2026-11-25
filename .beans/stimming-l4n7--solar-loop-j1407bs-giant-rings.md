@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T21:55:17Z
-updated_at: 2026-11-24T22:52:56Z
+updated_at: 2026-11-25T00:55:33Z
 parent: stimming-e35i
 ---
 
@@ -14,3 +14,7 @@ Tom, 2026-11-24: picked from the object list. A ring system about 180 million km
 - [x] Look: the star, the companion and its ring system crossing it; how the long lens, the wide view and far zoom frame it
 - [x] Facts for the star card, sourced (Mamajek et al. 2012; Kenworthy and Mamajek 2015)
 - [ ] Tom looks at it live
+
+## Fomalhaut (Tom, 2026-11-24)
+
+"do we have an actual ring star we can pick": swapped in Fomalhaut, a real ringed star, for the J1407b model: a narrow off-centre dust belt, an inner belt and the dust cloud, scaled, glowing thin dust; the rings turn in 3D with a drag. The id j1407 is gone; the new id is fomalhaut.

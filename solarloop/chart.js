@@ -28,7 +28,7 @@ export const CHART = {
   vycma: { t: 3490, cls: 'M5 Ia hypergiant' },
   wr124: { kind: 'wind', t: 44700, cls: 'WN8h Wolf-Rayet' },
   tzo: { kind: 'tzo', t: 3500, cls: 'Thorne–Żytkow object, predicted' },
-  j1407: { kind: 'ringed', t: null, cls: 'K5 young star with giant rings, a model' },
+  fomalhaut: { kind: 'ringed', t: 8590, cls: 'A3 V, a dust belt' },
   betalyr: { kind: 'binary', t: 13300, cls: 'B7 II donor, interacting binary' },
   s5hvs1: { t: null, cls: 'A-type hypervelocity star' },
   siriusb: { kind: 'dwarf', t: 25000, cls: 'DA2 white dwarf' },

@@ -5,7 +5,7 @@
 // WR 124: Hamann et al. 2019 (radius, age); the Gaia distance.
 // Thorne-Zytkow object: Thorne and Zytkow 1977; model sizes after Farmer et al. 2023.
 // status: what is known of an object that is only predicted. core: what hides inside.
-// V1400 Centauri: Mamajek et al. 2012; Kenworthy and Mamajek 2015 (the rings). rings: a ring system's size.
+// Fomalhaut: Kalas et al. 2008 (Hubble), Gaspar et al. 2023 (JWST); Mamajek 2012 (age). rings: a ring system's size.
 // Beta Lyrae: Harmanec and Scholz 1993 (the period); Mennickent and Djurasevic 2013 (the disc). orbit: a binary's period.
 // S5-HVS1: Koposov et al. 2020. speed: a runaway's speed through the galaxy.
 // mag may be a range in words.
@@ -38,7 +38,7 @@ export const FACTS = {
   vycma: { type: 'red hypergiant · M5 Ia', name: 'VY Canis Majoris', latin: null, cat: 'HIP 35793', turn: null, mag: 7.95, wide: 'about 1,420 suns', dist: 'about 3,800 light years', age: 'about 8 million years', found: '1801' },
   wr124: { type: 'Wolf-Rayet star · WN8h', name: 'WR 124', latin: 'QR Sagittae', cat: null, turn: null, mag: 11.2, wide: 'about 12 suns', dist: 'about 21,000 light years', age: 'about 8.6 million years', found: '1938' },
   tzo: { type: 'Thorne–Żytkow object, a model', name: 'Thorne–Żytkow object', latin: null, cat: null, status: 'predicted in 1977, not yet found', core: 'a neutron star about 20 km wide', turn: null, mag: null, wide: 'about 1,000 suns, a model', dist: null, age: null, found: null },
-  j1407: { name: 'A ringed star', type: 'a model, young star with giant rings · K5', latin: null, cat: null, status: 'a model: the rings of J1407b, which eclipsed V1400 Centauri in 2007, set round the star itself', rings: 'at least 37, scaled to 6 star radii', turn: 'about 3.2 days', mag: null, wide: null, dist: null, age: null, found: '2012, in the 2007 eclipse' },
+  fomalhaut: { latin: 'Alpha Piscis Austrini', type: 'white main-sequence star with a dust belt · A3 V', cat: 'HIP 113368', status: 'its belt imaged by Hubble (2008) and JWST (2023)', rings: 'a dust belt 133 to 158 AU out, and an inner belt; scaled here', turn: null, mag: 1.16, wide: 'about 1.8 suns', dist: '25 light years', age: 'about 440 million years' },
   betalyr: { type: 'interacting binary · B7 II donor', latin: 'Sheliak', cat: 'HIP 92420', orbit: '12.94 days, 19 seconds longer each year', turn: null, mag: '3.3 to 4.4', wide: null, dist: 'about 1,000 light years', age: null, found: 'known since antiquity; its eclipses in 1784' },
   siriusb: { type: 'white dwarf · DA2', latin: 'Alpha Canis Majoris B', cat: 'WD 0642−166', turn: null, mag: 8.44, wide: '0.008 of the sun', dist: '8.6 light years', age: 'about 228 million years', found: '1862' },
   cygx1: { type: 'stellar black hole', latin: null, cat: 'HDE 226868, its companion', mass: '21 suns', turn: null, mag: null, wide: 'its horizon, 125 km', dist: 'about 7,200 light years', age: 'about 5 million years', found: '1964' },
