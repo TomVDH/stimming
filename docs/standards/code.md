@@ -75,7 +75,7 @@ Every toy page that uses them carries this importmap, word for word:
 
 - Controls: Bar v2. The toy passes one `bar` spec to `initPage`; the shell builds every control. Spec and limits: `docs/plans/bar-v2.md`.
 - Never build a new page on the old bar. Never restyle the shared bar from a toy.
-- A heavy toy reports load progress: `stage(name)` and `buildSteps(n)` in `shared/stim.js`.
+- A heavy toy reports load progress: `stage(name)` and `buildSteps(n, notes)` in `shared/stim.js`. Notes name each step in plain words; the intro shows them above the load line.
 - Settings persist under `stimming.<id>.<key>`.
 - Never build a toy's own Quality chips. Size canvases with `fitCanvas()` or `pixelRatio()`; call `onQuality(resize)`.
 - A toy may keep its own Low tier in front of Standard.

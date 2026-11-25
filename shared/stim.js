@@ -4,7 +4,7 @@
 // Full URLs match the shared importmap, so each library loads once.
 import { converter, toGamut, formatRgb } from 'https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm';
 // The intro shows the load; stage() reports it. A page imports the intro by this same address.
-import { progress } from './intro.js';
+import { progress, loadNote } from './intro.js';
 // Every toy page gets the S favicon.
 import { toyFavicon } from './favicon.js';
 const TONE_URL = 'https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm';
@@ -1290,12 +1290,16 @@ let framed = false;
 /**
  * A build in n steps, for the intro's load line. Call the returned function once per finished step.
  * It returns its argument, so it fits a promise chain: bake().then(step).
+ * With notes, the intro names each step under the line as it starts: 'Baking the haze   3 / 6'.
  * @param {number} n The steps from stage('build') to the first frame.
+ * @param {string[]} [notes] Each step in plain words, in order; a toy without notes shows the line alone.
  */
-export function buildSteps(n) {
+export function buildSteps(n, notes = []) {
   let k = 0;
+  const say = () => { if (notes[k]) loadNote(notes[k], k + 1, n); };
+  say();
   // A step that ends after the first frame reports nothing.
-  return value => { if (!framed) stage('build', Math.min(1, ++k / n)); return value; };
+  return value => { if (!framed) { stage('build', Math.min(1, ++k / n)); say(); } return value; };
 }
 // Resolves when the main thread is free, so a build step cannot stall the intro.
 export const idle = (timeout = 800) => new Promise(r => ('requestIdleCallback' in window ? requestIdleCallback(() => r(), { timeout }) : setTimeout(r, 50)));
