@@ -21,7 +21,7 @@ Goal: the Crab as a lit volume with real scale.
 - The Ring Nebula (stimming-wcfv) may reuse the same shell march.
 
 - [x] Pick the technique and its pass (final pass at half resolution, or the volume pass): a baked 128³ volume (NBAKE), marched in the final pass
-- [x] March the shell: front-to-back 48-step march, tilted M1 silhouette with western bay, O III / S II / H-alpha filament palette, absorption
-- [x] Scale cues and parallax on drag: 3D tilted pulsar wind torus with expanding relativistic wisps, curved bipolar jets, faint stars through gaps
+- [x] March the shell: 3D Worley cellular Rayleigh-Taylor filament web, Hubble mint/gold/terracotta palette, milky sky-blue synchrotron cloud, front-to-back 48-step absorption
+- [x] Scale cues and dynamics: 10x larger nebula over pinprick pulsar (`reach: 180`, `size: 280`), Doppler-beamed relativistic wisps, flickering inner knot, Chandra 3D torus and curved jet, subtle expansion, Taurus stars through gaps
 - [ ] Perf check live with Tom
 - [ ] Tom looks at it live

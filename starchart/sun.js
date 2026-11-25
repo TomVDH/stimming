@@ -92,11 +92,11 @@ export const STARS = {
   },
   // The Crab Nebula: the remnant of the supernova of 1054, round the Crab pulsar.
   // The pulsar turns 30 times a second; on screen it turns in 0.3 s, so its beams blend to a glow.
-  // The nebula stands 30 R out each way here; the true one is 11 light years wide.
+  // The nebula stands 280 R out so the pulsar reads as a pinprick inside a vast remnant.
   crab: {
-    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, reach: 18,
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, reach: 180,
     ns: { u: 0.34, rl: 2.2, wind: 1, beam: 1, spin: 0.3, real: 0.0333924 },
-    bow: { kind: 4, heading: 0.45, size: 30, col: [1, 0.4, 0.2] },
+    bow: { kind: 4, heading: 0.45, size: 280, col: [1, 0.4, 0.2] },
     row: 5, rsun: 1.44e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.7,
     hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
     disk: [0.75, 0.55, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [24, 3, 0, 0.35],
