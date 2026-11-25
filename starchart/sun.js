@@ -300,6 +300,15 @@ export const STARS = {
     disk: [1.7, 0.6, 0.08, 0.36], disk2: [90, 0.5, 0.35, 0.08], tex: [40, 8, 0.1, 0.5],
     wide: 'none', long: 'none', root: 185,
   },
+  // Przybylski's star: an Ap star, rare earth metals in patches, a strong field, a quiet face.
+  // Its true turn may take near 188 years; the clock caps it at the slowest.
+  przyb: {
+    ...FLARE, spots: 0, day: 50000, ribbon: 0.4, bubble: 0.1, starspot: [0.45, 1.45, 0.35, 2.0],
+    row: 11, rsun: 1.98, expo: 1, hotW: 1, coolW: 0.9, loop: 0.25, prom: 0.2, dust: 0, rays: 0.8,
+    hal: [1, 0.82, 0.42], streak: [1, 0.9, 0.6],
+    disk: [1.8, 0.6, 0.1, 0.38], disk2: [60, 0.7, 0.4, 0.1], tex: [150, 14, 0.12, 0.55],
+    wide: 'none', long: 'none', root: 220,
+  },
   // Mira: a pulsing red giant, about 330 to 400 suns wide, beating every 332 days.
   // It ploughs through the gas at 130 km/s: a bow shock ahead, a tail 13 light years long.
   // The tail is the toy's, not to scale; its blue is GALEX's ultraviolet light.

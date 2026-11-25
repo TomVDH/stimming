@@ -16,6 +16,7 @@ export const CHART = {
   vega: { t: 9600, cls: 'A0 V' },
   sirius: { t: 9900, cls: 'A1 V' },
   procyon: { t: 6500, cls: 'F5 IV' },
+  przyb: { t: 6600, cls: 'Ap star, chemically peculiar' },
   sun: { t: 5772, cls: 'G2 V' },
   epseri: { t: 5080, cls: 'K2 V' },
   proxima: { t: 3040, cls: 'M5.5 V' },
@@ -86,7 +87,7 @@ const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3)) 
 
 // The groups, by kind of body; an object in none of them joins "More".
 const GROUPS = [
-  ['Stars', ['proxima', 'epseri', 'sun', 'xxtri', 'procyon', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
+  ['Stars', ['proxima', 'epseri', 'sun', 'xxtri', 'procyon', 'przyb', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
   ['Giants', ['arcturus', 'polaris', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
   ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur']],

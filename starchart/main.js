@@ -572,7 +572,7 @@ const fxv = id => {
 const PICKS = [
   ['zetaoph', 'Zeta Ophiuchi', 'oklch(0.7 0.16 275)'], ['regulus', 'Regulus', 'oklch(0.82 0.09 245)'],
   ['vega', 'Vega', 'oklch(0.94 0.02 250)'], ['sirius', 'Sirius', 'oklch(0.9 0.04 250)'],
-  ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
+  ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['przyb', 'Przybylski\'s star', 'oklch(0.9 0.09 100)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
   ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'], ['polaris', 'Polaris', 'oklch(0.92 0.06 95)'],
