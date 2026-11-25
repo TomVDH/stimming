@@ -52,3 +52,4 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [ ] Lighter far bake: the two cubes take about 196 MB at RGBA16F
 - [ ] Hyper cyclone in the far bake (Tom's batch, 2026-11-24)
 - [ ] Zany structures in the middle distance on the card machinery (Tom's batch, 2026-11-24)
+- [ ] Carry the upper void's tools down the dive: rolling bake in every void (mushball fall, nave, gyre, lightning nest); funnels in the mushball fall; the nave's columns as cards; the gyre's eyewall with the funnel light
