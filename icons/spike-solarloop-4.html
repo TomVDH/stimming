@@ -62,7 +62,7 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 </head>
 <body>
 <h1>Icon spike: Aster 4</h1>
-<p class="lede">Aster, round 4: the toy's new name (Tom, 2026-11-24: "we'll call this toy Aster instead", "a better and new icon"). Aster is the Greek for star, and a flower. Current: round 1's A, on the menu today. A: a glossy gold star core in two rings of violet petal rays. D: the bloom over a dark violet glass block.</p>
+<p class="lede">Aster, round 4: the toy's new name (Tom, 2026-11-24: "we'll call this toy Aster instead", "a better and new icon", "sweeping STAR with FLARE", "a little less gaudy and more villeneuvian"). Aster is the Greek for star. Current: round 1's A, on the menu today. A: one white-hot star in haze with a long anamorphic sweep. D: the star over a tall, dark monolith.</p>
 <div id="out"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
 <script>
@@ -212,137 +212,136 @@ h2 { margin: 0 0 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.14em
 
   /* ================= Aster: shared parts ================= */
 
-  // Aster is the Greek for star, and a flower: a star core in a ring of petal rays.
-  // The toy's gold for the core; the aster's violet for the rays.
-  const CORE = [[0, '#fff'], [0.32, 'oklch(0.97 0.08 92)'], [0.72, 'oklch(0.85 0.16 78)'], [1, 'oklch(0.66 0.17 56)']];
-  const OBS = [[0, 'oklch(0.34 0.03 290)'], [1, 'oklch(0.2 0.03 292)']];
-  const OBL = [[0, 'oklch(0.27 0.03 290)'], [1, 'oklch(0.2 0.025 292)']];
-  const OBR = [[0, 'oklch(0.18 0.025 290)'], [1, 'oklch(0.12 0.02 292)']];
+  // Aster is the Greek for star: one white-hot star in haze, a long anamorphic sweep.
+  // Restrained, after Villeneuve (Tom, 2026-11-24): sand, smoke, one strong light.
+  const CORE = [[0, '#fff'], [0.4, 'oklch(0.97 0.025 85)'], [0.78, 'oklch(0.84 0.05 72)'], [1, 'oklch(0.64 0.06 60)']];
+  const OBS = [[0, 'oklch(0.27 0.012 70)'], [1, 'oklch(0.17 0.01 70)']];
+  const OBL = [[0, 'oklch(0.2 0.01 70)'], [1, 'oklch(0.14 0.008 70)']];
+  const OBR = [[0, 'oklch(0.13 0.008 70)'], [1, 'oklch(0.09 0.006 70)']];
   const pt = p => `${f(p[0])} ${f(p[1])}`;
-  // One petal ray from the core: wide near its middle, a soft point at its tip.
-  // c: the centre; a: the angle; r0: where it starts; L: its length; w: its width.
-  const petal = (c, a, r0, L, w) => {
+  // A flare from the core: widest at its root, tapering to a point.
+  // c: the centre; a: the angle; r0: its root; L: its length; w: its root width.
+  const spike = (c, a, r0, L, w) => {
     const u = [Math.cos(a), Math.sin(a)], v = [-u[1], u[0]];
     const P = (s, t) => [c[0] + u[0] * s + v[0] * t, c[1] + u[1] * s + v[1] * t];
-    return `M${pt(P(r0, -w * 0.22))}C${pt(P(r0 + L * 0.15, -w * 0.46))} ${pt(P(r0 + L * 0.3, -w * 0.5))} ${pt(P(r0 + L * 0.45, -w * 0.5))}`
-      + `C${pt(P(r0 + L * 0.72, -w * 0.5))} ${pt(P(r0 + L * 0.92, -w * 0.3))} ${pt(P(r0 + L, 0))}`
-      + `C${pt(P(r0 + L * 0.92, w * 0.3))} ${pt(P(r0 + L * 0.72, w * 0.5))} ${pt(P(r0 + L * 0.45, w * 0.5))}`
-      + `C${pt(P(r0 + L * 0.3, w * 0.5))} ${pt(P(r0 + L * 0.15, w * 0.46))} ${pt(P(r0, w * 0.22))}Z`;
+    return `M${pt(P(r0, -w / 2))}C${pt(P(r0 + L * 0.35, -w * 0.3))} ${pt(P(r0 + L * 0.75, -w * 0.08))} ${pt(P(r0 + L, 0))}`
+      + `C${pt(P(r0 + L * 0.75, w * 0.08))} ${pt(P(r0 + L * 0.35, w * 0.3))} ${pt(P(r0, w / 2))}Z`;
   };
-  // A lighter streak down a petal's middle, so each ray reads as a fold.
-  const vein = (c, a, r0, L, w) => petal(c, a, r0 + L * 0.06, L * 0.78, w * 0.26);
-  // The petals' colour runs out from the core: white-hot, rose, then violet.
-  const asterDefs = (u, c, R) => `${light(u)}${blur(`${u}b`, 2.4)}${blur(`${u}h`, 12)}${blur(`${u}g`, 6)}
+  // The sweep: a long streak on a shallow arc, thick at the star, tapering at both ends.
+  // c: the star; reach: half its length; th: its thickness; bow: how far its ends rise.
+  const sweep = (c, reach, th, bow) => {
+    const n = 40, top = [], bot = [];
+    for (let i = 0; i <= n; i++) {
+      const s = i / n * 2 - 1, x = c[0] + s * reach, y = c[1] - bow * s * s;
+      const t = th * Math.pow(1 - Math.abs(s), 1.6) / 2 + 0.3;
+      top.push([x, y - t]);
+      bot.push([x, y + t]);
+    }
+    return 'M' + top.concat(bot.reverse()).map(pt).join('L') + 'Z';
+  };
+  const asterDefs = u => `${light(u)}${blur(`${u}b`, 2.4)}${blur(`${u}h`, 14)}${blur(`${u}s`, 3)}${blur(`${u}g`, 7)}
           ${rg(`${u}core`, CORE, 'cx="0.42" cy="0.38" r="0.66"')}
-          ${rg(`${u}back`, [[0, 'oklch(0.93 0.08 88)'], [0.34, 'oklch(0.74 0.13 330)'], [1, 'oklch(0.46 0.17 296)']], `gradientUnits="userSpaceOnUse" cx="${f(c[0])}" cy="${f(c[1])}" r="${f(R)}"`)}
-          ${rg(`${u}front`, [[0, '#fff'], [0.3, 'oklch(0.9 0.09 340)'], [0.7, 'oklch(0.72 0.15 310)'], [1, 'oklch(0.6 0.17 300)']], `gradientUnits="userSpaceOnUse" cx="${f(c[0])}" cy="${f(c[1])}" r="${f(R)}"`)}
-          ${rg(`${u}pt`, [[0, '#fff'], [0.45, 'oklch(0.97 0.07 90)'], [0.8, 'oklch(0.86 0.14 80)'], [1, 'oklch(0.78 0.15 330)']], `gradientUnits="userSpaceOnUse" cx="${f(c[0])}" cy="${f(c[1])}" r="${f(R)}"`)}
-          ${rg(`${u}glow`, [[0, 'oklch(0.9 0.12 85)', 0.9], [0.4, 'oklch(0.72 0.15 320)', 0.45], [1, 'oklch(0.55 0.17 300)', 0]])}`;
-  // The bloom: a glow, a back ring of twelve rays, a front ring between them, the core.
-  // Classes: glow, back, front, core. R: the bloom's radius to the rays' tips.
-  const aster = (u, c, R) => {
-    const N = 12, r0 = R * 0.2;
-    // Four back rays reach the full radius: the star's points through the bloom.
-    const star = i => i % 3 === 0;
-    const back = Array.from({ length: N }, (_, i) => petal(c, (i / N) * Math.PI * 2 - Math.PI / 2, r0, star(i) ? R * 0.98 : R * 0.68, star(i) ? R * 0.24 : R * 0.19));
-    const frontA = i => ((i + 0.5) / N) * Math.PI * 2 - Math.PI / 2;
-    const front = Array.from({ length: N }, (_, i) => petal(c, frontA(i), r0, R * 0.8 - (i % 2) * R * 0.1, R * 0.23));
-    const veins = Array.from({ length: N }, (_, i) => vein(c, frontA(i), r0, R * 0.8 - (i % 2) * R * 0.1, R * 0.23));
-    const rc = R * 0.3;
+          ${rg(`${u}haze`, [[0, 'oklch(0.94 0.03 85)', 0.85], [0.3, 'oklch(0.8 0.05 72)', 0.45], [0.65, 'oklch(0.55 0.04 65)', 0.16], [1, 'oklch(0.4 0.03 60)', 0]])}
+          ${lg(`${u}spk`, [[0, '#fff'], [1, 'oklch(0.9 0.04 80)']], 'x1="0" y1="0" x2="1" y2="1"')}
+          ${lg(`${u}sw`, [[0, 'oklch(0.75 0.05 70)', 0], [0.15, 'oklch(0.82 0.05 72)', 0.6], [0.4, 'oklch(0.95 0.03 82)', 1], [0.5, '#fff', 1], [0.6, 'oklch(0.95 0.03 82)', 1], [0.85, 'oklch(0.82 0.05 72)', 0.6], [1, 'oklch(0.75 0.05 70)', 0]], 'x1="0" y1="0" x2="1" y2="0"')}`;
+  // The star: a wide haze, the sweep, one faint ghost, a short vertical flare, the core.
+  // Classes: haze, sweep, ghost, spikes, core. R: the haze's reach.
+  const aster = (u, c, R, reach) => {
+    const rc = R * 0.24;
+    const vert = [-Math.PI / 2, Math.PI / 2].map(a => spike(c, a, rc * 0.6, R * 0.62, rc * 0.9));
     const disc = `M${f(c[0] - rc)} ${f(c[1])}a${f(rc)} ${f(rc)} 0 1 0 ${f(2 * rc)} 0a${f(rc)} ${f(rc)} 0 1 0 ${f(-2 * rc)} 0Z`;
     return `
-        <ellipse class="glow" cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(R * 1.05)}" ry="${f(R * 1.05)}" fill="url(#${u}glow)" filter="url(#${u}g)"/>
-        <g class="back" data-o="${pt(c)}">${back.map((d, i) => star(i) ? body(d, u, 'pt') : `<path d="${d}" fill="url(#${u}back)"/><path d="${d}" fill="url(#${u}lit)" opacity="0.6"/>`).join('')}</g>
-        <g class="front" data-o="${pt(c)}">${front.map(d => body(d, u, 'front')).join('')}${veins.map(d => `<path d="${d}" fill="#fff" opacity="0.28"/>`).join('')}</g>
-        <ellipse cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(rc * 1.5)}" ry="${f(rc * 1.5)}" fill="oklch(0.95 0.1 88)" opacity="0.55" filter="url(#${u}b)"/>
-        <g class="core" data-o="${pt(c)}">${body(disc, u, 'core')}
-          <circle cx="${f(c[0])}" cy="${f(c[1])}" r="${f(rc * 0.62)}" fill="none" stroke="oklch(0.72 0.16 64)" stroke-width="${f(rc * 0.16)}" opacity="0.35"/></g>`;
+        <ellipse class="haze" cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(R * 1.15)}" ry="${f(R * 0.95)}" fill="url(#${u}haze)" filter="url(#${u}g)"/>
+        <g class="sweep" data-o="${pt(c)}">
+          <path d="${sweep(c, reach, rc * 2.6, R * 0.1)}" fill="url(#${u}sw)" opacity="0.5" filter="url(#${u}s)"/>
+          <path d="${sweep(c, reach * 0.96, rc * 0.9, R * 0.1)}" fill="url(#${u}sw)"/>
+        </g>
+        <circle class="ghost" cx="${f(c[0] + R * 0.55)}" cy="${f(c[1] + R * 0.6)}" r="${f(rc * 0.8)}" fill="oklch(0.85 0.04 78)" opacity="0.16" filter="url(#${u}b)"/>
+        <g class="spikes" data-o="${pt(c)}">${vert.map(d => `<path d="${d}" fill="url(#${u}spk)" opacity="0.75"/>`).join('')}</g>
+        <ellipse cx="${f(c[0])}" cy="${f(c[1])}" rx="${f(rc * 1.9)}" ry="${f(rc * 1.9)}" fill="oklch(0.97 0.03 85)" opacity="0.55" filter="url(#${u}b)"/>
+        <g class="core" data-o="${pt(c)}">${body(disc, u, 'core')}</g>`;
   };
-  // The bloom opens on hover: the rays spread and turn, the core flares.
-  // The rays lean toward the pointer; leave settles all.
+  // The star swells slowly on hover; the sweep stretches; the ghost drifts against the pointer.
   const runAster = svg => {
-    const back = svg.querySelector('.back'), front = svg.querySelector('.front'), core = svg.querySelector('.core'), glow = svg.querySelector('.glow');
-    const o = front.dataset.o;
+    const haze = svg.querySelector('.haze'), sw = svg.querySelector('.sweep'), ghost = svg.querySelector('.ghost'), spikes = svg.querySelector('.spikes'), core = svg.querySelector('.core');
+    const o = core.dataset.o;
     let tl = null;
     return {
       enter() {
         if (tl) tl.kill();
         tl = gsap.timeline();
-        tl.to(front, { scale: 1.1, rotation: 8, svgOrigin: o, duration: 0.5, ease: 'back.out(2)' })
-          .to(back, { scale: 1.06, rotation: -6, svgOrigin: o, duration: 0.5, ease: 'back.out(2)' }, '<')
-          .to(core, { scale: 1.14, svgOrigin: o, duration: 0.25, ease: 'power3.out' }, '<')
-          .to(glow, { scale: 1.25, opacity: 1, svgOrigin: o, duration: 0.3, ease: 'power2.out' }, '<')
-          .to(core, { scale: 1.06, svgOrigin: o, duration: 1.2, ease: 'sine.out' })
-          .to(glow, { scale: 1.12, svgOrigin: o, duration: 1.2, ease: 'sine.out' }, '<');
+        tl.to(sw, { scaleX: 1.12, svgOrigin: o, duration: 1.4, ease: 'power2.out' })
+          .to(core, { scale: 1.1, svgOrigin: o, duration: 1.4, ease: 'power2.out' }, '<')
+          .to(spikes, { scaleY: 1.15, svgOrigin: o, duration: 1.4, ease: 'power2.out' }, '<')
+          .to(haze, { scale: 1.12, opacity: 1, svgOrigin: o, duration: 1.6, ease: 'power2.out' }, '<');
       },
       move(p) {
         if (!p) return;
-        const [ox] = o.split(' ').map(Number);
-        const lean = clamp((p[0] - ox) * 0.25, -10, 10);
-        gsap.to(front, { rotation: 8 + lean, svgOrigin: o, duration: 0.6, ease: 'power2.out' });
-        gsap.to(back, { rotation: -6 + lean * 0.6, svgOrigin: o, duration: 0.8, ease: 'power2.out' });
+        const [ox, oy] = o.split(' ').map(Number);
+        gsap.to(ghost, { x: clamp(-(p[0] - ox) * 0.3, -14, 14), y: clamp(-(p[1] - oy) * 0.3, -14, 14), duration: 1.2, ease: 'power2.out' });
       },
       leave() {
         if (tl) tl.kill();
         tl = null;
-        gsap.to([front, back], { scale: 1, rotation: 0, svgOrigin: o, duration: 0.7, ease: 'power2.inOut' });
-        gsap.to(core, { scale: 1, svgOrigin: o, duration: 0.6 });
-        gsap.to(glow, { scale: 1, svgOrigin: o, duration: 0.6 });
+        gsap.to(sw, { scaleX: 1, svgOrigin: o, duration: 1.2, ease: 'power2.inOut' });
+        gsap.to(spikes, { scaleY: 1, svgOrigin: o, duration: 1.2, ease: 'power2.inOut' });
+        gsap.to([core, haze], { scale: 1, svgOrigin: o, duration: 1.2, ease: 'power2.inOut' });
+        gsap.to(ghost, { x: 0, y: 0, duration: 1.2, ease: 'power2.inOut' });
       },
     };
   };
-  // The emblem's bloom: the core and the star points in white, the front rays in grey.
-  const asterEmblem = (c, R) => {
-    const N = 12, r0 = R * 0.2;
-    const front = Array.from({ length: N }, (_, i) => `<path d="${petal(c, ((i + 0.5) / N) * Math.PI * 2 - Math.PI / 2, r0, R * 0.8 - (i % 2) * R * 0.1, R * 0.23)}" fill="#9a9a9a"/>`).join('');
-    const pts = [0, 3, 6, 9].map(i => `<path d="${petal(c, (i / N) * Math.PI * 2 - Math.PI / 2, r0, R * 0.98, R * 0.24)}" fill="#fff"/>`).join('');
-    return `${pts}${front}<circle cx="${f(c[0])}" cy="${f(c[1])}" r="${f(R * 0.3)}" fill="#fff"/>`;
+  // The emblem's star: the core and the vertical flare in white, the sweep in grey.
+  const asterEmblem = (c, R, reach) => {
+    const rc = R * 0.24;
+    const vert = [-Math.PI / 2, Math.PI / 2].map(a => `<path d="${spike(c, a, rc * 0.6, R * 0.62, rc * 0.9)}" fill="#fff"/>`).join('');
+    return `<path d="${sweep(c, reach * 0.96, rc * 1.4, R * 0.1)}" fill="#8a8a8a"/>${vert}<circle cx="${f(c[0])}" cy="${f(c[1])}" r="${f(rc)}" fill="#fff"/>`;
   };
 
   /* ================= A: Shaded object ================= */
 
-  // The star in bloom, free on the menu ground.
-  const CA = [64, 64], RA = 54;
+  // The star in its haze, free on the menu ground.
+  const CA = [64, 64], RA = 46, SWA = 62;
   DIRS.push({
     l: 'A', name: 'Shaded object',
-    box: [CA[0] - RA, CA[1] - RA, RA * 2, RA * 2],
-    idea: 'Aster, the Greek for star and a flower: a glossy white-hot gold star core in two rings of petal rays, white-hot at the core, rose, then the aster\'s violet at the tips, a light fold down each front ray. The pointer opens the bloom: the rays spread and turn, the core flares, and the rays lean toward the pointer.',
+    box: [CA[0] - SWA, CA[1] - RA * 0.9, SWA * 2, RA * 1.8],
+    idea: 'Aster, the Greek for star, restrained after Villeneuve: one white-hot star in a wide warm haze, a long anamorphic sweep across it in warm white on a shallow arc, a short vertical flare, one faint ghost. Sand and smoke, one strong light. The pointer swells it slowly: the sweep stretches, the haze opens, the ghost drifts against the pointer.',
     art(svg, u) {
-      svg.innerHTML = `<defs>${asterDefs(u, CA, RA)}</defs>${aster(u, CA, RA)}`;
+      svg.innerHTML = `<defs>${asterDefs(u)}</defs>${aster(u, CA, RA, SWA)}`;
       return runAster(svg);
     },
-    emblem: `${EMB_HEAD}${asterEmblem(CA, RA)}</svg>`,
+    emblem: `${EMB_HEAD}${asterEmblem(CA, RA, SWA)}</svg>`,
   });
 
   /* ================= D: Isometric block ================= */
 
-  // The bloom hovers over a dark violet glass block.
-  const CYD = 86, HXD = 28, HYD = 28, TD = 14;
+  // The star hangs over a tall, dark monolith; its sweep glints on the top.
+  const CYD = 70, HXD = 24, HYD = 24, TD = 34;
   const isoD = (gx, gy) => [64 + (gx - gy) * 0.866, CYD + (gx + gy) * 0.5];
   const ND = isoD(-HXD, -HYD), ED = isoD(HXD, -HYD), SD = isoD(HXD, HYD), WD = isoD(-HXD, HYD);
   const dn = (p, k = 1) => [p[0], p[1] + TD * k];
-  const CD = [64, 40], RD = 36;
+  const CD = [64, 30], RD = 30, SWD = 56;
   DIRS.push({
     l: 'D', name: 'Isometric block',
-    box: [64 - Math.max(RD, ED[0] - 64), CD[1] - RD, Math.max(RD, ED[0] - 64) * 2, SD[1] + TD - (CD[1] - RD)],
-    idea: 'The same star in bloom hovers over a dark violet glass block at 30 degrees: a deep top that catches the bloom\'s gold glow, darker side faces, a rim on the top edges. The pointer opens it, as A does.',
+    box: [64 - SWD, CD[1] - RD * 0.9, SWD * 2, SD[1] + TD - (CD[1] - RD * 0.9)],
+    idea: 'The same star hangs over a tall, dark monolith at 30 degrees: a smoky top that catches the star\'s warm light and a glint of its sweep, near-black side faces, a faint rim on the top edges. The pointer swells it, as A does.',
     art(svg, u) {
       const top = poly([ND, ED, SD, WD]);
-      svg.innerHTML = `<defs>${asterDefs(u, CD, RD)}
+      svg.innerHTML = `<defs>${asterDefs(u)}
           ${lg(`${u}top`, OBS, 'x1="0.2" y1="0" x2="0.6" y2="1"')}
           ${lg(`${u}L`, OBL)}${lg(`${u}R`, OBR)}</defs>
-        <path d="${poly([ED, SD, WD, dn(WD), dn(SD), dn(ED)])}" fill="oklch(0.05 0.01 280)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
+        <path d="${poly([ED, SD, WD, dn(WD), dn(SD), dn(ED)])}" fill="oklch(0.04 0.005 70)" opacity="0.5" filter="url(#${u}b)" transform="translate(0 5)"/>
         <path d="${poly([WD, SD, dn(SD), dn(WD)])}" fill="url(#${u}L)"/>
         <path d="${poly([SD, ED, dn(ED), dn(SD)])}" fill="url(#${u}R)"/>
         <path d="${top}" fill="url(#${u}top)"/>
-        <path d="${top}" fill="url(#${u}lit)"/>
-        <ellipse cx="64" cy="${CYD}" rx="26" ry="10" fill="oklch(0.85 0.13 78)" opacity="0.4" filter="url(#${u}g)"/>
-        <path d="M${pt(WD)}L${pt(ND)}L${pt(ED)}" stroke="#fff" stroke-opacity="0.3" stroke-width="2" fill="none" stroke-linejoin="round"/>
-        <path d="M${pt(WD)}L${pt(SD)}L${pt(ED)}" stroke="#fff" stroke-opacity="0.6" stroke-width="2" fill="none" stroke-linejoin="round"/>
-        ${aster(u, CD, RD)}`;
+        <path d="${top}" fill="url(#${u}lit)" opacity="0.6"/>
+        <ellipse cx="64" cy="${CYD}" rx="22" ry="8" fill="oklch(0.85 0.05 75)" opacity="0.3" filter="url(#${u}g)"/>
+        <ellipse cx="64" cy="${CYD + 1}" rx="26" ry="2" fill="oklch(0.95 0.03 82)" opacity="0.4" filter="url(#${u}b)"/>
+        <path d="M${pt(WD)}L${pt(ND)}L${pt(ED)}" stroke="#fff" stroke-opacity="0.18" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        <path d="M${pt(WD)}L${pt(SD)}L${pt(ED)}" stroke="#fff" stroke-opacity="0.38" stroke-width="2" fill="none" stroke-linejoin="round"/>
+        ${aster(u, CD, RD, SWD)}`;
       return runAster(svg);
     },
-    emblem: `${EMB_HEAD}<path d="${poly([WD, SD, dn(SD), dn(WD)])}" fill="#5a5a5a"/><path d="${poly([SD, ED, dn(ED), dn(SD)])}" fill="#3a3a3a"/><path d="${poly([ND, ED, SD, WD])}" fill="#7a7a7a"/>${asterEmblem(CD, RD)}</svg>`,
+    emblem: `${EMB_HEAD}<path d="${poly([WD, SD, dn(SD), dn(WD)])}" fill="#4a4a4a"/><path d="${poly([SD, ED, dn(ED), dn(SD)])}" fill="#2e2e2e"/><path d="${poly([ND, ED, SD, WD])}" fill="#6a6a6a"/>${asterEmblem(CD, RD, SWD)}</svg>`,
   });
 
   /* ================= Gallery ================= */

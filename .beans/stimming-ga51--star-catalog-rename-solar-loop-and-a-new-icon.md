@@ -24,5 +24,5 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 ## Aster (Tom, 2026-11-24: "we'll call this toy Aster instead")
 
 - [x] Name: Aster; Dutch Aster (ˈɑstər); toys.json, the menu tile, the page title, intro and heading, the toy doc; the folder and address stay solarloop
-- [x] Icon round 4, "a better and new icon" (Tom): a star in bloom, a glossy gold core in two rings of violet petal rays with four long white-hot star points; D, the bloom over a dark violet glass block; round 3's emblems take its number
+- [x] Icon round 4, "a better and new icon" (Tom): a bloom first (Tom: "how is a flower relevant -- sweeping STAR with FLARE"), then a flared star (Tom: "a little less gaudy and more villeneuvian"); now one white-hot star in warm haze, a long anamorphic sweep, a short vertical flare, one faint ghost; D, the star over a tall dark monolith; round 3's emblems take its number
 - [ ] Tom picks on the sheet; the pick goes live on the menu
