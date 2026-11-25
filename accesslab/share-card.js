@@ -25,10 +25,10 @@ const STYLE = `
 /* emblemBox() sizes this box to the emblem's art: 150 px tall, its left edge on the text's edge. */
 .sc-ic { width: 150px; height: 150px; margin-bottom: 30px; background: #f3f1ec;
   -webkit-mask: var(--emblem) var(--mx, 0) var(--my, 0) / var(--ms, 100%) no-repeat; mask: var(--emblem) var(--mx, 0) var(--my, 0) / var(--ms, 100%) no-repeat; mask-mode: luminance; }
-/* The title row: the title, then the tech badges on its centre line. */
-.sc-trow { display: flex; align-items: center; gap: 18px; }
-.sc-badges { display: flex; gap: 8px; flex: none; }
-.sc-badges b { display: inline-flex; align-items: center; height: 34px; padding: 0 11px; border: 2px solid #f3f1ec80; border-radius: 5px; font: 800 18px/1 "SC Slab", monospace; letter-spacing: 0.08em; color: #f3f1eccc; }
+/* The title row: the title, then the tech tags small at its cap line, like a footnote mark. */
+.sc-trow { display: flex; align-items: flex-start; gap: 14px; }
+.sc-badges { display: flex; gap: 0.6em; flex: none; margin-top: 0.55em; font: 800 14px/1 "SC Slab", monospace; letter-spacing: 0.14em; color: #f3f1ec80; }
+.sc-badges b { font-weight: 800; }
 .sc-t { font-weight: 800; font-size: var(--ts, 74px); line-height: 1; letter-spacing: -0.025em; white-space: nowrap; }
 .sc-tag { margin-top: 16px; font: 400 24px/1.3 B612, sans-serif; color: #f3f1ecb8; max-width: 24ch; }
 /* The foot row: the lab line at left, the wordmark at right, on one centre line. */
@@ -144,7 +144,7 @@ export async function drawCard(host, id, t) {
   const card = /** @type {HTMLElement} */ (host.firstElementChild);
   // A long title steps down until it and its badges fit the column on one line.
   const title = /** @type {HTMLElement} */ (card.querySelector('.sc-t')), badges = /** @type {HTMLElement} */ (card.querySelector('.sc-badges'));
-  const room = 488 - (badges.offsetWidth ? badges.offsetWidth + 18 : 0);
+  const room = 488 - (badges.offsetWidth ? badges.offsetWidth + 14 : 0);
   if (title.scrollWidth > room) title.style.setProperty('--ts', `${Math.max(40, Math.floor(74 * room / title.scrollWidth))}px`);
   // The art fits 150 px tall, 240 px wide at most; the mask shifts so the art meets the edge.
   const ic = /** @type {HTMLElement | null} */ (card.querySelector('.sc-ic'));

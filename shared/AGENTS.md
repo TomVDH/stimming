@@ -27,6 +27,7 @@ Code every toy uses. A change here reaches every page.
 | `series/shots.js` | Series shots and `shotIcon()`. |
 | `fonts/` | Gabarito, B612, Iosevka Term Slab. A page off the shell links `fonts/fonts.css`. |
 | `stills/`, `loops/` | Tube pictures. Rules: `docs/menu.md`. |
+| `cards/` | Share cards, one og:image per main-shelf toy, 1200 x 630 JPEG. `tools/sharecards.mjs` writes them from `accesslab/share-card.js`; never edit one by hand. |
 
 ## Code
 

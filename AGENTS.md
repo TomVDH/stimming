@@ -64,6 +64,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 | Bar v2 test | `tests/run.sh http://localhost:8000/tests/bar-v2.html` |
 | Commit and push | `tools/commit.sh -m "<Area>: what (bean-id)" [--hunks <patch>] -- <paths>` |
 | Collate the toy inventory | `node tools/inventory.mjs` (writes `docs/inventory.json`) |
+| Share cards (og:image) | `npx -y -p playwright@1.63.0 node tools/sharecards.mjs [id ...]` with the dev server up (writes `shared/cards/<id>.jpg`) |
 | Work items | `beans prime` |
 
 ## Where things live

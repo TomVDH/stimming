@@ -1,0 +1,28 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Share card</title>
+<link rel="stylesheet" href="../shared/fonts/fonts.css">
+<style>
+html, body { margin: 0; background: #0e0e10; }
+#card { width: 1200px; height: 630px; }
+</style>
+<div id="card"></div>
+<script type="module">
+// One toy's share card at full size, for tools/sharecards.mjs: card.html?toy=<id>.
+// html[data-ready] says when the picture is whole: "1", or "missing" for an unknown id.
+import { drawCard } from './share-card.js';
+const id = new URLSearchParams(location.search).get('toy') || '';
+const toys = await fetch('../toys.json', { cache: 'no-store' }).then(r => r.json());
+const t = toys[id];
+if (!t) document.documentElement.dataset.ready = 'missing';
+else {
+  const card = await drawCard(/** @type {HTMLElement} */ (document.getElementById('card')), id, t);
+  // The still and the emblem mask decode before the shot.
+  const pics = [...card.querySelectorAll('img')].map(i => i.decode().catch(() => {}));
+  if (t.emblem) pics.push(new Promise(r => { const i = new Image(); i.onload = i.onerror = r; i.src = `../${t.emblem}`; }));
+  await Promise.all([...pics, document.fonts.ready]);
+  // Two frames let the masks and the blur paint.
+  requestAnimationFrame(() => requestAnimationFrame(() => { document.documentElement.dataset.ready = '1'; }));
+}
+</script>
