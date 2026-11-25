@@ -70,7 +70,12 @@ const altOf = d => ALT_TOP - d * (ALT_TOP - ALT_DEEP);
 
 /* ---------- dev tuning ---------- */
 // The far view's bake state (see bakeStrips); Dev changes start a new bake.
-const BK = { N: 1280, tex: null, texD: null, dummy: null, fb: null, ok: false, alt: 0, near: 0, gen: 0, done: -1, at: -1e9, job: null };
+// tex and texD are the front pair the march reads; bTex and bTexD the back pair a job builds.
+// fade runs from 0 to 1 as the view moves from the old bake to the new one.
+const BK = { N: 1280, tex: null, texD: null, bTex: null, bTexD: null, dummy: null, fb: null, ok: false, alt: 0, near: 0, gen: 0, done: -1, at: -1e9, job: null, fade: 1 };
+// The rolling rebake (Tom, 2026-11-24): one strip a frame, so the baked clouds keep drifting.
+// A full pass takes about 144 frames; the swap cross-fades over 1.5 s.
+const BK_ROLL_DRAWS = 1, BK_FADE_S = 1.5;
 // ?dev shows the Dev sheet: jump to a layer, render sharper, tune the light and the window.
 const TUNE_DEF = {
   cabin: 'on', devPitch: 0, devYaw: 0,
@@ -233,7 +238,7 @@ function bakeStrips(M) {
   gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
   gl.blendColor(0, 0, 0, 1 / BK_PASS);
   // The bake must not read itself.
-  for (const unit of [6, 7]) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_CUBE_MAP, BK.dummy); }
+  for (const unit of [6, 7, 9, 10]) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_CUBE_MAP, BK.dummy); }
   gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
   gl.uniform1f(u.uMode, 2);
   gl.uniform1f(u.uNear, BK.near);
@@ -242,10 +247,10 @@ function bakeStrips(M) {
   gl.uniform1f(u.uTwHi, 0);
   gl.uniform4fv(u.uFlash, new Float32Array(16));
   gl.uniform1f(u.uSteps, Math.min(400, Math.round(Number(u._steps || 200) * 1.5)));
-  for (let d = 0; d < BK_DRAWS && j.f < 6; d++) {
+  for (let d = 0; d < (j.roll ? BK_ROLL_DRAWS : BK_DRAWS) && j.f < 6; d++) {
     const [ma, sa, ta] = FACES[j.f];
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.tex, 0);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.texD, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.bTex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.bTexD, 0);
     gl.scissor(0, j.k * BK_STRIP, N, BK_STRIP);
     if (j.p === 0) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
     gl.uniform3fv(u.uFwd, ma); gl.uniform3fv(u.uRight, sa); gl.uniform3fv(u.uUp, ta);
@@ -258,7 +263,13 @@ function bakeStrips(M) {
   gl.disable(gl.BLEND);
   gl.disable(gl.SCISSOR_TEST);
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  if (j.f >= 6) { BK.job = null; BK.ok = true; BK.done = BK.gen; }
+  if (j.f >= 6) {
+    // The new bake goes to the front; a rolling one cross-fades from the old.
+    [BK.tex, BK.bTex] = [BK.bTex, BK.tex];
+    [BK.texD, BK.bTexD] = [BK.bTexD, BK.texD];
+    BK.fade = j.roll ? 0 : 1;
+    BK.job = null; BK.ok = true; BK.done = BK.gen;
+  }
 }
 // The last frame's view, for how much new march to take.
 const lastView = { fwd: [0, 0, -1], alt: 0, fresh: true };
@@ -312,8 +323,8 @@ async function setup() {
     P = set;
   } else P = await linked(gl, set);
   link.all = Math.round(performance.now() - t0);
-  // ?qa: the GL context and the swirl tile, for checks.
-  if (QS.has('qa')) Object.assign(globalThis.__gg, { gl, tune, swirlTex: () => swirl });
+  // ?qa: the GL context, the swirl tile and the bake state, for checks.
+  if (QS.has('qa')) Object.assign(globalThis.__gg, { gl, tune, swirlTex: () => swirl, BK });
   MZ[zone] = P.march;
   if (QS.has('qa')) globalThis.__gg.link = link;
   watch.step('bake');
@@ -639,12 +650,21 @@ function render(dt) {
   gl.uniform4fv(u.uFlash, flash);
   // The bake: start one when the eye hangs still and the old one no longer fits; stop it when the eye moves.
   const settled = !S.diving && Math.abs(S.v) < 0.05 && S.slideTo == null;
-  if (TUNE.bake > 0 && !BK.tex) { BK.tex = cubeTex(BK.N, gl.RGBA16F); BK.texD = cubeTex(BK.N, gl.R16F); BK.dummy = cubeTex(1, gl.RGBA16F); BK.fb = gl.createFramebuffer(); }
-  if (BK.job && (!settled || TUNE.bake <= 0)) { BK.job = null; BK.ok = false; }
-  if (TUNE.bake > 0 && settled && !BK.job && (!BK.ok || Math.abs(S.alt - BK.alt) > 0.1 || BK.done !== BK.gen || BK.near !== TUNE.bake)) {
-    BK.job = { f: 0, k: 0, p: 0 }; BK.ok = false; BK.alt = S.alt; BK.near = TUNE.bake;
+  if (TUNE.bake > 0 && !BK.tex) {
+    BK.tex = cubeTex(BK.N, gl.RGBA16F); BK.texD = cubeTex(BK.N, gl.R16F);
+    BK.bTex = cubeTex(BK.N, gl.RGBA16F); BK.bTexD = cubeTex(BK.N, gl.R16F);
+    BK.dummy = cubeTex(1, gl.RGBA16F); BK.fb = gl.createFramebuffer();
   }
-  const baked = TUNE.bake > 0 && BK.ok && !BK.job && Math.abs(S.alt - BK.alt) < 0.4;
+  // A move stops any job; a rolling one leaves the front bake in use.
+  if (BK.job && (!settled || TUNE.bake <= 0)) { if (!BK.job.roll) BK.ok = false; BK.job = null; }
+  BK.fade = Math.min(1, BK.fade + dt / BK_FADE_S);
+  if (TUNE.bake > 0 && settled && !BK.job) {
+    if (!BK.ok || Math.abs(S.alt - BK.alt) > 0.1 || BK.done !== BK.gen || BK.near !== TUNE.bake) {
+      BK.job = { f: 0, k: 0, p: 0, roll: false }; BK.ok = false; BK.fade = 1; BK.alt = S.alt; BK.near = TUNE.bake;
+    // ?qa: __gg.noRoll = true holds the rolling rebake, to time it.
+    } else if (BK.fade >= 1 && !globalThis.__gg?.noRoll) BK.job = { f: 0, k: 0, p: 0, roll: true };
+  }
+  const baked = TUNE.bake > 0 && BK.ok && (!BK.job || BK.job.roll) && Math.abs(S.alt - BK.alt) < 0.4;
   gl.uniform1f(u.uMode, baked ? 1 : 0);
   gl.uniform1f(u.uNear, BK.near);
   gl.activeTexture(gl.TEXTURE6);
@@ -653,6 +673,15 @@ function render(dt) {
   gl.activeTexture(gl.TEXTURE7);
   gl.bindTexture(gl.TEXTURE_CUBE_MAP, baked ? BK.texD : BK.dummy || null);
   gl.uniform1i(u.uFarD, 7);
+  // The old bake, while the view cross-fades to the new one.
+  const fading = baked && BK.fade < 1;
+  gl.uniform1f(u.uFarMix, fading ? BK.fade * BK.fade * (3 - 2 * BK.fade) : 1);
+  gl.activeTexture(gl.TEXTURE9);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, fading ? BK.bTex : BK.dummy || null);
+  gl.uniform1i(u.uFarO, 9);
+  gl.activeTexture(gl.TEXTURE10);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, fading ? BK.bTexD : BK.dummy || null);
+  gl.uniform1i(u.uFarDO, 10);
   M.u._steps = Math.min(400, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt))));
   tri(gl, T.march, vao);
   if (BK.job) bakeStrips(M);

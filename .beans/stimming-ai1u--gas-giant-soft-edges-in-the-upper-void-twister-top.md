@@ -38,3 +38,4 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [x] Marched near (Tom: "fully marched ones for the close ones"): `twVol()` marches the spike's density and backlight within 60 km, at the cards' girth and colours; tip twisters taper; the wall cloud and dust widen to the cards' girth (Tom: "the big one is strange": its top met a flat ceiling)
 - [x] Marched near, cards far is the default (Tom: "Yes, make default"); cards bake on the first approach to the void; BC5 packing one mip level a frame
 - [x] Flicker and vertical streaks (Tom's screenshot): card frames read at an explicit mip level from the distance
+- [x] Rolling rebake (Tom: "Yes, rolling rebake"): a back cube builds one strip a frame, swaps, cross-fades over 1.5 s; about 0.2 ms a frame, 98 MB more; `?qa` `__gg.noRoll` holds it

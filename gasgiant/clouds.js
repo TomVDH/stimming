@@ -117,6 +117,9 @@ uniform float uTwLo, uTwHi;
 // 2 bakes the far view: it marches from uNear on.
 uniform float uMode, uNear;
 uniform samplerCube uFar, uFarD;
+// The old bake and how far the view has faded to the new one: 1 is all new.
+uniform samplerCube uFarO, uFarDO;
+uniform float uFarMix;
 uniform vec4 uFlash[4];
 // Dev tuning: multiple scatter, ambient, bounce, haze reach.
 uniform vec4 uTune;
@@ -948,9 +951,11 @@ void main() {
   // Past the near reach, the baked far view.
   if (nearOnly) {
     vec4 far = texture(uFar, rd);
+    if (uFarMix < 0.999) far = mix(texture(uFarO, rd), far, uFarMix);
     // @seg upper
     // Twisters past the near reach go over the bake, the farther first.
     float fd = texture(uFarD, rd).r;
+    if (uFarMix < 0.999) fd = mix(texture(uFarDO, rd).r, fd, uFarMix);
     // The horizon's colour in this bearing: what the haze turns a far twister to.
     vec3 hz = texture(uFar, normalize(vec3(rd.x, 0.02, rd.z))).rgb;
     far = twFar(far, fd, twC2, twT2, hz);
