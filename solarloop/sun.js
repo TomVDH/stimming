@@ -11,7 +11,8 @@ export const BCRIT = 2.598;
 export const SPIN_UP = 1e4;
 export const STRIDE = 16;
 export const MAX_STRANDS = 2048;
-export const MAX_FLARES = 2;
+// Up to eight flares run at once; a ninth tap waits for one to end (Tom, 2026-11-24).
+export const MAX_FLARES = 8;
 // A flare runs this long, then the region is calm again.
 export const FLARE_END = 50;
 
@@ -672,7 +673,7 @@ export function strands(sun, time, { star, activity, spin = time }, out) {
   }
   for (const p of sun.proms) n = promStrands(p, B, time, out, n);
   if (B.field) n = fieldStrands(spin, B, out, n);
-  for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
+  for (const fl of sun.flares) n = flareStrands(fl, B, out, n, sun.flares.length);
   return n;
 }
 
@@ -745,7 +746,9 @@ export function stepProms(sun, dt) {
 // The point a prominence shows to a tap: part way up its body.
 export const promApex = p => scale(p.c, R + p.h * 0.6);
 
-function flareStrands(fl, B, out, n) {
+// crowd: the flares that run now; with many, each takes fewer fibres, so all fit.
+function flareStrands(fl, B, out, n, crowd = 1) {
+  const thin = crowd > 3 ? 0.5 : 1;
   const { rg, t } = fl;
   const C = flareCurve;
   const sep = C.sep(t, rg);
@@ -773,14 +776,14 @@ function flareStrands(fl, B, out, n) {
     // The rope is a bundle of fibres: a twisted tube that swells and frays as it lifts.
     const lift = hr - h0;
     const tube = 8 + 0.12 * lift, fray = sstep(30, 220, lift);
-    for (let k = 0; k < ROPE_FIBRES; k++) {
+    for (let k = 0; k < ROPE_FIBRES * thin; k++) {
       const q = m => hash(fl.seed * 17 + k, m, 91);
       // Fibres fill the tube's cross-section evenly.
       const rr = tube * Math.sqrt(q(1)) * (1 + 0.8 * fray * q(2));
       const turn = rg.ropeTurn ?? ROPE_TURN;
       const A = footT(rg, turn, (q(3) - 0.5) * 6, -rg.len * (0.55 + 0.1 * q(4)));
       const Bf = footT(rg, turn, (q(5) - 0.5) * 6, rg.len * (0.55 + 0.1 * q(6)));
-      const I = ropeI * 0.04 * (0.4 + 1.2 * q(7)) * (1 - 0.6 * fray * q(8));
+      const I = ropeI * 0.04 / thin * (0.4 + 1.2 * q(7)) * (1 - 0.6 * fray * q(8));
       n = put(out, n, A, hr * (0.96 + 0.08 * q(9)), Bf, (q(10) - 0.5) * 0.12, 2.2 + 2.6 * q(11) + 0.004 * lift, I, k, 0, rr, 0.9 + 0.3 * q(12), q(13) * 6.2832 + t * 0.4, 2);
     }
   }
@@ -799,14 +802,14 @@ function flareStrands(fl, B, out, n) {
     const off = (q(2) - 0.5) * len;
     // An arcade loop is a tube of fibres, so the row reads as a glowing comb.
     const tube = 1.5 + 0.05 * a;
-    for (let k = 0; k < LOOP_FIBRES; k++) {
+    for (let k = 0; k < Math.ceil(LOOP_FIBRES * thin); k++) {
       // Each fibre takes its own hash slots, 100 apart by k.
       const r = m => hash(fl.seed * 31 + j, 100 * k + m, 78);
       const ang = r(1) * 6.2832, rad = tube * Math.sqrt(r(2));
       const de = Math.cos(ang) * rad, df = Math.sin(ang) * rad;
       const A = foot(rg, a + de + (r(3) - 0.5) * 2, off + df + 2);
       const Bf = foot(rg, -a - de + (r(4) - 0.5) * 2, off + df - 2);
-      n = put(out, n, A, (a * 1.2 + 3) * (1 + 0.05 * (r(5) - 0.5)), Bf, (q(11) - 0.5) * 0.2 + (r(6) - 0.5) * 0.08, 1.4 + 1.6 * r(7), I * 0.16 * (0.4 + 1.2 * r(8)), q(14) * 7 + r(9), clamp((tau - 12 - 8 * r(10)) / 13));
+      n = put(out, n, A, (a * 1.2 + 3) * (1 + 0.05 * (r(5) - 0.5)), Bf, (q(11) - 0.5) * 0.2 + (r(6) - 0.5) * 0.08, 1.4 + 1.6 * r(7), I * 0.16 / thin * (0.4 + 1.2 * r(8)), q(14) * 7 + r(9), clamp((tau - 12 - 8 * r(10)) / 13));
     }
   }
   return n;
@@ -831,8 +834,8 @@ export function makeSite(c, view = null) {
 // The sun runs at 0.75; a supergiant takes about four times as long.
 export const flarePace = B => 0.75 / clamp(Math.pow(B.rsun, 0.18), 0.8, 3.5);
 export function startFlare(sun, rg, time, k = 1) {
-  sun.flares = sun.flares.filter(f => f.rg !== rg);
-  if (sun.flares.length >= MAX_FLARES) sun.flares.shift();
+  // A new flare never cuts a running one short; at the limit the tap does nothing.
+  if (sun.flares.length >= MAX_FLARES) return null;
   const fl = { rg, t: 0, k, seed: Math.floor(Math.random() * 1e6) };
   sun.flares.push(fl);
   rg.lastFlare = time;

@@ -6,7 +6,7 @@ import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChan
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
 import { detail } from '../shared/detail.js';
-import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
+import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, magAxis, SPIN, SPIN_PERIOD, makeSun, strands, startFlare, stepFlares, MAX_FLARES, makeSite, flarePace, flareView, flareCurve, ARCADE, startEruption, stepProms, promApex, LIT_GAIN } from './sun.js';
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
@@ -736,6 +736,8 @@ function resize(force = false) {
 function flareAt(rg) {
   if (!rg) return;
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
+  // Eight flares already run: this tap waits, silent.
+  if (!fl) return;
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
   poke();
@@ -947,8 +949,8 @@ function eggFrame(out, dim) {
 /* ---------- frame state for the renderer ---------- */
 const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
-  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(8), flB: new Float32Array(8),
-  sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
+  regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(4 * MAX_FLARES), flB: new Float32Array(4 * MAX_FLARES),
+  sat: new Float32Array(4 * MAX_FLARES), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),

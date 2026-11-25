@@ -4,7 +4,7 @@
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
 import { TRI_VS, program, linked, target, free, bind, tri, to } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
-import { R, BCRIT, STRIDE, MAX_STRANDS, NR } from './sun.js';
+import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES } from './sun.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
 import { FLARE } from '../shared/flare.js';
 
@@ -643,7 +643,7 @@ uniform float uDust;
 uniform vec4 uReg[${NR}];
 // Each region's bipole axis in the view frame, and its sunspot size.
 uniform vec4 uSpot[${NR}];
-uniform vec4 uFl[2], uFlB[2];
+uniform vec4 uFl[${MAX_FLARES}], uFlB[${MAX_FLARES}];
 uniform vec4 uEgg[4], uDim[2];
 // A Wolf-Rayet wind: its glow, its clumps, the nebula's light, the nebula's radius in R.
 uniform vec4 uWind;
@@ -1069,7 +1069,7 @@ void main() {
     hot += uYso.w * jvis * jet * knots * 0.5;
   }
   // The erupting bubble: a faint shell, dim inside.
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < ${MAX_FLARES}; k++) {
     if (uFlB[k].z <= 0.0) continue;
     vec3 c = uFl[k].xyz * (R + uFlB[k].x);
     float d = length(P - c.xy) / uFlB[k].y;
@@ -1743,7 +1743,7 @@ function noiseVolume(n) {
 /* ---------- final: heat bend, grade, volume, bodies, lens, film ---------- */
 const FINAL = `${HEAD}
 uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
-uniform vec4 uSat[2];
+uniform vec4 uSat[${MAX_FLARES}];
 uniform vec4 uView, uMix, uBodyA, uBodyB, uCam, uFilm, uFx1, uFx2, uFx3, uFx4, uFx5;
 uniform vec2 uBodyK;
 // The Sun's egg: the ship's x, y and size in pixels and weight; heading, shield slant, glint.
@@ -1780,7 +1780,7 @@ uvec3 pcg3(uvec3 v) {
 // The kernel's white core, added to the hot light before the grade.
 float kern(vec2 fc) {
   float s = 0.0;
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < ${MAX_FLARES}; k++) {
     float S = uSat[k].z;
     if (S <= 0.0) continue;
     vec2 d = (fc - uSat[k].xy) / uSc;
@@ -2044,7 +2044,7 @@ void main() {
   if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 : uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
-  for (int k = 0; k < 2; k++) {
+  for (int k = 0; k < ${MAX_FLARES}; k++) {
     float S = uSat[k].z;
     if (S <= 0.0) continue;
     // A stronger core throws a longer streak.
