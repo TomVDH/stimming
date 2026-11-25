@@ -103,62 +103,64 @@ export function makeCard(o) {
     type();
   }
 
-  // Our Sun at the same scale as the star on screen, above the card (Tom, 2026-11-24).
-  // d is its diameter in CSS pixels; max is the room above the card.
-  // ratio is the Sun's width over the object's; colour is the object's swatch colour.
-  // Too small to draw, the Sun is a dot. Too large for the room, the card shows an inset:
-  // the Sun at a set size, the object inside it at its true ratio, and how many times wider the Sun is.
-  function sunMark({ d, max, ratio, colour }) {
+  // Our Sun beside the object at their true ratio, above the card (Tom, 2026-11-24).
+  // k is the object's radius in R☉; a black hole gives its horizon's.
+  // The larger body is H px wide; the smaller shrinks to scale, at least a 2 px dot.
+  // A dot under 6 px wears a ring, so the eye finds it.
+  function sizeMark({ k }) {
+    const H = 48, GAP = 10;
     const el = h('div', 'c-sun');
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
     const circle = (cx, cy, r, cls) => {
       const c = document.createElementNS(NS, 'circle');
-      Object.entries({ cx, cy, r }).forEach(([k, v]) => c.setAttribute(k, v));
-      if (cls) c.setAttribute('class', cls);
+      Object.entries({ cx, cy, r }).forEach(([a, v]) => c.setAttribute(a, v));
+      c.setAttribute('class', cls);
       svg.append(c);
-      return c;
     };
-    let w, note;
-    if (d < 4) {
-      w = 6; note = 'the Sun, a speck at this scale';
-      circle(3, 3, 2.2, 'c-sun-dot');
-    } else if (d <= max) {
-      w = d + 2; note = 'the Sun, to scale';
-      circle(w / 2, w / 2, d / 2);
-    } else {
-      const S = Math.min(72, max);
-      w = S + 2;
-      circle(w / 2, w / 2, S / 2);
-      // Below a pixel the object still shows, as a one-pixel dot in its colour.
-      const obj = circle(w / 2, w / 2, Math.max(0.6, S / 2 / ratio), 'c-sun-obj');
-      obj.style.fill = colour;
-      note = `the Sun, ${fmtRatio(ratio)} times wider`;
-    }
-    svg.setAttribute('width', w); svg.setAttribute('height', w);
-    svg.setAttribute('viewBox', `0 0 ${w} ${w}`);
-    el.append(svg, h('span', 'c-sun-k', note));
+    const dSun = k >= 1 ? H / k : H, dObj = k >= 1 ? H : H * k;
+    const body = (x, d, cls) => {
+      const r = Math.max(1, d / 2);
+      circle(x + r, H - r, r, cls);
+      if (d < 6) circle(x + r, H - r, 5, 'c-sun-ring');
+      return x + Math.max(2 * r, d < 6 ? 10 : 0);
+    };
+    const x = body(0, dSun, 'c-sun-sol') + GAP;
+    const w = body(x, dObj, 'c-sun-obj');
+    svg.setAttribute('width', w); svg.setAttribute('height', H);
+    svg.setAttribute('viewBox', `0 0 ${w} ${H}`);
+    // The larger body takes the number: Sun to object.
+    el.append(svg, h('span', 'c-sun-k', k >= 1 ? `☉ 1 : ${fmtRatio(k)}` : `☉ ${fmtRatio(1 / k)} : 1`));
     return el;
   }
-  // A ratio in words: one decimal below 10, whole above, spaced thousands.
-  const fmtRatio = r => r < 10 ? String(+r.toFixed(1)) : Math.round(r).toLocaleString('en').replace(/,/g, ' ');
+  // A ratio: two figures below 10, whole to 100,000, then powers of ten.
+  const fmtRatio = r => r < 10 ? String(+r.toPrecision(2)) : r < 1e5 ? Math.round(r).toLocaleString('en')
+    : `${(r / 10 ** Math.floor(Math.log10(r))).toFixed(1)} × 10${String(Math.floor(Math.log10(r))).replace(/\d/g, n => '⁰¹²³⁴⁵⁶⁷⁸⁹'[n])}`;
 
   return {
     /**
      * @param {{ name: string, type: string, latin: string | null, rows: [string, string][] }} c
      * @param {string} style One of CARD_STYLES.
-     * @param {{ d: number, max: number, ratio: number, colour: string } | null} sun Our Sun on screen, or null.
+     * @param {{ k: number } | null} sun The object's radius in R☉ beside our Sun, or null on the Sun.
+     * @param {boolean} hint Shows the hint to press i again for the article.
      */
-    show(c, style = 'intro', sun = null) {
+    show(c, style = 'intro', sun = null, hint = false) {
       clear();
       box = h('div', `sl-card sl-card--${style}`);
       box.setAttribute('aria-hidden', 'true');
       o.stage.append(box);
       // The Sun's outline appears a beat after the card starts.
       if (sun) {
-        const mark = sunMark(sun);
+        const mark = sizeMark(sun);
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
+      }
+      // The i key's hint shows a beat after the card, under it (Tom, 2026-11-24).
+      if (hint) {
+        const tip = h('p', 'c-hint');
+        tip.append(h('kbd', null, 'i'), ' again for the article');
+        box.append(tip);
+        if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
       }
       if (style === 'caption') {
         if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
@@ -171,5 +173,7 @@ export function makeCard(o) {
     },
     fade,
     clear,
+    /** True while the card stands on the stage, before it fades. */
+    isOpen: () => !!box && !box.classList.contains('out'),
   };
 }

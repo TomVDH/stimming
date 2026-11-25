@@ -36,6 +36,16 @@ export const CHART = {
   cygx1: { kind: 'hole', t: null, cls: 'stellar black hole' },
   sgra: { kind: 'hole', t: null, cls: 'supermassive black hole' },
   qso: { kind: 'quasar', t: null, cls: 'quasar' },
+  st218: { t: 3200, cls: 'red supergiant, the largest known' },
+  wohg64: { kind: 'cocoon', t: 3400, cls: 'M7.5 red supergiant in a dust torus' },
+  quasi: { kind: 'core', t: 4000, cls: 'quasi-star, a model' },
+  wr140: { kind: 'shells', t: 70000, cls: 'Wolf-Rayet and O star, colliding winds' },
+  vfts352: { kind: 'binary', t: null, cls: 'two O stars in contact' },
+  xxtri: { t: 4620, cls: 'K0 III giant, giant starspots' },
+  epsaur: { kind: 'disc', t: 7750, cls: 'F0 supergiant, eclipsed by a dark disc' },
+  mothra: { kind: 'arc', t: 5250, cls: 'yellow hypergiant and blue supergiant, lensed' },
+  earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
+  powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.

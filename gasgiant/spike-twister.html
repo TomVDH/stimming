@@ -7,26 +7,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Alien twister bake</title>
 <style>
-/* Gas giant spike: one alien twister, marched at bake quality, in three lights. */
+/* Gas giant spike: three alien twisters, marched at bake quality, in one light. */
 html, body { margin: 0; background: #050a0b; color: #cfe3df; font: 13px/1.3 system-ui, sans-serif; }
 canvas { display: block; width: 100vw; height: 100vh; }
 .note { position: fixed; left: 12px; top: 10px; opacity: 0.7; }
 </style>
 </head>
 <body>
-<canvas id="c" aria-label="Three renders of one alien twister"></canvas>
+<canvas id="c" aria-label="Three alien twister varieties side by side"></canvas>
 <div class="note" id="note">Baking...</div>
 <script type="module">
 import { TRI_VS, program, linked } from '../shared/gl.js';
 
 // The twister in its own frame, in km: y up from the void's floor, the eye on +z.
-// Three panels: light from above on the sun's side, light from behind for the rim, a flash.
+// Three panels: banded, wide and smooth twisters. ?l= picks the light.
 const FS = /* glsl */`#version 300 es
 precision highp float;
 in vec2 vUv;
 out vec4 o;
 uniform vec2 uRes;
 uniform float uT;
+uniform int uL;
+// The variety: 0 banded, 1 wide, 2 smooth.
+int gV = 0;
 const float H = 24.0, PI = 3.14159265;
 float h13(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }
 float vn3(vec3 p) {
@@ -41,11 +44,17 @@ float fbm(vec3 p, int oct) {
   return s;
 }
 // The axis leans in a slow S, so the column reads as one huge body bending in the wind.
-vec2 axisAt(float y) { float f = y / H; return vec2(4.2 * sin(f * 3.0 + 0.3) * f, 2.4 * sin(f * 3.8 + 1.2) * f); }
-// The radius in km: a thin rope at the floor widens steadily into the ceiling's flare.
+// The wide one leans less; the smooth rope swings most.
+vec2 axisAt(float y) {
+  float f = y / H, b = gV == 1 ? 0.45 : gV == 2 ? 1.25 : 1.0;
+  return b * vec2(4.2 * sin(f * 3.0 + 0.3) * f, 2.4 * sin(f * 3.8 + 1.2) * f);
+}
+// The radius in km: a narrow foot widens steadily into the ceiling's flare.
 float radAt(float y) {
-  float f = clamp(y / H, 0.0, 1.0);
-  return 0.55 + 2.4 * pow(f, 1.6) + 2.2 * exp(-f * 16.0) + 6.0 * pow(smoothstep(0.7, 1.0, f), 2.0);
+  float f = clamp(y / H, 0.0, 1.0), fl = pow(smoothstep(0.7, 1.0, f), 2.0);
+  if (gV == 1) return 1.5 + 4.4 * pow(f, 1.2) + 3.0 * exp(-f * 10.0) + 4.5 * fl;
+  if (gV == 2) return 0.42 + 1.5 * pow(f, 2.2) + 1.1 * exp(-f * 20.0) + 6.5 * fl;
+  return 0.55 + 2.4 * pow(f, 1.6) + 2.2 * exp(-f * 16.0) + 6.0 * fl;
 }
 // The density at p, 0 to 1.
 float dens(vec3 p, int oct) {
@@ -64,14 +73,16 @@ float dens(vec3 p, int oct) {
   // The angle term keeps the phase continuous across the atan seam.
   float ph = (p.y / 2.6 - uT * 2.0) * 2.0 * PI + a + 1.4 * sin(a + p.y * 0.25) + n * 4.0;
   float bands = smoothstep(0.35, 0.95, 0.5 + 0.5 * sin(ph));
-  float edge = R * (0.62 + 0.5 * n + 0.32 * hel + 0.26 * bands) - r;
-  float d = smoothstep(0.0, 0.5 + 0.6 * f, edge);
+  // The smooth rope keeps a calm wall: little noise, faint collars.
+  float rough = gV == 2 ? 0.25 : gV == 1 ? 0.8 : 1.0, bandK = gV == 2 ? 0.35 : gV == 1 ? 0.6 : 1.0;
+  float edge = R * (0.62 + (1.0 - rough) * 0.32 + 0.5 * n * rough + 0.32 * hel * rough + 0.26 * bands * bandK) - r;
+  float d = smoothstep(0.0, (0.5 + 0.6 * f) * (gV == 2 ? 1.6 : 1.0), edge);
   // The skirt at the floor is torn and dusty; the flare frays into the ceiling.
   float skirt = 1.0 - smoothstep(0.02, 0.16, f);
   d *= mix(1.0, smoothstep(0.35, 0.75, n + 0.2 * hel), skirt * 0.8);
   d *= mix(1.0, smoothstep(0.3, 0.7, n), smoothstep(0.75, 1.0, f) * 0.7);
   // Collars and ridges are denser, so they stand out in the light.
-  return d * (0.6 + 0.5 * n + 0.35 * bands + 0.2 * hel);
+  return d * (0.6 + 0.5 * mix(0.5, n, rough) + 0.35 * bands * bandK + 0.2 * hel);
 }
 // Henyey-Greenstein, two lobes: a strong forward one for the rim, a soft back one.
 float hg(float mu, float g) { float g2 = g * g; return (1.0 - g2) / (4.0 * PI * pow(1.0 + g2 - 2.0 * g * mu, 1.5)); }
@@ -82,12 +93,13 @@ vec3 voidAt(vec3 rd, vec3 L, float flash) {
   vec3 c = mix(vec3(0.02, 0.06, 0.06), vec3(0.16, 0.3, 0.3), smoothstep(0.35, 0.75, u));
   return c + vec3(0.25, 0.4, 0.45) * pow(max(dot(rd, L), 0.0), 6.0) * 0.4 + vec3(0.5, 0.55, 0.9) * flash * 0.15;
 }
-// One panel: k picks the light.
+// One panel: k picks the variety, uL the light.
 vec3 panel(vec2 uv, int k) {
-  // The light comes from above on the sun's side; panel 1 has it behind; panel 2 adds a flash.
-  vec3 L = k == 1 ? normalize(vec3(-0.25, 0.35, -0.9)) : normalize(vec3(-0.85, 0.45, 0.3));
+  gV = k;
+  // Light 0 comes from above on the sun's side; 1 from behind; 2 adds a flash.
+  vec3 L = uL == 1 ? normalize(vec3(-0.25, 0.35, -0.9)) : normalize(vec3(-0.85, 0.45, 0.3));
   vec3 Lc = vec3(0.85, 1.0, 0.95) * 1.1;
-  float flash = k == 2 ? 1.0 : 0.0;
+  float flash = uL == 2 ? 1.0 : 0.0;
   vec3 F = vec3(-3.0, 9.0, 4.0);
   vec3 ro = vec3(0.0, 11.0, 46.0);
   vec3 rd = normalize(vec3((uv.x - 0.5) * 0.62 * uRes.x / 3.0 / uRes.y, (uv.y - 0.5) * 0.62, -1.0));
@@ -154,6 +166,9 @@ gl.viewport(0, 0, W, Hh);
 gl.useProgram(P.p);
 gl.uniform2f(P.u.uRes, W, Hh);
 gl.uniform1f(P.u.uT, Number(new URLSearchParams(location.search).get('t') || 0));
+// ?l=1 lights from behind, ?l=2 adds a flash.
+const LI = Number(new URLSearchParams(location.search).get('l') || 0);
+gl.uniform1i(P.u.uL, LI);
 gl.bindVertexArray(gl.createVertexArray());
 const t0 = performance.now();
 // The bake runs in tiles, one per frame, so no draw trips the driver's timeout.
@@ -167,7 +182,7 @@ for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
 }
 gl.disable(gl.SCISSOR_TEST);
 window.__done = true;
-document.getElementById('note').textContent = `Alien twister, 24 km, three lights: from above, from behind, a flash. Bake ${Math.round(performance.now() - t0)} ms.`;
+document.getElementById('note').textContent = `Alien twisters, 24 km: banded, wide, smooth. Light: ${['from above', 'from behind', 'a flash'][LI]}. Bake ${Math.round(performance.now() - t0)} ms.`;
 </script>
 </body>
 </html>

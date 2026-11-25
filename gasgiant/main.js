@@ -10,6 +10,7 @@ import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, SWIRL_FS, marchFS, zoneFor } from './clouds.js';
+import { WALL_FS, WALL_W, WALL_H, WALL_N, TW_MAX, twisterUniforms } from './twisters.js';
 import { COMPOSITE_FS, FINAL_FS, BOKEH_FS } from './post.js';
 import { wetGlassMotion } from '../shared/wetglass.js';
 import { CABIN_FS } from './cabin.js';
@@ -30,6 +31,8 @@ const S = {
   alt: ALT_TOP, v: 0, diving: false, slideTo: null,
   yaw: 0, pitch: 0, tMap: 2600, tC: 0, lum: 1, shake: 0, wipe: 0, tWipe: 0, tGlass: 0, melt: 0,
   wispY: 0, crush: -1, crackLvl: 0,
+  // Dev previews: a crush with no return to the top, and an entry burn.
+  crushDev: -1, entryDev: 0,
   // The head, after Window seat: hover sway (hx, hy to targets thx, thy) and the lean to the glass (lean to leanT).
   hx: 0, hy: 0, thx: 0, thy: 0, lean: 0, leanT: 0,
 };
@@ -66,6 +69,8 @@ const depthOf = alt => (ALT_TOP - alt) / (ALT_TOP - ALT_DEEP);
 const altOf = d => ALT_TOP - d * (ALT_TOP - ALT_DEEP);
 
 /* ---------- dev tuning ---------- */
+// The far view's bake state (see bakeStrips); Dev changes start a new bake.
+const BK = { N: 1280, tex: null, texD: null, dummy: null, fb: null, ok: false, alt: 0, near: 0, gen: 0, done: -1, at: -1e9, job: null };
 // ?dev shows the Dev sheet: jump to a layer, render sharper, tune the light and the window.
 const TUNE_DEF = {
   cabin: 'on', devPitch: 0, devYaw: 0,
@@ -75,7 +80,15 @@ const TUNE_DEF = {
   ms: 0.38, amb: 1, bounce: 0.3, haze: 1, rays: 1,
   flash: 1,
   near: 1, wet: 1, fogK: 1, cracks: 'depth',
+  // Each window effect: by depth, off, or full.
+  fxFrost: 'auto', fxEntry: 'auto', fxWipe: 'auto', fxIce: 'auto', fxWet: 'auto', fxFog: 'auto', fxHeat: 'auto', fxNear: 'auto',
+  // Window timings, in seconds or as rates.
+  // The far view bakes from this many km out; 0 marches every ray in full.
+  bake: 25,
+  tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
+// An effect's level: its depth value, none, or full.
+const fx = (id, v) => (TUNE[id] === 'off' ? 0 : TUNE[id] === 'on' ? 1 : v);
 const TUNE = { ...TUNE_DEF };
 let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 // Render rows change the targets, so they resize.
@@ -84,6 +97,7 @@ const tune = (id, v) => {
   TUNE[id] = v;
   if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
   if (RESIZE.has(id) && P) resize(true);
+  BK.gen++;
   touch();
 };
 const cabinOff = () => QS.has('out') || TUNE.cabin === 'off';
@@ -108,6 +122,7 @@ const DEV = [
   choice('Render', 'pix', 'Pixels', [['auto', 'Auto'], ['native', 'Native']]),
   choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
   choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
+  slider('Render', 'bake', 'Bake past, km (0 off)', 0, 200, 5),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
   slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
   slider('Exposure', 'expo', 'Exposure', 0.25, 4, 0.01),
@@ -122,6 +137,18 @@ const DEV = [
   slider('Window', 'wet', 'Drops', 0, 2, 0.01),
   slider('Window', 'fogK', 'Pane fog', 0, 2, 0.01),
   choice('Window', 'cracks', 'Cracks', [['depth', 'By depth'], ['off', 'Off'], ['full', 'Full']]),
+  ...[['fxFrost', 'Frost'], ['fxEntry', 'Entry glow'], ['fxWipe', 'Wipes'], ['fxIce', 'Rime'], ['fxWet', 'Rain and drops'], ['fxFog', 'Pane fog'], ['fxHeat', 'Heat shimmer'], ['fxNear', 'Near fog']]
+    .map(([id, l]) => choice('Window effects', id, l, [['auto', 'By depth'], ['off', 'Off'], ['on', 'Full']])),
+  slider('Window timing', 'tCrush', 'Crush, s', 0.5, 8, 0.1),
+  slider('Window timing', 'tWipe', 'Wipe rise, s', 0.1, 3, 0.05),
+  slider('Window timing', 'wipeSpeed', 'Wipe speed', 0.2, 3, 0.05),
+  slider('Window timing', 'melt', 'Frost melt, per s', 0.1, 3, 0.05),
+  slider('Window timing', 'frostBack', 'Frost back, per s', 0.05, 1, 0.01),
+  slider('Window timing', 'jolt', 'Crack jolt', 0, 3, 0.05),
+  slider('Window timing', 'rushK', 'Near fog rush', 0.2, 3, 0.05),
+  { type: 'button', group: 'Window play', label: 'Crush', text: 'Play', onClick: () => { S.crushDev = 0; touch(); } },
+  { type: 'button', group: 'Window play', label: 'Entry burn', text: 'Play', onClick: () => { S.entryDev = 1; touch(); } },
+  { type: 'button', group: 'Window play', label: 'Crack jolt', text: 'Play', onClick: () => { S.shake += TUNE.jolt; touch(); } },
   { type: 'button', group: 'Reset', label: 'All dev values', text: 'Defaults', onClick: () => { for (const [id, v] of Object.entries(TUNE_DEF)) ui.setting('gg_' + id)?.set(v, true); } },
 ];
 
@@ -155,7 +182,78 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const watch = loadWatch(ID, canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null;
+let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null, wall = null;
+// The march settles over frames: each frame blends into the last one.
+// Thin and far things then read whole instead of boiling into grain.
+// The history is full size; the march shifts its rays a sub-pixel each frame, so detail builds up.
+const HIST_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uCur, uPrev;
+uniform float uK;
+uniform vec2 uJit;
+void main() { o = mix(texture(uPrev, vUv), texture(uCur, vUv - uJit), uK); }`;
+// Eight sub-pixel shifts in the march's own pixels, Halton 2 and 3.
+const halton = (i, b) => { let f = 1, r = 0; for (; i > 0; i = Math.floor(i / b)) { f /= b; r += f * (i % b); } return r; };
+const JIT = Array.from({ length: 8 }, (_, i) => [halton(i + 1, 2) - 0.5, halton(i + 1, 3) - 0.5]);
+// The far view's bake: a cube map round the eye, marched from the near reach out.
+// It builds in strips over a few frames once the eye hangs still, and again when the eye moves.
+// Each strip averages a few jittered passes, so the bake holds no grain.
+const BK_STRIP = 160, BK_PASS = 3, BK_DRAWS = 6;
+// Cube faces as GL samples them: the major axis, then the s and t axes.
+const FACES = [
+  [[1, 0, 0], [0, 0, -1], [0, -1, 0]], [[-1, 0, 0], [0, 0, 1], [0, -1, 0]],
+  [[0, 1, 0], [1, 0, 0], [0, 0, 1]], [[0, -1, 0], [1, 0, 0], [0, 0, -1]],
+  [[0, 0, 1], [1, 0, 0], [0, -1, 0]], [[0, 0, -1], [-1, 0, 0], [0, -1, 0]],
+];
+function cubeTex(n, fmt) {
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, t);
+  gl.texStorage2D(gl.TEXTURE_CUBE_MAP, 1, fmt, n, n);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_CUBE_MAP, k, v);
+  return t;
+}
+// Runs a few strips of the bake with the march program M, its uniforms already set for this frame.
+function bakeStrips(M) {
+  const u = M.u, j = BK.job, N = BK.N, strips = Math.ceil(N / BK_STRIP);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, BK.fb);
+  gl.viewport(0, 0, N, N);
+  gl.enable(gl.SCISSOR_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.CONSTANT_ALPHA, gl.ONE);
+  gl.blendColor(0, 0, 0, 1 / BK_PASS);
+  // The bake must not read itself.
+  for (const unit of [6, 7]) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_CUBE_MAP, BK.dummy); }
+  gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
+  gl.uniform1f(u.uMode, 2);
+  gl.uniform1f(u.uNear, BK.near);
+  // The twisters stay live; the bake holds none.
+  gl.uniform1f(u.uTwLo, 0);
+  gl.uniform1f(u.uTwHi, 0);
+  gl.uniform4fv(u.uFlash, new Float32Array(16));
+  gl.uniform1f(u.uSteps, Math.min(400, Math.round(Number(u._steps || 200) * 1.5)));
+  for (let d = 0; d < BK_DRAWS && j.f < 6; d++) {
+    const [ma, sa, ta] = FACES[j.f];
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.tex, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_CUBE_MAP_POSITIVE_X + j.f, BK.texD, 0);
+    gl.scissor(0, j.k * BK_STRIP, N, BK_STRIP);
+    if (j.p === 0) { gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); }
+    gl.uniform3fv(u.uFwd, ma); gl.uniform3fv(u.uRight, sa); gl.uniform3fv(u.uUp, ta);
+    const js = JIT[(j.p * 3 + 1) % 8];
+    gl.uniform2f(u.uJit, js[0] / N, js[1] / N);
+    gl.uniform1f(u.uSeed, j.p * 23 + j.k * 7 + j.f * 3);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (++j.p >= BK_PASS) { j.p = 0; if (++j.k >= strips) { j.k = 0; j.f++; } }
+  }
+  gl.disable(gl.BLEND);
+  gl.disable(gl.SCISSOR_TEST);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  if (j.f >= 6) { BK.job = null; BK.ok = true; BK.done = BK.gen; }
+}
+// The last frame's view, for how much new march to take.
+const lastView = { fwd: [0, 0, -1], alt: 0, fresh: true };
+const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4), twC = new Float32Array(TW_MAX * 4);
 let W = 1, H = 1, cssW = 1, cssH = 1;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 const flash = new Float32Array(16);
@@ -195,7 +293,7 @@ async function setup() {
   // Only the march zone the eye starts in links before the first frame.
   const zone = zoneFor(S.alt);
   const src = {
-    bake: BAKE_FS, swirl: SWIRL_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
+    bake: BAKE_FS, swirl: SWIRL_FS, wall: WALL_FS, hist: HIST_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
   };
   const set = {};
   for (const [k, fs] of Object.entries(src)) set[k] = program(gl, TRI_VS, pruneGLSL(fs));
@@ -212,6 +310,7 @@ async function setup() {
   watch.step('bake');
   bakeVolume(64);
   bakeSwirl(1024);
+  bakeWall();
   lut = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, lut);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, LUT_N, 1, 0, gl.RGBA, gl.FLOAT, lightTable());
@@ -254,6 +353,26 @@ function bakeSwirl(n) {
   gl.generateMipmap(gl.TEXTURE_2D);
 }
 
+// The twisters' unrolled walls: one layer per variety, angle across, height up.
+function bakeWall() {
+  wall = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, WALL_W, WALL_H, WALL_N);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D_ARRAY, k, v);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.viewport(0, 0, WALL_W, WALL_H);
+  gl.useProgram(P.wall.p);
+  gl.bindVertexArray(vao);
+  for (let v = 0; v < WALL_N; v++) {
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, wall, 0, v);
+    gl.uniform1i(P.wall.u.uV, v);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
+}
+
 function resize(force = false) {
   if (!P) return;
   const r = stage.getBoundingClientRect();
@@ -266,7 +385,11 @@ function resize(force = false) {
   canvas.width = W; canvas.height = H;
   const m = marchCut();
   free(gl, T.march); free(gl, T.scene); free(gl, T.cabin); free(gl, T.bok);
-  T.march = target(gl, Math.max(1, Math.round(W * m.scale)), Math.max(1, Math.round(H * m.scale)));
+  for (const h of T.hist || []) free(gl, h);
+  const mw = Math.max(1, Math.round(W * m.scale)), mh = Math.max(1, Math.round(H * m.scale));
+  T.march = target(gl, mw, mh);
+  T.hist = [target(gl, W, H), target(gl, W, H)];
+  lastView.fresh = true;
   T.scene = target(gl, W, H);
   T.cabin = target(gl, W, H);
   // The view through fog on the pane: the scene in discs, at half size.
@@ -352,32 +475,35 @@ function step(dt) {
   // The wipes: veils rush up the glass in the air, faster with the fall.
   const inAir = smooth(40, 10, S.alt) * (1 - smooth(-100, -130, S.alt));
   const wp = inAir * (0.3 + 0.6 * clamp(S.v / 6, 0, 1)) * (frozen ? 0.4 : 1);
-  S.wipe += (wp - S.wipe) * (1 - Math.exp(-dt / 0.6));
-  S.tWipe += sdt * (frozen ? 0 : 0.08 + 0.45 * clamp(S.v / 5, 0, 1));
+  S.wipe += (wp - S.wipe) * (1 - Math.exp(-dt / TUNE.tWipe));
+  S.tWipe += sdt * (frozen ? 0 : 0.08 + 0.45 * clamp(S.v / 5, 0, 1)) * TUNE.wipeSpeed;
   S.tGlass += sdt * (frozen ? 0 : 1);
   const heat = smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1);
-  S.melt = S.alt > 245 && !S.diving ? Math.max(0, S.melt - dt * 0.2) : Math.min(1, S.melt + heat * dt * 0.8);
+  S.melt = S.alt > 245 && !S.diving ? Math.max(0, S.melt - dt * TUNE.frostBack) : Math.min(1, S.melt + heat * dt * TUNE.melt);
   // The head eases toward its targets, so moves feel bodily.
   const kh = 1 - Math.exp(-dt / 0.25);
   S.hx += (S.thx - S.hx) * kh; S.hy += (S.thy - S.hy) * kh;
   S.lean += (S.leanT - S.lean) * (1 - Math.exp(-dt / 0.35));
   if (Math.abs(S.leanT - S.lean) < 1e-4) S.lean = S.leanT;
   // The near fog streams up past the glass, faster with the fall.
-  S.wispY += sdt * (3 + 50 * clamp(S.v / 5, 0, 1));
+  S.wispY += sdt * (3 + 50 * clamp(S.v / 5, 0, 1)) * TUNE.rushK;
   wgm.step(sdt, Math.min(60, Math.abs(S.v) * 10));
   // Each new crack jolts the capsule.
   const lvl = Math.floor(stressAt(S.alt) * 12);
-  if (lvl > S.crackLvl && !frozen) S.shake += 0.8;
+  if (lvl > S.crackLvl && !frozen) S.shake += TUNE.jolt;
   S.crackLvl = lvl;
   // The crush: at the floor of the dive the hull fails; 2.5 s later the toy wakes at the top.
   if (S.crush < 0 && S.alt <= ALT_DEEP + 0.01) S.crush = 0;
   if (S.crush >= 0) {
-    S.crush += dt / 2.5;
+    S.crush += dt / TUNE.tCrush;
     if (S.crush >= 1) {
       S.crush = -1; S.alt = ALT_TOP; S.v = 0; S.slideTo = null; S.diving = false; S.lum = luma(lightAt(S.alt)); S.melt = 0;
       B.strokes.length = 0; snd.cancel(); ui.slider?.set(0); saveSpot();
     }
   }
+  // Dev previews run on their own clocks and leave the dive alone.
+  if (S.crushDev >= 0) { S.crushDev += dt / TUNE.tCrush; if (S.crushDev >= 1) S.crushDev = -1; }
+  S.entryDev = Math.max(0, S.entryDev - dt / 4);
   const b = basis();
   stepBolts(B, dt, { alt: S.alt, aim: aimOnDeck(b), soft: frozen, live: timeK > 0, deck: deckAt(S.alt) });
   for (const hd of B.heard.splice(0)) {
@@ -385,7 +511,7 @@ function step(dt) {
     snd.thunder(d, hd.level, clamp(hd.pos[0] / Math.max(d, 1), -1, 1));
   }
   snd.update(dt, Math.abs(S.v), depthOf(S.alt), S.diving);
-  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0
+  return S.diving || S.v !== 0 || S.slideTo != null || busyBolts(B) || S.shake > 0.01 || S.crush >= 0 || S.crushDev >= 0 || S.entryDev > 0 || !!BK.job
     || Math.abs(S.thx - S.hx) + Math.abs(S.thy - S.hy) > 0.002 || S.lean !== S.leanT;
 }
 
@@ -437,6 +563,22 @@ function render(dt) {
   gl.bindTexture(gl.TEXTURE_3D, vol);
   gl.uniform1i(u.uVol, 2);
   if (u.uSwirl) bind(gl, M, 'uSwirl', 4, swirl);
+  if (u.uWall) {
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
+    gl.uniform1i(u.uWall, 5);
+    twisterUniforms(S.tC, twA, twB, twC);
+    // ?qa: __gg.noTw = true hides them, to time the march without them.
+    if (globalThis.__gg?.noTw) { twB.fill(0); twC.fill(0); }
+    // ?qa: __gg.twOnly = i shows only twister i.
+    const only = globalThis.__gg?.twOnly;
+    if (only != null) for (let i = 0; i < TW_MAX; i++) if (i !== only) { twB[i * 4 + 1] = 0; twC.fill(0, i * 4, i * 4 + 4); }
+    gl.uniform4fv(u.uTwA, twA);
+    gl.uniform4fv(u.uTwB, twB);
+    gl.uniform4fv(u.uTwC, twC);
+    gl.uniform1f(u.uTwLo, 0);
+    gl.uniform1f(u.uTwHi, TW_MAX);
+  }
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
   gl.uniform1f(u.uT, S.tC);
@@ -448,16 +590,51 @@ function render(dt) {
   // Over the tops the window opens as wide as in a void.
   gl.uniform1f(u.uWin, 220 + 1380 * Math.max(vk, smooth(14, 30, S.alt)));
   gl.uniform1f(u.uSeed, frameNo % 64);
+  // The sub-pixel shift; none when the march runs at full size.
+  const js = T.march.w < W ? JIT[frameNo % 8] : [0, 0];
+  const jit = [js[0] / T.march.w, js[1] / T.march.h];
+  gl.uniform2fv(u.uJit, jit);
   flashUniform(B, flash);
   // Deep down the eye opens wider; the flashes dim to match, as they show at the water deck.
   const fk = Math.min(1, 2.2 / gainAt(S.lum)) * TUNE.flash;
   for (let i = 3; i < 16; i += 4) flash[i] *= fk;
   gl.uniform4fv(u.uFlash, flash);
+  // The bake: start one when the eye hangs still and the old one no longer fits; stop it when the eye moves.
+  const settled = !S.diving && Math.abs(S.v) < 0.05 && S.slideTo == null;
+  if (TUNE.bake > 0 && !BK.tex) { BK.tex = cubeTex(BK.N, gl.RGBA16F); BK.texD = cubeTex(BK.N, gl.R16F); BK.dummy = cubeTex(1, gl.RGBA16F); BK.fb = gl.createFramebuffer(); }
+  if (BK.job && (!settled || TUNE.bake <= 0)) { BK.job = null; BK.ok = false; }
+  if (TUNE.bake > 0 && settled && !BK.job && (!BK.ok || Math.abs(S.alt - BK.alt) > 0.1 || BK.done !== BK.gen || BK.near !== TUNE.bake)) {
+    BK.job = { f: 0, k: 0, p: 0 }; BK.ok = false; BK.alt = S.alt; BK.near = TUNE.bake;
+  }
+  const baked = TUNE.bake > 0 && BK.ok && !BK.job && Math.abs(S.alt - BK.alt) < 0.4;
+  gl.uniform1f(u.uMode, baked ? 1 : 0);
+  gl.uniform1f(u.uNear, BK.near);
+  gl.activeTexture(gl.TEXTURE6);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, baked ? BK.tex : BK.dummy || null);
+  gl.uniform1i(u.uFar, 6);
+  gl.activeTexture(gl.TEXTURE7);
+  gl.bindTexture(gl.TEXTURE_CUBE_MAP, baked ? BK.texD : BK.dummy || null);
+  gl.uniform1i(u.uFarD, 7);
+  M.u._steps = Math.min(400, Math.round(m.steps * (1 + 0.3 * voidAt(S.alt))));
   tri(gl, T.march, vao);
+  if (BK.job) bakeStrips(M);
+  // Pass 3b: blend into the last frame. A turn, a fast fall or a flash takes more of the new frame.
+  const fwl = Math.hypot(...b.fwd), fw = b.fwd.map(x => x / fwl);
+  const dA = Math.acos(Math.min(1, fw[0] * lastView.fwd[0] + fw[1] * lastView.fwd[1] + fw[2] * lastView.fwd[2]));
+  const flashing = Math.max(flash[3], flash[7], flash[11], flash[15]) > 0.02;
+  const hk = lastView.fresh ? 1 : Math.min(1, Math.max(0.15 + dA * 40 + Math.abs(S.alt - lastView.alt) * 0.8, flashing ? 0.6 : 0));
+  lastView.fwd = fw; lastView.alt = S.alt; lastView.fresh = false;
+  gl.useProgram(P.hist.p);
+  bind(gl, P.hist, 'uCur', 0, T.march);
+  bind(gl, P.hist, 'uPrev', 1, T.hist[1]);
+  gl.uniform1f(P.hist.u.uK, hk);
+  gl.uniform2fv(P.hist.u.uJit, jit);
+  tri(gl, T.hist[0], vao);
+  T.hist.reverse();
   // Pass 4: the composite.
   gl.useProgram(P.comp.p);
   sunTo(P.comp);
-  bind(gl, P.comp, 'uClouds', 0, T.march);
+  bind(gl, P.comp, 'uClouds', 0, T.hist[1]);
   gl.uniform3fv(P.comp.u.uCam, cam);
   gl.uniform3fv(P.comp.u.uFwd, b.fwd); gl.uniform3fv(P.comp.u.uRight, b.right); gl.uniform3fv(P.comp.u.uUp, b.up);
   tri(gl, T.scene, vao);
@@ -481,7 +658,7 @@ function render(dt) {
   // Against the window: the near fog's place, its density, and the brightest flash in capsule metres.
   gl.uniform3f(c.uWispP, 0, -S.wispY, 0);
   const inDeck = deckAt(S.alt);
-  gl.uniform1f(c.uNear, Math.min(1, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1) * TUNE.near));
+  gl.uniform1f(c.uNear, fx('fxNear', Math.min(1, (S.alt < 24 ? 0.25 + 0.75 * inDeck : 0.25 * smooth(40, 24, S.alt)) * (S.alt > -505 ? 1 : 0) * (frozen ? 0.6 : 1))) * TUNE.near);
   const fd = [flash[0], flash[1] - S.alt, flash[2]], fl = Math.hypot(...fd) || 1;
   const fc = k => (fd[0] * b[k][0] + fd[1] * b[k][1] + fd[2] * b[k][2]) / fl * 25;
   gl.uniform3f(c.uFlashP, fc('X'), fc('Y'), fc('Z'));
@@ -490,11 +667,12 @@ function render(dt) {
   gl.uniform1f(c.uFlow, wgm.flow);
   gl.uniform1f(c.uAir, wgm.speed);
   // No base fog: clear glass stays sharp.
-  gl.uniform1f(c.uFog, (0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt)) * TUNE.fogK);
-  gl.uniform1f(c.uIce, smooth(-1, 2, S.alt) * (1 - smooth(20, 23, S.alt)));
+  gl.uniform1f(c.uFog, fx('fxFog', 0.25 * inDeck * smooth(22, 18, S.alt) + 0.35 * smooth(-150, -500, S.alt)) * TUNE.fogK);
+  gl.uniform1f(c.uIce, fx('fxIce', smooth(-1, 2, S.alt) * (1 - smooth(20, 23, S.alt))));
   // Stress bows and cracks the pane; the crush shatters it, with no white burst under reduced motion.
   gl.uniform1f(c.uStress, TUNE.cracks === 'off' ? 0 : TUNE.cracks === 'full' ? 1 : stressAt(S.alt));
-  gl.uniform1f(c.uCrush, S.crush < 0 ? 0 : frozen ? 0.3 + 0.7 * S.crush : S.crush);
+  const cr = Math.max(S.crush, S.crushDev);
+  gl.uniform1f(c.uCrush, cr < 0 ? 0 : frozen ? 0.3 + 0.7 * cr : cr);
   gl.uniform3fv(c.uEye, b.eye);
   gl.uniformMatrix3fv(c.uLook, false, b.lookM);
   gl.uniform2fv(c.uTan, b.tan);
@@ -502,16 +680,16 @@ function render(dt) {
   // With no frame the clouds fill the screen; bloom and shake stay.
   gl.uniform1f(c.uFrame, cabinOff() ? 0 : 1);
   gl.uniform1f(c.uTime, S.tGlass);
-  gl.uniform1f(c.uWipe, S.wipe);
+  gl.uniform1f(c.uWipe, fx('fxWipe', S.wipe));
   // Entry heat melts the frost; it forms again only near the top.
-  gl.uniform1f(c.uFrost, smooth(40, 120, S.alt) * (1 - S.melt));
+  gl.uniform1f(c.uFrost, fx('fxFrost', smooth(40, 120, S.alt) * (1 - S.melt)));
   // Rain and drops below the white deck, heaviest in the decks, gone under the last deck.
-  gl.uniform1f(c.uWet, Math.min(1, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)) * TUNE.wet));
+  gl.uniform1f(c.uWet, fx('fxWet', Math.min(1, smooth(2, -6, S.alt) * (1 - smooth(-480, -520, S.alt)) * (0.35 + 0.65 * deckAt(S.alt)))) * TUNE.wet);
   gl.uniform1f(c.uRush, clamp(S.v / 5, 0, 1));
-  gl.uniform1f(c.uHeat, frozen ? 0 : smooth(-80, -130, S.alt));
+  gl.uniform1f(c.uHeat, frozen ? 0 : fx('fxHeat', smooth(-80, -130, S.alt)));
   gl.uniform1f(c.uAsp, W / H);
   // Entry: the plasma glows while the capsule falls fast, high up.
-  const entry = smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1);
+  const entry = fx('fxEntry', Math.max(S.entryDev, smooth(110, 200, S.alt) * clamp((S.v - 2) / 6, 0, 1)));
   gl.uniform1f(c.uEntry, entry);
   gl.uniform1f(c.uDeck, deckAt(S.alt) * (frozen ? 0.5 : 1));
   gl.uniform1f(c.uFlash, Math.min(2.5, (flash[3] + flash[7] * 0.5) / (S.alt > 0 ? 400 : 1.2)));

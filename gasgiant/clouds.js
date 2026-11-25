@@ -4,6 +4,7 @@
 // Output: one RGBA16F target. rgb is the light in front of the sky, a is the cover.
 import { COMMON } from './world.js';
 import { CLOUDS } from '../shared/clouds.js';
+import { TW_DECL, TW_MARCH } from './twisters.js';
 
 /* ---------- K: Railgun's tiled 3D billow noise (copied from volcano/clouds.js) ---------- */
 const VOL_NOISE = /* glsl */`
@@ -99,13 +100,23 @@ const MARCH_SRC = /* glsl */`#version 300 es
 precision highp float;
 precision highp sampler3D;
 in vec2 vUv;
-out vec4 o;
+layout(location = 0) out vec4 o;
+// The far view's first cloud depth, for the bake.
+layout(location = 1) out vec4 oD;
 uniform sampler2D uMap, uLut;
 uniform sampler3D uVol;
 // The top deck's baked swirls: SWIRL_FS.
 uniform sampler2D uSwirl;
 uniform vec3 uCam, uFwd, uRight, uUp;
 uniform float uT, uTMap, uSteps, uFine, uWin, uSeed;
+// A sub-pixel shift each frame; the history pass builds full detail from it.
+uniform vec2 uJit;
+// The twisters this pass draws, by index: from uTwLo up to uTwHi.
+uniform float uTwLo, uTwHi;
+// uMode 0 marches the whole ray. 1 marches to uNear and reads the baked far view past it.
+// 2 bakes the far view: it marches from uNear on.
+uniform float uMode, uNear;
+uniform samplerCube uFar, uFarD;
 uniform vec4 uFlash[4];
 // Dev tuning: multiple scatter, ambient, bounce, haze reach.
 uniform vec4 uTune;
@@ -190,11 +201,22 @@ float gyreEye(vec2 xz) { return 1.0 - smoothstep(110.0, 135.0, length(xz - GY_C)
 // soft widens the edge: light through a thick deck spreads into a penumbra.
 float breakAt(vec2 xz, float seed, float soft) {
   vec4 v = textureLod(uVol, vec3(xz / 260.0 + vec2(uT * 0.00004, fract(seed * 0.71)), fract(seed * 0.37)), 0.0);
-  return smoothstep(0.64 - soft, 0.72 + 0.3 * soft, v.a + 0.1 * (v.r - 0.5));
+  // The brown deck under the upper void stays mostly closed (Tom, 2026-11-24).
+  float th = seed == 7.7 ? 0.08 : 0.0;
+  float b = smoothstep(0.64 + th - soft, 0.72 + th + 0.3 * soft, v.a + 0.1 * (v.r - 0.5));
+  // Under the top deck, narrow rifts 2 to 8 km across let shafts in close by.
+  // Two crossed scales hide the noise tile's repeat.
+  if (seed == 3.1) {
+    vec2 xr = vec2(0.8 * xz.x - 0.6 * xz.y, 0.6 * xz.x + 0.8 * xz.y);
+    float w1 = textureLod(uVol, vec3(xz / 37.0 + vec2(uT * 0.0001, 0.29), 0.83), 0.0).a;
+    float w2 = textureLod(uVol, vec3(xr / 53.0 + vec2(0.61, uT * 0.00007), 0.17), 0.0).g;
+    b = max(b, smoothstep(0.74 - soft, 0.8 + 0.3 * soft, w1 * 0.65 + w2 * 0.45));
+  }
+  return b;
 }
 // The void round a height, floor included: its ceiling and its seed. x under -1000 means none.
 vec2 voidOver(float h) {
-  return h > -30.0 && h < 0.0 ? vec2(2.0, 3.1) : h > -70.0 && h < -38.0 ? vec2(-38.0, 7.7)
+  return h > -46.0 && h < 0.0 ? vec2(2.0, 3.1) : h > -70.0 && h < -50.0 ? vec2(-50.0, 7.7)
     : h > -236.0 && h < -158.0 ? vec2(-158.0, 11.3) : h > -366.0 && h < -262.0 ? vec2(-262.0, 5.9)
     : h > -431.0 && h < -385.0 ? vec2(-385.0, 9.4) : vec2(-1e4, 0.0);
 }
@@ -225,6 +247,9 @@ float gyre(vec3 p, float f) {
   return res;
 }
 vec3 deepLight(vec3 upv) { return normalize(upv * 0.75 + normalize(SUN - upv * dot(SUN, upv)) * 0.66); }
+// @seg upper
+${TW_DECL}
+// @end
 // Storm curtains and rare twisters in a void from flo to cei.
 // cu is the share of storm cells with a curtain; tw the share of curtains with a twister.
 // Storms gather where convection does, as the towers do.
@@ -249,7 +274,7 @@ float stormsIn(vec3 p, float h, float flo, float cei, float seed, float cs, floa
     }
     // A twister drops from the rain-free base at the curtain's edge.
     // ?qa view 9 drops a twister at every curtain.
-    if (r2.z > 1.0 - (uDbg > 8.5 ? 1.0 : tw)) {
+    if (r2.z > 1.0 - (uDbg > 8.5 && tw > 0.0 ? 1.0 : tw)) {
       float an = r2.x * 6.2832;
       vec2 tc = c + vec2(cos(an), sin(an) / 1.7) * rc * 1.05;
       // It wanders slowly; the foot trails the top; the rope sways.
@@ -413,29 +438,38 @@ float dens(vec3 p, float lod, float fine, float full) {
     } else
     // @end
     // @seg upper
-    if (h > -24.0) {
+    if (h > -40.0) {
       // The upper void: towers stand between the brown floor and the white ceiling.
-      d = tower(p, h, -24.0, 2.0, 3.1, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
+      // It is 42 km tall, the tallest void under the tops (Tom, 2026-11-24).
+      d = tower(p, h, -40.0, 2.0, 3.1, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.5 + 0.3 * n1.a), pal(0.1), f);
       gOpen = f;
-      vd = vec4(-24.0, 2.0, 3.1, 0.5);
-      vk = vec4(70.0, 0.12, 0.35, 0.05);
+      // Dust heaps round the twisters' feet, ragged and torn by the noise.
+      if (full > 0.5 && h < -34.0) {
+        // Over a hole in the deck no dust rises.
+        float dh = twDust(p.xz);
+        if (dh > 0.05) dh *= twGround(p.xz);
+        float du = smoothstep(0.0, 1.2, -40.0 + dh * (0.5 + 0.7 * n1.b) - h) * smoothstep(0.3, 0.6, n2.r + 0.25) * 0.8;
+        if (du > d) { d = du; gAlb = mix(pal(0.34), pal(0.6), n1.a); gOpen = 0.4; }
+      }
+      vd = vec4(-40.0, 2.0, 3.1, 0.5);
+      vk = vec4(70.0, 0.0, 0.35, 0.05);
     } else
     // @end
     // @seg brown
-    if (h > -38.0) {
+    if (h > -50.0) {
       // The brown deck: a floor above, a ceiling below, a few breaks.
-      float cov = smoothstep(0.3, 0.48, 1.0 - nc.a + 0.08 * (nb - 0.5));
-      float sh = min(-24.0 + 4.0 * (nb - 0.5) - h, (h + 40.0) * 0.8);
+      float cov = smoothstep(0.18, 0.36, 1.0 - nc.a + 0.08 * (nb - 0.5));
+      float sh = min(-40.0 + 3.0 * (nb - 0.5) - h, (h + 52.0) * 0.8);
       d = smoothstep(0.0, 1.6 + lod, sh) * cov * 0.85 * (1.0 - breakAt(p.xz, 7.7, 0.0));
       gAlb = mix(pal(0.34), pal(0.6), n1.a);
-      gOpen = clamp(1.0 - (-24.0 - h) / 6.0, 0.0, 1.0);
+      gOpen = clamp(1.0 - (-40.0 - h) / 5.0, 0.0, 1.0);
     } else
     // @end
     // @seg mushball
     if (h > -64.0) {
       // The mushball fall: darker towers, and slush hail falling in streaks.
-      d = tower(p, h, -64.0, -38.0, 7.7, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
+      d = tower(p, h, -64.0, -50.0, 7.7, nb, 48.0, 0.5, f) * (0.6 + 0.4 * n1.b);
       gAlb = mix(pal(0.95 + 0.15 * n1.a), pal(0.45), f);
       gOpen = f;
       // The hail falls in patches 50 to 100 km across, at 0.6 km/s.
@@ -445,7 +479,7 @@ float dens(vec3 p, float lod, float fine, float full) {
         float mb = 0.18 * mp * smoothstep(0.62, 0.85, st);
         if (mb > d) { d = mb; gAlb = vec3(0.85, 0.9, 0.95); gOpen = 0.6; }
       }
-      vd = vec4(-64.0, -38.0, 7.7, 0.95);
+      vd = vec4(-64.0, -50.0, 7.7, 0.95);
       vk = vec4(60.0, 0.15, 0.4, 0.45);
     } else
     // @end
@@ -563,6 +597,10 @@ float dens(vec3 p, float lod, float fine, float full) {
       // broad rolls, billows on the skin, ragged scud under it.
       // The lumps come from flat maps, so each keeps its shape through its depth.
       float cb = vd.y - 1.0;
+      // @seg upper
+      // The base sags into a wall cloud round each twister's top, so the flare grows out of it.
+      if (vd.z == 3.1) cb -= twSag(p.xz);
+      // @end
       float sc = 0.0, ex = 0.0;
       if (h > cb - 9.0) {
         vec3 lq = vec3(p.x, 0.0, p.z);
@@ -631,9 +669,23 @@ float lightOD(vec3 p, vec3 ld, float lod) {
   }
   return od;
 }
+// @seg upper
+// The upper void's twisters: baked walls, lit live (twisters.js).
+${TW_MARCH}
+// A twister layer over the baked far view: the haze in front fades it, and behind the bake's
+// first cloud only what shows through counts. fd is that cloud's depth.
+vec4 twFar(vec4 f, float fd, vec4 L, float tL) {
+  if (tL <= 0.0 || L.a < 1e-3) return f;
+  // The glow of the lit haze in front counts as haze too, so the fade runs faster than the gas alone.
+  float th = exp(-max(tL - uNear, 0.0) * 2.5 / (690.0 * uTune.w));
+  // A twister that enters a cloud fades into it over a few km.
+  float k = th * L.a * mix(1.0, 1.0 - f.a, smoothstep(fd - 4.0, fd + 4.0, tL));
+  return vec4(mix(f.rgb, L.rgb / L.a, k), mix(f.a, 1.0, k));
+}
+// @end
 void main() {
   vec3 ro = uCam;
-  vec2 c = vUv * 2.0 - 1.0;
+  vec2 c = (vUv + uJit) * 2.0 - 1.0;
   vec3 rd = normalize(uFwd + c.x * uRight + c.y * uUp);
   float camH = altOf(ro);
   // The slab of cloud between the top shell and the bottom shell.
@@ -649,19 +701,40 @@ void main() {
   // A ray that the window cuts ends in fog; one that leaves through the top sees the sky.
   bool winEnd = inWin && uWin < t1;
   if (inWin) t1 = min(t1, uWin);
+  float t0a = t0;
+  bool nearOnly = uMode > 0.5 && uMode < 1.5;
+  // @seg upper
+  // The twisters stay live in every mode but the bake, to the ray's full length.
+  float twT = -1.0, twT2 = -1.0;
+  vec4 twC = vec4(0.0), twC2 = vec4(0.0);
+  if (t1 > t0) twC = twisters(ro, rd, t0, t1, twT, twC2, twT2);
+  // @end
+  if (uMode > 1.5) t0 = max(t0, uNear);
+  if (nearOnly && t1 > uNear) { t1 = uNear; winEnd = false; }
+  // The window fog, the deck's far haze and the aerial perspective belong to the far view.
+  bool tail = !nearOnly;
   vec4 res = vec4(0.0);
+  float hitD = 1e4;
   if (t1 > t0) {
     float mu = dot(rd, SUN);
     float ph = clPhase(mu);
-    float t = t0 + (0.3 + 0.006 * t0) * fract(sin(dot(gl_FragCoord.xy + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
+    // Interleaved gradient noise: an even spread that the history pass settles fast.
+    float t = t0 + (0.3 + 0.006 * t0) * fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 5.588, vec2(0.06711056, 0.00583715))));
     vec3 col = vec3(0.0);
     float T = 1.0, tHit = -1.0;
+    // @seg upper
+    // @end
     // sk shrinks the steps after the first hit, so a crisp skin is not stepped over.
     float sk = 1.0;
     bool refined = false;
     int n = int(uSteps);
     for (int i = 0; i < 400; i++) {
       if (i >= n || t > t1 || T < 0.02) break;
+      // @seg upper
+      // The march reaches a twister: it covers what lies behind it.
+      if (twT > 0.0 && t >= twT) { col += T * twC.rgb; T *= 1.0 - twC.a; twT = -1.0; }
+      if (twT2 > 0.0 && t >= twT2) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
+      // @end
       vec3 p = ro + rd * t;
       float ds = min(inWin ? 0.3 + grow * t : 0.3 + 0.0075 * t, cap + (0.004 + 0.006 * vw) * t) * sk;
       sk = min(1.0, sk * 1.3);
@@ -757,12 +830,19 @@ void main() {
         float hg = altOf(p);
         // The voids stay clear to the horizon; the gaps between sheets stay fairly clear.
         // Over the tops the air clears, so the deck runs to its far horizon.
-        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 700.0 * smoothstep(16.0, 34.0, hg) + 300.0 * band(hg, -24.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -38.0, 3.0)
+        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 700.0 * smoothstep(16.0, 34.0, hg) + 520.0 * band(hg, -40.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -50.0, 3.0)
           + 500.0 * band(hg, -230.0, -158.0, 6.0) + 700.0 * band(hg, -360.0, -262.0, 6.0)
           + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -425.0, 6.0) + 300.0 * band(hg, -425.0, -385.0, 3.0) + 40.0 * step(hg, -500.0);
         float sg = 1.0 / (mfp * uTune.w);
-        float ag = 1.0 - exp(-sg * ds * 1.6);
         vec3 gs = lut(hg).rgb * vec3(0.38, 0.42, 0.44);
+        // Under the top deck: white haze near the eye, the void's green bleeding in far off.
+        float nearK = 1.0 - smoothstep(8.0, 110.0, t);
+        if (hg > -42.0 && hg < 0.0) {
+          float lw = dot(lut(hg).rgb, vec3(0.3, 0.5, 0.2));
+          sg += nearK * nearK / (420.0 * uTune.w);
+          gs = mix(lut(hg).rgb * vec3(0.36, 0.72, 0.5), vec3(lw * 0.66), nearK * nearK);
+        }
+        float ag = 1.0 - exp(-sg * ds * 1.6);
         // God rays: in a void the gas glows where light falls through a break.
         // The shafts glow most when the eye looks toward the light.
         vec2 vo = voidOver(hg);
@@ -770,7 +850,23 @@ void main() {
           vec3 upg = normalize(p - PC);
           vec3 lg = deepLight(upg);
           float sh = shaftAt(p, hg, lg, upg, vo);
-          gs = gs * 0.55 + lut(vo.x + 6.0).rgb * sh * mix(1.0, clPhase(dot(rd, lg)), 0.8) * 4.0 * uRays;
+          float phS = mix(1.0, clPhase(dot(rd, lg)), 0.8);
+          if (vo.y != 3.1) gs = gs * 0.55 + lut(vo.x + 6.0).rgb * sh * phS * 4.0 * uRays;
+          else {
+            // Under the top deck the shafts stand out on their own, near and far.
+            // Each tapers as it falls: its soft edge tightens and it fades toward the floor.
+            float fall = clamp((vo.x - hg) / 42.0, 0.0, 1.0);
+            float shT = pow(sh, 1.0 + 3.0 * fall);
+            // Not the void's green: pearl under the ceiling, then rose-violet or ice blue by place.
+            float hue = textureLod(uVol, vec3(p.xz / 340.0, 0.47), 0.0).b;
+            vec3 rc = mix(vec3(1.0, 0.88, 0.72), mix(vec3(0.86, 0.62, 1.0), vec3(0.55, 0.84, 1.0), smoothstep(0.35, 0.65, hue)), smoothstep(0.05, 0.7, fall));
+            float lum = dot(lut(vo.x + 6.0).rgb, vec3(0.3, 0.5, 0.2));
+            // Far off, the shafts take the void's green too.
+            rc = mix(rc, normalize(lut(hg).rgb * vec3(0.36, 0.72, 0.5)) * 1.5, smoothstep(60.0, 420.0, t) * 0.75);
+            col += T * rc * lum * shT * phS * min(ds, 6.0) * 0.02 * uRays * (1.0 - 0.7 * fall);
+            // The haze glows in the light: pale near the eye, green far off.
+            gs = gs * 0.55 + mix(lut(vo.x + 6.0).rgb, vec3(lum * 1.3), 0.1 + 0.6 * nearK) * sh * phS * 4.0 * uRays;
+          }
         }
         col += T * gs * ag;
         // @seg nest
@@ -789,6 +885,14 @@ void main() {
       }
       t += ds * (dn > 0.003 ? 1.0 : 1.6);
     }
+    // @seg upper
+    // Layers past the march's end go on in depth order; past the near reach they go over the bake.
+    if (!nearOnly) {
+      if (twT2 > 0.0 && twT2 < twT) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
+      if (twT > 0.0) { col += T * twC.rgb; T *= 1.0 - twC.a; twT = -1.0; }
+      if (twT2 > 0.0) { col += T * twC2.rgb; T *= 1.0 - twC2.a; twT2 = -1.0; }
+    }
+    // @end
     // Inside the decks, the medium past the window is fog of the same light.
     if (winEnd && t >= t1 - 0.01 && T > 0.02) {
       vec4 L = lut(camH - 0.15 * min(uWin, 220.0));
@@ -800,7 +904,7 @@ void main() {
     vec3 oc = ro - PC;
     float bq = dot(oc, rd);
     float hMin = (bq < 0.0 ? length(oc - rd * bq) : length(oc)) - R;
-    if (!inWin && T > 0.02 && hMin < 22.0 && ((hB.x < hB.y && hB.x > 0.0) || t < t1 - 1.0)) {
+    if (tail && !inWin && T > 0.02 && hMin < 22.0 && ((hB.x < hB.y && hB.x > 0.0) || t < t1 - 1.0)) {
       if (tHit < 0.0) tHit = t1;
       col += T * vec3(0.34, 0.58, 0.6) * 0.62;
       T = 0.0;
@@ -808,16 +912,29 @@ void main() {
     float al = 1.0 - T;
     // Aerial perspective over the deck: far bands fade into the limb's teal, brightest toward the sun.
     // The colour matches the sky's limb haze in sky.js, so the far deck melts into the horizon.
-    if (!inWin && tHit > 0.0) {
-      float hz = 1.0 - exp(-(tHit - t0) / 1100.0);
+    if (tail && !inWin && tHit > 0.0) {
+      float hz = 1.0 - exp(-(tHit - t0a) / 1100.0);
       vec3 hzC = vec3(0.38, 0.66, 0.68) * 0.5 * (0.7 + 0.5 * min(clPhase(dot(rd, SUN)), 3.0));
       col = mix(col, hzC * al, hz * 0.85);
     }
     res = vec4(col, al);
+    if (tHit > 0.0) hitD = tHit;
     // ?qa view 6: red the cover, green a hit, blue what passes.
     if (uDbg > 5.5 && uDbg < 6.5) res = vec4(al * 0.3, tHit > 0.0 ? 0.3 : 0.0, T * 0.3, 1.0);
   }
+  // Past the near reach, the baked far view.
+  if (nearOnly) {
+    vec4 far = texture(uFar, rd);
+    // @seg upper
+    // Twisters past the near reach go over the bake, the farther first.
+    float fd = texture(uFarD, rd).r;
+    far = twFar(far, fd, twC2, twT2);
+    far = twFar(far, fd, twC, twT);
+    // @end
+    res = vec4(res.rgb + (1.0 - res.a) * far.rgb, res.a + (1.0 - res.a) * far.a);
+  }
   o = res;
+  oD = vec4(hitD, 0.0, 0.0, 1.0);
 }`;
 
 // The march in four zone programs, so each links fast and the others link in the background.

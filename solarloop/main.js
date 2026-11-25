@@ -14,7 +14,15 @@ import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimmin
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeCard, CARD_STYLES } from './card.js';
+import { makeArticle } from './article.js';
 import { cardLines } from './facts.js';
+
+// Dev shows always on this toy (Tom, 2026-11-24): the address gains ?dev before the bar reads it.
+if (!new URLSearchParams(location.search).has('dev')) {
+  const u = new URL(location.href);
+  u.searchParams.set('dev', '');
+  history.replaceState(history.state, '', u);
+}
 mark('libs');
 
 const ID = 'solarloop';
@@ -413,7 +421,7 @@ const FX = [
   ['fxRays', 'Post', 'Light rays', 0, 3, 1, 2, 'Shafts of light streaming out from the star.'],
   ['fxHal', 'Post', 'Halation', 0, 3, 1, 1, 'The red glow film gives round bright light.'],
   ['fxSplit', 'Post', 'Colour split', 0, 4, 1, 3, 'Red and blue fringes toward the frame\'s edge, as a lens splits colour.'],
-  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1, 3, 'Hot air above the limb bends what lies behind it.'],
+  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1, 3, 'Hot air above the limb bends what lies behind it. Stars only.'],
   ['fxDirt', 'Post', 'Lens dirt', 0, 4, 1, 4, 'Smudges on the glass that catch the star\'s light.'],
   ['fxRoll', 'Post', 'Highlight roll-off', 0, 2, 1, 1, 'The brightest parts fade to warm white, as on film.'],
   ['fxVig', 'Post', 'Vignette', 0, 2, 1, 1, 'The frame darkens toward its corners.'],
@@ -421,8 +429,16 @@ const FX = [
   ['fxVol', 'Volume', 'Haze density', 0, 4, 1, 2, 'How thick the haze and dust round the star are.'],
   ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1, 1, 'How much starlight the haze scatters.'],
   ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1, 1, 'The star\'s outer atmosphere, seen on the full view.'],
-  ['fxDenoise', 'Volume', 'Haze denoise', 0, 1.1, 1, 1, 'Blends the haze with past frames at rest, so its speckle settles; moving views take none.'],
+  ['fxDenoise', 'Volume', 'Haze denoise', 0, 1.1, 1, 1, 'Blends a live march with past frames at rest, so its speckle settles: Beta Lyrae\'s gas and the pulsar\'s beams. The baked haze needs none.'],
   ['fxBend', 'Volume', 'Corona bend', 0, 3, 1, 3, 'How much the corona\'s streamers curve on the full view.'],
+  // The black holes and the quasar have their own volume; the star rows above grey out there.
+  ['fxHCloud', 'Black hole', 'Cloud density', 0, 4, 1, 2, 'How thick the cloud layer round a black hole\'s disc is.'],
+  ['fxHCLight', 'Black hole', 'Cloud light', 0, 4, 1, 2, 'How brightly the clouds glow with the disc\'s light.'],
+  ['fxHDisc', 'Black hole', 'Disc light', 0, 3, 1, 2, 'The flat disc under the clouds, and its photon ring.'],
+  ['fxHTorus', 'Black hole', 'Dusty torus', 0, 3, 1, 2, 'The quasar\'s ring of dust round its disc.'],
+  ['fxHBlr', 'Black hole', 'Broad-line clouds', 0, 3, 1, 2, 'The quasar\'s bright clumps that orbit above and below its disc.'],
+  ['fxHWinds', 'Black hole', 'Winds', 0, 3, 1, 2, 'The gas the quasar\'s disc blows off its faces.'],
+  ['fxHJet', 'Black hole', 'Jet', 0, 3, 1, 2, 'The quasar\'s jet along its spin axis.'],
   ['fxOrb', 'Flare', 'Orb', 0, 3, 1, 1, 'The soft round glow of the lens flare.'],
   ['fxStreak', 'Flare', 'Streak', 0, 3, 1, 1, 'The thin horizontal anamorphic streak.'],
   ['fxGhost', 'Flare', 'Ghosts', 0, 3, 1, 1, 'The rimmed discs a bright light throws across the frame.'],
@@ -445,6 +461,20 @@ const gradeRows = () => [
 ];
 const gv = (id, d) => ui?.setting?.(id)?.value ?? d;
 // A knob's value: its Dev row, else the default.
+// The Dev rows that act on the object in view; the others grey out.
+let devKind = '';
+// The haze is baked, so only a live march (a binary's gas, a pulsar's beams) needs Haze denoise.
+function devRows(star) {
+  const hole = star.hole;
+  const k = hole ? (hole.qso ? 'qso' : 'hole') : star.bin || star.ns ? 'live' : 'star';
+  if (k === devKind || !ui?.setting) return;
+  devKind = k;
+  const on = (ids, yes) => { for (const id of ids) { const h = ui.setting(id); if (h) h.disabled = !yes; } };
+  on(['fxVol', 'fxVolLight', 'fxCorona', 'fxBend'], !hole);
+  on(['fxDenoise'], k === 'live');
+  on(['fxHCloud', 'fxHCLight', 'fxHDisc'], k !== 'star');
+  on(['fxHTorus', 'fxHBlr', 'fxHWinds', 'fxHJet'], k === 'qso');
+}
 const fxv = id => {
   const [, , , , , d, reach] = FX.find(f => f[0] === id);
   const v = ui?.setting?.(id)?.value ?? d;
@@ -463,7 +493,7 @@ const PICKS = [
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
-  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
+  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
   ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'], ['qso', '3C 273', 'oklch(0.86 0.06 260)'],
@@ -477,6 +507,7 @@ function pickStar(v) {
   st.star = v;
   egg = null;
   store.set('star', v);
+  article.close();
   // The old star's card leaves at once; the new one waits for the switch's light.
   // Reduced motion swaps at once, so its card need not wait.
   card.clear();
@@ -493,7 +524,7 @@ const ui = initPage({ id: ID, bar: {
   actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }, { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() }],
   settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
   quality: true,
-  // Tuning for the people who build the toy; the Dev button shows with ?dev.
+  // Tuning for the people who build the toy; the Dev button always shows here.
   dev: [
     ...FX.map(([id, group, label, min, max, value, , hint]) => ({ type: 'slider', id, group, label, hint, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
@@ -511,14 +542,15 @@ const ui = initPage({ id: ID, bar: {
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
-    ['click', 'Tap a region to flare it, or a prominence to lift it off'],
-    ['drag', 'Drag to turn the star (the long lens holds still)'],
-    ['scroll', 'Zoom from the long lens through the wide view to the full star, and farther out'],
-    ['L', 'Jump to the next lens stop: long, full, wide'],
-    ['S', 'Open the star chart'],
-    ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
-    ['[', 'Step to the previous star; ] steps to the next'],
-    ['T', 'Turn speed: real time, 5,000 or 10,000 times faster'],
+    ['click', 'Flare a region or lift a prominence'],
+    ['drag', 'Turn the star'],
+    ['scroll', 'Zoom'],
+    ['L', 'Next view'],
+    ['S', 'Star chart'],
+    ['1', 'Main sequence and brown dwarfs, 1 to 0'],
+    ['[', 'Previous or next star, [ and ]'],
+    ['T', 'Turn speed'],
+    ['I', 'Star card; again for the article'],
   ],
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
@@ -561,6 +593,8 @@ const rail = makeRail({
 // The star card: the star's name and facts type on, then fade (Tom, 2026-11-24).
 // It shows only on the full star: zoomed out to it, glided there by a pick, or opened there.
 const card = makeCard({ stage });
+// The article: the second i opens it over the card (Tom, 2026-11-24).
+const article = makeArticle({ stage });
 let cardStar = null;
 // The card plays once the view is within a hair of the full star, once per arrival (Tom, 2026-11-24).
 // A heavy zoom creeps for seconds at the end; the card need not wait for the creep.
@@ -583,14 +617,13 @@ function arrive() {
   showCard();
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
-// Our Sun's outline above it takes the star's scale on screen.
-function showCard() {
+// Our Sun stands beside the object at their true ratio; the Sun's own card has none.
+function showCard(hint = false) {
   cardStar = st.star;
-  // A black hole's R is its shadow's edge, BCRIT horizon radii out; its rsun is the horizon's.
-  const B = STARS[st.star], horizonR = B.hole ? R / BCRIT : R;
+  // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
-  const sun = { d: horizonR / B.rsun * cssH / view.hh, max: cssH * 0.3, ratio: 1 / B.rsun, colour: pick.colour };
-  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun);
+  const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
+  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, hint);
   showClock();
 }
 // A new card style plays at once when the view rests on the full star.
@@ -611,6 +644,12 @@ addEventListener('keydown', e => {
   else if (e.key === 's' || e.key === 'S') chart.open(true);
   else if (e.key === ' ') flareNext();
   else if (e.key === 'l' || e.key === 'L') toggleLens();
+  // i shows the card in any view; again, while the card stands, the article; again, it shuts.
+  else if (e.key === 'i' || e.key === 'I') {
+    if (article.isOpen()) article.close();
+    else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
+    else showCard(true);
+  } else if (e.key === 'Escape' && article.isOpen()) article.close();
   else if (step) {
     const at = PICKS.findIndex(x => x.value === st.star);
     pickStar(PICKS[(at + step + PICKS.length) % PICKS.length].value);
@@ -841,7 +880,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2), holeV: new Float32Array(4), holeQ: new Float32Array(4),
-  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
+  ring: new Float32Array(4), ring2: new Float32Array(4), ring3: new Float32Array(4), shell: new Float32Array(4), pair: new Float32Array(4), pair2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
@@ -885,15 +924,18 @@ function makeFrame() {
   });
   // A black hole: the trace replaces the disk; no loops, haze, corona or glare.
   const hole = star.hole;
+  devRows(star);
   f.count = hole ? 0 : strands(sun, st.time, { star: shown, activity: act, spin: pulsarTurns(STARS[shown]) ? 0 : st.spin }, ren.data);
-  f.hole.set(hole ? [1, hole.tilt, hole.light, hole.heat] : [0, 0, 0, 0]);
+  const hd = fxv('fxHDisc');
+  f.hole.set(hole ? [1, hole.tilt, hole.light * hd, hole.heat] : [0, 0, 0, 0]);
   f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
   f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
   // The volumetric layer over a hole's disc, and a quasar's torus, clouds and winds.
   const hv = hole?.vol, hq = hole?.qso;
-  f.holeV.set(hv ? [1, hv.dens, hv.light, hq ? 40 : 18] : [0, 0, 0, 0]);
-  f.holeQ.set(hq ? [1, hq.torus, hq.clouds, hq.winds] : [0, 0, 0, 0]);
-  f.jet = star.jet;
+  // The clouds take the disc's light too, so Disc light divides out of theirs.
+  f.holeV.set(hv ? [1, hv.dens * fxv('fxHCloud'), hv.light * fxv('fxHCLight') / Math.max(hd, 1e-3), hq ? 40 : 18] : [0, 0, 0, 0]);
+  f.holeQ.set(hq ? [1, hq.torus * fxv('fxHTorus'), hq.clouds * fxv('fxHBlr'), hq.winds * fxv('fxHWinds')] : [0, 0, 0, 0]);
+  f.jet = star.jet * (hole ? fxv('fxHJet') : 1);
   // A giant ring system drifts slowly across the star, so its bands sweep the disk.
   const rg = star.ring;
   if (rg) {
@@ -913,7 +955,9 @@ function makeFrame() {
     const side = -Math.sign((w[0] * -ey + w[1] * ex) * w[2]) || 1;
     f.ring.set([rg.tau, c[0], c[1], Math.max(Math.abs(nrm[2]), 0.02) * side]);
     f.ring2.set([Math.atan2(ey, ex), rg.glow, rg.inner ?? 0, rg.outer ?? 0]);
-  } else { f.ring.fill(0); f.ring2.fill(0); }
+    // Fomalhaut's belt by default: its dust cloud, a thin belt, clumps.
+    f.ring3.set([rg.cloud ?? 1, rg.width ?? 0.1, rg.clump ?? 0.9, 0]);
+  } else { f.ring.fill(0); f.ring2.fill(0); f.ring3.fill(0); }
   // A runaway: its bow shock or wake, in the view's frame.
   const bw = star.bow;
   // The heading turns with the camera, so the arc or the wake keeps its place round the star.
@@ -921,6 +965,13 @@ function makeFrame() {
     const h = camView([Math.cos(bw.heading), Math.sin(bw.heading), 0]);
     f.bow.set([1, Math.atan2(h[1], h[0]), bw.size, bw.kind]); f.bowC.set(bw.col);
   } else { f.bow.fill(0); f.bowC.fill(0); }
+  // WR 140's dust shells: one per orbit, counted on the star's own clock.
+  const sh = star.shells;
+  f.shell.set(sh ? [sh.light, sh.gap, st.turn / (sh.orbit * 86400), 0] : [0, 0, 0, 0]);
+  // A partner star holds still in the star's frame: a contact twin is tidally locked.
+  const pr = star.pair;
+  f.pair.set(pr ? [...toView(pr.at), 1] : [0, 0, 0, 0]);
+  f.pair2.set(pr ? [pr.size, pr.neck, pr.cool, 0] : [0, 0, 0, 0]);
   // The camera's turn, column-major and transposed: the shaders take view points back into it.
   f.camM.set([CAM[0][0], CAM[0][1], CAM[0][2], CAM[1][0], CAM[1][1], CAM[1][2], CAM[2][0], CAM[2][1], CAM[2][2]]);
   // A binary: the donor turns once per orbit, so its partner holds still in the star's frame.
@@ -1047,6 +1098,7 @@ function makeFrame() {
   f.lens = weight('long');
   // The full view's half exposure is for a bright disk; a black hole keeps its light.
   f.full = hole ? 0 : weight('full');
+  // Heat haze is a star's; a black hole and the quasar take none (Tom, 2026-11-24).
   f.shimmer = calm || hole ? 0 : 2.2 * view.W / cssW;
   return f;
 }
