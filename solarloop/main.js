@@ -13,6 +13,7 @@ import { makeChart } from './chart.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
+import { makeSStars } from './sstars.js';
 import { makeCard, CARD_STYLES } from './card.js';
 import { cardLines } from './facts.js';
 mark('libs');
@@ -625,6 +626,8 @@ const snd = makeSound(kit, id => ui?.setting?.(id)?.value);
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
+// The S stars round Sagittarius A*: a 2D layer just above the GL canvas.
+const sst = makeSStars(canvas);
 const D = detail({ maxDpr: 2, budget: 2.6e6, steps: 2, settle: 2, onChange: () => resize(true) });
 
 let sizeKey = '';
@@ -1053,6 +1056,7 @@ function makeFrame() {
 function draw() {
   if (!ren) return;
   ren.frame(makeFrame());
+  sst.draw({ on: shown === 'sgra', light: dipLight(), view, w: cssW, h: cssH, dpr: view.H / Math.max(1, cssH), R, cam: camView, rot: M, tilt: STARS[shown].hole?.tilt ?? 0, far: farAt(cam.z) });
 }
 
 // The fluid's step and draw for this frame: the box stands under the prominence, radial up.
@@ -1099,6 +1103,8 @@ function frame(now) {
     const adapting = stepEye(dt);
     stepFlares(sun, dt * flarePace(STARS[shown]) * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
+    // The S stars run on their own clock; each visit starts it again.
+    if (shown === 'sgra') sst.step(dt * drifting); else sst.reset();
     if (FLUID) {
       // A new framing may show another prominence: the fluid moves to it.
       if (!fluidRun || fluidRun.mode !== cam.mode) { const p = promInView(); if (p) startFluid(p); }

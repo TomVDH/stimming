@@ -50,6 +50,17 @@ Event horizon's black hole, ported into Solar loop (Tom, 2026-11-24): Cygnus X-1
 - A volumetric layer (Tom, 2026-11-24: "a bit in for depth and fidelity", after MisterPrada's singularity): soft cloud wisps in two thin sheets just above and below the disc. Each is shaded where the bent ray crosses it, so the wisps bend with the lensing; a slanted ray stays longer in a sheet. The noise is smooth and fixed for the frame: no sampling grain (Tom: the first, sampled version was "very noisy and pixely"). The clouds shear at the Kepler rate and reset unseen, catch the disc's own light with its Doppler shift, and dim what lies behind them. The noise is the volume pass's 3D texture.
 - No loops, prominences, haze, corona, heat shimmer or glare. A tap does nothing yet; dropping a star in comes next.
 
+## The S stars (bean `stimming-bw0w`)
+
+Sagittarius A* carries the S stars, the cluster that weighed the hole (Tom, 2026-11-24). Twenty-two stars on their published orbits: S1, S2, S4, S8, S9, S12, S13, S14, S17, S18, S21, S29, S31, S38, S39, S55, S60, S62, S175, S4711, S4714 and S4716.
+
+- Elements: GRAVITY 2022 for S2, S29, S38 and S55; Peißker et al. 2022 for S4716; Peißker et al. 2020 for S62, S4711 and S4714; Gillessen et al. 2017 for the rest. The orientation is the sky's: north up, east to the left, as the pictures from the earth show them; S2 runs clockwise.
+- Not to scale (Tom, 2026-11-24: "lets try not to scale"). One scale for every orbit, so each keeps its true shape: S2's far point stands 20 hole radii out, about 460 times closer than in nature. A deep plunge (S4714, S62, S175) rounds off at 1.15 hole radii, just outside the photon ring.
+- Time: one year is 1.5 s, so S2 laps in about 24 s and S4716 in about 6 s. Each star keeps its true timing round its orbit, so it whips through its closest point. Every visit starts the clock at 2014.2, so S2 swings past the hole soon after the glide in.
+- Each star is a point in a soft glow, sized by its K magnitude; the hot young stars blue white, the cool late-type ones orange. A trail behind each covers a fixed stretch of time, so it streaks where the star runs fast. Close in, the trails step back and fade near the hole, so the hole's own picture leads; the shadow hides a star behind it and the disc's gas dims it to 30 percent.
+- The full view shows the inner stars passing the hole; pulled back to x4 the whole cluster frames. The drag turns the orbits with the camera.
+- A 2D canvas over the stage draws them (`sstars.js`): no GL pass and no volume work. Light bending is left out. They hold still while the toy sleeps and under reduced motion.
+
 ## The runaways (bean `stimming-q5aa`)
 
 Two runaway stars (Tom, 2026-11-24: both).
@@ -182,6 +193,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 | `index.html` | The page shell |
 | `main.js` | State, the telescope view, the turn, picking, Bar v3 spec, frame loop |
 | `rail.js`, `rail.css` | The zoom rail over the bar |
+| `sstars.js` | The S stars round Sagittarius A*: their elements, Kepler's equation, a 2D layer over the stage |
 | `card.js`, `card.css`, `facts.js` | The star card and the facts it shows |
 | `chart.js`, `chart.css` | The star tray, a size ladder: a sheet the toy owns, in the Bar v3 sheet look. The Star action opens it; the bar labels follow the Bar v2 chips |
 | `sun.js` | The regions, the loop life cycle, the flare timeline, the stars and the scale bodies; it writes one strand per thread |
