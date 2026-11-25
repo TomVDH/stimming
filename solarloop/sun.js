@@ -180,7 +180,7 @@ export const STARS = {
     ...FLARE, day: 0.22, ribbon: 0.7, rope: 0.5, rain: 0, bubble: 0.08, clouds: [1, 6, 1.6, 1],
     row: 13, rsun: 0.1, expo: 0.9, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.4,
     hal: [0.8, 0.25, 0.3], streak: [0.9, 0.4, 0.45],
-    disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.7],
+    disk: [1.3, 0.9, 0, 0.12], disk2: [30, 0, 0, 0], tex: [14, 4, 0, 0.2],
     wide: 'none', long: 'none', root: 293.66,
   },
   // WISE 0855: a Y brown dwarf, the coldest known; dark, with water ice clouds.
@@ -188,7 +188,7 @@ export const STARS = {
     ...FLARE, day: 0.42, ribbon: 0.4, rope: 0.3, rain: 0, bubble: 0.05, clouds: [1, 4, 1.2, 0.6],
     row: 14, rsun: 0.1, expo: 0.85, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.25,
     hal: [0.5, 0.25, 0.3], streak: [0.6, 0.4, 0.45],
-    disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.75],
+    disk: [1.1, 1, 0, 0.08], disk2: [25, 0, 0, 0], tex: [10, 3, 0, 0.25],
     wide: 'none', long: 'none', root: 329.63,
   },
   // T Tauri: a young star, three suns wide, still wrapped in its birth dust.

@@ -485,6 +485,57 @@ float lumpAt(vec3 d) {
   vec3 p = d * uLump.y + vec3(0.0, 0.0, uLump.z);
   return 0.65 * vn(p) + 0.35 * vn(p * 2.1 + vec3(5.2, 1.3, uLump.z * 0.6)) - 0.5;
 }
+// One band of a brown dwarf's deck: its cloud at longitude lon and warped latitude wl.
+// b is the band coordinate; the band's middle sits at id + 0.5.
+// The band drifts at one speed, so it never smears into streaks.
+float bandTau(float id, float lon, float wl, float b) {
+  float h = h13(vec3(id, 7.0, 3.0));
+  // Neighbour bands run opposite ways.
+  float odd = mod(id, 2.0);
+  float lo = lon + uTime * 0.012 * uCloud.w * (odd * 2.0 - 1.0) * (0.5 + h);
+  // One storm oval rides some bands; it twists the cloud round its eye.
+  float c = h * 40.0 + uTime * 0.004 * uCloud.w;
+  vec2 v = vec2(atan(sin(lo - c), cos(lo - c)), (b - id - 0.5) * 3.1416 / uCloud.y);
+  float e = h > 0.45 ? length(v / vec2(0.34, 0.6 * 3.1416 / uCloud.y)) : 9.0;
+  float sw = 2.6 * exp(-e * e * 1.6);
+  vec2 v2 = mat2(cos(sw), sin(sw), -sin(sw), cos(sw)) * v;
+  lo += v2.x - v.x;
+  wl += (v2.y - v.y) * 0.64;
+  vec3 bq = vec3(cos(lo), wl * 1.4, sin(lo)) + id * 3.7;
+  // Belts are thinner and hotter than zones.
+  float base = odd > 0.5 ? 0.6 + 0.4 * h : 1.1 + 0.5 * h;
+  vec3 w = vec3(fbm(bq * 3.0 + 1.0), fbm(bq * 3.0 + 4.0), 0.0);
+  float lump = fbm(bq * 2.2 + w * 1.8);
+  // Fine turbulence, a little longer along the band than across it, in two sizes.
+  float fine = 0.7 * fbm(vec3(bq.x * 8.0, bq.y * 11.0, bq.z * 8.0) + w * 2.2) + 0.3 * fbm(bq * 26.0 + w * 3.0);
+  float tau = base * (0.5 + 1.0 * lump) * (0.4 + 1.2 * smoothstep(0.2, 0.8, fine));
+  // A storm's eye is clearer than its wall.
+  return tau * mix(1.0, 0.65 + 0.8 * smoothstep(0.3, 0.9, e), exp(-e * e * 0.8));
+}
+// A brown dwarf's cloud deck: its optical depth at the unit point q, about 0 to 3.
+// Bands sit in latitude, so seen side-on they crowd toward the poles.
+float deckTau(vec3 q) {
+  float lat = asin(clamp(q.y, -1.0, 1.0)) / 1.5708;
+  float lon = atan(q.z, q.x);
+  // Slow weather bends the band edges in a frame that does not shear.
+  float wl = lat + 0.1 * uCloud.z * (fbm(q * 3.0 + vec3(0.0, 0.0, uTime * 0.006)) - 0.5) + 0.1 * (vn(vec3(lat * 2.6, 1.0, 3.0)) - 0.5);
+  float b = (wl * 0.5 + 0.5) * uCloud.y;
+  // Two neighbour bands blend across a soft shear zone at their edge.
+  float i0 = floor(b - 0.5), fr = fract(b - 0.5);
+  float s = smoothstep(0.3, 0.7, fr);
+  float tau = mix(bandTau(i0, lon, wl, b), bandTau(i0 + 1.0, lon, wl, b), s);
+  // The shear zone churns: its cloud is a little thicker.
+  tau += 0.35 * (1.0 - abs(2.0 * s - 1.0));
+  // An L dwarf's mottle: soft round blotches of rising and sinking gas, in two sizes.
+  float mottle = 0.6 * fbm(q * 5.0 + vec3(0.0, 0.0, uTime * 0.01)) + 0.4 * fbm(q * 12.0 + vec3(0.0, uTime * 0.017, 0.0));
+  tau *= 0.45 + 1.1 * mottle;
+  // Large patches thin and thicken over hours, as on Luhman 16B's map.
+  tau *= 0.5 + 1.0 * fbm(q * 1.3 + vec3(5.0, 0.0, uTime * 0.003));
+  // The poles lose their bands to a chaos of small storms.
+  float pole = smoothstep(0.62, 0.86, abs(lat));
+  float chaos = (0.6 + 1.4 * fbm(q * 6.0 + 2.0 * mottle)) * (0.55 + 0.9 * mottle);
+  return mix(tau, chaos, pole);
+}
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   if (uHole.x > 0.0) { o = holeTrace(P); return; }
@@ -534,25 +585,18 @@ void main() {
     float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
     // A rising giant cell is hot and bulges; a sinking one is cool and falls back.
     tex *= 1.0 + 2.0 * uLump.w * lumpAt(q);
-    // A brown dwarf: a cloud deck in bands round its spin axis, no granules.
+    // A brown dwarf glows from inside; its clouds are cool blankets on top.
+    // Thin cloud lets the hot deep light through; thick cloud shows its dull top.
     if (uCloud.x > 0.0) {
-      float lat = q.y;
-      float lon = atan(q.z, q.x);
-      // Neighbour bands run opposite ways, so the edges between them shear.
-      float spd = sin(lat * uCloud.y * 3.14159 + 0.7);
-      float lo = lon + uTime * 0.012 * uCloud.w * spd;
-      vec3 cq = vec3(cos(lo), lat * 2.2, sin(lo));
-      // Eddies curl the band edges.
-      vec3 ew = vec3(fbm(cq * 3.0 + 1.0), fbm(cq * 3.0 + 4.0), fbm(cq * 3.0 + 7.0));
-      // Uneven band widths: the latitude itself is warped.
-      float wl = lat + 0.18 * (vn(vec3(lat * 2.6, 1.0, 3.0)) - 0.5);
-      float edge = wl + uCloud.z * 0.14 * (fbm(cq * 4.0 + ew * 2.5) - 0.5);
-      float band = 0.5 + 0.5 * sin(edge * uCloud.y * 3.14159);
-      band = mix(band, smoothstep(0.2, 0.8, band), 0.5);
-      float fine = fbm(vec3(cq.x * 7.0, cq.y * 16.0, cq.z * 7.0) + ew * 1.6);
-      // A few dark storm ovals ride the bands.
-      float storm = smoothstep(0.78, 0.9, fbm(cq * 2.2 + 11.0));
-      float deck = 0.6 + 0.42 * band + 0.75 * (fine - 0.5) - 0.4 * storm;
+      float m = max(mu, 0.1);
+      // Deeper along the view ray, the point under the eye slides toward the limb.
+      vec3 sink = uToSun * (n * mu - vec3(0.0, 0.0, 1.0));
+      float t1 = deckTau(q);
+      float t2 = deckTau(normalize(q + sink * min(0.04 / m, 0.09)));
+      // The slant path through the deck grows as 1 / mu, so the limb dims by itself.
+      float tr = exp(-(0.35 * t1 + 0.65 * t2) / m);
+      // A high haze glows at the limb, lit from below.
+      float deck = mix(0.4, 1.8, tr) + 0.9 * pow(1.0 - mu, 3.0);
       tex = mix(tex, deck, uCloud.x);
     }
     // From far away the surface detail melts into one even glow.
