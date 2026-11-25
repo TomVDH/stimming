@@ -511,14 +511,14 @@ const ui = initPage({ id: ID, bar: {
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
-    ['click', 'Tap a region to flare it, or a prominence to lift it off'],
-    ['drag', 'Drag to turn the star (the long lens holds still)'],
-    ['scroll', 'Zoom from the long lens through the wide view to the full star, and farther out'],
-    ['L', 'Jump to the next lens stop: long, full, wide'],
-    ['S', 'Open the star chart'],
-    ['1', 'Pick a main sequence star or a brown dwarf: 1 to 0'],
-    ['[', 'Step to the previous star; ] steps to the next'],
-    ['T', 'Turn speed: real time, 5,000 or 10,000 times faster'],
+    ['click', 'Flare a region or lift a prominence'],
+    ['drag', 'Turn the star'],
+    ['scroll', 'Zoom'],
+    ['L', 'Next view'],
+    ['S', 'Star chart'],
+    ['1', 'Main sequence and brown dwarfs, 1 to 0'],
+    ['[', 'Previous or next star, [ and ]'],
+    ['T', 'Turn speed'],
   ],
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
