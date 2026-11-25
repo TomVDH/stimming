@@ -16,4 +16,5 @@ Cause, measured offline in the pane: a stopped choir that stays connected costs 
 - [x] The full 5 s crossfade stays (Tom: a fast 0.3 s cut was too abrupt)
 - [x] Dead choirs: four cost 83 % of the audio budget connected, 1 % disconnected
 - [x] Pushed (Tom: finish up)
-- [ ] Tom decides on the 5 s overlap: two heavy choirs together still pass the budget
+- [x] Overlap CPU cut (2026-11-25): old oscillators fade into reverb over 1.5 s and stop at 1.9 s while the 5 s reverb tail finishes; new oscillators start at +0.4 s; rapid switches cap `leaving` to one voice; dead analog formants and unused progression slots skipped; `ease()` clamps timestamps cleanly
+- [ ] Tom confirms no crackle live

@@ -6,6 +6,7 @@ import { TRI_VS, program, linked, target, free, bind, tri, to, uniforms, nextFra
 import { bloomChain } from '../shared/glow.js';
 import { idle } from '../shared/stim.js';
 import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES, STARS } from './sun.js';
+import { TDE_STRIDE, MAX_TDE } from './tde.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
 import { FLARE } from '../shared/flare.js';
 
@@ -1440,6 +1441,61 @@ void main() {
   o = vec4(L * (1.0 - cf), L * cf, 0.0, 1.0);
 }`;
 
+/* ---------- black hole tidal-disruption streaks (after Galaxy & Event horizon) ---------- */
+// Instanced motion-aligned quads drawn into hdr before bloom; negative size flags a polar jet spark.
+const TDE_VS = `${HEAD}
+layout(location = 0) in vec4 aA;
+layout(location = 1) in vec4 aB;
+uniform mat3 uRot;
+uniform vec4 uView, uHole;
+uniform vec2 uRes;
+uniform float uGain;
+out vec2 vUv, vCol;
+const float R = ${R.toFixed(1)}, BCRIT = ${BCRIT.toFixed(3)};
+void main() {
+  float lx = float((gl_VertexID & 1) * 2 - 1);
+  float ly = float((gl_VertexID >> 1) * 2 - 1);
+  float c = cos(uHole.y), s = sin(uHole.y);
+  // Hole frame to view space, matching vFrame in holeTrace.
+  vec3 pv = uRot * vec3(aA.x, c * aA.y - s * aA.z, s * aA.y + c * aA.z);
+  vec3 vv = uRot * vec3(aB.x, c * aB.y - s * aB.z, s * aB.y + c * aB.z);
+  // Gravitational lensing bends the far side of the debris stream over and under the shadow.
+  float b = length(pv.xy);
+  float beh = smoothstep(1.2, -2.2, pv.z);
+  float lensW = beh * smoothstep(28.0, 2.0, -pv.z);
+  float bApp = 0.5 * (b + sqrt(b * b + 4.0 * BCRIT * BCRIT * lensW));
+  vec2 pos2 = b > 1e-4 ? pv.xy * (bApp / b) : pv.xy;
+  float occ = 1.0 - beh * smoothstep(1.35, 0.95, b);
+  float sc = R / BCRIT;
+  float ppr = sc * uRes.y / max(2.0 * uView.w, 1e-3);
+  float sz = abs(aA.w);
+  float radPx = clamp(sz * max(0.095 * ppr, 1.45), 1.5, 24.0);
+  float spd = length(vv.xy);
+  float lenPx = clamp(spd * ppr * 2.8, radPx, radPx * 9.5);
+  vec2 dir = spd > 1e-4 ? vv.xy / spd : vec2(1.0, 0.0);
+  vec2 nrm = vec2(-dir.y, dir.x);
+  vec2 offPx = dir * (lx * lenPx - 0.35 * (lenPx - radPx)) + nrm * (ly * radPx);
+  vec2 ndc = (pos2 * sc - uView.xy) / uView.zw + offPx * 2.0 / uRes;
+  gl_Position = vec4(ndc, 0.0, 1.0);
+  // Relativistic Doppler beaming shifts approaching gas toward cool blue-white.
+  float jet = aA.w < 0.0 ? 1.0 : 0.0;
+  float beta = clamp(vv.z * 0.95, -0.55, 0.55);
+  float dop = clamp(1.0 / (1.0 - beta), 0.45, 2.4);
+  float coolM = clamp(jet * 0.92 + smoothstep(-0.12, 0.52, beta) * 0.72 + smoothstep(1.1, 3.0, aB.w) * 0.35, 0.0, 1.0);
+  float L = aB.w * occ * pow(dop, 1.6) * uGain;
+  vUv = vec2(lx, ly);
+  vCol = vec2(L * (1.0 - coolM), L * coolM);
+}`;
+const TDE_FS = `${HEAD}
+in vec2 vUv, vCol;
+out vec4 o;
+void main() {
+  float tail = smoothstep(-1.0, 0.45, vUv.x) * exp(-2.8 * vUv.y * vUv.y);
+  float head = exp(-5.0 * (pow(vUv.x - 0.35, 2.0) + vUv.y * vUv.y));
+  float g = (0.4 * tail + 0.95 * head) * smoothstep(1.0, 0.58, abs(vUv.x));
+  o = vec4(vCol * g, 0.0, 1.0);
+}`;
+
 /* ---------- light rays: a march toward the sun's centre ---------- */
 const RAYS = `${HEAD}
 uniform sampler2D uSrc;
@@ -2584,11 +2640,12 @@ vec3 etaNeb(vec2 pR) {
     T *= exp(-dens * dt * 4.4);
     if (T < 0.015) break;
   }
-  // Faint red nitrogen outer ejecta knots and Carina stars through deep space.
+  // Faint red nitrogen outer ejecta knots and Carina stars, feathered cleanly into space.
   float d = sqrt(d2);
-  float oe = exp(-pow((d - 1.28) / 0.2, 2.0)) * 0.14 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
+  float oe = exp(-pow((d - 1.28) / 0.2, 2.0)) * smoothstep(1.48, 1.3, d) * 0.14 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
   vec2 sky = (uCamM * vec3(q, -1.0)).xy;
-  return (acc + vec3(1.0, 0.28, 0.2) * oe + ophStars(sky * 1.3, pw * 1.3) * 0.35 * T) * vis;
+  float sFade = smoothstep(1.46, 0.88, d);
+  return (acc + vec3(1.0, 0.28, 0.2) * oe + ophStars(sky * 1.3, pw * 1.3) * 0.35 * T * sFade) * vis;
 }
 // Gaia BH1's dormant black hole, orbiting uBow.z R out in Ophiuchus (after NOIRLab gaiabh1.webp).
 // 56-step front-to-back march over baked 192³ Worley dust with one-step self-shading and jq dithering;
@@ -2743,9 +2800,9 @@ vec3 v838Echo(vec2 pR) {
     T *= exp(-dens * dt * 3.1);
     if (T < 0.015) break;
   }
-  // Monoceros field stars shining through the dark dust cavities and outer veils.
+  // Monoceros field stars shining through the dark dust cavities, feathered before the edge.
   vec2 sky = (uCamM * vec3(q, -1.0)).xy;
-  acc += ophStars(sky * 1.25, pw * 1.25) * 0.52 * T;
+  acc += ophStars(sky * 1.25, pw * 1.25) * 0.52 * T * smoothstep(1.38, 0.85, sqrt(d2));
   return acc * vis;
 }
 // The Ring Nebula (M57), after JWST (ring.webp), uBow.z R out; not to scale.
@@ -2791,7 +2848,7 @@ vec3 ringNeb(vec2 pR) {
   return (acc + vec3(0.88, 0.28, 0.3) * halo + ophStars(sky * 1.3, pw * 1.3) * 0.38 * T * sFade) * vis;
 }
 // The Crab Nebula (M1), uBow.z R along its long axis; vast over the pinprick pulsar.
-// 64-step front-to-back march over baked 128³ Worley billows with one-step self-shading,
+// 64-step front-to-back march over baked 192³ Worley billows with one-step self-shading,
 // interleaved gradient noise dithering, Doppler-beamed relativistic wisps and Chandra torus.
 vec3 crabNeb(vec2 pR) {
   vec2 q = pR / uBow.z;
@@ -2850,9 +2907,9 @@ vec3 crabNeb(vec2 pR) {
     T *= exp(-(fil * 3.4 + syn * 0.35) * dt);
     if (T < 0.015) break;
   }
-  // Faint Taurus field stars seen through the dark gaps in the filament cage.
+  // Faint Taurus field stars seen through the dark gaps, feathered before the edge.
   vec2 sky = (uCamM * vec3(q, -1.0)).xy;
-  acc += ophStars(sky * 1.35, pw * 1.35) * 0.42 * T;
+  acc += ophStars(sky * 1.35, pw * 1.35) * 0.42 * T * smoothstep(1.38, 0.85, sqrt(d2));
   return acc * vis;
 }
 // Mira's bow shock and tail, in R along its heading; not to scale.
@@ -3176,27 +3233,10 @@ export async function makeRender(gl, opts = {}) {
     const was = lastSky.get(v.band);
     return was && skyReady(was) ? was.q : null;
   }
-  // Compiles the versions for these stars in idle time, one at a time.
-  // busy: true while the page moves; a compile waits for a still moment.
-  let warming = Promise.resolve();
-  function warm(ids, busy = () => false) {
-    // Without parallel compile a link blocks the page; each star compiles on its pick.
-    if (!par) return warming;
-    for (const id of ids) {
-      const B = STARS[id];
-      if (!B) continue;
-      warming = warming.then(async () => {
-        while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
-        await idle(2000);
-        const e = skyStart(bandOn.get(B) || starOn(B));
-        while (!gl.isContextLost() && !skyReady(e)) await new Promise(r => setTimeout(r, 120));
-      });
-    }
-    return warming;
-  }
   const first = skyStart(starOn(STARS[opts.star] || STARS.sun));
   const P = await linked(gl, {
     strand: program(gl, STRAND_VS, STRAND_FS),
+    tde: program(gl, TDE_VS, TDE_FS),
     rays: program(gl, TRI_VS, RAYS),
     vol: program(gl, TRI_VS, VOL),
     up: program(gl, TRI_VS, UP),
@@ -3223,6 +3263,18 @@ export async function makeRender(gl, opts = {}) {
   for (let i = 0; i < 4; i++) {
     gl.enableVertexAttribArray(i);
     gl.vertexAttribPointer(i, 4, gl.FLOAT, false, STRIDE * 4, i * 16);
+    gl.vertexAttribDivisor(i, 1);
+  }
+  gl.bindVertexArray(null);
+  // Tidal-disruption particles for black holes and quasars: two vec4 per instance.
+  const tdeVbo = gl.createBuffer();
+  const tdeVao = gl.createVertexArray();
+  gl.bindVertexArray(tdeVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, tdeVbo);
+  gl.bufferData(gl.ARRAY_BUFFER, MAX_TDE * TDE_STRIDE * 4, gl.DYNAMIC_DRAW);
+  for (let i = 0; i < 2; i++) {
+    gl.enableVertexAttribArray(i);
+    gl.vertexAttribPointer(i, 4, gl.FLOAT, false, TDE_STRIDE * 4, i * 16);
     gl.vertexAttribDivisor(i, 1);
   }
   gl.bindVertexArray(null);
@@ -3341,31 +3393,72 @@ export async function makeRender(gl, opts = {}) {
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // Black hole detail: below 1 the holes' sky pass draws to holeT, made on first use.
-  // A nebula's dust bakes on first show: 4 Crab, 5 Ring, 6 Eta Carinae, 7 V838, 8 Gaia BH1.
-  const nebT = {};
-  function nebTex(which) {
-    const t = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_3D, t);
-    gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RGBA8, NB_N, NB_N, NB_N);
-    for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  // A nebula's dust bakes in idle slices or on first show: 4 Crab, 5 Ring, 6 Eta Carinae, 7 V838, 8 Gaia BH1.
+  const NEB_KIND = { 6: 0, 7: 1, 4: 2, 5: 3, 8: 4 };
+  const nebT = {}, nebProg = {};
+  function nebStep(nk, slices) {
+    if (nebT[nk]) return nebT[nk];
+    let p = nebProg[nk];
+    if (!p) {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_3D, t);
+      gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RGBA8, NB_N, NB_N, NB_N);
+      for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      p = nebProg[nk] = { t, which: NEB_KIND[nk], next: 0 };
+    }
+    const end = Math.min(NB_N, p.next + slices);
     const b = P.nbake;
     gl.useProgram(b.p);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_3D, noise);
     gl.uniform1i(b.u.uNoise3, 0);
-    gl.uniform1i(b.u.uWhich, which);
+    gl.uniform1i(b.u.uWhich, p.which);
     gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
     gl.viewport(0, 0, NB_N, NB_N);
     gl.bindVertexArray(empty);
-    for (let k = 0; k < NB_N; k++) {
-      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, t, 0, k);
+    for (let k = p.next; k < end; k++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, p.t, 0, k);
       gl.uniform1f(b.u.uLayer, (k + 0.5) / NB_N);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
     }
     gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
-    return t;
+    p.next = end;
+    if (p.next >= NB_N) { nebT[nk] = p.t; delete nebProg[nk]; return p.t; }
+    return null;
+  }
+  // Compiles SKY versions and pre-bakes 192³ nebulae and Epsilon Aurigae in idle slices.
+  let warming = Promise.resolve();
+  function warm(ids, busy = () => false) {
+    for (const id of ids) {
+      const B = STARS[id];
+      if (!B) continue;
+      warming = warming.then(async () => {
+        if (par) {
+          while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
+          await idle(2000);
+          const e = skyStart(bandOn.get(B) || starOn(B));
+          while (!gl.isContextLost() && !skyReady(e)) await new Promise(r => setTimeout(r, 120));
+        }
+        if (B.discE?.[0] > 0 && !epsB) {
+          while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
+          await idle(1500);
+          if (!gl.isContextLost() && !epsB) { epsB = qbakeTex(QB.d, 2); await settled(gl); }
+        }
+        const nk = B.bow?.kind;
+        if (nk && NEB_KIND[nk] !== undefined && !nebT[nk]) {
+          while (!gl.isContextLost() && !nebT[nk]) {
+            while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
+            if (gl.isContextLost() || nebT[nk]) break;
+            nebStep(nk, 16);
+            await nextFrame();
+          }
+          if (!gl.isContextLost()) await settled(gl);
+        }
+      });
+    }
+    return warming;
   }
   let holeS = 1, holeT = null;
   // The haze history is empty until a first frame fills it.
@@ -3421,8 +3514,7 @@ export async function makeRender(gl, opts = {}) {
     // A nebula's dust bakes once, the first time its star shows.
     if (v.band.discE[0] > 0 && !epsB) epsB = qbakeTex(32, 2);
     const nk = v.bow[0] > 0 ? Math.round(v.bow[3]) : 0;
-    const nw = { 6: 0, 7: 1, 4: 2, 5: 3, 8: 4 }[nk];
-    if (nw !== undefined && !nebT[nk]) nebT[nk] = nebTex(nw);
+    if (NEB_KIND[nk] !== undefined && !nebT[nk]) nebStep(nk, NB_N);
     gl.disable(gl.BLEND);
     if (fluid && v.fluid) fluid.step(v.fluid.step);
     // The star's disk version; a frame waits while it still compiles.
@@ -3519,6 +3611,26 @@ export async function makeRender(gl, opts = {}) {
       gl.bindVertexArray(vao);
       to(gl, hdr);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, NS * 2, v.count);
+      gl.bindVertexArray(null);
+      gl.disable(gl.BLEND);
+    }
+
+    // Tidal-disruption breakup particles draw into hdr before bloom, so they glow and lens.
+    if (v.tdeCount > 0 && v.tdeBuf) {
+      const p = P.tde;
+      gl.useProgram(p.p);
+      gl.uniformMatrix3fv(p.u.uRot, false, v.rot);
+      gl.uniform4fv(p.u.uView, v.view);
+      gl.uniform4fv(p.u.uHole, v.hole);
+      gl.uniform2f(p.u.uRes, W, H);
+      gl.uniform1f(p.u.uGain, Math.max(0.15, 1 - 0.85 * v.far));
+      gl.bindBuffer(gl.ARRAY_BUFFER, tdeVbo);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, v.tdeBuf, 0, v.tdeCount * TDE_STRIDE);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.bindVertexArray(tdeVao);
+      to(gl, hdr);
+      gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, v.tdeCount);
       gl.bindVertexArray(null);
       gl.disable(gl.BLEND);
     }

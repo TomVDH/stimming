@@ -200,14 +200,17 @@ export function makeSound(kit, opt = () => undefined) {
   // 5 s out keeps two dense choirs from piling up (Tom: careful with bleed).
   const XOUT = 5, XIN = 6, XWAIT = 0.4;
   // A quarter sine in, a quarter cosine out: the two powers sum to one.
-  function ease(prm, at, dur, up) {
+  function ease(prm, at, dur, up, ac) {
     const n = 96, c = new Float32Array(n), from = up ? 0 : prm.value;
     for (let i = 0; i < n; i++) { const x = i / (n - 1) * Math.PI / 2; c[i] = up ? Math.sin(x) : from * Math.cos(x); }
+    const now = ac ? ac.currentTime : 0;
+    const a0 = Math.max(now + 0.002, at - 0.005);
+    const a1 = Math.max(a0 + 0.004, at);
     // A new gain starts at 1; it must hold silent until its curve begins.
-    if (up) { prm.value = 0; prm.setValueAtTime(0, at - 0.005); }
-    else if (prm.cancelAndHoldAtTime) prm.cancelAndHoldAtTime(at - 0.005);
-    else { prm.cancelScheduledValues(at - 0.005); prm.setValueAtTime(from, at - 0.005); }
-    prm.setValueCurveAtTime(c, at, dur);
+    if (up) { prm.value = 0; prm.setValueAtTime(0, a0); }
+    else if (prm.cancelAndHoldAtTime) prm.cancelAndHoldAtTime(a0);
+    else { prm.cancelScheduledValues(a0); prm.setValueAtTime(from, a0); }
+    prm.setValueCurveAtTime(c, a1, dur);
   }
   // The idle rest (Tom, 2026-11-25): the choir thins out and goes down 6 dB.
   // The rumble holds, so the bass comes forward.
@@ -250,7 +253,7 @@ export function makeSound(kit, opt = () => undefined) {
   function fade(dur) {
     if (!drone) return;
     const t = drone.ac.currentTime;
-    for (const x of [drone.g, drone.gc]) ease(x.gain, t, dur, false);
+    for (const x of [drone.g, drone.gc]) ease(x.gain, t, dur, false, drone.ac);
   }
   // Stops a fade and brings the voice back to full over about 2 s.
   function unfade() {
@@ -270,21 +273,29 @@ export function makeSound(kit, opt = () => undefined) {
       if (ac.currentTime > drone.voice.until - 40) drone.voice.sing(ac.currentTime + 240);
       return;
     }
-    const t = ac.currentTime + 0.01;
+    const t = ac.currentTime + 0.02;
     // A star switch crossfades at equal power: the old voice eases out, the new one in (Tom).
     if (drone && drone.ac === ac) {
       // Taps from the last star and their echoes taper out first, so they do not bleed.
       if (taps && taps.ac === ac) taps.bus.fadeAll(t, 1.5);
+      // Fast-clear any older fading voice so rapid switches never stack three choirs.
+      for (const prev of [...leaving]) {
+        for (const x of [prev.g, prev.gc]) ease(x.gain, t, 0.12, false, ac);
+        for (const o of prev.os) { try { o.stop(t + 0.15); } catch { /* stopped */ } }
+        when(ac, t + 0.17, () => drop(prev));
+      }
       const old = drone;
-      for (const x of [old.g, old.gc]) ease(x.gain, t, XOUT, false);
-      for (const o of old.os) { try { o.stop(t + XOUT + 0.5); } catch { /* stopped */ } }
+      for (const x of [old.g, old.gc]) ease(x.gain, t, XOUT, false, ac);
+      // Fade old oscillators into the reverb over 1.5 s and stop them at 1.9 s while the reverb tail finishes.
+      if (old.voice?.sw) ease(old.voice.sw.gain, t, 1.5, false, ac);
+      for (const o of old.os) { try { o.stop(t + 1.9); } catch { /* stopped */ } }
       leaving.add(old);
       when(ac, t + XOUT + 0.5, () => drop(old));
     }
     const root = keyOf(band) / 2;
     const os = [];
     const g = ac.createGain();
-    ease(g.gain, t + XWAIT, XIN, true);
+    ease(g.gain, t + XWAIT, XIN, true, ac);
     g.connect(kit.out);
     send(ac, g, 0.8, hallOf(ac));
 
@@ -292,17 +303,19 @@ export function makeSound(kit, opt = () => undefined) {
     const humOn = ac.createGain();
     humOn.gain.value = layers.h;
     const gc = ac.createGain();
-    ease(gc.gain, t + XWAIT, XIN, true);
+    ease(gc.gain, t + XWAIT, XIN, true, ac);
     const restC = ac.createGain();
     const restLP = ac.createBiquadFilter();
     restLP.type = 'lowpass';
     restLP.frequency.value = OPEN_HZ;
     restLP.Q.value = 0;
     humOn.connect(restC).connect(restLP).connect(gc).connect(kit.out);
-    const voice = choir(ac, { t, base: root * 4, p: preset(band), out: humOn, hall: hallOf(ac), os, track });
+    // Start new oscillators at t + XWAIT so they stay silent during the wipe darkening.
+    const tIn = t + XWAIT;
+    const voice = choir(ac, { t: tIn, base: root * 4, p: preset(band), out: humOn, hall: hallOf(ac), os, track });
     voice.setLayers(layers.z);
     voice.setTurn(turnK);
-    voice.sing(t + 240);
+    voice.sing(tIn + 240);
 
     // The space rumble: a seamless rendered loop, added once it is ready.
     const rumOn = ac.createGain();
@@ -473,6 +486,35 @@ export function makeSound(kit, opt = () => undefined) {
     };
   }
 
+  // Black hole star drop: soft falling harmonic chime in the hole's own key.
+  function plunge(pan, band) {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.008;
+    const f = keyOf(band) * 2;
+    const g = voice(ac, pan);
+    env(g, t, 0.045, 0.025, 1.2);
+    const o = osc(ac, 'sine', f, t, 1.4);
+    o.frequency.exponentialRampToValueAtTime(f * 0.75, t + 1.1);
+    o.connect(g);
+    const rm = roomOf(ac, band);
+    send(ac, g, 0.65, rm || fxOf(ac).wet);
+  }
+  // Tidal breakup: filtered rip that falls in pitch, plus a resonant swell in the hole's chord.
+  function tear(pan, band) {
+    const ac = kit.live();
+    if (!ac) return;
+    const t = ac.currentTime + 0.008;
+    const g = voice(ac, pan);
+    env(g, t, 0.08, 0.015, 0.65);
+    const bp = filt(ac, 'bandpass', 1400, 1.8);
+    bp.frequency.exponentialRampToValueAtTime(140, t + 0.6);
+    noise(ac, t, 0.75, 0.9).connect(bp).connect(g);
+    const rm = roomOf(ac, band);
+    send(ac, g, 0.7, rm || fxOf(ac).wet);
+    if (on('sndBlast')) braam(ac, t, pan, band, 0.55, 5, 1, 1);
+  }
+
   // Stops every sound now: mute, a hidden tab, or sleep.
   function quiet() {
     spinRate = 0;
@@ -480,5 +522,5 @@ export function makeSound(kit, opt = () => undefined) {
     for (const d of [drone, ...leaving]) if (d) drop(d);
     drone = null;
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, tick, beacon, quiet, settle, stir, fade, unfade, get rest() { return restAt(); }, get restGains() { return drone && { choir: drone.restC.gain.value, hz: Math.round(OPEN_HZ * 2 ** (drone.restLP.detune.value / 1200)), layers: drone.voice.restGains?.() }; }, get busy() { return pending > 0; } };
+  return { flare, rise, plunge, tear, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, tick, beacon, quiet, settle, stir, fade, unfade, get rest() { return restAt(); }, get restGains() { return drone && { choir: drone.restC.gain.value, hz: Math.round(OPEN_HZ * 2 ** (drone.restLP.detune.value / 1200)), layers: drone.voice.restGains?.() }; }, get busy() { return pending > 0; } };
 }

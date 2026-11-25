@@ -641,7 +641,7 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   const prog = p.prog && p.prog.length ? p.prog : null;
   const harmony = p.harmony;
   const mode0 = harmony === 'cross' ? 1 : harmony, held = prog ? null : HELD[mode0];
-  const v = { cv, g, ion: [], pen: [], leads: [[], []], slots: [], li: 0, mode: mode0, step: 0, until: t, line: held ? held.line : null, tl: [] };
+  const v = { cv, g, sw, ion: [], pen: [], leads: [[], []], slots: [], li: 0, mode: mode0, step: 0, until: t, line: held ? held.line : null, tl: [] };
   const kk = () => p.step / 8;
   let nextMode = !prog && harmony === 'cross' ? t + (10 + rand() * 2) * kk() : Infinity;
   let nextLead = p.melody === 'off' ? Infinity : t + (p.melody === 'arp' ? arpGap() : p.step);
@@ -682,6 +682,8 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   }
   const first = prog ? chordOf(prog[0], harmony) : null;
   const firstV = first ? voiced(first, p.voicing) : null;
+  // Allocate only the note slots this progression uses (unless live-editing).
+  const usedSlots = prog ? (live ? SLOTS : Math.max(1, ...prog.map(c => voiced(chordOf(c, harmony), p.voicing).length))) : 0;
   const layers = p.slowed ? LAYERS : [LAYERS[0]];
   const cut0 = L => clamp(L.lp * p.bright, 500, 11000);
   for (let oi = 0; oi < 3; oi++) {
@@ -696,7 +698,8 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
       // The rest gain sits after the bus, so apply() never sets it.
       lay.rest = G(1);
       lay.bus.connect(lay.rest);
-      for (const [f, q, a] of FORMANTS) {
+      // Skip dead formant filters on bare analog pads to cut audio-thread CPU.
+      if (live || p.voice > 0) for (const [f, q, a] of FORMANTS) {
         const bp = filt('bandpass', f, q), ga = G(0);
         soft.connect(bp).connect(ga).connect(lay.bus);
         lay.forms.push({ bp, ga, f, a });
@@ -727,9 +730,8 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
         return ng;
       };
       if (prog) {
-        // A song: five note slots that take each chord's notes in turn.
         const row = [];
-        for (let i = 0; i < SLOTS; i++) {
+        for (let i = 0; i < usedSlots; i++) {
           const nv = firstV[i];
           const ng = note(base * (nv ? nv[0] : 1) * sh, nv ? nv[1] : 0, nv ? nv[2] : 0, !!nv);
           row.push(ng);
@@ -863,12 +865,12 @@ export function choir(ac, { t, base, p, out, hall = null, motion = MOTION, os = 
   const fade = (gn, at, a, b, len) => { gn.gain.setValueAtTime(a, at); gn.gain.linearRampToValueAtTime(b, at + len); };
   // The song: chord changes, each held for its length, round and round.
   let ci = 0, nextChord = prog ? t + prog[0].len : Infinity;
-  let slotState = prog ? Array.from({ length: SLOTS }, (_, i) => firstV[i] ? { r: firstV[i][0], a: firstV[i][1] } : { r: 1, a: 0 }) : null;
+  let slotState = prog ? Array.from({ length: usedSlots }, (_, i) => firstV[i] ? { r: firstV[i][0], a: firstV[i][1] } : { r: 1, a: 0 }) : null;
   function changeChord(at) {
     ci = (ci + 1) % prog.length;
     const c = prog[ci], ch = chordOf(c, harmony), nv = voiced(ch, p.voicing);
     const xf = clamp(c.len / 3, 1, 4);
-    for (let i = 0; i < SLOTS; i++) {
+    for (let i = 0; i < usedSlots; i++) {
       const want = nv[i] ? { r: nv[i][0], a: nv[i][1] } : { r: slotState[i].r, a: 0 };
       const was = slotState[i];
       // A note the next chord keeps holds still.

@@ -15,6 +15,7 @@ import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimmin
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
+import { makeTde, resetTde, dropStar, stepTde, packTde } from './tde.js';
 import { makeCard, CARD_STYLES } from './card.js';
 import { makeArticle, loadArticles } from './article.js';
 import { cardLines } from './facts.js';
@@ -117,9 +118,12 @@ const dipLight = () => {
 const CARD_AFTER_DIP = 1750;
 // The time before which the card waits, from performance.now().
 let cardAfter = 0;
-// A new star starts calm: no flare or eruption carries over, unseen, and keeps the toy awake.
+// Tidal-disruption star drops for black holes and quasars (stimming-qhnp).
+const tde = makeTde();
+// A new star starts calm: no flare, eruption or falling star carries over unseen.
 function clearActivity() {
   sun.flares.length = 0;
+  resetTde(tde);
   for (const p of sun.proms) { p.erupt = -1; p.lit = 0; }
   for (const rg of sun.regions) { rg.lastFlare = -1e9; rg.lit = 0; }
 }
@@ -909,8 +913,9 @@ function flareAt(rg) {
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);
   poke();
 }
-// Space flares each region in view in turn.
+// Space flares each region in view in turn, or drops a star into a black hole.
 function flareNext() {
+  if (canHoleTap()) { dropAt(cssW * (0.25 + 0.5 * Math.random()), cssH * (0.25 + 0.5 * Math.random())); return; }
   if (!canTap()) return;
   const seen = sun.regions.filter(rg => {
     if (!near(rg.c)) return false;
@@ -941,6 +946,21 @@ const near = u => bendV(toView(u))[2] >= 0;
 // A black hole has no regions to flare.
 // Taps answer from the full star inward, and during a glide in to it, so the first tap counts.
 const canTap = () => (cam.z <= NOTCH + 0.05 || (cam.glide && cam.to <= NOTCH)) && !STARS[shown].hole;
+// Black holes and quasars accept star drops from slightly past full view inward.
+const canHoleTap = () => (cam.z <= NOTCH + 0.6 || (cam.glide && cam.to <= NOTCH)) && !!STARS[shown].hole;
+function dropAt(x, y) {
+  if (!canHoleTap()) return;
+  const B = STARS[shown];
+  const vx = (view.cx + (x / cssW * 2 - 1) * view.hw) / R * BCRIT;
+  const vy = (view.cy + (1 - y / cssH * 2) * view.hh) / R * BCRIT;
+  const sy = Math.max(Math.abs(Math.sin(B.hole.tilt || 0.2)), 0.25);
+  const dz = -vy / sy;
+  const phi = Math.atan2(dz, vx);
+  const r0 = Math.hypot(vx, dz);
+  if (!dropStar(tde, phi, r0)) return;
+  snd.plunge?.(clamp(x / cssW * 2 - 1, -1, 1), st.star);
+  poke();
+}
 function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   if (!canTap()) return { t: best, prom, d: bd };
@@ -983,9 +1003,9 @@ function diskAt(x, y) {
   // M is a rotation, so its transpose takes the view frame back to the star's.
   return [0, 1, 2].map(c => M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]);
 }
-// A tap near a region or a prominence answers there.
-// Anywhere else on the near disk, a flare starts where the hand is (Tom, 2026-11-24).
+// A tap near a region or a prominence answers there; on a black hole it drops a star in.
 function flareNear(x, y) {
+  if (STARS[shown].hole) { dropAt(x, y); return; }
   const { t, prom, d } = pickAt(x, y);
   if (t && d < reach()) { if (prom) eruptAt(t); else flareAt(t); return; }
   const s = diskAt(x, y);
@@ -1001,7 +1021,7 @@ let hoverAt = null, cursor = '';
 function readHover(fromFrame = false) {
   let c = 'default';
   if (pointer.drag && canTurn()) c = 'grabbing';
-  else if (hoverAt && pointer.id === null && (pickAt(hoverAt[0], hoverAt[1]).d < reach() || diskAt(hoverAt[0], hoverAt[1]))) c = 'pointer';
+  else if (hoverAt && pointer.id === null && (canHoleTap() || pickAt(hoverAt[0], hoverAt[1]).d < reach() || diskAt(hoverAt[0], hoverAt[1]))) c = 'pointer';
   else if (canTurn()) c = 'grab';
   if (c !== cursor) { cursor = c; stage.style.cursor = c; }
   const near = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]) : null;
@@ -1211,7 +1231,8 @@ function makeFrame() {
   devRows(star);
   f.count = hole ? 0 : strands(sun, st.time, { star: shown, activity: act, spin: pulsarTurns(STARS[shown]) ? 0 : st.spin }, ren.data);
   const hd = fxv('fxHDisc');
-  f.hole.set(hole ? [1, hole.tilt, hole.light * hd, hole.heat] : [0, 0, 0, 0]);
+  const tdeBoost = hole && tde.flare > 0 ? 1 + 0.55 * tde.flare : 1;
+  f.hole.set(hole ? [1, hole.tilt, hole.light * hd * tdeBoost, hole.heat] : [0, 0, 0, 0]);
   f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
   f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
   // The volumetric layer over a hole's disc, and a quasar's torus, clouds and winds.
@@ -1219,7 +1240,9 @@ function makeFrame() {
   // The clouds take the disc's light too, so Disc light divides out of theirs.
   f.holeV.set(hv ? [1, hv.dens * fxv('fxHCloud'), hv.light * fxv('fxHCLight') / Math.max(hd, 1e-3), hq ? 40 : 18] : [0, 0, 0, 0]);
   f.holeQ.set(hq ? [1, hq.torus * fxv('fxHTorus'), hq.clouds * fxv('fxHBlr'), hq.winds * fxv('fxHWinds')] : [0, 0, 0, 0]);
-  f.jet = star.jet * (hole ? fxv('fxHJet') : 1);
+  f.jet = star.jet * (hole ? fxv('fxHJet') * (1 + 0.85 * tde.flare) : 1);
+  if (hole && tde.live > 0) { f.tdeCount = packTde(tde, calm ? 0.75 : 1); f.tdeBuf = tde.buf; }
+  else { f.tdeCount = 0; f.tdeBuf = null; }
   // A giant ring system drifts slowly across the star, so its bands sweep the disk.
   const rg = star.ring;
   if (rg) {
@@ -1504,6 +1527,10 @@ function frame(now) {
     const adapting = stepEye(dt);
     stepFlares(sun, dt * flarePace(STARS[shown]) * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
+    if (STARS[shown].hole && tde.live > 0) {
+      stepTde(tde, dt, calm, STARS[shown].jet > 0);
+      for (const ev of tde.events) if (ev.kind === 'tear') snd.tear?.(clamp(ev.x / 14, -1, 1), shown);
+    }
     // The S stars follow Turn; each visit starts their clock again.
     // The S stars step only while they show; the clock's years go on regardless.
     if (shown === 'sgra') { const k = dt * drifting * 10 ** (turn.lr - fitLog('sgra')); if (sVis > 0) sst.step(k); sYears += k / YEAR_S; } else { sst.reset(); sYears = 0; }
@@ -1551,7 +1578,7 @@ function frame(now) {
       }
     }
     frameNo++;
-    lively = zooming || turning || swaying || settling || adapting || dipping || glowing || sFading || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || pointer.drag;
+    lively = zooming || turning || swaying || settling || adapting || dipping || glowing || sFading || !!egg || holding || sun.flares.length > 0 || sun.proms.some(p => p.erupt >= 0) || tde.live > 0 || pointer.drag;
     busy = lively;
     // A cut voice waits for input; the loop never restarts it.
     if (drifting > 0) { mixSound(); if (soundState !== 'cut') snd.hum(shown); }
