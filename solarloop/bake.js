@@ -10,7 +10,7 @@ import { STARS, SPIN_PERIOD } from './sun.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 // Frames per loop, the frame's side in pixels, and the frames that blend the seam.
-export const OPT = { frames: 24, size: 128, seam: 6, q: 0.75 };
+export const OPT = { frames: 12, size: 64, seam: 3, q: 0.75 };
 // Dev rows that add screen noise or edges; the bake turns them off, then back.
 const QUIET = { fxGrain: 0, fxDirt: 0, fxVig: 0, fxDenoise: 0, fxStreak: 0, fxGhost: 0 };
 // The toy's time between frames, in seconds: granules and gas move on it.

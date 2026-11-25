@@ -12,8 +12,9 @@ Tom, 2026-11-24: "The [star] tray needs to be cleaned up -- most others are good
 
 - [x] Tom names what to clean up (2026-11-24): "display is messy -- star icons cheap"
 - [x] Tom picks the ingredients (2026-11-24): grouped by kind of body; the toy's own render, pre-baked; integrated with the bar, in its look
-- [x] Flipbooks with alpha on every body (Tom, 2026-11-24): 24 frames per turn, colour over a grey alpha row used as a luminance mask (`solarloop/bake.js`, `solarloop/tray/`); each body at its own size on a log scale (Tom)
+- [x] Flipbooks with alpha on every body (Tom, 2026-11-24): 12 frames of 64 px per turn, colour over a grey alpha row used as a luminance mask (`solarloop/bake.js`, `solarloop/tray/`); each body at its own size on a log scale (Tom)
 - [x] Menus and labels in B612, the Airbus face (Tom, 2026-11-24); the bar keeps Iosevka
 - [ ] Build, show, Tom looks
-- [ ] Budget: about 70 KB a flipbook at 128 px, about 2.5 MB for 36 bodies; 96 px and fewer frames cut it, over the 1 MB toy budget: Tom's yes
+- [x] Budget: 64 px and 12 frames, about 16 KB each, so the toy stays inside its 1 MB budget and the tray lands on main (Tom, 2026-11-24: land WIP)
+- [ ] Tom picks the flipbook size: 96 px and 16 frames put the toy at about 1.35 MB, 128 px and 24 frames at about 2.5 MB; either needs his yes, over the 1 MB toy budget: Tom's yes
 - [ ] Bake the objects session's new bodies once they land on main
