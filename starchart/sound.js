@@ -310,6 +310,20 @@ export function makeSound(kit, opt = () => undefined) {
     if (drone && drone.ac === ac && drone.band === band) drone.voice.spin(rate);
   }
 
+  // Vega's primes: one soft note per pulse, a step of the pentatonic per group.
+  function prime(band, group) {
+    const ac = kit.live();
+    if (!ac || !on('sndPrime')) return;
+    const t = ac.currentTime + 0.01;
+    const f = (ROOT[band] || 220) * 2 ** ([0, 2, 4, 7, 9, 12][group % 6] / 12);
+    const pad = voice(ac, 0);
+    pad.gain.setValueAtTime(0, t);
+    pad.gain.linearRampToValueAtTime(0.03, t + 0.02);
+    pad.gain.setTargetAtTime(0.0001, t + 0.05, 0.35);
+    osc(ac, 'sine', f, t, 2.5).connect(pad);
+    send(ac, pad, 0.8);
+  }
+
   // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
@@ -381,5 +395,5 @@ export function makeSound(kit, opt = () => undefined) {
     for (const d of [drone, ...leaving]) if (d) drop(d);
     drone = null;
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, beacon, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, beacon, quiet, get busy() { return pending > 0; } };
 }

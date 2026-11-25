@@ -11,7 +11,7 @@ import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { glyph } from './glyphs.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR, makePrimes, primes, PULSES, PRIME_END } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
@@ -674,7 +674,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
     // The choir and rumble switches and levels live in Settings (Tom, 2026-11-24).
     ...[['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
-    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
+    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming'], ['sndPrime', 'Egg: primes']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -1043,6 +1043,7 @@ function startEgg(x, y, rare = false) {
   if (kind === 'carrington') egg = makeCarrington(c);
   else if (kind === 'dimming') egg = makeDimming();
   else if (kind === 'voice') egg = makeVoice();
+  else if (kind === 'primes') egg = makePrimes();
   return !!egg;
 }
 // One step of the egg's clock; a hold let go early runs it back out.
@@ -1075,6 +1076,10 @@ function stepEgg(dt, holding) {
     if (egg.t >= SHIP_END) { egg.stop?.(); egg = null; }
   } else if (egg.kind === 'bluedot') {
     if (egg.t >= DOT_END) egg = null;
+  } else if (egg.kind === 'primes') {
+    // Each pulse sounds one soft note; each group of pulses its own note.
+    while (egg.next < PULSES.length && egg.t >= PULSES[egg.next][0]) snd.prime?.(st.star, PULSES[egg.next++][1]);
+    if (egg.t >= PRIME_END) egg = null;
   }
 }
 // The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
@@ -1354,6 +1359,8 @@ function makeFrame() {
   f.bend = fxv('fxBend');
   f.fx1.set([fxv('fxBloom'), fxv('fxRays'), fxv('fxSplit'), fxv('fxHal')]);
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
+  // Vega's primes egg pulses the exposure.
+  if (egg?.kind === 'primes') f.lift *= 1 + (calm ? 0.25 : 0.45) * primes(egg);
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), f.lift]);
   f.fx4.set([Number(gv('fxTone', '1')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
   f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), f.glare]);

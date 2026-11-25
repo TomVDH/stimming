@@ -4,6 +4,7 @@
 // Pulsar: the Vela pulsar's true voice, 11.19 pulses a second.
 // Sun, a hold on Mercury: a ship's distress beacon, then the ship in transit.
 // Sun, a hold far out: the pale blue dot, one pixel in a ray of scattered light.
+// Vega: its light pulses in prime counts, after Contact.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -19,7 +20,7 @@ export const CUE = 0.6;
 // An egg comes on its own about once per this many awake seconds.
 export const RARE = 25 * 60;
 // The star that holds each egg.
-export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice' };
+export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice', vega: 'primes' };
 
 /* ---------- the Carrington flare ---------- */
 // Carrington and Hodgson saw two white kernels flash over a huge spot group.
@@ -108,6 +109,28 @@ export function blueDot(egg) {
   const ray = (t < 0 ? 0.35 * sstep(CUE - HOLD, 0, t) : 0.35 + 0.65 * sstep(0, 3, t)) * out;
   const dot = sstep(4, 5.5, t) * out;
   return { ray, dot };
+}
+
+/* ---------- primes (Tom, 2026-11-25) ---------- */
+// Contact: a signal from Vega counts out the prime numbers.
+// One pulse every 0.4 s keeps under three flashes a second.
+const PRIMES = [2, 3, 5, 7, 11, 13], BEAT = 0.4, GAP = 1.4;
+// Each pulse's start in seconds from the end of the hold, and its group.
+export const PULSES = [];
+{ let t = 0.6; PRIMES.forEach((n, g) => { for (let i = 0; i < n; i++, t += BEAT) PULSES.push([t, g]); t += GAP - BEAT; }); }
+export const PRIME_END = PULSES[PULSES.length - 1][0] + 3;
+export function makePrimes() {
+  return { kind: 'primes', t: CUE - HOLD, next: 0 };
+}
+/** The pulse light at the egg's clock, from 0 to 1: a fast rise, a slower fall. */
+export function primes(egg) {
+  let l = 0;
+  for (const [s] of PULSES) {
+    const d = egg.t - s;
+    if (d < 0) break;
+    if (d < 1.2) l = Math.max(l, Math.min(1, d / 0.05) * Math.exp(-d / 0.14));
+  }
+  return l;
 }
 
 /* ---------- the Vela pulsar's true voice ---------- */

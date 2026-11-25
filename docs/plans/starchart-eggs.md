@@ -1,6 +1,6 @@
 # Star Chart: egg candidates per body
 
-Status: proposed, 2026-11-25 · Bean `stimming-3qc0` (decision) · Epic `stimming-e35i` · Round 2 build bean: `stimming-27rx`. Nothing here is built. Tom picks.
+Status: active; built: the pale blue dot, primes; dropped: the slab (2026-11-25) · Bean `stimming-3qc0` (decision) · Epic `stimming-e35i` · Round 2 build bean: `stimming-27rx`. Nothing here is built. Tom picks.
 
 Tom, 2026-11-25: "come up with the list per body that we can add -- be elaborate -- reference sci fi -- yet be realistic about how stylishly we can develop it".
 
@@ -337,7 +337,7 @@ The ten best across all bodies, ranked by delight for the cost.
 | Rank | Egg | Body | Cost | Why |
 |---|---|---|---|---|
 | 1 | The pale blue dot | Sun | S | One pixel in a ray; moving and the toy's own light |
-| 2 | The slab | Epsilon Aurigae | S | The disc is already a slab; one squaring and a chord |
+| 2 | The slab (dropped, Tom 2026-11-25: did not read) | Epsilon Aurigae | S | The disc is already a slab; one squaring and a chord |
 | 3 | Primes | Vega | S | Contact is the best-known nod for Vega; pulses and notes only |
 | 4 | A probe at the horizon | Cygnus X-1 | M | The plan's next step for holes; real and ominous |
 | 5 | The Moon's edge | 3C 273 | S | A real moment with a sound that cuts |
