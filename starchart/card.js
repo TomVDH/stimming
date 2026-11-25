@@ -14,6 +14,8 @@ const FRAME = 1000 / 30;
 // The i hint comes on this long after the card's last line, in ms.
 const TIP_AFTER = 700;
 export const CARD_STYLES = [['intro', 'Intro'], ['stamp', 'Stamp'], ['caption', 'Caption']];
+// The card keeps three facts; the article holds them all (Tom, 2026-11-25).
+const CARD_ROWS = new Set(['mass', 'radius', 'distance']);
 
 const h = (tag, cls, text) => {
   const el = document.createElement(tag);
@@ -167,6 +169,7 @@ export function makeCard(o) {
      * @param {boolean} again The i key opened it: the hint says press i again.
      */
     show(c, style = 'intro', sun = null, again = false) {
+      c = { ...c, rows: c.rows.filter(([k]) => CARD_ROWS.has(k)) };
       clear();
       box = h('div', `sl-card sl-card--${style}`);
       box.dataset.view = view;
