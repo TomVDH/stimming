@@ -78,6 +78,14 @@ vec2 twAxis(float Y, int v, float ph) {
 }
 // A girth wave climbs the column, so the taper breathes.
 float twR(float Y, int v, float w, float ph) { return twRad(Y, v) * w * (1.0 + 0.1 * sin(Y * 0.45 - uT * 0.35 + ph)); }
+// The brown deck's cover at xz, 0 to 1: 0 over an open hole.
+// It reads the deck's own noise at its top, as dens() does.
+float twGround(vec2 xz) {
+  vec4 nw = textureLod(uVol, vec3(xz.x, -40.0, xz.y) / 1300.0 + vec3(0.3, 0.1, 0.7), 0.0);
+  vec3 q = vec3(xz.x, -100.0, xz.y) + (nw.xyz - 0.5) * 110.0;
+  vec4 nc = textureLod(uVol, vec3(0.6 * q.x + 0.8 * q.z, -160.0, 0.8 * q.x - 0.6 * q.z) / 157.0 + vec3(0.11, 0.0, 0.53), 0.0);
+  return smoothstep(0.3, 0.48, 1.0 - nc.a) * (1.0 - breakAt(xz, 7.7, 0.0));
+}
 // How far the ceiling sags at xz, in km: a wall cloud round each twister's top.
 float twSag(vec2 xz) {
   float g = 0.0;
@@ -132,12 +140,14 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
   ta = max(ta, ta0);
   tb = min(tb, tb0);
   if (ta >= tb) return vec4(0.0);
+  // Over cloud the foot melts into the deck; over a hole the funnel tapers to a tip.
+  float gr = twGround(A.xy);
   vec3 upv = normalize(vec3(A.x, 0.0, A.y) - PC);
   vec3 ld = deepLight(upv);
   float phL = clPhase(dot(rd, ld));
   vec3 alb0 = mix(pal(0.5), vec3(0.85), 0.35);
   vec3 col = vec3(0.0);
-  vec3 ceilC = mix(pal(0.05), vec3(0.8), 0.25), floorC = mix(pal(0.34), pal(0.6), 0.5);
+  vec3 ceilC = mix(pal(0.05), vec3(0.8), 0.25);
   float Tt = 1.0, shk = -1.0;
   // The fine step grows with distance, to about a pixel of the march.
   float fine = max(0.08 * s, ta * 0.0016);
@@ -148,7 +158,7 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
     float h = altOf(p), Y = (h - B.x) / s, f = Y / TW_H;
     if (f < 0.0 || f > 1.0) { t += fine * 3.0; continue; }
     vec2 q = (p.xz - A.xy) / s - twAxis(Y, v, ph);
-    float r = length(q), R = twR(Y, v, w, ph);
+    float r = length(q), R = twR(Y, v, w, ph) * mix(pow(smoothstep(0.0, 0.45, f), 0.8), 1.0, gr);
     // Far from the column, step by the gap to its widest wall.
     if (r > R * 1.8) { t += max((r - R * 1.8) * s * 0.6, fine); continue; }
     vec4 wl;
@@ -156,7 +166,8 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
     float st = r > Rw ? max((r - Rw) * s * 0.6, fine) : fine;
     float soft = (0.5 + 0.6 * f) * (v == 2 ? 1.6 : 1.0) * w;
     // The top thins into the ceiling's wall cloud; the foot thins into its dust.
-    float dd = smoothstep(0.0, soft, Rw - r) * wl.g * 1.8 * (1.0 - 0.75 * smoothstep(0.84, 0.98, f)) * mix(0.55, 1.0, smoothstep(0.0, 0.06, f));
+    float foot = mix(smoothstep(0.0, 0.12, f), mix(0.3, 1.0, smoothstep(0.0, 0.1, f)), gr);
+    float dd = smoothstep(0.0, soft, Rw - r) * wl.g * 1.8 * (1.0 - 0.75 * smoothstep(0.84, 0.98, f)) * foot;
     if (dd > 0.002) {
       tF = tF < 0.0 ? t : min(tF, t);
       // The wall's normal: the radial way, tipped by the wall's slope round and up.
@@ -185,9 +196,8 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
       amb += lut(B.x + 3.0).rgb * 0.12 * (1.0 - f) * max(0.0, -N.y + 0.3) * uTune.z;
       // Rim: the thin grazing edge glows toward the light.
       float rim = pow(1.0 - abs(dot(N, rd)), 3.0) * depth * phL;
-      // The colour blends into the floor's brown at the foot and the ceiling's at the top.
-      vec3 alb = mix(alb0 * mix(vec3(1.0), vec3(0.92, 0.88, 1.08), f), floorC, 0.6 * (1.0 - smoothstep(0.0, 0.14, f)));
-      alb = mix(alb, ceilC, smoothstep(0.7, 0.95, f));
+      // The colour blends into the ceiling's only where the top meets it.
+      vec3 alb = mix(alb0 * mix(vec3(1.0), vec3(0.92, 0.88, 1.08), f), ceilC, 0.6 * smoothstep(0.88, 0.99, f));
       vec3 Lc = alb * (key * (tl * 1.8 + rim * 0.6) + amb * 1.5);
       for (int j = 0; j < 4; j++) {
         vec4 fl = uFlash[j];

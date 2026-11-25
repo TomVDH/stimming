@@ -434,7 +434,10 @@ float dens(vec3 p, float lod, float fine, float full) {
       gOpen = f;
       // Dust heaps round the twisters' feet, ragged and torn by the noise.
       if (full > 0.5 && h < -34.0) {
-        float du = smoothstep(0.0, 1.2, -40.0 + twDust(p.xz) * (0.5 + 0.7 * n1.b) - h) * smoothstep(0.3, 0.6, n2.r + 0.25) * 0.8;
+        // Over a hole in the deck no dust rises.
+        float dh = twDust(p.xz);
+        if (dh > 0.05) dh *= twGround(p.xz);
+        float du = smoothstep(0.0, 1.2, -40.0 + dh * (0.5 + 0.7 * n1.b) - h) * smoothstep(0.3, 0.6, n2.r + 0.25) * 0.8;
         if (du > d) { d = du; gAlb = mix(pal(0.34), pal(0.6), n1.a); gOpen = 0.4; }
       }
       vd = vec4(-40.0, 2.0, 3.1, 0.5);
@@ -602,8 +605,7 @@ float dens(vec3 p, float lod, float fine, float full) {
         ex = clamp((drop + 1.0) / 7.0, 0.0, 1.0);
         sc = smoothstep(0.6, 0.8, n2.r + 0.2 * (n1.b - 0.5)) * band(h, cb - 3.0, cb - 0.3, 0.6) * 0.45;
       }
-      // The upper void's base is solid and heavy; the others stay softer.
-      float dc = smoothstep(0.0, 0.25 + 0.5 * lod, h - cb) * (vd.z == 3.1 ? 1.5 + 0.2 * n1.b : 0.7 + 0.3 * n1.b);
+      float dc = smoothstep(0.0, 0.25 + 0.5 * lod, h - cb) * (0.7 + 0.3 * n1.b);
       float br = max(breakAt(p.xz, vd.z, 0.0), vd.z == 5.9 ? gyreEye(p.xz) : 0.0);
       float dd = max(dc * (1.0 - br), sc * (1.0 - 0.5 * br));
       if (dd > d) {
@@ -818,7 +820,8 @@ void main() {
             vec3 rc = mix(vec3(1.0, 0.88, 0.72), mix(vec3(0.86, 0.62, 1.0), vec3(0.55, 0.84, 1.0), smoothstep(0.35, 0.65, hue)), smoothstep(0.05, 0.7, fall));
             float lum = dot(lut(vo.x + 6.0).rgb, vec3(0.3, 0.5, 0.2));
             col += T * rc * lum * shT * phS * min(ds, 6.0) * 0.02 * uRays * (1.0 - 0.7 * fall);
-            gs *= 0.55;
+            // The haze keeps its glow in the light, pale rather than green, so the far void stays bright.
+            gs = gs * 0.55 + mix(lut(vo.x + 6.0).rgb, vec3(lum * 1.3), 0.6) * sh * phS * 4.0 * uRays;
           }
         }
         col += T * gs * ag;
