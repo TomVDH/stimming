@@ -2117,11 +2117,15 @@ float pip(vec2 d, float pw, float len) {
 }
 // A strong lens round a far star (Tom, 2026-11-24): the light is traced, not drawn.
 // q: the view in R, turned so the lens lies along +x; Pv: the same point unturned.
-// The lens is a singular isothermal sphere uBow.z radii off, its Einstein radius 0.86 of that:
-// so the star sits by the critical curve, hugely magnified, and shows twice.
-// Each pixel looks back through the lens to the source plane: b = t - tE t/|t|.
+// The lens is a singular isothermal sphere uBow.z radii off; each pixel looks back to the source plane: b = t - tE t/|t|.
+// uBow.x - 1 picks the field, after each object's own image (Tom, 2026-11-25):
+// 0 Earendel: one giant elliptical; the star sits by the critical curve on the red Sunrise Arc and shows twice.
+// 1 Mothra: MACS J0416, a merging cluster with two cores in an elongated swarm.
+// 2 UHZ1: Abell 2744, three cores in a violet X-ray glow; a weak lens, one image, a purple dot.
+// 3 MoM-z14: no cluster and no lens; a faint red smudge in an open deep field.
 vec3 lensScene(vec2 q, vec2 Pv) {
-  float D = uBow.z, tE = 0.86 * D;
+  float sty = uBow.x - 1.0;
+  float D = uBow.z, tE = (sty > 2.5 ? 0.0 : sty > 1.5 ? 0.45 : 0.86) * D;
   // The mouse sway slides the layers by depth: the foreground stars most, the cluster less, the deep field least.
   // The lens is traced from the shifted places, so the arcs flow and re-form as the view sways.
   vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
@@ -2131,31 +2135,52 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   float tl = max(length(t), 1e-3);
   vec2 b = t - tE * t / tl + sw * 0.35;
   float pw = max(length(fwidth(q)), 1e-3);
-  // The host galaxy, round the star's own source position: a clumpy disc in uBowC with blue knots.
+  // The host galaxy, round the object's own source position, in uBowC.
+  // A far star's host is a clumpy disc with blue knots; a far galaxy is small and compact.
+  bool gal = sty > 1.5;
   vec2 bs = vec2(-(D - tE), 0.0) + sw * 0.35;
-  vec2 hq = b - bs - vec2(0.004, 0.006) * D;
-  float host = galaxy(hq, 0.011 * D, 0.7, 0.8);
+  vec2 hq = b - bs - (gal ? vec2(0.0) : vec2(0.004, 0.006) * D);
+  float host = galaxy(hq, (gal ? 0.005 : 0.011) * D, gal ? 0.6 : 0.7, 0.8);
   float knots = 0.0;
   for (int k = 0; k < 7; k++) {
     vec4 h = hash42(vec2(float(k), 3.7));
-    knots += galaxy(hq - (h.xy - 0.5) * 0.03 * D, (0.0016 + 0.002 * h.z) * D, 1.0, 0.0);
+    knots += galaxy(hq - (h.xy - 0.5) * (gal ? 0.008 : 0.03) * D, (0.0016 + 0.002 * h.z) * D * (gal ? 0.5 : 1.0), 1.0, 0.0);
   }
-  vec3 col = uBowC * host * 0.9 + vec3(0.7, 0.8, 1.0) * knots * 0.6;
+  vec3 col = uBowC * host * (gal ? 2.2 : 0.9) + (gal ? uBowC : vec3(0.7, 0.8, 1.0)) * knots * (gal ? 0.5 : 0.6);
   // Every galaxy behind the cluster is bent too: arcs and arclets ring it.
   col += deepField(b + vec2(13.7, -5.1) * D * 0.01, D);
-  // The cluster in front: a giant elliptical at the centre in its own halo, members round it, gold.
+  // The cluster in front, gold: one giant elliptical, two cores or three, in their own halo.
   vec3 gold = vec3(1.0, 0.8, 0.52);
-  col += gold * (1.6 * galaxy(t, 0.016 * D, 0.72, 0.4) + 0.16 * exp(-tl / (0.35 * tE)));
-  for (int k = 0; k < 48; k++) {
-    vec4 h = hash42(vec2(float(k) * 1.37, 9.1));
-    vec2 c = (h.xy - 0.5) * 2.6 * tE * sqrt(h.z);
-    col += gold * galaxy(t - c, (0.0025 + 0.008 * h.w * h.w) * D, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
+  if (sty < 2.5) {
+    vec2 c1 = sty > 1.5 ? vec2(-0.3, 0.25) * tE : sty > 0.5 ? vec2(-0.28, 0.34) * tE : vec2(0.0);
+    vec2 c2 = sty > 1.5 ? vec2(0.35, -0.2) * tE : vec2(0.3, -0.36) * tE;
+    vec2 c3 = vec2(0.05, 0.6) * tE;
+    float n = sty < 0.5 ? 1.0 : sty < 1.5 ? 2.0 : 3.0;
+    col += gold * 1.6 * galaxy(t - c1, 0.016 * D / sqrt(n), 0.72, 0.4);
+    if (n > 1.5) col += gold * 1.3 * galaxy(t - c2, 0.013 * D, 0.6, -0.7);
+    if (n > 2.5) col += gold * 1.1 * galaxy(t - c3, 0.011 * D, 0.8, 1.2);
+    col += gold * 0.16 * exp(-tl / (0.35 * max(tE, 0.3 * D)));
+    // The members swarm round the cores; a merging cluster's swarm is long.
+    vec2 st = sty > 0.5 && sty < 1.5 ? vec2(1.5, 0.6) : vec2(1.0);
+    for (int k = 0; k < 48; k++) {
+      vec4 h = hash42(vec2(float(k) * 1.37, 9.1));
+      vec2 c = (h.xy - 0.5) * 2.6 * max(tE, 0.7 * D) * sqrt(h.z) * st;
+      col += gold * galaxy(t - c, (0.0025 + 0.008 * h.w * h.w) * D, 0.45 + 0.5 * h.z, h.x * 6.283) * (0.5 + 0.8 * h.w);
+    }
+    // Abell 2744's hot gas, as Chandra sees it: a soft violet glow in three lobes.
+    if (sty > 1.5) col += vec3(0.5, 0.36, 1.0) * 0.18 * (exp(-length(t - c1) / (0.4 * D)) + exp(-length(t - c2) / (0.35 * D)) + 0.7 * exp(-length(t - c3) / (0.3 * D)));
   }
   // A few foreground stars of our own galaxy.
   for (int k = 0; k < 3; k++) {
     vec4 h = hash42(vec2(float(k) + 41.0, 2.3));
     vec2 c = vec2((h.x - 0.2) * 2.2 * D, (h.y - 0.5) * 1.6 * D);
     col += vec3(0.85, 0.9, 1.0) * pip(q - c - sw, pw, (0.004 + 0.008 * h.z) * D) * 0.5 * h.w;
+  }
+  // A far galaxy has no point of light.
+  // UHZ1 as Chandra shows it: a hazy neon purple oval round a light pink core.
+  if (gal) {
+    if (sty < 2.5) col += uBowC * 0.7 * galaxy(hq, 0.012 * D, 0.7, 0.5) + vec3(1.0, 0.75, 0.9) * pip(Pv, pw, 0.003 * D) * 0.5;
+    return col;
   }
   // The star itself, twice: here, burning, and its fainter counter-image past the cluster.
   // The counter-image follows the lens: it stands at b - tE b/|b| from the lens centre, b the star's source place.

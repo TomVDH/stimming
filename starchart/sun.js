@@ -450,11 +450,32 @@ export const STARS = {
   mothra: {
     ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 400,
     pair: { at: [2.5, 0.35, 1.2], size: 0.22, neck: 0, cool: 1 },
-    bow: { kind: 2, heading: 0.5, size: 460, col: [1, 0.45, 0.6] },
+    bow: { kind: 2, style: 1, heading: 0.5, size: 460, col: [1, 0.45, 0.6] },
     row: 28, rsun: 271, expo: 1, hotW: 1, coolW: 1, loop: 0.3, prom: 0, dust: 0.1, rays: 1,
     hal: [1, 0.8, 0.45], streak: [1, 0.85, 0.6],
     disk: [1.7, 0.7, 0.04, 0.3], disk2: [120, 0, 0.3, 0.06], tex: [20, 5, 0.06, 0.55],
     wide: 'none', long: 'none', root: 130.81,
+  },
+  // UHZ1: a galaxy 13.2 billion light years back, its black hole seen in X-rays by Chandra.
+  // Abell 2744 magnifies it about four times: a small purple dot, as the composite shows it; one image, no arc.
+  // A far galaxy: no near view, so the zoom stops at the full view.
+  uhz1: {
+    ...FLARE, day: 0, rain: 0, rope: 0, bubble: 0, sat: 0, reach: 400, far: true,
+    bow: { kind: 2, style: 2, heading: 1.1, size: 520, col: [0.72, 0.38, 1] },
+    row: 2, rsun: 1, expo: 1, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [0.75, 0.45, 1], streak: [0.8, 0.55, 1],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
+    wide: 'none', long: 'none', root: 116.54,
+  },
+  // MoM-z14: the most distant galaxy confirmed, seen 280 million years after the Big Bang.
+  // No cluster lies in front: a faint red smudge in an open deep field.
+  momz14: {
+    ...FLARE, day: 0, rain: 0, rope: 0, bubble: 0, sat: 0, reach: 400, far: true,
+    bow: { kind: 2, style: 3, heading: 2.2, size: 520, col: [1, 0.24, 0.12] },
+    row: 2, rsun: 1, expo: 1, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [1, 0.35, 0.2], streak: [1, 0.45, 0.3],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
+    wide: 'none', long: 'none', root: 103.83,
   },
   // Earendel: perhaps the most distant star, its light 12.9 billion years old.
   // If single, a B star of 13,000 to 16,000 K and 103 to 393 suns; 200 here.

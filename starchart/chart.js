@@ -51,6 +51,8 @@ export const CHART = {
   xxtri: { t: 4620, cls: 'K0 III giant, giant starspots' },
   epsaur: { kind: 'disc', t: 7750, cls: 'F0 supergiant, eclipsed by a dark disc' },
   mothra: { kind: 'arc', t: 5250, cls: 'yellow hypergiant and blue supergiant, lensed' },
+  uhz1: { kind: 'arc', t: null, cls: 'galaxy with a feeding black hole, lensed' },
+  momz14: { kind: 'arc', t: null, cls: 'galaxy, the most distant known' },
   earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
   powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
   gargantua: { kind: 'hole', t: null, cls: 'supermassive black hole, after a film' },
@@ -93,7 +95,7 @@ const GROUPS = [
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur']],
   ['Dead stars', ['magnetar', 'neutron', 'crab', 'siriusb', 'ring']],
   ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi', 'gargantua']],
-  ['Far and strange', ['quasi', 'earendel', 'mothra']],
+  ['Far and strange', ['quasi', 'earendel', 'mothra', 'uhz1', 'momz14']],
 ];
 
 /**

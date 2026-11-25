@@ -229,6 +229,8 @@ const weight = name => {
 };
 // How far the full view pulls back at z.
 const pullBack = z => 2 ** (Math.max(0, z - 2) * 1.25);
+// A far galaxy has no near view: its zoom stops at the full view (Tom, 2026-11-25).
+const zLo = () => STARS[shown]?.far ? 2 : 0;
 // How far out the view is: 0 on the full star, 1 at x32.
 const farAt = z => ease(clamp((z - 2) / 4));
 // Real light: 0 up close, where the star is masked; full by x16.
@@ -374,7 +376,7 @@ function zoomBy(dz) {
 }
 // Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
-  z = clamp(z, 0, Z_MAX);
+  z = clamp(z, zLo(), Z_MAX);
   // A glide-in ends at any new target, and so does a magnet's quick catch.
   cam.glide = false;
   cam.snap = false;
@@ -418,7 +420,7 @@ function stepFollow(dt) {
   const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1) * (cam.snap ? 0.5 : 1);
   [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt, true);
   [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt, true);
-  cam.z = clamp(cam.z, 0, Z_MAX);
+  cam.z = clamp(cam.z, zLo(), Z_MAX);
   if (Math.abs(cam.to - cam.z) < 2e-4 && Math.abs(cam.v) < 2e-3 && Math.abs(cam.va) < 2e-3) {
     cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false;
   }
@@ -578,7 +580,7 @@ const PICKS = [
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'], ['polaris', 'Polaris', 'oklch(0.92 0.06 95)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'], ['rlep', 'R Leporis', 'oklch(0.52 0.2 25)'],
-  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['gargantua', 'Gargantua', 'oklch(0.82 0.11 70)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
+  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['uhz1', 'UHZ1', 'oklch(0.65 0.18 305)'], ['momz14', 'MoM-z14', 'oklch(0.55 0.16 25)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['gargantua', 'Gargantua', 'oklch(0.82 0.11 70)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['magnetar', 'SGR 1806-20', 'oklch(0.74 0.14 295)'], ['crab', 'Crab Nebula', 'oklch(0.72 0.14 40)'], ['ring', 'Ring Nebula', 'oklch(0.8 0.11 175)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
   ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'], ['qso', '3C 273', 'oklch(0.86 0.06 260)'],
@@ -1243,7 +1245,7 @@ function makeFrame() {
   // The heading turns with the camera, so the arc or the wake keeps its place round the star.
   if (bw) {
     const h = camView([Math.cos(bw.heading), Math.sin(bw.heading), 0]);
-    f.bow.set([1, Math.atan2(h[1], h[0]), bw.size, bw.kind]); f.bowC.set(bw.col);
+    f.bow.set([1 + (bw.style ?? 0), Math.atan2(h[1], h[0]), bw.size, bw.kind]); f.bowC.set(bw.col);
   } else { f.bow.fill(0); f.bowC.fill(0); }
   // WR 140's dust shells: one per orbit, counted on the star's own clock.
   const sh = star.shells;

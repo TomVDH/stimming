@@ -231,6 +231,7 @@ TAPNORM.mothra = TAPNORM.betalyr;
 VOICES.earendel = VOICES.rigel;
 NORM.earendel = NORM.rigel;
 TAPNORM.earendel = TAPNORM.rigel;
+for (const id of ['uhz1', 'momz14']) { VOICES[id] = VOICES.rigel; NORM[id] = NORM.rigel; TAPNORM[id] = TAPNORM.rigel; }
 // Polaris sings Procyon's choir.
 VOICES.polaris = VOICES.procyon;
 VOICES.przyb = VOICES.procyon;
@@ -283,6 +284,9 @@ Object.assign(VOICES, {
   mothra: from('s5hvs1', { dist: 0.95, rev: 14, mix: 1.8, width: 1.9, bright: 1.1 }),
   // Earendel: the farthest single star seen, on a lensed arc. An airy, far choir.
   earendel: from('wr124', { voice: 0.4, dist: 1, rev: 15, mix: 1.9, bright: 1.35 }),
+  // UHZ1 and MoM-z14: far galaxies. Earendel's airy choir, lower, farther and darker.
+  uhz1: from('wr124', { voice: 0.3, dist: 1, rev: 16, mix: 2, bright: 0.9 }),
+  momz14: from('wr124', { voice: 0.25, dist: 1, rev: 17, mix: 2.1, bright: 0.7 }),
   // Powehi (M87*): the first black hole imaged. Sagittarius A*'s deep pad, slower and darker.
   powehi: from('sgra', { step: 18, rev: 15, bright: 0.45, det: 16 }),
   // Gargantua: a film's black hole. Sagittarius A*'s pad, wide and slow.
@@ -303,7 +307,7 @@ Object.assign(VOICES, {
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['uhz1', 'wr124'], ['momz14', 'wr124'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];

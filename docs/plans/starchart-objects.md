@@ -9,14 +9,14 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 43 |
-| Picked by Tom, not built | 4 |
+| Built, in the tray | 45 |
+| Picked by Tom, not built | 2 |
 | Asked for by Tom, not built | 0 |
 | Offered, no answer | 16 |
 | Offered, not picked | 10 |
 | Parked | 4 |
 
-## Built (43)
+## Built (45)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
@@ -29,7 +29,7 @@ All in the tray now. A bean marked open waits for Tom's live look.
 | Runaways | S5-HVS1 (`q5aa`) |
 | Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`), the Crab Nebula (`404a`), the Ring Nebula (`wcfv`) |
 | Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`), Gargantua (`9q7x`) |
-| Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`) |
+| Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`), UHZ1 (`901h`), MoM-z14 (`dk4z`) |
 
 Tom's notes on built bodies:
 
@@ -49,8 +49,6 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 |---|---|---|
 | `l4n7` | J1407b's giant rings | Build it too, beside Fomalhaut (2026-11-25) |
 | None | Eta Carinae | Picked 2026-11-25 |
-| None | MoM-z14 | Picked 2026-11-25; the far scenes must differ, after the real images |
-| None | UHZ1 | Picked 2026-11-25; the same |
 
 ## Asked for by Tom, not built
 

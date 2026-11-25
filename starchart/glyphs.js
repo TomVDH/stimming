@@ -81,7 +81,7 @@ export const KIND = {
   luhman: 'brown', wise: 'brown', ttauri: 'proto',
   betalyr: 'interacting', vfts352: 'contact', epsaur: 'darkdisc', wr124: 'wind', wr140: 'shells',
   siriusb: 'dwarf', neutron: 'pulsar', magnetar: 'magnetar', crab: 'remnant', ring: 'planetary',
-  cygx1: 'hole', powehi: 'hole', gargantua: 'hole', sgra: 'sstars', qso: 'quasar', earendel: 'arc', mothra: 'arc',
+  cygx1: 'hole', powehi: 'hole', gargantua: 'hole', sgra: 'sstars', qso: 'quasar', earendel: 'arc', uhz1: 'arc', momz14: 'arc', mothra: 'arc',
 };
 
 /**
