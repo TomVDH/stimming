@@ -1890,18 +1890,23 @@ float pip(vec2 d, float pw, float len) {
   return exp(-r * r / (pw * pw * 2.0)) + 0.5 * exp(-r / (pw * 2.5)) + 0.12 * exp(-r / len);
 }
 // A strong lens round a far star (Tom, 2026-11-24): the light is traced, not drawn.
-// q: the view in R, turned so the lens lies along +x; Pv: the same point unturned, for the spikes.
+// q: the view in R, turned so the lens lies along +x; Pv: the same point unturned.
 // The lens is a singular isothermal sphere uBow.z radii off, its Einstein radius 0.86 of that:
 // so the star sits by the critical curve, hugely magnified, and shows twice.
 // Each pixel looks back through the lens to the source plane: b = t - tE t/|t|.
 vec3 lensScene(vec2 q, vec2 Pv) {
   float D = uBow.z, tE = 0.86 * D;
-  vec2 t = q - vec2(D, 0.0);
+  // The mouse sway slides the layers by depth: the foreground stars most, the cluster less, the deep field least.
+  // The lens is traced from the shifted places, so the arcs flow and re-form as the view sways.
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 sw = vec2(dot(uSway, ax), ax.x * uSway.y - ax.y * uSway.x) * D * 0.07;
+  vec2 lens = vec2(D, 0.0) + sw * 0.5;
+  vec2 t = q - lens;
   float tl = max(length(t), 1e-3);
-  vec2 b = t - tE * t / tl;
+  vec2 b = t - tE * t / tl + sw * 0.35;
   float pw = max(length(fwidth(q)), 1e-3);
   // The host galaxy, round the star's own source position: a clumpy disc in uBowC with blue knots.
-  vec2 bs = vec2(-(D - tE), 0.0);
+  vec2 bs = vec2(-(D - tE), 0.0) + sw * 0.35;
   vec2 hq = b - bs - vec2(0.6, 0.9);
   float host = galaxy(hq, 1.6, 0.7, 0.8);
   float knots = 0.0;
@@ -1924,12 +1929,14 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   for (int k = 0; k < 3; k++) {
     vec4 h = hash42(vec2(float(k) + 41.0, 2.3));
     vec2 c = vec2((h.x - 0.2) * 2.2 * D, (h.y - 0.5) * 1.6 * D);
-    col += vec3(0.85, 0.9, 1.0) * pip((q - c) * 0.9, pw, 3.0 + 6.0 * h.z) * 0.5 * h.w;
+    col += vec3(0.85, 0.9, 1.0) * pip(q - c - sw, pw, 3.0 + 6.0 * h.z) * 0.5 * h.w;
   }
   // The star itself, twice: here, burning, and its fainter counter-image past the cluster.
-  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  // The counter-image follows the lens: it stands at b - tE b/|b| from the lens centre, b the star's source place.
+  vec2 sb = -lens - tE * normalize(-lens) + sw * 0.35;
+  vec2 ci = lens + sb - tE * sb / max(length(sb), 1e-3);
   col += vec3(1.0) * pip(Pv, pw, 7.0) * 1.4;
-  col += vec3(1.0) * pip(Pv - ax * 2.0 * tE, pw, 4.0) * 0.45;
+  col += vec3(1.0) * pip(q - ci, pw, 4.0) * 0.45;
   return col;
 }
 // A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.

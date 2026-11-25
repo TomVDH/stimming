@@ -1415,8 +1415,10 @@ function stepEye(dt) {
 const sway = { x: 0, y: 0, vx: 0, vy: 0 };
 const SWAY_T = 0.9;
 // Steps the follow; true while it moves.
+// A lensed far star sways from the full view on: its full view is already far out (Tom, 2026-11-24).
 function stepSway(dt) {
-  const on = calm ? 0 : farAt(cam.z);
+  const lensed = STARS[shown]?.bow?.kind === 2;
+  const on = calm ? 0 : lensed ? Math.max(farAt(cam.z), clamp(cam.z - NOTCH + 1, 0, 1)) : farAt(cam.z);
   const tx = hoverAt && on ? (hoverAt[0] / cssW * 2 - 1) * on : 0;
   const ty = hoverAt && on ? (1 - hoverAt[1] / cssH * 2) * on : 0;
   [sway.x, sway.vx] = follow(sway.x, tx, sway.vx, SWAY_T, dt);
