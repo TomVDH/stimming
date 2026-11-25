@@ -2,6 +2,7 @@
 // Sun: the Carrington flare of 1 September 1859.
 // Betelgeuse: the Great Dimming of 2019 to 2020.
 // Pulsar: the Vela pulsar's true voice, 11.19 pulses a second.
+// Sun, a hold on Mercury: a ship's distress beacon, then the ship in transit.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -71,6 +72,25 @@ export function dimming(egg) {
   const cool = (t < 0 ? 0.6 * sstep(CUE - HOLD, 0, t) : 0.6 + 0.4 * sstep(0, 3, t)) * clear;
   const veil = sstep(0, 5, t) * clear;
   return { cool, veil };
+}
+
+/* ---------- a ship in transit, after Sunshine (Tom, 2026-11-24) ---------- */
+// A hold on Mercury: a distress beacon, then a ship crosses the sun beside Mercury.
+// The ship is our own: a sunshield disc, a long spine, a payload block.
+export const SHIP_END = 38;
+// The ship's speed across the disk, in star units a second, and its lead on Mercury.
+const SHIP_V = 26, SHIP_LEAD = -260;
+export function makeSunshine(mercuryX) {
+  return { kind: 'sunshine', t: CUE - HOLD, x0: mercuryX + SHIP_LEAD };
+}
+/** The ship at its clock t: x in star units, weight, heading, shield slant, glint. */
+export function sunshine(egg) {
+  const t = Math.max(egg.t, 0);
+  const w = egg.t < 0 ? 0 : sstep(0, 2.5, t) * (1 - sstep(SHIP_END - 4, SHIP_END, t));
+  // The shield turns a little toward the sun; one turn throws a glint at the eye.
+  const tilt = 0.32 + 0.12 * Math.sin(t * 0.22);
+  const glint = Math.exp(-(((t - 13) / 0.7) ** 2));
+  return { x: egg.x0 + SHIP_V * t, w, heading: Math.PI - 0.12, tilt, glint };
 }
 
 /* ---------- the Vela pulsar's true voice ---------- */

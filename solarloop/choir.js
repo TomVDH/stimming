@@ -1078,8 +1078,9 @@ export function tapBus(ac, { out, hall, track = n => n }) {
   const fold = r => { while (r >= 2) r /= 2; while (r < 1) r *= 2; return r; };
   return {
     // A blast: root is the star's key two octaves down; chordRoot moves it to the chord.
-    blast({ t, root, K, len = 6, p = SUN, pan = 0, room = null, chordRoot = 1 }) {
-      if (!p.stack) steal(live.blast, 1, t, 0.5); else prune(live.blast, t);
+    // max: how many blasts may ring at once; a tap run's triad keeps three.
+    blast({ t, root, K, len = 6, p = SUN, pan = 0, room = null, chordRoot = 1, max = 1 }) {
+      if (!p.stack) steal(live.blast, max, t, 0.5); else prune(live.blast, t);
       const sh = shell();
       const h = blast(ac, { t, root: root * fold(chordRoot), K, len, p, out: sh, track });
       route(sh, pan * 0.3, 0.5, room, 0.5 * p.dist, p.stack);
