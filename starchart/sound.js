@@ -358,6 +358,18 @@ export function makeSound(kit, opt = () => undefined) {
     return () => { const n = ac.currentTime; g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(g.gain.value, n); g.gain.linearRampToValueAtTime(0, n + 0.3); };
   }
 
+  // A neutrino tick: a dry, short click.
+  function tick(level) {
+    const ac = kit.live();
+    if (!ac || !on('sndTick')) return;
+    const t = ac.currentTime + 0.01;
+    const g = voice(ac, 0);
+    env(g, t, 0.06 * level, 0.001, 0.025);
+    const hp = filt(ac, 'highpass', 2500, 0.7);
+    hp.connect(g);
+    noise(ac, t, 0.05).connect(hp);
+  }
+
   // The Great Dimming: a chord that falls and muffles as the light goes.
   function dim(band) {
     const ac = kit.live();
@@ -429,5 +441,5 @@ export function makeSound(kit, opt = () => undefined) {
     for (const d of [drone, ...leaving]) if (d) drop(d);
     drone = null;
   }
-  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, hiss, beacon, quiet, get busy() { return pending > 0; } };
+  return { flare, rise, hum, mixLayers, setTurn, ping, spin, dim, prime, pip, hiss, tick, beacon, quiet, get busy() { return pending > 0; } };
 }

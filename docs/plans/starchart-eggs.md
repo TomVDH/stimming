@@ -1,6 +1,6 @@
 # Star Chart: egg candidates per body
 
-Status: active; built: the pale blue dot, primes, the probe at the horizon, the Moon's edge; dropped: the slab (2026-11-25) · Bean `stimming-3qc0` (decision) · Epic `stimming-e35i` · Round 2 build bean: `stimming-27rx`. Nothing here is built. Tom picks.
+Status: active; built: the pale blue dot, primes, the probe at the horizon, the Moon's edge, Not yet (white-out only, blast shell open); dropped: the slab (2026-11-25) · Bean `stimming-3qc0` (decision) · Epic `stimming-e35i` · Round 2 build bean: `stimming-27rx`. Nothing here is built. Tom picks.
 
 Tom, 2026-11-25: "come up with the list per body that we can add -- be elaborate -- reference sci fi -- yet be realistic about how stylishly we can develop it".
 

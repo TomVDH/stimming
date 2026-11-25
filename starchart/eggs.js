@@ -7,6 +7,7 @@
 // Vega: its light pulses in prime counts, after Contact.
 // Cygnus X-1: a probe falls in, slows, reddens and freezes at the shadow's edge.
 // 3C 273: the Moon's dark limb sweeps over it, as at Parkes in 1962.
+// Betelgeuse, a second hold during the Dimming: it starts to go supernova, then rewinds.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
@@ -173,6 +174,30 @@ export function makeMoon() {
 }
 /** The Moon's centre x from the quasar, in frame heights; it moves left to right. */
 export const moonX = egg => -MOON_HALF + MOON_V * (egg.t - MOON_IN);
+
+/* ---------- not yet (Tom, 2026-11-25) ---------- */
+// The Great Dimming set off talk of a supernova; a second hold plays one, then rewinds it.
+// Neutrinos come first: dry ticks that quicken; the light follows, peaks, and runs back.
+export const NY_PEAK = 3, NY_BACK = 3.8, NY_HOME = 5.3, NY_END = 7;
+export function makeNotYet(dim) {
+  return { kind: 'notyet', t: CUE - HOLD, ph: 0, beat: 0, veil: dim.veil, cool: dim.cool };
+}
+/** The light: 0 at rest, 1 at the peak; and the Dimming's veil and cool patch, fading. */
+export function notYet(egg) {
+  const t = egg.t;
+  const up = sstep(-0.5, NY_PEAK, t), back = sstep(NY_BACK, NY_HOME, t);
+  const fade = 1 - sstep(CUE - HOLD, 0, t);
+  return { light: up * up * (1 - back), veil: egg.veil * fade, cool: egg.cool * fade };
+}
+/** One step of the neutrino ticks: up to 12 a second at the peak, slowing as it rewinds. */
+export function stepNotYet(egg, dt) {
+  const t = egg.t;
+  const rate = t < NY_BACK ? 1 + 11 * sstep(CUE - HOLD, NY_PEAK, t) : 12 * (1 - sstep(NY_BACK, NY_HOME, t));
+  egg.ph += rate * dt;
+  const beat = Math.floor(egg.ph), tick = beat > egg.beat;
+  egg.beat = beat;
+  return tick;
+}
 
 /* ---------- the Vela pulsar's true voice ---------- */
 // Vela turns 11.19 times a second; the toy shows it every 1.6 s.

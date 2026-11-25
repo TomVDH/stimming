@@ -11,7 +11,7 @@ import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { glyph } from './glyphs.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR, makePrimes, primes, PULSES, PRIME_END, makeProbe, probe, stepProbe, PROBE_END, makeMoon, moonX, MOON_R, MOON_D, MOON_IN, MOON_OUT, MOON_END } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR, makePrimes, primes, PULSES, PRIME_END, makeProbe, probe, stepProbe, PROBE_END, makeMoon, moonX, MOON_R, MOON_D, MOON_IN, MOON_OUT, MOON_END, makeNotYet, notYet, stepNotYet, NY_PEAK, NY_END } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
@@ -675,7 +675,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
     // The choir and rumble switches and levels live in Settings (Tom, 2026-11-24).
     ...[['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
-    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming'], ['sndPrime', 'Egg: primes'], ['sndProbe', 'Egg: probe beacon'], ['sndHiss', 'Egg: radio hiss']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
+    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming'], ['sndPrime', 'Egg: primes'], ['sndProbe', 'Egg: probe beacon'], ['sndHiss', 'Egg: radio hiss'], ['sndTick', 'Egg: neutrino ticks']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -1091,6 +1091,10 @@ function stepEgg(dt, holding) {
     // The radio hiss: on at the end of the hold, cut by the limb, back when it uncovers.
     if (egg.t >= 0 && !egg.fired) { egg.fired = true; egg.stop = snd.hiss?.(MOON_IN, MOON_OUT - MOON_IN, MOON_END - MOON_OUT - 2) || null; }
     if (egg.t >= MOON_END) { egg.stop?.(); egg = null; }
+  } else if (egg.kind === 'notyet') {
+    if (stepNotYet(egg, dt)) snd.tick?.(0.4 + 0.6 * notYet(egg).light);
+    if (egg.t >= NY_PEAK && !egg.fired) { egg.fired = true; snd.flare(0, st.star, 1); }
+    if (egg.t >= NY_END) egg = null;
   }
 }
 // The egg's uniforms. Carrington: two spots, two kernels, each a view point and a weight.
@@ -1100,8 +1104,8 @@ function eggFrame(out, dim) {
   if (egg?.kind === 'carrington') {
     const c = carrington(egg);
     [...c.spots, ...c.kernels].forEach(([p, w], k) => out.set([...toView(p), calm ? w * 0.7 : w], k * 4));
-  } else if (egg?.kind === 'dimming') {
-    const d = dimming(egg);
+  } else if (egg?.kind === 'dimming' || egg?.kind === 'notyet') {
+    const d = egg.kind === 'dimming' ? dimming(egg) : notYet(egg);
     dim.set([...toView(SOUTH), d.veil, d.cool, 0, 0, 0]);
   }
 }
@@ -1386,6 +1390,8 @@ function makeFrame() {
   f.fx2.set([fxv('fxStreak'), fxv('fxDirt'), fxv('fxRoll'), fxv('fxVig')]);
   // Vega's primes egg pulses the exposure.
   if (egg?.kind === 'primes') f.lift *= 1 + (calm ? 0.25 : 0.45) * primes(egg);
+  // Betelgeuse's supernova whites the frame out, then rewinds.
+  if (egg?.kind === 'notyet') f.lift *= 1 + (calm ? 2 : 16) * notYet(egg).light;
   f.fx3.set([fxv('fxGrain'), fxv('fxExpo'), fxv('fxShimmer'), f.lift]);
   f.fx4.set([Number(gv('fxTone', '1')), Number(gv('fxLook', '0')), gv('fxContrast', 1), gv('fxSat', 1)]);
   f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), f.glare]);
@@ -1488,6 +1494,8 @@ function frame(now) {
     // A still press past the cue starts the star's egg under it.
     const holding = pointer.id !== null && !pointer.drag;
     if (holding && !egg && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE && startEgg(pointer.x0, pointer.y0)) pointer.egg = true;
+    // A second hold during the Dimming plays a supernova that rewinds: not yet.
+    if (holding && egg?.kind === 'dimming' && egg.t > 0 && !pointer.egg && (t0 - pointer.t0) / 1000 >= CUE) { egg = makeNotYet(dimming(egg)); pointer.egg = true; }
     // Now and then an egg comes on its own, near the middle of the view.
     if (!egg && !calm && drifting > 0 && EGGS[st.star] && Math.random() < dt / RARE) {
       if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()), true)) egg.rare = true;
