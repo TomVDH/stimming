@@ -1,10 +1,11 @@
 ---
 # stimming-8ljj
 title: 'Star Chart: a volumetric Crab Nebula'
-status: todo
+status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-25T09:37:02Z
-updated_at: 2026-11-25T09:37:02Z
+updated_at: 2026-11-25T19:56:03Z
 parent: stimming-e35i
 ---
 
@@ -19,8 +20,8 @@ Goal: the Crab as a lit volume with real scale.
 - Perf: march at reduced resolution or in the baked volume pass; hold the 30 fps budget; one perf change at a time, judged live.
 - The Ring Nebula (stimming-wcfv) may reuse the same shell march.
 
-- [ ] Pick the technique and its pass (final pass at half resolution, or the volume pass)
-- [ ] March the shell: filaments, glow, absorption
+- [x] Pick the technique and its pass (final pass at half resolution, or the volume pass): a baked 128³ volume (NBAKE), marched in the final pass
+- [x] March the shell: filaments, glow, absorption
 - [ ] Scale cues and parallax on drag
 - [ ] Perf check live with Tom
 - [ ] Tom looks at it live

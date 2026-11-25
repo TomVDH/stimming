@@ -1906,8 +1906,8 @@ function noiseVolume(n) {
 }
 
 /* ---------- the nebulae's dust, baked once on first use ---------- */
-// 0 the Homunculus round Eta Carinae, 1 V838 Monocerotis's dust shells.
-// A cube 2.8 wide round the star, in the nebula's own units, in the dust's frame; the march samples it.
+// 0 the Homunculus round Eta Carinae, 1 V838 Monocerotis's dust shells, 2 the Crab Nebula, 3 the Ring Nebula.
+// A cube round the star, 2.8 wide (3.0 for the Ring), in the nebula's own units and frame; the march samples it.
 const NB_N = 128;
 const NBAKE = `${HEAD}
 uniform int uWhich;
@@ -1915,8 +1915,35 @@ uniform float uLayer;
 out vec4 o;
 ${NOISE}
 void main() {
-  vec3 w = (vec3(gl_FragCoord.xy / ${NB_N}.0, uLayer) * 2.0 - 1.0) * 1.4;
-  if (uWhich == 0) {
+  vec3 w = (vec3(gl_FragCoord.xy / ${NB_N}.0, uLayer) * 2.0 - 1.0) * (uWhich == 3 ? 1.5 : 1.4);
+  if (uWhich == 2) {
+    // The Crab: an ellipsoid cage of filaments round a synchrotron glow, its rim ragged.
+    vec3 u = w / vec3(1.0, 0.68, 0.75);
+    vec3 nd = u / max(length(u), 1e-3);
+    float e = length(u) / (1.0 + 0.24 * (fbm(nd * 2.0 + 5.0) - 0.5));
+    // The filaments: ridges of two noise layers, in a thick shell.
+    float r1 = pow(1.0 - abs(fbm(w * 4.5) - 0.5) * 2.0, 14.0);
+    float r2 = pow(1.0 - abs(fbm(w * 9.0 + 3.0) - 0.5) * 2.0, 18.0);
+    float fil = (r1 + 0.7 * r2 + 0.12 * fbm(w * 3.0 + 9.0)) * smoothstep(0.35, 0.75, e) * smoothstep(1.08, 0.9, e);
+    // The synchrotron glow: soft, blue-white, brightest round the pulsar.
+    float syn = exp(-e * e * 2.2) * (0.5 + 0.8 * fbm(u * 3.0 + 1.3));
+    o = vec4(fil / 3.0, syn / 2.0, smoothstep(0.3, 0.7, fbm(w * 1.5 + 8.0)), 1.0);
+  } else if (uWhich == 3) {
+    // The Ring: a prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
+    vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
+    vec3 U = normalize(cross(AX, vec3(0.0, 1.0, 0.0))), V = cross(AX, U);
+    vec3 b = vec3(dot(w, U), dot(w, V), dot(w, AX));
+    float rc = length(b.xy), sh = length(vec3(b.xy, b.z * 0.62));
+    float ring = exp(-pow((rc - 0.72) / 0.1, 2.0)) * exp(-pow(b.z / 0.45, 2.0));
+    float wall = exp(-pow((sh - 0.8) / 0.1, 2.0)) * 0.3;
+    // Streaks, as in WR 124's wind: fine across the sky, long along each radius.
+    vec3 nd = b / max(length(b), 1e-3);
+    float stk = fbm(nd * 9.0 + vec3(0.0, 0.0, log(sh + 0.05) * 1.4));
+    float m = fbm(b * 2.0 + 1.0);
+    float dens = (ring + wall) * (0.3 + 1.4 * smoothstep(0.3, 0.75, stk)) * (0.6 + 0.6 * m);
+    float fill = 0.16 * smoothstep(0.85, 0.2, sh) * (0.6 + 0.8 * m);
+    o = vec4(dens / 2.8, sh / 2.0, fill / 0.3, 1.0);
+  } else if (uWhich == 0) {
     // The axis leans about 41 degrees from the line of sight.
     vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
     float a = dot(w, AX);
@@ -2347,62 +2374,55 @@ vec3 v838Echo(vec2 pR) {
 }
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
 // A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
-// Each ray marches through it in the camera's frame, so a drag turns the barrel.
+// Each ray marches its baked gas (NBAKE) in the camera's frame, so a drag turns the barrel.
 // Oxygen glows blue-green inside; hydrogen and nitrogen glow red at the rim.
 vec3 ringNeb(vec2 pR) {
   vec2 q = pR / uBow.z;
   float d = length(q);
   if (d > 1.8) return vec3(0.0);
-  vec3 AX = normalize(vec3(0.3, 0.38, 0.87));
-  vec3 U = normalize(cross(AX, vec3(0.0, 1.0, 0.0))), V = cross(AX, U);
   vec3 acc = vec3(0.0);
-  const int N = 20;
+  const int N = 40;
   float dt = 3.2 / float(N);
   for (int i = 0; i < N; i++) {
     vec3 w = uCamM * vec3(q, -1.6 + (float(i) + 0.5) * dt);
-    vec3 b = vec3(dot(w, U), dot(w, V), dot(w, AX));
-    float rc = length(b.xy), sh = length(vec3(b.xy, b.z * 0.62));
-    // The dense ring round the waist, and the barrel's thin walls.
-    float ring = exp(-pow((rc - 0.72) / 0.1, 2.0)) * exp(-pow(b.z / 0.45, 2.0));
-    float wall = exp(-pow((sh - 0.8) / 0.1, 2.0)) * 0.3;
-    // Streaks, as in WR 124's wind: fine across the sky, long along each radius.
-    vec3 nd = b / max(length(b), 1e-3);
-    float stk = fbm(nd * 9.0 + vec3(0.0, 0.0, log(sh + 0.05) * 1.4));
-    float m = fbm(b * 2.0 + 1.0);
-    float dens = (ring + wall) * (0.3 + 1.4 * smoothstep(0.3, 0.75, stk)) * (0.6 + 0.6 * m);
+    if (any(greaterThan(abs(w), vec3(1.48)))) continue;
+    // The baked gas (NBAKE): density, the shell's radius and the thin fill.
+    vec4 nb = texture(uNeb, w / 3.0 + 0.5);
+    float dens = nb.r * 2.8, sh = nb.g * 2.0, fill = nb.b * 0.3;
+    // Oxygen blue-green inside, yellow, then hydrogen and nitrogen red at the rim.
     vec3 c = mix(vec3(0.25, 0.85, 0.75), vec3(0.95, 0.85, 0.35), smoothstep(0.55, 0.75, sh));
     c = mix(c, vec3(1.0, 0.2, 0.16), smoothstep(0.7, 0.88, sh)) * (1.0 + 0.5 * smoothstep(0.7, 0.9, sh));
-    // The thin oxygen fill inside the barrel.
-    float fill = 0.16 * smoothstep(0.85, 0.2, sh) * (0.6 + 0.8 * m);
     acc += (c * dens + vec3(0.2, 0.75, 0.8) * fill) * dt;
   }
   // The faint outer halo of hydrogen loops, as JWST shows it.
   float halo = exp(-pow((d - 1.4) / 0.2, 2.0)) * 0.12 * (0.3 + 1.4 * fbm(vec3(q * 5.0, 4.0)));
   return acc * 0.9 + vec3(1.0, 0.3, 0.25) * halo;
 }
-// The Crab Nebula, in R along its long axis; not to scale: the true nebula is 11 light years wide.
-// A blue synchrotron glow from the pulsar's wind fills an oval cage of red and gold filaments.
-// The helium torus crosses the pulsar; a faint jet leaves along its axis.
-vec3 crabNeb(vec2 q) {
-  float S = uBow.z;
-  vec2 u = q / (S * vec2(1.0, 0.68));
-  // The rim is ragged: the shell's edge wanders by about a tenth.
-  float a = atan(u.y, u.x);
-  float e = length(u) / (1.0 + 0.24 * (fbm(vec3(cos(a) * 2.0, sin(a) * 2.0, 5.0)) - 0.5));
-  if (e > 1.4) return vec3(0.0);
-  float syn = exp(-e * e * 1.7) * (0.55 + 0.8 * fbm(vec3(u * 3.0, 1.3 + uTime * 0.004)));
-  // The filaments: ridges of two noise layers, brightest in the outer half of the cage.
-  vec3 p = vec3(u * 4.5, 2.0);
-  float r1 = pow(1.0 - abs(fbm(p) - 0.5) * 2.0, 16.0);
-  float r2 = pow(1.0 - abs(fbm(p * 2.3 + 3.0) - 0.5) * 2.0, 20.0);
-  // A soft haze of the same gas lies between the ridges.
-  float haze = 0.35 * fbm(p * 0.7 + 9.0);
-  float fil = (r1 + 0.7 * r2 + haze) * smoothstep(0.25, 0.75, e) * smoothstep(1.1, 0.9, e);
-  vec3 filC = mix(vec3(1.0, 0.2, 0.1), vec3(1.0, 0.7, 0.36), smoothstep(0.3, 0.7, fbm(vec3(u * 1.5, 8.0))));
-  // The inner torus and the jet, round the pulsar.
+// The Crab Nebula, uBow.z R along its long axis; not to scale: the true nebula is 11 light years wide.
+// A lit volume (Tom, 2026-11-25: volumetrics, scale): a cage of red and gold filaments round a blue synchrotron glow.
+// Each ray marches the baked volume (NBAKE) in the camera's frame, so a drag turns it and the filaments part in depth.
+vec3 crabNeb(vec2 pR) {
+  vec2 q = pR / uBow.z;
+  if (length(q) > 1.5) return vec3(0.0);
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  const int N = 40;
+  float dt = 2.8 / float(N);
+  for (int i = 0; i < N; i++) {
+    vec3 w = uCamM * vec3(q, -1.4 + (float(i) + 0.5) * dt);
+    if (any(greaterThan(abs(w), vec3(1.38)))) continue;
+    vec4 nb = texture(uNeb, w / 2.8 + 0.5);
+    float fil = nb.r * 3.0, syn = nb.g * 2.0;
+    vec3 filC = mix(vec3(1.0, 0.2, 0.1), vec3(1.0, 0.7, 0.36), nb.b);
+    // The filaments glow and also hide a little of what lies behind them.
+    acc += T * (filC * fil * 0.55 + vec3(0.55, 0.7, 1.0) * syn * 0.75) * dt * 0.75;
+    T *= exp(-fil * dt * 1.5);
+  }
+  // The inner torus and the jet round the pulsar, drawn flat: they are small.
+  vec2 u = q / vec2(1.0, 0.68);
   float tor = exp(-pow((length(u / vec2(1.0, 0.4)) - 0.09) / 0.025, 2.0)) * 0.5;
   float jet = exp(-pow(u.x / 0.012, 2.0)) * smoothstep(0.22, 0.02, abs(u.y)) * 0.25;
-  return vec3(0.55, 0.7, 1.0) * (syn * 0.85 + tor + jet) + filC * fil * 0.6;
+  return acc + vec3(0.55, 0.7, 1.0) * (tor + jet);
 }
 // Mira's bow shock and tail, in R along its heading; not to scale.
 // The true tail is 13 light years long; uBow.z is the bow's stand-off.
@@ -2451,7 +2471,7 @@ vec3 runaway(vec2 P) {
   // The Ring Nebula: a barrel of glowing gas round a white dwarf, marched in 3D.
   if (uBow.w > 4.5) return ringNeb(P / R);
   // The Crab Nebula: the pulsar's wind nebula in its cage of filaments.
-  if (uBow.w > 3.5) return crabNeb(q);
+  if (uBow.w > 3.5) return crabNeb(P / R);
   // Mira: a bow shock ahead and a long turbulent tail behind, as GALEX saw it in 2007.
   if (uBow.w > 2.5) return miraTail(q);
   // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
@@ -2880,7 +2900,7 @@ export async function makeRender(gl, opts = {}) {
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // Black hole detail: below 1 the holes' sky pass draws to holeT, made on first use.
-  // A nebula's dust, baked the first time its star shows: kind 6 Eta Carinae, kind 7 V838 Monocerotis.
+  // A nebula's dust, baked the first time its star shows: kind 4 the Crab, 5 the Ring, 6 Eta Carinae, 7 V838 Monocerotis.
   const nebT = {};
   function nebTex(which) {
     const t = gl.createTexture();
@@ -2956,7 +2976,8 @@ export async function makeRender(gl, opts = {}) {
     if (!hdr) return;
     // A nebula's dust bakes once, the first time its star shows.
     const nk = v.bow[0] > 0 ? Math.round(v.bow[3]) : 0;
-    if ((nk === 6 || nk === 7) && !nebT[nk]) nebT[nk] = nebTex(nk - 6);
+    const nw = { 6: 0, 7: 1, 4: 2, 5: 3 }[nk];
+    if (nw !== undefined && !nebT[nk]) nebT[nk] = nebTex(nw);
     gl.disable(gl.BLEND);
     if (fluid && v.fluid) fluid.step(v.fluid.step);
     // The star's disk version; a frame waits while it still compiles.
