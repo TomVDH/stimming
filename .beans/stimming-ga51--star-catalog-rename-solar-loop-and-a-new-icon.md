@@ -26,3 +26,9 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 - [x] Name: Aster; Dutch Aster (ˈɑstər); toys.json, the menu tile, the page title, intro and heading, the toy doc; the folder and address stay solarloop
 - [x] Icon round 4, "a better and new icon" (Tom): a bloom first (Tom: "how is a flower relevant -- sweeping STAR with FLARE"), then a flared star (Tom: "a little less gaudy and more villeneuvian"); now one white-hot star in warm haze, a long anamorphic sweep, a short vertical flare, one faint ghost; D, the star over a tall dark monolith; round 3's emblems take its number
 - [ ] Tom picks on the sheet; the pick goes live on the menu
+
+## Spectral Sightings (Tom, 2026-11-24: "Spectral Sightings is the new name of the TOY")
+
+- [x] Name: Spectral Sightings; toys.json, the menu tile, the page title, intro and heading, the choir lab title, the toy doc; the folder and address stay solarloop
+- [ ] Dutch name: proposed Spectrale waarnemingen (spɛkˈtraːlə ˈʋaːrneːmɪŋə); Tom confirms
+- [ ] The round 4 pick (A or D) becomes the toy's emblem and favicon
