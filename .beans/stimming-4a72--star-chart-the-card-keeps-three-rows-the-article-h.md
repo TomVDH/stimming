@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-25T09:11:41Z
-updated_at: 2026-11-25T09:15:46Z
+updated_at: 2026-11-25T09:16:38Z
 parent: stimming-e35i
 ---
 
@@ -25,3 +25,5 @@ Tom (2026-11-25): prune the info card; the article header shows the full line-up
 - Checked at 1280 x 800 and 375 x 812.
 
 - Follow-up (Tom: yes): Vega mass about 2.1 M☉ (Wikipedia 2.135), the Sun 1 M☉, in facts.js.
+
+- Follow-up (Tom: yes): the Sun's radius, 1 R☉.
