@@ -45,6 +45,7 @@ export const FACTS = {
   sgra: { type: 'supermassive black hole', latin: null, cat: null, mass: 'about 4.3 million suns', turn: null, mag: null, wide: 'its horizon, about 18 suns', dist: 'about 26,700 light years', age: null, found: '1974' },
   qso: { type: 'quasar', latin: null, cat: 'HIP 60936', mass: 'about 260 million suns', turn: null, mag: 12.9, wide: 'its horizon, about 1,100 suns', dist: 'about 2.4 billion light years', age: null, found: '1963, as a quasar' },
   st218: { type: 'red supergiant, perhaps a hypergiant', name: 'Stephenson 2-18', latin: null, cat: 'IRAS 18363−0607', turn: null, mag: null, wide: 'about 1,840 suns', dist: 'about 19,000 light years', age: null, found: '1988', wiki: 'https://en.wikipedia.org/wiki/Stephenson_2_DFK_1' },
+  wohg64: { type: 'red supergiant in a dust torus · M7.5', name: 'WOH G64', latin: null, cat: 'IRAS 04553−6825', status: 'its torus imaged by VLTI in 2024, the first close-up of a star in another galaxy', turn: null, mag: '17.7 to 18.8', wide: 'about 1,540 suns', dist: 'about 163,000 light years, in the Large Magellanic Cloud', age: 'under 5 million years', found: 'the 1970s', wiki: 'https://en.wikipedia.org/wiki/WOH_G64' },
   neutron: { type: 'pulsar, a spinning neutron star', name: 'The Vela pulsar', latin: 'PSR B0833−45', cat: 'PSR J0835−4510', turn: '0.089 seconds', mag: 23.6, wide: '24 km', dist: 'about 940 light years', age: 'about 11,000 years', found: '1968' },
 };
 

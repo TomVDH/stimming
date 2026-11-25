@@ -463,7 +463,7 @@ const PICKS = [
   ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
-  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
+  ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
   ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
   ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'], ['qso', '3C 273', 'oklch(0.86 0.06 260)'],
@@ -841,7 +841,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2), holeV: new Float32Array(4), holeQ: new Float32Array(4),
-  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
+  ring: new Float32Array(4), ring2: new Float32Array(4), ring3: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
@@ -913,7 +913,9 @@ function makeFrame() {
     const side = -Math.sign((w[0] * -ey + w[1] * ex) * w[2]) || 1;
     f.ring.set([rg.tau, c[0], c[1], Math.max(Math.abs(nrm[2]), 0.02) * side]);
     f.ring2.set([Math.atan2(ey, ex), rg.glow, rg.inner ?? 0, rg.outer ?? 0]);
-  } else { f.ring.fill(0); f.ring2.fill(0); }
+    // Fomalhaut's belt by default: its dust cloud, a thin belt, clumps.
+    f.ring3.set([rg.cloud ?? 1, rg.width ?? 0.1, rg.clump ?? 0.9, 0]);
+  } else { f.ring.fill(0); f.ring2.fill(0); f.ring3.fill(0); }
   // A runaway: its bow shock or wake, in the view's frame.
   const bw = star.bow;
   // The heading turns with the camera, so the arc or the wake keeps its place round the star.

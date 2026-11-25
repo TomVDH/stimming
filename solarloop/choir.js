@@ -200,6 +200,10 @@ export const GLOWNORM = {
 VOICES.st218 = VOICES.vycma;
 NORM.st218 = NORM.vycma;
 TAPNORM.st218 = TAPNORM.vycma;
+// WOH G64 sings Betelgeuse's choir.
+VOICES.wohg64 = VOICES.betelgeuse;
+NORM.wohg64 = NORM.betelgeuse;
+TAPNORM.wohg64 = TAPNORM.betelgeuse;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

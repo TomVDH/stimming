@@ -293,6 +293,17 @@ export const STARS = {
     disk: [1.9, 1.6, 0, 0.14], disk2: [150, 0.45, 0.2, 0.05], tex: [4, 2, 0, 0.75],
     wide: 'none', long: 'none', root: 98,
   },
+  // WOH G64: a red supergiant in the Large Magellanic Cloud, about 1,540 suns wide.
+  // VLTI imaged it in 2024: an egg-shaped glow inside a ragged dust torus.
+  // The thick dust hides the surface; the glow stretches across, the torus stands upright.
+  wohg64: {
+    ...FLARE, day: 25000, ribbon: 0.9, bubble: 0.1, oblate: 0.3, lump: [0.05, 1.4, 0.7, 0.3], reach: 1.7,
+    ring: { tau: 1, ratio: 0.62, angle: 1.35, glow: 1.6, cx: 0.05, cy: -0.05, inner: 0, outer: 2.3, cloud: 0, width: 0.3, clump: 1.5 },
+    row: 25, rsun: 1540, expo: 1, hotW: 1, coolW: 1.1, loop: 0.1, prom: 0.35, dust: 1.4, rays: 0.8,
+    hal: [1, 0.45, 0.12], streak: [1, 0.6, 0.3],
+    disk: [1.9, 0.6, 0.06, 0.2], disk2: [150, 0.4, 0.2, 0.05], tex: [4, 2, 0, 0.45],
+    wide: 'none', long: 'none', root: 103.83,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.

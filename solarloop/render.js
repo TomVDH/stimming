@@ -95,6 +95,9 @@ const LUTS = [
   // Stephenson 2-18: oxblood, the coolest here; its brightest light stays a dull orange.
   [['000000', 0], ['0a0101', 0.1], ['220403', 0.28], ['4e0c05', 0.46], ['86180a', 0.64], ['c23a14', 0.8], ['f07a42', 0.92], ['ffcaa8', 1]],
   [['000000', 0], ['0c0203', 0.12], ['2a0709', 0.3], ['5a1412', 0.5], ['943222', 0.68], ['d0683e', 0.84], ['f8d8c4', 1]],
+  // WOH G64: a dust-veiled glow, rust to amber gold; the torus burnt orange.
+  [['000000', 0], ['0e0402', 0.1], ['341004', 0.26], ['782a06', 0.44], ['c45a12', 0.62], ['f09a2e', 0.78], ['ffd27a', 0.9], ['fff4d8', 1]],
+  [['000000', 0], ['0e0402', 0.12], ['361204', 0.3], ['74300a', 0.5], ['b85818', 0.68], ['e89048', 0.84], ['fde2c0', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -466,7 +469,7 @@ uniform vec4 uNs, uNsU, uNsV;
 // How hard a pulsar's flashes may flash: 1 at its true rate, near 0.2 when fast enough to flicker.
 uniform float uFlashW;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
-uniform vec4 uRing, uRing2;
+uniform vec4 uRing, uRing2, uRing3;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
 // uBinN: the disc's axis in the view frame.
 uniform vec4 uBin, uBinD, uBinN;
@@ -838,6 +841,7 @@ void main() {
   // and barely dims the star. Tilted, so an ellipse; the star hides the far half.
   // uRing.yz: the belt's centre in R; uRing.w: the minor ratio, its sign the near half.
   // uRing2: the major axis's angle, the glow, the inner belt's radius, the main belt's radius.
+  // uRing3: the dust cloud's weight, the belt's outer width, the clump strength.
   if (uRing.x > 0.0) {
     vec2 d = P / R - uRing.yz;
     float ca = cos(uRing2.x), sa = sin(uRing2.x), k = abs(uRing.w);
@@ -847,11 +851,11 @@ void main() {
     float rho = length(pl), rb = uRing2.w;
     float ang = atan(pl.y, pl.x);
     // Clumps along the belt, as Hubble and JWST show it.
-    float clump = 0.55 + 0.9 * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
-    float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * 0.1));
-    float inner = 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
+    float clump = 0.55 + uRing3.z * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
+    float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * uRing3.y));
+    float inner = uRing2.z <= 0.0 ? 0.0 : 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
     vec2 cp = vec2(-0.45, 0.72) * rb;
-    float cloud = 0.45 * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
+    float cloud = 0.45 * uRing3.x * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
     float hide = e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
     // Dust scatters forward: the near half glows a little brighter.
     float fwd = 0.75 + 0.5 * smoothstep(0.0, -0.8 * rb * k, e.y * sign(uRing.w));
@@ -1721,6 +1725,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uFlashW, v.flashW);
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
+    gl.uniform4fv(s.u.uRing3, v.ring3);
     gl.uniform4fv(s.u.uBin, v.bin);
     gl.uniform4fv(s.u.uBinD, v.binD);
     gl.uniform4fv(s.u.uBinN, v.binN);
