@@ -3,8 +3,9 @@
 title: 'Share cards: standard SEO images per toy in Stimming''s style'
 status: draft
 type: feature
+priority: normal
 created_at: 2026-11-25T08:58:17Z
-updated_at: 2026-11-25T08:58:17Z
+updated_at: 2026-11-25T18:12:48Z
 ---
 
 Tom, 2026-11-25: standard generation of SEO images in our style, with the toy's full-colour icon.
@@ -17,3 +18,8 @@ Each toy gets one og:image (1200 x 630) made from its data: name, full-colour me
 - [ ] Spike: a generator script in tools/ and three sample cards for Tom
 - [ ] Meta tags: og:image, twitter:card per toy page (touches every toy page: Tom's yes, own worktree and PR)
 - [ ] Pages: the cards publish with the site
+- [ ] Bench: a share-card view that renders a toy's 1200 x 630 card from the chosen icon
+
+## Notes
+
+- Tom, 2026-11-25: part of the new toy bench. The cards come from the icon the bench picks. The bench session has the handoff.
