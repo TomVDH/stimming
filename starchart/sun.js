@@ -783,7 +783,7 @@ function flareStrands(fl, B, out, n) {
       const q = m => hash(fl.seed * 17 + k, m, 91);
       const A = footT(rg, turn, (q(3) - 0.5) * 8, -rg.len * (0.5 + 0.1 * q(4)));
       const Bf = footT(rg, turn, (q(5) - 0.5) * 8, rg.len * (0.5 + 0.1 * q(6)));
-      const I = ropeI * 0.3 * (0.7 + 0.6 * q(7)) * (1 - 0.4 * fray);
+      const I = ropeI * 0.5 * (0.7 + 0.6 * q(7)) * (1 - 0.4 * fray);
       const twR = tube * (0.4 + 0.5 * fray);
       n = put(out, n, A, hr * (0.94 + 0.12 * q(9)), Bf, (q(10) - 0.5) * 0.2, tube * (0.5 + 0.2 * q(11)), I, q(12) * 7 + k, 0, twR, 1.1 + 0.5 * q(13), k * 2.094 + q(14) + t * 0.35, 6);
     }
@@ -798,11 +798,13 @@ function flareStrands(fl, B, out, n) {
     const lt = Math.log10(0.9e6 + 21e6 * Math.exp(-tau / 1.6));
     const em = sstep(0, 0.25, tau) * Math.exp(-tau / 30) * (1 - sstep(30, 40, tau));
     // Every band sees the snap; then each sees the loop at its own temperature.
-    const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
+    // A newborn loop glows hot and broad, as in 131 A, before it cools into a sharp 171 A loop.
+    const hot = clamp((lt - 6.3) / 0.8);
+    const I = (resp(lt) + 0.9 * hot + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
     // An arcade loop is one plasma tube; each has its own width, lean and shear.
-    const tube = (3.5 + 0.12 * a) * (0.6 + 0.8 * q(15));
+    const tube = (3.5 + 0.12 * a) * (0.6 + 0.8 * q(15)) * (1 + 0.8 * hot);
     // Early loops lie sheared along the neutral line; later ones stand square to it.
     const sh = (q(16) - 0.5) * 36 * Math.exp(-j / 7);
     const A = foot(rg, a, off + sh), Bf = foot(rg, -a, off - sh);
