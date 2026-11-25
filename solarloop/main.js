@@ -16,6 +16,13 @@ import { makeClock } from './clock.js';
 import { makeSStars } from './sstars.js';
 import { makeCard, CARD_STYLES } from './card.js';
 import { cardLines } from './facts.js';
+
+// Dev shows always on this toy (Tom, 2026-11-24): the address gains ?dev before the bar reads it.
+if (!new URLSearchParams(location.search).has('dev')) {
+  const u = new URL(location.href);
+  u.searchParams.set('dev', '');
+  history.replaceState(history.state, '', u);
+}
 mark('libs');
 
 const ID = 'solarloop';
@@ -414,7 +421,7 @@ const FX = [
   ['fxRays', 'Post', 'Light rays', 0, 3, 1, 2, 'Shafts of light streaming out from the star.'],
   ['fxHal', 'Post', 'Halation', 0, 3, 1, 1, 'The red glow film gives round bright light.'],
   ['fxSplit', 'Post', 'Colour split', 0, 4, 1, 3, 'Red and blue fringes toward the frame\'s edge, as a lens splits colour.'],
-  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1, 3, 'Hot air above the limb bends what lies behind it.'],
+  ['fxShimmer', 'Post', 'Heat shimmer', 0, 4, 1, 3, 'Hot air above the limb bends what lies behind it. Stars only.'],
   ['fxDirt', 'Post', 'Lens dirt', 0, 4, 1, 4, 'Smudges on the glass that catch the star\'s light.'],
   ['fxRoll', 'Post', 'Highlight roll-off', 0, 2, 1, 1, 'The brightest parts fade to warm white, as on film.'],
   ['fxVig', 'Post', 'Vignette', 0, 2, 1, 1, 'The frame darkens toward its corners.'],
@@ -422,8 +429,16 @@ const FX = [
   ['fxVol', 'Volume', 'Haze density', 0, 4, 1, 2, 'How thick the haze and dust round the star are.'],
   ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1, 1, 'How much starlight the haze scatters.'],
   ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1, 1, 'The star\'s outer atmosphere, seen on the full view.'],
-  ['fxDenoise', 'Volume', 'Haze denoise', 0, 1.1, 1, 1, 'Blends the haze with past frames at rest, so its speckle settles; moving views take none.'],
+  ['fxDenoise', 'Volume', 'Haze denoise', 0, 1.1, 1, 1, 'Blends a live march with past frames at rest, so its speckle settles: Beta Lyrae\'s gas and the pulsar\'s beams. The baked haze needs none.'],
   ['fxBend', 'Volume', 'Corona bend', 0, 3, 1, 3, 'How much the corona\'s streamers curve on the full view.'],
+  // The black holes and the quasar have their own volume; the star rows above grey out there.
+  ['fxHCloud', 'Black hole', 'Cloud density', 0, 4, 1, 2, 'How thick the cloud layer round a black hole\'s disc is.'],
+  ['fxHCLight', 'Black hole', 'Cloud light', 0, 4, 1, 2, 'How brightly the clouds glow with the disc\'s light.'],
+  ['fxHDisc', 'Black hole', 'Disc light', 0, 3, 1, 2, 'The flat disc under the clouds, and its photon ring.'],
+  ['fxHTorus', 'Black hole', 'Dusty torus', 0, 3, 1, 2, 'The quasar\'s ring of dust round its disc.'],
+  ['fxHBlr', 'Black hole', 'Broad-line clouds', 0, 3, 1, 2, 'The quasar\'s bright clumps that orbit above and below its disc.'],
+  ['fxHWinds', 'Black hole', 'Winds', 0, 3, 1, 2, 'The gas the quasar\'s disc blows off its faces.'],
+  ['fxHJet', 'Black hole', 'Jet', 0, 3, 1, 2, 'The quasar\'s jet along its spin axis.'],
   ['fxOrb', 'Flare', 'Orb', 0, 3, 1, 1, 'The soft round glow of the lens flare.'],
   ['fxStreak', 'Flare', 'Streak', 0, 3, 1, 1, 'The thin horizontal anamorphic streak.'],
   ['fxGhost', 'Flare', 'Ghosts', 0, 3, 1, 1, 'The rimmed discs a bright light throws across the frame.'],
@@ -446,6 +461,20 @@ const gradeRows = () => [
 ];
 const gv = (id, d) => ui?.setting?.(id)?.value ?? d;
 // A knob's value: its Dev row, else the default.
+// The Dev rows that act on the object in view; the others grey out.
+let devKind = '';
+// The haze is baked, so only a live march (a binary's gas, a pulsar's beams) needs Haze denoise.
+function devRows(star) {
+  const hole = star.hole;
+  const k = hole ? (hole.qso ? 'qso' : 'hole') : star.bin || star.ns ? 'live' : 'star';
+  if (k === devKind || !ui?.setting) return;
+  devKind = k;
+  const on = (ids, yes) => { for (const id of ids) { const h = ui.setting(id); if (h) h.disabled = !yes; } };
+  on(['fxVol', 'fxVolLight', 'fxCorona', 'fxBend'], !hole);
+  on(['fxDenoise'], k === 'live');
+  on(['fxHCloud', 'fxHCLight', 'fxHDisc'], k !== 'star');
+  on(['fxHTorus', 'fxHBlr', 'fxHWinds', 'fxHJet'], k === 'qso');
+}
 const fxv = id => {
   const [, , , , , d, reach] = FX.find(f => f[0] === id);
   const v = ui?.setting?.(id)?.value ?? d;
@@ -494,7 +523,7 @@ const ui = initPage({ id: ID, bar: {
   actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }, { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() }],
   settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
   quality: true,
-  // Tuning for the people who build the toy; the Dev button shows with ?dev.
+  // Tuning for the people who build the toy; the Dev button always shows here.
   dev: [
     ...FX.map(([id, group, label, min, max, value, , hint]) => ({ type: 'slider', id, group, label, hint, min, max, step: 0.05, value, persist: true, onInput: () => poke() })),
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
@@ -888,15 +917,18 @@ function makeFrame() {
   });
   // A black hole: the trace replaces the disk; no loops, haze, corona or glare.
   const hole = star.hole;
+  devRows(star);
   f.count = hole ? 0 : strands(sun, st.time, { star: shown, activity: act, spin: pulsarTurns(STARS[shown]) ? 0 : st.spin }, ren.data);
-  f.hole.set(hole ? [1, hole.tilt, hole.light, hole.heat] : [0, 0, 0, 0]);
+  const hd = fxv('fxHDisc');
+  f.hole.set(hole ? [1, hole.tilt, hole.light * hd, hole.heat] : [0, 0, 0, 0]);
   f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
   f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
   // The volumetric layer over a hole's disc, and a quasar's torus, clouds and winds.
   const hv = hole?.vol, hq = hole?.qso;
-  f.holeV.set(hv ? [1, hv.dens, hv.light, hq ? 40 : 18] : [0, 0, 0, 0]);
-  f.holeQ.set(hq ? [1, hq.torus, hq.clouds, hq.winds] : [0, 0, 0, 0]);
-  f.jet = star.jet;
+  // The clouds take the disc's light too, so Disc light divides out of theirs.
+  f.holeV.set(hv ? [1, hv.dens * fxv('fxHCloud'), hv.light * fxv('fxHCLight') / Math.max(hd, 1e-3), hq ? 40 : 18] : [0, 0, 0, 0]);
+  f.holeQ.set(hq ? [1, hq.torus * fxv('fxHTorus'), hq.clouds * fxv('fxHBlr'), hq.winds * fxv('fxHWinds')] : [0, 0, 0, 0]);
+  f.jet = star.jet * (hole ? fxv('fxHJet') : 1);
   // A giant ring system drifts slowly across the star, so its bands sweep the disk.
   const rg = star.ring;
   if (rg) {
@@ -1050,6 +1082,7 @@ function makeFrame() {
   f.lens = weight('long');
   // The full view's half exposure is for a bright disk; a black hole keeps its light.
   f.full = hole ? 0 : weight('full');
+  // Heat haze is a star's; a black hole and the quasar take none (Tom, 2026-11-24).
   f.shimmer = calm || hole ? 0 : 2.2 * view.W / cssW;
   return f;
 }
