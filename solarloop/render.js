@@ -1713,6 +1713,30 @@ in vec2 vUv;
 out vec4 o;
 void main() { o = mix(texture(uCur, vUv), texture(uHist, vUv), uW); }`;
 
+// Dev picture options (Tom, 2026-11-24): motion blur from the camera's move, then frame blending.
+// uMv maps this frame's uv to where that point stood last frame: uv * xy + zw.
+// uBlur: the shutter, 0 to 1 of the move. uBlend: the last frame's share.
+const POST = `${HEAD}
+uniform sampler2D uSrc, uPrev;
+uniform vec4 uMv;
+uniform float uBlur, uBlend;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 back = (vUv * uMv.xy + uMv.zw - vUv) * uBlur;
+  vec3 c = vec3(0.0);
+  // Eight taps across the move, centred on this frame.
+  for (int i = 0; i < 8; i++) c += texture(uSrc, vUv + back * (float(i) / 7.0 - 0.5)).rgb;
+  c /= 8.0;
+  o = vec4(mix(c, texture(uPrev, vUv).rgb, uBlend), 1.0);
+}`;
+// Copies a texture to the screen.
+const COPY = `${HEAD}
+uniform sampler2D uSrc;
+in vec2 vUv;
+out vec4 o;
+void main() { o = texture(uSrc, vUv); }`;
+
 // A three-tap blur along one axis: it hides the march dither, as in Fire.
 const BLUR = `${HEAD}
 uniform sampler2D uSrc;
@@ -2197,6 +2221,8 @@ export async function makeRender(gl, opts = {}) {
     blur: program(gl, TRI_VS, BLUR),
     acc: program(gl, TRI_VS, ACC),
     final: program(gl, TRI_VS, FINAL),
+    post: program(gl, TRI_VS, POST),
+    copy: program(gl, TRI_VS, COPY),
     ...(opts.fluid ? fluidPrograms(gl) : {}),
   });
   const empty = gl.createVertexArray();
@@ -2296,10 +2322,21 @@ export async function makeRender(gl, opts = {}) {
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // The haze history is empty until a first frame fills it.
   let histOk = false;
+  // The post targets: the final picture and two history frames, made only while a post option is on.
+  let post = null;
+  function freePost() { if (post) { free(gl, post.src); free(gl, post.h[0]); free(gl, post.h[1]); post = null; } }
+  function postTargets() {
+    if (!post) {
+      const mk = () => target(gl, W, H, { format: gl.RGBA8, clear: true });
+      post = { src: mk(), h: [mk(), mk()], i: 0, fresh: true };
+    }
+    return post;
+  }
   // shift: the volume's size as a power of two below the frame; 1 is half size.
   function resize(w, h, shift = 1) {
     W = Math.max(2, w); H = Math.max(2, h);
     gl.canvas.width = W; gl.canvas.height = H;
+    freePost();
     free(gl, hdr); free(gl, rays); free(gl, volA); free(gl, volB); free(gl, volH); free(gl, volO);
     hdr = target(gl, W, H);
     rays = target(gl, Math.max(2, W >> 1), Math.max(2, H >> 1));
@@ -2501,7 +2538,25 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(f.u.uDpr, v.dpr);
     gl.uniform1f(f.u.uDip, v.dip ?? 1);
     gl.uniform1f(f.u.uRow, B.row);
+    // v.post: blur, blend and the move map; with both off the final pass draws to the screen.
+    const pp = v.post && (v.post.blur > 0 || v.post.blend > 0) ? postTargets() : (freePost(), null);
+    tri(gl, pp ? pp.src : null, empty);
+    if (!pp) return;
+    const q = P.post, prev = pp.h[pp.i], next = pp.h[1 - pp.i];
+    gl.useProgram(q.p);
+    bind(gl, q, 'uSrc', 0, pp.src);
+    bind(gl, q, 'uPrev', 1, prev);
+    gl.uniform4fv(q.u.uMv, v.post.mv);
+    gl.uniform1f(q.u.uBlur, v.post.blur);
+    // The first frame has no history to blend.
+    gl.uniform1f(q.u.uBlend, pp.fresh ? 0 : v.post.blend);
+    tri(gl, next, empty);
+    const c = P.copy;
+    gl.useProgram(c.p);
+    bind(gl, c, 'uSrc', 0, next);
     tri(gl, null, empty);
+    pp.i = 1 - pp.i;
+    pp.fresh = false;
   }
   return { resize, frame, data };
 }

@@ -290,7 +290,26 @@ function applyView() {
   // An oblate star: the view stretches its equator across the screen.
   const ob = 1 + STARS[shown].oblate;
   view.cx /= ob; view.hw /= ob;
+  // The camera sways gently on the quarter cut, half as much on the half view, not at all from the full star out.
+  view.cx += drift.x * view.hw;
+  view.cy += drift.y * view.hw;
   setRot();
+}
+// The camera's sway (Tom, 2026-11-24): a slow drift of the view, as a share of its half width.
+const drift = { x: 0, y: 0, t: 0 };
+// Its size at the quarter cut; it halves by the half view and fades out by the full star.
+const DRIFT_A = 0.006;
+const driftWeight = z => z <= 1 ? 1 - 0.5 * ease(clamp(z)) : 0.5 * (1 - ease(clamp(z - 1)));
+// Steps the sway with the drift clock; true while it moves.
+function stepDrift(dt) {
+  const a = calm ? 0 : DRIFT_A * driftWeight(cam.z);
+  if (a <= 0 && !drift.x && !drift.y) return false;
+  drift.t += dt * drifting;
+  const T = drift.t * 2 * Math.PI;
+  drift.x = a * (0.6 * Math.sin(T / 13.7) + 0.4 * Math.sin(T / 7.9 + 1.3));
+  drift.y = a * (0.6 * Math.sin(T / 11.3 + 0.7) + 0.4 * Math.sin(T / 6.1 + 2.1));
+  applyView();
+  return drifting > 0 && a > 0;
 }
 // L jumps to the next stop in Tom's order: long lens, full star, wide dome, then back.
 function toggleLens() {
@@ -601,6 +620,10 @@ const ui = initPage({ id: ID, bar: {
     // Weight 2 is the house zoom: heavy, about 3.5 s a stop (Tom, 2026-11-24).
     // Compares the pulsar redo live (Tom, 2026-11-24): the original, true physics, or true physics with the lighthouse.
     { type: 'choice', id: 'pulsarLook', group: 'Pulsar', label: 'Pulsar look', hint: 'The original, true physics, or true physics with lighthouse beams and the far strobe.', value: '2', options: [['0', 'Original'], ['1', 'True physics'], ['2', 'Lighthouse']].map(([value, label]) => ({ value, label })), onPick: () => poke() },
+    // Frames (Tom, 2026-11-24): a frame cap, frame blending and motion blur.
+    { type: 'choice', id: 'fpsCap', group: 'Frames', label: 'Frame cap', hint: 'Frames a second while the star moves; Unlimited follows the screen.', value: '0', persist: true, options: [['0', 'Unlimited'], ['60', '60'], ['30', '30'], ['24', '24']].map(([value, label]) => ({ value, label })), onPick: () => poke() },
+    { type: 'slider', id: 'frameBlend', group: 'Frames', label: 'Frame blending', hint: 'How much of the last frame stays in the new one; 0 is off.', min: 0, max: 0.9, step: 0.05, value: 0, persist: true, onInput: () => poke() },
+    { type: 'slider', id: 'motionBlur', group: 'Frames', label: 'Motion blur', hint: 'The shutter: a share of the camera move between frames. 0 is off.', min: 0, max: 1, step: 0.05, value: 0, persist: true, onInput: () => poke() },
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
@@ -994,8 +1017,14 @@ const frameState = {
   ring: new Float32Array(4), ring2: new Float32Array(4), ring3: new Float32Array(4), shell: new Float32Array(4), pair: new Float32Array(4), pair2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
+// The view on the last frame: motion blur maps each pixel to where it stood then.
+const was = { cx: 0, cy: 0, hw: 1, hh: 1 };
 function makeFrame() {
   const f = frameState;
+  // Dev frame blending and motion blur (Tom, 2026-11-24); both off by default.
+  const mv = [view.hw / was.hw, view.hh / was.hh, (view.cx - view.hw - was.cx) / (2 * was.hw) + 0.5, (view.cy - view.hh - was.cy) / (2 * was.hh) + 0.5];
+  f.post = { blur: Number(gv('motionBlur', 0)), blend: Number(gv('frameBlend', 0)), mv };
+  Object.assign(was, { cx: view.cx, cy: view.cy, hw: view.hw, hh: view.hh });
   f.view.set([view.cx, view.cy, view.hw, view.hh]);
   setRot();
   // Column-major: the rot columns are M's columns; toSun is M transposed.
@@ -1259,6 +1288,13 @@ function fluidFrame(r) {
 function frame(now) {
   raf = 0;
   if (!visible || !gl || !started) return;
+  // A Dev frame cap: frames land on an even grid, so 24 and 30 look steady.
+  // An early frame does nothing but wait for the next screen refresh.
+  const period = 1000 / (Number(gv('fpsCap', '0')) || Infinity);
+  if (period < Infinity) {
+    if (now < pace - 3) { raf = requestAnimationFrame(frame); return; }
+    pace = now - pace > period ? now + period : pace + period;
+  }
   const t0 = performance.now();
   const dt = Math.max(0, Math.min(1 / 15, (now - last) / 1000));
   last = Math.max(last, now);
@@ -1271,6 +1307,7 @@ function frame(now) {
     clock.tick(shown, clockRead());
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
     const zooming = stepZoom(dt);
+    stepDrift(dt);
     const swaying = stepSway(dt);
     const settling = stepTurnBack(dt);
     const adapting = stepEye(dt);
@@ -1320,6 +1357,8 @@ function frame(now) {
     if (again) schedule(lively ? 0 : t0 + (calmMotion() ? 66 : 33) - performance.now()); else rest();
   }
 }
+// The next frame time on the Dev cap's grid.
+let pace = 0;
 function rest() {
   snd.quiet();
   kit.rest(() => !raf && !timer && !snd.busy);
