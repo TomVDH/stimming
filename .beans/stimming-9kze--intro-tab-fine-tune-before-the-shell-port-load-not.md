@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-25T19:17:01Z
-updated_at: 2026-11-25T19:53:15Z
+updated_at: 2026-11-25T19:55:15Z
 parent: stimming-0cau
 ---
 
@@ -39,3 +39,5 @@ Tom, 2026-11-25, same session:
 - [x] Load: Hold keeps the loader up; the load line centres on the tech tags' row
 - [x] Icon colour paints the logo in every effect
 - [x] Signal's slab title set tighter and in caps, font as made: letter spacing -0.03em, word spacing -0.22em (Tom)
+
+- [x] Stars: Signal, Punch, Shutter (Tom); the arrows step through the stars, All effects shows the rest. Rare Punch in the shell: stimming-z69r

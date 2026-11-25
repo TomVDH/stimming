@@ -217,7 +217,11 @@ const TRY = /** @type {[string, string, string][]} */ ([
   ['classic', 'Classic notice', 'Shows < CLASSIC > under the title, as on a toy\'s Classic build.'],
 ]);
 const VARS = Object.keys(MADE.VARIETIES);
-const vName = (/** @type {string} */ v) => (MADE.VARIETIES[v].label || v).split(':')[0];
+// Tom's stars, 2026-11-25: Signal ships; Punch plays now and then; Shutter is kept.
+const STARS = ['signal', 'punch', 'shutter'];
+const vName = (/** @type {string} */ v) => (MADE.VARIETIES[v].label || v).split(':')[0] + (STARS.includes(v) ? ' ★' : '');
+// Starred only: the arrows step through the stars.
+const vList = () => (S.allEffects ? VARS : VARS.filter(v => STARS.includes(v)));
 const kfmt = (/** @type {number} */ v, /** @type {string} */ u) => (u === 'f' ? `${v}f` : u === 'x' ? `${(+v).toFixed(2)}×` : `${v}${u}`);
 const INV = 'stimming.inventory.';
 
@@ -276,7 +280,7 @@ function barHTML() {
   const set = (/** @type {string} */ attr, /** @type {any[][]} */ opts, /** @type {any} */ now) => opts.map(([v, l]) => `<button class="w" type="button" data-${attr}="${v}" aria-pressed="${now === v}">${l}</button>`).join('');
   const full = document.body.classList.contains('is-full');
   const row = (/** @type {string} */ cls, /** @type {string} */ l, /** @type {string} */ html) => `<span class="lab ${cls}">${l}</span><div class="bar ${cls}">${html}</div>`;
-  return row('r-play', 'Play', w('vprev', '‹', undefined, 'Previous effect') + `<button class="w" type="button" data-a="replay" title="${MADE.VARIETIES[S.variety].label}">${vName(S.variety)}${S.variety === 'strobe' ? glyph('flash') : ''}</button>` + w('vnext', '›', undefined, 'Next effect')
+  return row('r-play', 'Play', w('vprev', '‹', undefined, 'Previous effect') + `<button class="w" type="button" data-a="replay" title="${MADE.VARIETIES[S.variety].label}">${vName(S.variety)}${S.variety === 'strobe' ? glyph('flash') : ''}</button>` + w('vnext', '›', undefined, 'Next effect') + w('all', 'All effects', !!S.allEffects, 'Off: the arrows step through the starred effects only')
       + sl + w('replay', 'Replay', undefined, 'Space') + w('step', 'Step through', !!S.step, 'Stops at every step; Next or N goes on') + w('next', 'Next ›', undefined, 'N')
       + sl + w('knobs', 'Knobs', !$('.is-knobs')?.hidden) + w('full', full ? 'Leave full screen' : 'Full screen', undefined, full ? 'Escape' : ''))
     + row('r-look', 'Look', lab('Row') + set('l', [['stack', 'List'], ['line', 'Line'], ['rail', 'Rail']], S.layout)
@@ -716,9 +720,10 @@ export default {
       }
       if (ds.al) S.align = ds.al;
       if (ds.l) S.layout = ds.l;
-      const vi = VARS.indexOf(S.variety);
-      if (ds.a === 'vprev') S.variety = VARS[(vi + VARS.length - 1) % VARS.length];
-      if (ds.a === 'vnext') S.variety = VARS[(vi + 1) % VARS.length];
+      const L = vList(), vi = L.indexOf(S.variety);
+      if (ds.a === 'vprev') S.variety = L[(vi + L.length - 1) % L.length];
+      if (ds.a === 'vnext') S.variety = L[(vi + 1) % L.length];
+      if (ds.a === 'all') S.allEffects = !S.allEffects;
       if (ds.a === 'gate') S.noGate = !S.noGate;
       if (ds.a === 'notes') S.notes = S.notes === false;
       if (ds.slow !== undefined) S.slow = +ds.slow;
