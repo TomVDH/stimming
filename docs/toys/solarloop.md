@@ -118,9 +118,9 @@ Ten objects picked for their looks, their size or their distance. Each card's fa
 | VFTS 352 | `stimming-4xq2` | Two O stars in contact. A twin disk 1.85 R out (`uPair`), joined by a smooth union: a darker neck, a peanut side on, one disk end on. Tidally locked, so the turn swings the twin round once every 27 hours, about 10 s at x10k |
 | XX Trianguli | `stimming-usfc` | An orange giant with dark ragged caps round both poles and one spot wider than the Sun (`starspot`), in the star's frame, turning every 24 days |
 | Epsilon Aurigae | `stimming-ruz6` | A yellow-white supergiant (200 suns here) held mid-eclipse behind a dusty disc 3.8 AU wide, seen edge on (`discE`): a dark slab 2.04 by 0.26 R that blocks 70 percent of the light, its rim lit, a hidden B star glowing at its heart. A true eclipse lasts about two years every 27 |
-| Mothra | `stimming-ggkj` | A gold hypergiant (271 suns) with a blue supergiant partner (60 suns) drawn in the cool channel (`uPair2`). Far out the host galaxy grows in as a thin pink arc, the pair a point on it (the runaway block's kind 2). The unseen lens is not drawn |
+| Mothra | `stimming-ggkj` | A gold hypergiant (271 suns) with a blue supergiant partner (60 suns) drawn in the cool channel (`uPair2`). The full view stands 80 times back, so the pair is a pip on its lensed host galaxy, a thin pink arc (the runaway block's kind 2), shown at every zoom (Tom, 2026-11-24). The unseen lens is not drawn |
 | Pōwehi (M87*) | `stimming-rg9y` | The first black hole imaged (EHT, 2019), 6.5 billion suns. A hole entry with no new code: the ring about 17 degrees from face on (tilt 1.27), the cloud layer, a short jet near the line of sight, an ember-to-gold ramp; no torus, clouds or winds. The full view stands 3 times back |
-| Earendel | `stimming-3me5` | Perhaps the most distant star, a hot B star (200 suns here, if it is one star). Far out it sits on the thin red Sunrise Arc |
+| Earendel | `stimming-3me5` | Perhaps the most distant star, a hot B star (200 suns here, if it is one star). The full view stands 80 times back: the star is a pip on the thin red Sunrise Arc (Tom, 2026-11-24) |
 
 The swatch kinds `cocoon`, `core`, `shells`, `disc` and `arc` draw as plain stars until the star tray cleanup (`stimming-9zar`) draws them.
 
