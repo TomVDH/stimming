@@ -157,19 +157,23 @@ export function makeCard(o) {
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
       }
-      // The i key's hint shows a beat after the card, under it (Tom, 2026-11-24).
-      if (hint) {
+      // The i key's hint shows a beat after the card, at its foot (Tom, 2026-11-24).
+      const foot = () => {
+        if (!hint) return;
         const tip = h('p', 'c-hint');
         tip.append(h('kbd', null, 'i'), ' again for the article');
         box.append(tip);
         if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
-      }
+      };
       if (style === 'caption') {
-        if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
-        else caption(c);
+        if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); foot(); later(fade, HOLD); return; }
+        // The caption makes its empty lines at once, so the hint lands under them.
+        caption(c);
+        foot();
         return;
       }
       const parts = build(c);
+      foot();
       if (RM.matches) { later(fade, HOLD); return; }
       if (style === 'stamp') stamp(parts); else intro(parts);
     },
