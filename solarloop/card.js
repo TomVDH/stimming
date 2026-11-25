@@ -155,21 +155,21 @@ export function makeCard(o) {
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
       }
-      // The i key's hint shows a beat after the card, under it (Tom, 2026-11-24).
+      if (style === 'caption') {
+        if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
+        else caption(c);
+      } else {
+        const parts = build(c);
+        if (RM.matches) later(fade, HOLD);
+        else if (style === 'stamp') stamp(parts); else intro(parts);
+      }
+      // The i key's hint shows under the facts, a beat after the card (Tom, 2026-11-24).
       if (hint) {
         const tip = h('p', 'c-hint');
         tip.append(h('kbd', null, 'i'), ' again for the article');
         box.append(tip);
         if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
       }
-      if (style === 'caption') {
-        if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
-        else caption(c);
-        return;
-      }
-      const parts = build(c);
-      if (RM.matches) { later(fade, HOLD); return; }
-      if (style === 'stamp') stamp(parts); else intro(parts);
     },
     fade,
     clear,
