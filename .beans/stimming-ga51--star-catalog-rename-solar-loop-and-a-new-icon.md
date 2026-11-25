@@ -32,3 +32,9 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 - [x] Name: Spectral Sightings; toys.json, the menu tile, the page title, intro and heading, the choir lab title, the toy doc; the folder and address stay solarloop
 - [x] Dutch name: Sterrenkaart (ˈstɛrəkaːrt), a star chart (Tom: "what is a good name for a star chart")
 - [x] Tom picks round 4 A, the star in haze: the menu tile and its hook, the intro emblem (shared/emblems/solarloop.svg) and the favicon (tools/favicons.mjs, Playwright 1.63.0)
+
+## Star Chart (Tom, 2026-11-24: "Star Chart is the name of the toy", "change slug too")
+
+- [x] Name: Star Chart, Dutch Sterrenkaart, everywhere Spectral Sightings stood
+- [x] The pick on the sheet: icons/picks.json, solarloop A of solarloop-4
+- [ ] Slug: solarloop to starchart, with a redirect at solarloop/; after starcatalog-weather lands
