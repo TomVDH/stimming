@@ -81,14 +81,20 @@ Beta Lyrae (Sheliak), about 1,000 light years away (Tom, 2026-11-24): a blue-whi
 - Eclipses come from the volume itself: gas in front dims the donor, and the march stops at the donor's surface, so the donor hides gas behind it. A faint jet with travelling knots rises from each face of the disc.
 - The full view stands 3.1 times farther back, so the pair fits; the march reaches 7.6 radii. The donor's surface is a B giant's, blue white; the disc, the stream and the jets take the cool ramp, warm white. The donor is drawn round, not drawn out toward its partner as a Roche lobe would make it.
 
-## The ringed star: Fomalhaut (bean `stimming-l4n7`)
+## The ringed stars: Fomalhaut and J1407b (bean `stimming-l4n7`)
 
-Fomalhaut (Alpha Piscis Austrini), a white A3 V star 25 light years away, about 1.8 suns wide and 440 million years old, ringed by a belt of icy dust (Tom, 2026-11-24: "do we have an actual ring star we can pick", then swap it in). It replaces the J1407b ring model. Hubble imaged the belt in 2008 and JWST in 2023.
+Fomalhaut (Alpha Piscis Austrini), a white A3 V star 25 light years away, about 1.8 suns wide and 440 million years old, ringed by a belt of icy dust (Tom, 2026-11-24: "do we have an actual ring star we can pick", then swap it in). Hubble imaged the belt in 2008 and JWST in 2023.
 
 - A narrow main belt, 133 to 158 AU out in nature, with a sharp inner edge and clumps along it; its centre sits a little off the star, as the real belt's does. A faint inner belt lies about halfway in, and a soft dust cloud, the object once called Fomalhaut b, sits just inside the main belt.
 - Scaled: the true belt lies about 15,000 star radii out; here the main belt runs at 6 radii, so the whole system frames. Tilted about 66 degrees, as we see it, so it draws as an ellipse.
 - The dust is thin: it glows with scattered starlight, a little brighter on the near half, and dims the star only faintly. The star hides the far half. The belt hangs in space: a drag turns its plane in 3D with the camera.
 - The full view stands 2.4 times farther back. The star takes a white ramp with a breath of blue; the belt a warm grey.
+
+J1407b joins as its own body beside Fomalhaut (Tom, 2026-11-25: "Build the rings too"): the young K5 star V1400 Centauri (about 0.96 suns wide, 3.2 d rotation) eclipsed in 2007 by a companion carrying at least 37 concentric rings 0.6 AU (180 million km) across.
+
+- Shares the `uRing` block with `uRing3.w` set to 1: 37+ concentric ringlets with three exomoon-carved gaps (including the wide Kenworthy-Mamajek gap), Keplerian shimmer, and warm starlight illumination strongest near V1400 Centauri.
+- The companion sits off to the left and in front of V1400 Centauri (`cz: 1.5`), so a drag shows real 3D foreground parallax, the right wing of the rings sweeps across and eclipses the star behind dense bands while exomoon gaps transmit sunlight, and the companion shows a dark sphere with a thin sunlit crescent rim, a conical shadow across its own rings, and the near rings crossing in front of its face.
+- Full view stands 3.4 times back. Warm orange K5 ramp for V1400 Centauri and warm amber-ivory ramp for the rings (`row: 31`). Shares Fomalhaut's warm ringed choir at root G sharp 3 (207.65 Hz).
 
 ## The Wolf-Rayet star (bean `stimming-gzrx`)
 

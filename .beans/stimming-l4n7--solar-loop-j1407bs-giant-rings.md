@@ -23,4 +23,4 @@ Tom, 2026-11-24: picked from the object list. A ring system about 180 million km
 
 Asked: build the rings too, or close the bean? Tom: "Build the rings too". J1407b comes back as its own body beside Fomalhaut.
 
-- [ ] Look: J1407b's ring system crossing V1400 Centauri, its own body
+- [x] Look: J1407b's ring system crossing V1400 Centauri, its own body

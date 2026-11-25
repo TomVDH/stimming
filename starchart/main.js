@@ -578,7 +578,7 @@ const PICKS = [
   ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['przyb', 'Przybylski\'s star', 'oklch(0.9 0.09 100)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
   ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
-  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'], ['polaris', 'Polaris', 'oklch(0.92 0.06 95)'], ['hubblev1', 'Hubble V1', 'oklch(0.86 0.1 80)'], ['gaiabh1', 'Gaia BH1', 'oklch(0.84 0.13 80)'],
+  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['fomalhaut', 'Fomalhaut', 'oklch(0.93 0.03 240)'], ['j1407', 'J1407b', 'oklch(0.78 0.15 58)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'], ['polaris', 'Polaris', 'oklch(0.92 0.06 95)'], ['hubblev1', 'Hubble V1', 'oklch(0.86 0.1 80)'], ['gaiabh1', 'Gaia BH1', 'oklch(0.84 0.13 80)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'], ['rlep', 'R Leporis', 'oklch(0.52 0.2 25)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['etacar', 'Eta Carinae', 'oklch(0.74 0.11 60)'], ['v838', 'V838 Monocerotis', 'oklch(0.6 0.17 35)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['uhz1', 'UHZ1', 'oklch(0.65 0.18 305)'], ['momz14', 'MoM-z14', 'oklch(0.55 0.16 25)'], ['eincross', 'Einstein Cross', 'oklch(0.86 0.06 250)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['gargantua', 'Gargantua', 'oklch(0.82 0.11 70)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
@@ -1226,7 +1226,7 @@ function makeFrame() {
     // The rings hang in space: the camera's turn carries their centre and their tilt.
     // Rings round the star stay centred on it; a companion's drift slowly across.
     const sway = rg.outer ? 0 : 1;
-    const c = camView([rg.cx + 7 * sway * Math.sin(st.time * 0.03), rg.cy + 2 * sway * Math.cos(st.time * 0.021), 0]);
+    const c = camView([rg.cx + 7 * sway * Math.sin(st.time * 0.03), rg.cy + 2 * sway * Math.cos(st.time * 0.021), rg.cz ?? 0]);
     // The ring plane in 3D: its normal leans so the rings draw at the axis ratio, then the drag turns it.
     // On screen the ellipse's major axis lies across the normal; its minor ratio is the normal's depth.
     const sq = Math.sqrt(1 - rg.ratio * rg.ratio);
@@ -1239,8 +1239,8 @@ function makeFrame() {
     const side = -Math.sign((w[0] * -ey + w[1] * ex) * w[2]) || 1;
     f.ring.set([rg.tau, c[0], c[1], Math.max(Math.abs(nrm[2]), 0.02) * side]);
     f.ring2.set([Math.atan2(ey, ex), rg.glow, rg.inner ?? 0, rg.outer ?? 0]);
-    // Fomalhaut's belt by default: its dust cloud, a thin belt, clumps.
-    f.ring3.set([rg.cloud ?? 1, rg.width ?? 0.1, rg.clump ?? 0.9, 0]);
+    // Fomalhaut's belt by default; w = 1 switches to J1407b's 37+ banded eclipsing rings.
+    f.ring3.set([rg.cloud ?? 1, rg.width ?? 0.1, rg.clump ?? 0.9, rg.bands ? 1 : 0]);
   } else { f.ring.fill(0); f.ring2.fill(0); f.ring3.fill(0); }
   // A runaway: its bow shock or wake, in the view's frame.
   const bw = star.bow;

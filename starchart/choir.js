@@ -270,6 +270,10 @@ TAPNORM.mira = TAPNORM.betelgeuse;
 // Powehi sings Sagittarius A*'s choir, lower.
 VOICES.powehi = VOICES.sgra;
 VOICES.gargantua = VOICES.sgra;
+// J1407b shares Fomalhaut's warm ringed choir, slightly deeper and wider.
+VOICES.j1407 = VOICES.fomalhaut;
+NORM.j1407 = NORM.fomalhaut;
+TAPNORM.j1407 = TAPNORM.fomalhaut;
 // A preset from a relative's: its sound, with changes; fx lists only the effects to turn on.
 const from = (id, o = {}) => ({ ...VOICES[id], ...o, oct: o.oct || VOICES[id].oct, fx: o.fx ? fxOn(o.fx) : VOICES[id].fx });
 // The bodies of 2026-11-24 evening (Tom: "the choir tool to have the latest bodies").

@@ -9,20 +9,20 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 50 |
-| Picked by Tom, not built | 1 |
+| Built, in the tray | 51 |
+| Picked by Tom, not built | 0 |
 | Asked for by Tom, not built | 0 |
 | Offered, no answer | 13 |
 | Offered, not picked | 9 |
 | Parked | 4 |
 
-## Built (50)
+## Built (51)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
 | Group | Bodies |
 |---|---|
-| Stars | Sun, Proxima, Epsilon Eridani, Procyon, Przybylski's star (`xwce`), Sirius, Vega, Regulus, Zeta Ophiuchi, Fomalhaut, Arcturus |
+| Stars | Sun, Proxima, Epsilon Eridani, J1407b (`l4n7`), Procyon, Przybylski's star (`xwce`), Sirius, Vega, Regulus, Zeta Ophiuchi, Fomalhaut, Arcturus |
 | Giants | Polaris (`br7d`), Hubble V1 (`81qy`), Rigel, Mira (`gico`), Betelgeuse, R Leporis (`7rv1`), VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
 | Newborn and failed | T Tauri, Luhman 16, WISE 0855 |
 | Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Eta Carinae (`je5g`), Gaia BH1 (`xz78`), Thorne–Żytkow object (`ye4c`) |
@@ -35,7 +35,7 @@ Tom's notes on built bodies:
 
 - Sagittarius A*: the S stars orbit it; they show only while the card or the article is open.
 - Earendel and Mothra: the lens must read far more cosmic, with scale and distance. Tom expected the far stars as faint pips on the lensing.
-- Fomalhaut took the J1407b ring model's place (`l4n7`), after Tom asked for a real ring star; on 2026-11-25 Tom asked for J1407b too.
+- Fomalhaut took the J1407b ring model's place (`l4n7`), after Tom asked for a real ring star; on 2026-11-25 Tom asked for J1407b too, and J1407b is now built beside Fomalhaut.
 - Pulsar: the lighthouse is the default and the only pulsar. Its tray icon was too small.
 - Crab Nebula: "looks cheap"; it needs volumetrics, scale and pizzazz (`8ljj`).
 - Brown dwarfs: the shading looks cheap. Cygnus X-1: a jump on its bright edge.
@@ -47,7 +47,7 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 
 | Bean | Object | Tom's choice |
 |---|---|---|
-| `l4n7` | J1407b's giant rings | Build it too, beside Fomalhaut (2026-11-25) |
+| None | | |
 
 ## Asked for by Tom, not built
 

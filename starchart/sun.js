@@ -255,6 +255,16 @@ export const STARS = {
     disk: [1.4, 0.4, 0.1, 0.4], disk2: [70, 0.35, 0.3, 0.06], tex: [120, 10, 0.05, 0.5],
     wide: 'none', long: 'none', root: 196,
   },
+  // J1407b: vast 37+ ring system (0.6 AU wide) round a hidden companion eclipsing V1400 Centauri in 2007.
+  // Rings sit centred left of the K5 star so their right wing sweeps across and eclipses its face.
+  j1407: {
+    ...FLARE, spots: 1.2, day: 3.2, ribbon: 1.8, sat: 1.1,
+    ring: { tau: 1, ratio: 0.34, angle: 0.28, glow: 1.45, cx: -1.65, cy: -0.22, cz: 1.5, inner: 0.42, outer: 5.8, bands: 1 }, reach: 3.4,
+    row: 31, rsun: 0.96, expo: 1, hotW: 1, coolW: 1, loop: 0.4, prom: 0.4, dust: 0.08, rays: 0.85,
+    hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
+    disk: [1.8, 0.8, 0.1, 0.38], disk2: [50, 0.9, 0.55, 0.13], tex: [130, 13, 0.18, 0.62],
+    wide: 'none', long: 'none', root: 207.65,
+  },
   // Arcturus: an orange giant, 25 suns wide.
   arcturus: {
     ...FLARE, spots: 0.4, day: 730, bubble: 0.18, lump: [0.015, 2.2, 1.2, 0.15],

@@ -36,6 +36,7 @@ export const CHART = {
   wr124: { kind: 'wind', t: 44700, cls: 'WN8h Wolf-Rayet' },
   tzo: { kind: 'tzo', t: 3500, cls: 'Thorne–Żytkow object, predicted' },
   fomalhaut: { kind: 'ringed', t: 8590, cls: 'A3 V, a dust belt' },
+  j1407: { kind: 'ringed', t: 4400, cls: 'K5 star eclipsed by 37+ giant rings' },
   betalyr: { kind: 'binary', t: 13300, cls: 'B7 II donor, interacting binary' },
   s5hvs1: { t: null, cls: 'A-type hypervelocity star' },
   siriusb: { kind: 'dwarf', t: 25000, cls: 'DA2 white dwarf' },
@@ -94,7 +95,7 @@ const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3)) 
 
 // The groups, by kind of body; an object in none of them joins "More".
 const GROUPS = [
-  ['Stars', ['proxima', 'epseri', 'sun', 'xxtri', 'procyon', 'przyb', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
+  ['Stars', ['proxima', 'epseri', 'j1407', 'sun', 'xxtri', 'procyon', 'przyb', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
   ['Giants', ['arcturus', 'polaris', 'hubblev1', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
   ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur', 'etacar', 'gaiabh1']],

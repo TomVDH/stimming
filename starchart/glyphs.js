@@ -83,7 +83,7 @@ const DRAW = {
 // Each object's kind; an object not listed draws as a main sequence star.
 export const KIND = {
   sun: 'main', proxima: 'main', epseri: 'main', procyon: 'main', przyb: 'main', sirius: 'main',
-  vega: 'spinner', regulus: 'spinner', zetaoph: 'runaway', xxtri: 'spotted', fomalhaut: 'belt', s5hvs1: 'hyper',
+  vega: 'spinner', regulus: 'spinner', zetaoph: 'runaway', xxtri: 'spotted', fomalhaut: 'belt', j1407: 'belt', s5hvs1: 'hyper',
   arcturus: 'giant', rigel: 'giant', etacar: 'bipolar', betelgeuse: 'giant', mira: 'tail', polaris: 'cepheid', hubblev1: 'cepheid', gaiabh1: 'dormant', rlep: 'giant', vycma: 'giant', st218: 'giant',
   wohg64: 'cocoon', tzo: 'core', quasi: 'quasi',
   luhman: 'brown', wise: 'brown', ttauri: 'proto',

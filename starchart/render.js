@@ -114,6 +114,9 @@ const LUTS = [
   // R Leporis: soot filters out the blue; a drop of blood, never white.
   [['000000', 0], ['0a0001', 0.1], ['2a0105', 0.28], ['60030a', 0.46], ['9c0810', 0.62], ['d01212', 0.76], ['ee3018', 0.88], ['ff5e3c', 1]],
   [['000000', 0], ['080102', 0.12], ['1e0405', 0.3], ['44090a', 0.5], ['761612', 0.68], ['b0321e', 0.84], ['e0603e', 1]],
+  // V1400 Centauri (J1407b): young orange K5 star; the 37+ rings glow warm amber-ivory.
+  [['000000', 0], ['0e0502', 0.1], ['341404', 0.25], ['7c300a', 0.43], ['c85e16', 0.6], ['f4963c', 0.76], ['ffca8e', 0.89], ['fff2e4', 1]],
+  [['000000', 0], ['0a0704', 0.12], ['2c2012', 0.3], ['6e5434', 0.5], ['b89664', 0.68], ['ecd4aa', 0.84], ['fff8ec', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -1079,19 +1082,58 @@ void main() {
     vec2 pl = vec2(e.x, e.y / k);
     float rho = length(pl), rb = uRing2.w;
     float ang = atan(pl.y, pl.x);
-    // Clumps along the belt, as Hubble and JWST show it.
-    float clump = 0.55 + uRing3.z * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
-    float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * uRing3.y));
-    float inner = uRing2.z <= 0.0 ? 0.0 : 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
-    vec2 cp = vec2(-0.45, 0.72) * rb;
-    float cloud = 0.45 * uRing3.x * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
-    float hide = e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
-    // Dust scatters forward: the near half glows a little brighter.
-    float fwd = 0.75 + 0.5 * smoothstep(0.0, -0.8 * rb * k, e.y * sign(uRing.w));
-    float L = ((belt + inner) * clump + cloud) * fwd * hide;
-    cool += uRing.x * uRing2.y * uDisk.x * L * (0.5 * uOff + 0.25 + 0.3 * uFar);
-    // The thin dust over the disk dims it only faintly.
-    hot *= 1.0 - 0.08 * belt * hide * step(r, R);
+    if (uRing3.w > 0.5) {
+      // J1407b: 37+ concentric rings with exomoon gaps eclipsing V1400 Centauri in front.
+      float rf = rho / rb;
+      float inSpan = smoothstep(uRing2.z / rb, uRing2.z / rb + 0.03, rf) * smoothstep(1.03, 0.96, rf);
+      // Multi-scale concentric ringlet optical depth plus three exomoon-carved gaps.
+      float b1 = 0.5 + 0.5 * sin(rf * 72.0 + 1.1 * sin(rf * 17.0));
+      float b2 = 0.5 + 0.5 * sin(rf * 185.0 - 0.8 * cos(rf * 31.0));
+      float b3 = 0.5 + 0.5 * sin(rf * 390.0);
+      float id = floor(rf * 38.0);
+      float vary = 0.45 + 0.55 * fract(sin(id * 127.1 + 311.7) * 43758.5453);
+      float gap1 = 1.0 - 0.96 * exp(-pow((rf - 0.61) / 0.028, 2.0));
+      float gap2 = 1.0 - 0.88 * exp(-pow((rf - 0.37) / 0.014, 2.0));
+      float gap3 = 1.0 - 0.82 * exp(-pow((rf - 0.82) / 0.011, 2.0));
+      // Subtle Keplerian shimmer along each ringlet.
+      float shim = 0.85 + 0.25 * fbm(vec3(cos(ang - uTime * 0.06 / max(rf, 0.15)) * 4.0, sin(ang - uTime * 0.06 / max(rf, 0.15)) * 4.0, rf * 18.0));
+      float tau = inSpan * vary * (0.35 + 0.45 * b1 + 0.3 * b2 + 0.15 * b3) * gap1 * gap2 * gap3 * shim;
+      // Companion planet sits at ring centre and casts shadow away from V1400 Centauri.
+      float rp = 0.22;
+      float plMask = smoothstep(rp * 1.08, rp * 0.92, length(d));
+      float farSide = step(0.0, e.y * sign(uRing.w));
+      float plHide = plMask * farSide;
+      vec2 toS = normalize(-uRing.yz + 1e-4);
+      vec2 toSp = normalize(vec2(ca * toS.x + sa * toS.y, (-sa * toS.x + ca * toS.y) / max(k, 0.08)));
+      float behindP = smoothstep(-0.05, 0.15, -dot(pl, toSp));
+      float perpP = abs(pl.x * toSp.y - pl.y * toSp.x);
+      float pSh = 1.0 - 0.82 * behindP * smoothstep(rp * 1.15, rp * 0.78, perpP);
+      // Dense rings eclipse the star while exomoon gaps transmit starlight.
+      float occ = clamp(tau * 0.82, 0.0, 0.92);
+      hot *= (1.0 - occ * step(r, R)) * (1.0 - plMask);
+      cool *= (1.0 - occ * step(r, R)) * (1.0 - plMask);
+      // Warm starlight lights the rings; near arcs cross over the planet.
+      float distS = max(length(P / R), 0.7);
+      float lit = (0.42 + 0.85 / (0.35 + distS * 0.45)) * pSh * (0.8 + 0.35 * smoothstep(0.0, -0.7 * rb * k, e.y * sign(uRing.w)));
+      // Thin sunlit crescent rim glows on the companion facing V1400 Centauri.
+      float rim = exp(-pow((length(d) - rp * 0.98) / 0.025, 2.0)) * smoothstep(-0.1, 0.7, dot(normalize(d + 1e-4), toS));
+      cool += uRing.x * uDisk.x * rim * 0.85 * (1.0 - occ * (1.0 - farSide));
+      cool += uRing.x * uRing2.y * uDisk.x * tau * lit * (1.0 - plHide) * (0.45 * uOff + 0.35 + 0.25 * uFar);
+    } else {
+      // Clumps along the belt, as Hubble and JWST show it.
+      float clump = 0.55 + uRing3.z * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
+      float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * uRing3.y));
+      float inner = uRing2.z <= 0.0 ? 0.0 : 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
+      vec2 cp = vec2(-0.45, 0.72) * rb;
+      float cloud = 0.45 * uRing3.x * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
+      float hide = e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
+      // Dust scatters forward: the near half glows a little brighter.
+      float fwd = 0.75 + 0.5 * smoothstep(0.0, -0.8 * rb * k, e.y * sign(uRing.w));
+      float L = ((belt + inner) * clump + cloud) * fwd * hide;
+      cool += uRing.x * uRing2.y * uDisk.x * L * (0.5 * uOff + 0.25 + 0.3 * uFar);
+      // The thin dust over the disk dims it only faintly.
+      hot *= 1.0 - 0.08 * belt * hide * step(r, R);
+    }
   }
   hot *= shade;
   // Beta Lyrae's partner: its disc and stream are gas in the volume pass.
