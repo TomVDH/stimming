@@ -100,6 +100,7 @@ Numbers: `docs/plans/loading.md`. The menu opens in stages and never holds for a
 
 ## Stills and loops
 
+- Tom's promoted icons (Icon tab, 2026-11-25) show as `shared/tiles/<id>.svg` images in the tile; the tile's own drawing stays, hidden, for its scripts. They hold still on hover until each card's own motion is ported (the swap bean).
 - Every main-shelf toy has one 512 px WebP still in `shared/stills/`. `tools/stills.mjs` captures them; its header holds the command and the poke per toy.
 - Renew a still when the toy's look changes. A toy that joins the main shelf needs one.
 - A toy listed in `shared/loops/index.json` plays `shared/loops/<id>.mp4` in the tube, only while in hand.
