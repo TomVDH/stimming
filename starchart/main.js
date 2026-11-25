@@ -872,7 +872,8 @@ function eruptAt(p) {
 const near = u => bendV(toView(u))[2] >= 0;
 // Taps answer only from the full star inward; far out the star is too small (Tom, 2026-11-24).
 // A black hole has no regions to flare.
-const canTap = () => cam.z <= NOTCH + 0.05 && !STARS[shown].hole;
+// Taps answer from the full star inward, and during a glide in to it, so the first tap counts.
+const canTap = () => (cam.z <= NOTCH + 0.05 || (cam.glide && cam.to <= NOTCH)) && !STARS[shown].hole;
 function pickAt(x, y) {
   let best = null, bd = Infinity, prom = false;
   if (!canTap()) return { t: best, prom, d: bd };
@@ -894,7 +895,11 @@ function pickAt(x, y) {
   return { t: best, prom, d: bd };
 }
 // A target counts as under the hand within this many CSS pixels.
-const reach = () => Math.max(56, 0.1 * Math.min(cssW, cssH));
+const reach = () => {
+  const r = Math.max(56, 0.1 * Math.min(cssW, cssH));
+  // Mid-glide the star is small: the reach shrinks with it, to 0.4 of its radius on screen.
+  return cam.z > NOTCH ? Math.min(r, 0.4 * R / view.hw * cssW / 2) : r;
+};
 // The point of the near disk under a stage point, in the star's frame, or null.
 function diskAt(x, y) {
   if (!canTap()) return null;
