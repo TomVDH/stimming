@@ -2177,10 +2177,11 @@ vec3 ringNeb(vec2 pR) {
     // The dense ring round the waist, and the barrel's thin walls.
     float ring = exp(-pow((rc - 0.72) / 0.1, 2.0)) * exp(-pow(b.z / 0.45, 2.0));
     float wall = exp(-pow((sh - 0.8) / 0.1, 2.0)) * 0.3;
-    // Dense knots stud the ring; a slower churn breaks it into clouds.
-    float kn = vn(b * 15.0 + 3.0);
-    float m = fbm(b * 3.0 + 1.0);
-    float dens = (ring + wall) * (0.35 + 1.8 * kn * kn) * (0.5 + m);
+    // Streaks, as in WR 124's wind: fine across the sky, long along each radius.
+    vec3 nd = b / max(length(b), 1e-3);
+    float stk = fbm(nd * 9.0 + vec3(0.0, 0.0, log(sh + 0.05) * 1.4));
+    float m = fbm(b * 2.0 + 1.0);
+    float dens = (ring + wall) * (0.3 + 1.4 * smoothstep(0.3, 0.75, stk)) * (0.6 + 0.6 * m);
     vec3 c = mix(vec3(0.25, 0.85, 0.75), vec3(0.95, 0.85, 0.35), smoothstep(0.55, 0.75, sh));
     c = mix(c, vec3(1.0, 0.2, 0.16), smoothstep(0.7, 0.88, sh)) * (1.0 + 0.5 * smoothstep(0.7, 0.9, sh));
     // The thin oxygen fill inside the barrel.
