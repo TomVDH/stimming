@@ -1310,6 +1310,12 @@ void main() {
     }
     I += vI * uRain * k * 1.6;
   }
+  // An erupting rope: knots of cool plasma ride its fibres, so it reads as torn plasma, not a hose.
+  if (vKind == 2.0) {
+    float fr = vS * 26.0 + vPh * 7.3 - uTime * 0.15;
+    float kr = n1(fr) * 0.6 + n1(fr * 2.3 + 3.0) * 0.6;
+    I *= 0.25 + 1.3 * kr * kr;
+  }
   // Prominences: knots of cool plasma slide down toward the feet.
   if (vKind >= 3.0) {
     float fl = foot * 40.0 + uTime * 0.6 + vPh * 13.0;

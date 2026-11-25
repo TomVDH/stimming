@@ -605,6 +605,8 @@ export const flareCurve = {
   born: j => 0.45 + 0.62 * j + 0.012 * j * j,
 };
 export const ARCADE = 22;
+// Fibres per erupting rope, and per arcade loop.
+const ROPE_FIBRES = 36, LOOP_FIBRES = 9;
 // The rope lies across the neutral line at a slant, so its arch shows side on.
 const ROPE_TURN = 0.85;
 
@@ -763,12 +765,21 @@ function flareStrands(fl, B, out, n) {
   // The rope lifts off with growing speed and leaves the frame.
   const h0 = rg.span[1] * 0.42;
   const hr = C.ropeH(t, h0);
-  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(500, 900, hr)) * fl.k;
+  // It fades as it climbs, before its legs stretch into long straight lines.
+  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(150, 420, hr)) * fl.k;
   if (ropeI > 0.002) {
-    const A = footT(rg, ROPE_TURN, 0, -rg.len * 0.6), Bf = footT(rg, ROPE_TURN, 0, rg.len * 0.6);
-    const twR = 2.5 + 0.2 * (hr - h0);
-    for (let k = 0; k < 12; k++) {
-      n = put(out, n, A, hr * (0.94 + 0.012 * k), Bf, 0.08 * Math.sin(k), 1.4 + 0.008 * hr, ropeI * 0.12, k, 0, twR * (0.7 + 0.05 * k), 0.9, k * 0.5236 + t * 0.4, 2);
+    // The rope is a bundle of fibres: a twisted tube that swells and frays as it lifts.
+    const lift = hr - h0;
+    const tube = 8 + 0.12 * lift, fray = sstep(30, 220, lift);
+    for (let k = 0; k < ROPE_FIBRES; k++) {
+      const q = m => hash(fl.seed * 17 + k, m, 91);
+      // Fibres fill the tube's cross-section evenly.
+      const rr = tube * Math.sqrt(q(1)) * (1 + 0.8 * fray * q(2));
+      const turn = rg.ropeTurn ?? ROPE_TURN;
+      const A = footT(rg, turn, (q(3) - 0.5) * 6, -rg.len * (0.55 + 0.1 * q(4)));
+      const Bf = footT(rg, turn, (q(5) - 0.5) * 6, rg.len * (0.55 + 0.1 * q(6)));
+      const I = ropeI * 0.04 * (0.4 + 1.2 * q(7)) * (1 - 0.6 * fray * q(8));
+      n = put(out, n, A, hr * (0.96 + 0.08 * q(9)), Bf, (q(10) - 0.5) * 0.12, 2.2 + 2.6 * q(11) + 0.004 * lift, I, k, 0, rr, 0.9 + 0.3 * q(12), q(13) * 6.2832 + t * 0.4, 2);
     }
   }
   // The arcade: loops snap in over the ribbons, each born hot, then cooling.
@@ -784,13 +795,16 @@ function flareStrands(fl, B, out, n) {
     const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
-    const drain = clamp((tau - 12) / 13);
-    // Three threads per arcade loop: a loop is a bundle of strands.
-    for (let k = 0; k < 3; k++) {
-      // Each thread takes its own hash slots: 20, 30, 40, 50 and 60 apart by k.
-      const A = foot(rg, a + (q(20 + k) - 0.5) * 3, off + (q(30 + k) - 0.5) * 4 + 2);
-      const Bf = foot(rg, -a + (q(40 + k) - 0.5) * 3, off + (q(50 + k) - 0.5) * 4 - 2);
-      n = put(out, n, A, a * 1.2 + 3, Bf, (q(11) - 0.5) * 0.2, 1.0 + 0.5 * q(60 + k), I * [0.7, 0.5, 0.35][k], q(14) * 7, drain);
+    // An arcade loop is a tube of fibres, so the row reads as a glowing comb.
+    const tube = 1.5 + 0.05 * a;
+    for (let k = 0; k < LOOP_FIBRES; k++) {
+      // Each fibre takes its own hash slots, 100 apart by k.
+      const r = m => hash(fl.seed * 31 + j, 100 * k + m, 78);
+      const ang = r(1) * 6.2832, rad = tube * Math.sqrt(r(2));
+      const de = Math.cos(ang) * rad, df = Math.sin(ang) * rad;
+      const A = foot(rg, a + de + (r(3) - 0.5) * 2, off + df + 2);
+      const Bf = foot(rg, -a - de + (r(4) - 0.5) * 2, off + df - 2);
+      n = put(out, n, A, (a * 1.2 + 3) * (1 + 0.05 * (r(5) - 0.5)), Bf, (q(11) - 0.5) * 0.2 + (r(6) - 0.5) * 0.08, 1.4 + 1.6 * r(7), I * 0.16 * (0.4 + 1.2 * r(8)), q(14) * 7 + r(9), clamp((tau - 12 - 8 * r(10)) / 13));
     }
   }
   return n;
@@ -800,11 +814,16 @@ function flareStrands(fl, B, out, n) {
 // A flare site where the hand taps the disk (Tom, 2026-11-24).
 // It carries what a flare needs from a region: its frame, span and length.
 // c is the tapped point in the star's frame; the bipole runs east to west.
-export function makeSite(c) {
-  let e = cross([0, 1, 0], c);
+// view: the direction to the eye in the star's frame; the arcade then faces the eye.
+export function makeSite(c, view = null) {
+  // Loops lie across e; with e square to the eye, they stand side-on at the limb.
+  let e = view ? cross(view, c) : cross([0, 1, 0], c);
+  if (Math.hypot(e[0], e[1], e[2]) < 0.05) e = cross([0, 1, 0], c);
   if (Math.hypot(e[0], e[1], e[2]) < 1e-3) e = [1, 0, 0];
   e = norm(e);
-  return { c, e, f: cross(c, e), span: [12, 60], len: 80, hk: 1, lastFlare: -1e9, site: true };
+  // A tap's flare is large, so its arcade reads at the wide view: up to about 85 Mm tall.
+  // Its rope turns nearly square to the eye too, so it lifts as an arch, not as lines.
+  return { c, e, f: cross(c, e), span: [20, 110], len: 140, hk: 1, lastFlare: -1e9, site: true, ropeTurn: view ? 1.35 : ROPE_TURN };
 }
 // The flare's pace: slower on every star, and slower still on a large one.
 // The sun runs at 0.75; a supergiant takes about four times as long.

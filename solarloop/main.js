@@ -765,7 +765,8 @@ function flareNear(x, y) {
   const { t, prom, d } = pickAt(x, y);
   if (t && d < reach()) { if (prom) eruptAt(t); else flareAt(t); return; }
   const s = diskAt(x, y);
-  if (s) flareAt(makeSite(s));
+  // The eye's direction in the star's frame: M's third row.
+  if (s) flareAt(makeSite(s, [M[2][0], M[2][1], M[2][2]]));
 }
 
 /* ---------- hover: the cursor reads the region under it ---------- */

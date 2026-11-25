@@ -14,4 +14,5 @@ Tom, 2026-11-24: refine the micro-interactions. Round 1 is stimming-hdwz.
 - [ ] Show Tom the top five; build only what he picks
 - [x] Quick flare taps run through the choir's chord (Tom, 2026-11-24); the choir picks the style (Tom: the arpeggio sounds strange on Luhman's minor choir): bright songs arpeggiate, minor songs build an open triad
 - [ ] Tom's ear on the tap runs
+- [ ] Tap flares as plasma (Tom: the flare and the ?fluid probe both look weird): fibre bundles for the rope (36) and each arcade loop (9), knots on the rope, a larger tap site whose arcade and rope face the eye, staggered rain; WIP, waiting on Tom's eye
 - [ ] Doc: Play and Frame loop sections true
