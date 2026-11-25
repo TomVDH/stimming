@@ -143,7 +143,10 @@ float cells(vec3 p) {
 // RK4 on x'' = -1.5 h^2 x / r^5, the bend of light near a Schwarzschild hole.
 // The disc lies in y = 0 of the hole's frame, from the ISCO to ROUT.
 const HOLE = `
-const float BCRIT = ${BCRIT.toFixed(3)}, RIN = 3.0, ROUT = 14.0, REXIT = 40.0, SKYD = 40.0, TAU = 6.2831853;
+const float BCRIT = ${BCRIT.toFixed(3)}, RIN = 3.0, ROUT = 20.0, REXIT = 40.0, SKYD = 40.0, TAU = 6.2831853;
+// The swirl's cycle in seconds: the gas shears for one cycle, then a fresh copy fades in.
+// The cycle starts later farther out, so no radius fades with all the others at once.
+const float KCYC = 12.0;
 // The view frame to the hole's frame: the star's turn, then the disc's tilt.
 vec3 hFrame(vec3 v) {
   vec3 q = uToSun * v;
@@ -161,10 +164,10 @@ vec3 holeDisc(vec3 p, vec3 v, out float a) {
   float phi = atan(p.z, p.x);
   // Kepler: the inner gas turns faster; streaks shear and reset unseen.
   float om = sqrt(0.5 / (r * r * r));
-  float x = uTime * om / 1.5708;
-  float fa = fract(x), fb = fract(x + 0.5);
+  // One shared cycle for every radius keeps the shear bounded, so no ripples build up.
+  float ca = uTime / KCYC + 1.7 * log(r), fa = fract(ca), fb = fract(ca + 0.5);
   float wa = 1.0 - abs(2.0 * fa - 1.0);
-  float pa = phi - 1.5708 * fa + 2.3 * floor(x), pb = phi - 1.5708 * fb + 2.3 * floor(x + 0.5) + 1.7;
+  float pa = phi - om * KCYC * fa + 2.3 * floor(ca), pb = phi - om * KCYC * fb + 2.3 * floor(ca + 0.5) + 1.7;
   float lr = log(r) * 9.0;
   // Noise round a circle has no seam where the angle wraps.
   // Fine across the radius, long along the orbit: streaks.
@@ -243,13 +246,16 @@ vec2 holeJet(vec2 b2) {
   bool near = along * a.z * sign(dot(a.xy, ax)) >= 0.0;
   return near ? vec2(L, 0.0) : vec2(0.0, L * 0.03);
 }
-/* ---------- the volumetric layer round a hole (Tom, 2026-11-24: a light touch) ---------- */
-// After MisterPrada's singularity: soft wisps over the disc, swirling with it, lit by it.
+/* ---------- the cloud layer round a hole (Tom, 2026-11-24) ---------- */
+// After MisterPrada's singularity: a thick, puffy volume round the disc, lit from within.
+// The march follows the bent ray, so the clouds bend with the lensing.
 // A quasar adds a dusty torus with a hot inner rim, broad-line clouds and winds off the disc.
-// uHoleV: on, wisp density, wisp light, the layer's outer bound in Schwarzschild radii.
+// uHoleV: on, cloud density, cloud light, the quasar layer's outer bound in Schwarzschild radii.
 // uHoleQ: on, torus, clouds, winds.
 uniform vec4 uHoleV, uHoleQ;
 uniform highp sampler3D uNoise3;
+// The cloud bake: noise and its emboss in the disc's polar frame.
+uniform highp sampler3D uHoleBake;
 // Smooth texture noise: one texel is half a Schwarzschild radius at scale 1.
 float hn(vec3 p) {
   vec3 x = p * 2.0, i = floor(x), f = fract(x);
@@ -257,32 +263,87 @@ float hn(vec3 p) {
   return texture(uNoise3, (i + f + 0.5) / 64.0).r;
 }
 float hn2(vec3 p) { return 0.65 * hn(p) + 0.35 * hn(p.zxy * 2.07 + 5.3); }
-// A wisp sheet where the ray crosses it: emission (hot, cool) and extinction for a unit path.
-// layer: 0 above the disc, 1 below, so the two sheets carry different clouds.
-// The noise is smooth and fixed for the frame: no sampling grain.
-vec2 holeWisp(vec3 p, vec3 v, float layer, out float ext) {
+// The cloud layer's reach: radii CB0 to CB1, heights to CREACH times the layer's height.
+const float CB0 = 2.4, CB1 = 24.0, CREACH = 2.2;
+// The layer's height: thin inside, flaring outward, as a disc does.
+float holeH(float r) { return 0.3 + 0.06 * r; }
+// A cloud point in the hole's frame: emission (hot, cool) per unit length, and extinction.
+// v: the ray's backward direction, for the Doppler shift.
+vec2 holeCloud(vec3 p, vec3 v, out float ext) {
   ext = 0.0;
   float r = length(p.xz), R3 = length(p);
-  float env = smoothstep(RIN - 0.3, RIN + 1.0, r) * smoothstep(ROUT + 1.0, ROUT - 4.0, r);
-  if (env < 0.004 || R3 < 1.05) return vec2(0.0);
+  if (r < CB0 || r > CB1 || R3 < 1.05) return vec2(0.0);
+  float H = holeH(r);
   float phi = atan(p.z, p.x);
+  // The clouds shear at the Kepler rate and reset unseen, as the disc's streaks do.
+  float om = sqrt(0.5 / (r * r * r));
+  float ca = uTime / KCYC + 1.7 * log(r), fa = fract(ca), fb = fract(ca + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
+  float pa = phi - om * KCYC * fa + 2.3 * floor(ca), pb = phi - om * KCYC * fb + 2.3 * floor(ca + 0.5) + 1.7;
+  float rho = log(r / CB0) / log(CB1 / CB0);
+  float zeta = clamp(p.y / (CREACH * H) * 0.5 + 0.5, 0.0, 1.0);
+  vec2 n = mix(texture(uHoleBake, vec3(pb / TAU, rho, zeta)).rg, texture(uHoleBake, vec3(pa / TAU, rho, zeta)).rg, wa);
+  // A puffy top: the cloud's surface rises and falls with the noise.
+  float top = H * (0.45 + 1.3 * n.x);
+  // A soft edge: light diffuses through the cloud's skin.
+  float puff = smoothstep(top, top * 0.35, abs(p.y));
+  float env = smoothstep(RIN - 0.5, RIN + 1.0, r) * smoothstep(ROUT + 3.0, ROUT - 3.0, r);
+  // Strata: thin sheets stacked over the height, wavering with the noise.
+  float strata = 0.3 + 1.4 * pow(0.5 + 0.5 * cos(p.y / H * 4.0 + 0.8 - n.x * 3.0), 2.0);
+  float d = env * puff * strata * (0.2 + 1.8 * n.x * n.x) * uHoleV.y;
+  if (d < 1e-4) return vec2(0.0);
   float q = RIN / max(r, RIN);
   float f = pow(q, 0.75) * pow(max(1.0 - 0.94 * sqrt(q), 0.0), 0.25) / 0.52;
   float beta = sqrt(0.5 / max(r - 1.0, 0.5));
   vec3 ph = vec3(-p.z, 0.0, p.x) / max(r, 1e-3);
   float g = sqrt(max(1.0 - 1.0 / R3, 0.0)) * sqrt(max(1.0 - beta * beta, 0.0)) / (1.0 + beta * dot(ph, v));
   float blue = smoothstep(0.7, 1.6, pow(f, 1.5) * g * uHole.w);
-  // The clouds shear at the Kepler rate and reset unseen, as the disc's streaks do.
-  float om = sqrt(0.5 / (r * r * r)), xx = uTime * om / 1.5708;
-  float fa = fract(xx), fb = fract(xx + 0.5), wa = 1.0 - abs(2.0 * fa - 1.0);
-  float pa = phi - 1.5708 * fa + 2.3 * floor(xx), pb = phi - 1.5708 * fb + 2.3 * floor(xx + 0.5) + 1.7;
-  float na = hn2(vec3(cos(pa) * r, layer * 7.3, sin(pa) * r) * 0.55);
-  float nb = hn2(vec3(cos(pb) * r, layer * 7.3 + 11.0, sin(pb) * r) * 0.55);
-  // A soft floor: rounded clouds with clear sky between, no speckle.
-  float d = env * smoothstep(0.38, 0.75, mix(nb, na, wa)) * uHoleV.y;
-  float lum = pow(f, 2.2) * g * g * g * uHole.z * uHoleV.z;
-  ext = d * 0.45;
+  // Faces toward the hole catch more of the inner disc's light; the light scatters on through.
+  float lit = clamp(0.45 + 4.5 * n.y, 0.12, 2.2);
+  // Depth: cloud lying between this point and the hole shades it.
+  float rho2 = log(r * 0.9 / CB0) / log(CB1 / CB0), rho3 = log(r * 0.8 / CB0) / log(CB1 / CB0);
+  float n2 = texture(uHoleBake, vec3(pa / TAU, rho2, zeta)).r, n3 = texture(uHoleBake, vec3(pa / TAU, rho3, zeta)).r;
+  float shade = exp(-1.6 * uHoleV.y * (smoothstep(0.35, 0.8, n2) + 0.7 * smoothstep(0.35, 0.8, n3)));
+  // Tops catch the light; the interior and the gaps between strata sit darker.
+  float tops = 0.5 + 0.5 * smoothstep(0.0, top, abs(p.y));
+  lit *= (0.25 + 0.75 * shade) * tops * (0.6 + 0.3 * strata);
+  // Translucent gas: it glows through its depth and dims what lies behind only a little.
+  float lum = 1.4 * pow(f, 2.2) * lit * g * g * g * uHole.z * uHoleV.z;
+  ext = d * 0.75;
   return vec2(lum * (1.0 - blue), lum * blue) * d;
+}
+// The clouds along one step of the ray, from ta to tb, where the step lies in the layer.
+// s0: the path length at x0. Samples sit on one grid along the whole ray, 0.15 apart,
+// so no seam shows where the steps meet.
+void holeCloudSeg(vec3 x0, vec3 x1, vec3 v0, vec3 v1, float ta, float tb, float segL, float s0, inout float hot, inout float cool, inout float tr) {
+  float ra = length(mix(x0, x1, ta).xz), rb = length(mix(x0, x1, tb).xz);
+  if (max(ra, rb) < CB0 - 1.0 || min(ra, rb) > CB1 + 1.0) return;
+  // The layer is tallest at the step's outer end: clip to that, so no cloud is cut.
+  float hm = CREACH * holeH(max(ra, rb));
+  // The height runs straight along the step: clip the step to the layer.
+  float y0 = mix(x0.y, x1.y, ta), y1 = mix(x0.y, x1.y, tb), dy = y1 - y0;
+  if (min(y0, y1) > hm || max(y0, y1) < -hm) return;
+  float a = ta, b = tb;
+  if (abs(dy) > 1e-5) {
+    float ua = (-hm - y0) / dy, ub = (hm - y0) / dy;
+    float lo = max(0.0, min(ua, ub)), hi = min(1.0, max(ua, ub));
+    if (hi <= lo) return;
+    a = mix(ta, tb, lo);
+    b = mix(ta, tb, hi);
+  }
+  const float HS = 0.15;
+  float sa = s0 + a * segL, sb = s0 + b * segL, ds = HS;
+  float m = ceil(sa / HS - 0.5);
+  for (int k = 0; k < 24; k++) {
+    float sm = (m + float(k) + 0.5) * HS;
+    if (sm >= sb) break;
+    float t = (sm - s0) / segL;
+    float ex;
+    vec2 e = holeCloud(mix(x0, x1, t), normalize(mix(v0, v1, t)), ex);
+    hot += tr * e.x * ds;
+    cool += tr * e.y * ds;
+    tr *= exp(-ex * ds);
+    if (tr < 0.01) return;
+  }
 }
 // A quasar's gas at a point in the hole's frame: emission (hot, cool) per unit length, and extinction.
 // v: the ray's backward direction, for the Doppler shift.
@@ -344,6 +405,11 @@ vec4 holeTrace(vec2 P) {
   float a0 = (1.0 + dot(normalize(x), v)) / max(b, 1e-3);
   v = normalize(v * cos(a0) - normalize(pp + 1e-6) * sin(a0));
   float hot = 0.0, cool = 0.0, tr = 1.0, gone = 0.0;
+  // The path length from the plane in front of the exit sphere: the cloud samples' grid.
+  // A start on the sphere itself would lay the grid in rings round the hole.
+  float sPath = b < REXIT ? REXIT - sqrt(REXIT * REXIT - b * b) : 0.0;
+  // A still offset per pixel, up to one sample apart: the slices break into fine noise, not ladders.
+  sPath += 0.15 * h13(vec3(gl_FragCoord.xy, 7.0));
   // Interleaved gradient noise, fixed in time: a still offset for the quasar's samples.
   float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   if (b < REXIT) {
@@ -365,23 +431,11 @@ vec4 holeTrace(vec2 P) {
       vec3 k4 = v + dt * a3, a4 = -1.5 * h2 * xd * ip5(xd);
       x += dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
       v += dt / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
-      // Wisps: two thin sheets of cloud just above and below the disc, shaded where the bent ray
-      // crosses each, so they bend with the lensing and carry no sampling grain.
+      // The cloud layer: the part of this step in front of the disc's plane comes first.
+      float tc = x0.y * x.y < 0.0 ? x0.y / (x0.y - x.y) : 1.0;
+      float segL = dt * length(mix(v0, v, 0.5));
       if (uHoleV.x > 0.0) {
-        for (int sh = 0; sh < 2; sh++) {
-          float hs = sh == 0 ? 0.5 : -0.5;
-          if ((x0.y - hs) * (x.y - hs) < 0.0) {
-            float t = (x0.y - hs) / (x0.y - x.y);
-            vec3 ps = mix(x0, x, t), ds = normalize(mix(v0, v, t));
-            // A slanted ray stays longer in the sheet.
-            float sl = min(1.0 / max(abs(ds.y), 0.1), 6.0) * 0.6;
-            float ex;
-            vec2 e = holeWisp(ps, ds, float(sh), ex);
-            hot += tr * e.x * sl;
-            cool += tr * e.y * sl;
-            tr *= exp(-ex * sl);
-          }
-        }
+        holeCloudSeg(x0, x, v0, v, 0.0, tc, segL, sPath, hot, cool, tr);
         // A quasar's torus, clouds and winds: four samples a step where they live.
         // A fixed per-pixel offset breaks step bands into a still, fine dither: no flicker.
         float rm = length(mix(x0, x, 0.5)), ym = abs(mix(x0.y, x.y, 0.5));
@@ -406,12 +460,20 @@ vec4 holeTrace(vec2 P) {
         if (rp > RIN - 0.4 && rp < ROUT) {
           float a;
           vec3 c = holeDisc(p, normalize(mix(v0, v, t)), a);
+          // Within the cloud layer the plane is thinner, so the two never fight at one depth.
+          if (uHoleV.x > 0.0) a *= 0.55;
           hot += tr * c.x * a;
           cool += tr * c.y * a;
           tr *= 1.0 - a;
           if (tr < 0.01) break;
         }
       }
+      // The cloud layer behind the disc's plane.
+      if (uHoleV.x > 0.0 && tc < 1.0) {
+        holeCloudSeg(x0, x, v0, v, tc, 1.0, segL, sPath, hot, cool, tr);
+        if (tr < 0.01) break;
+      }
+      sPath += segL;
     }
   }
   // Past the exit sphere: the weak-field rest of the bend.
@@ -1022,48 +1084,43 @@ void main() {
 // Orthographic rays run toward the star from in front of it.
 // The march stops at the star's surface, or far behind it.
 const NOISE_N = 64;
-const VOL = `${HEAD}
-precision highp sampler3D;
-uniform sampler3D uNoise;
-uniform vec4 uView;
-uniform mat3 uToSun;
-uniform float uTime, uDens, uDust, uLight, uCorona, uBend;
-// A binary's gas: the partner (centre in R, on), its disc, its axis, and the stream's path.
-// uGas: on, scattered light, own heat. uPath: 12 points in R and the stream's width.
-uniform vec4 uBin, uBinD, uBinN, uGas, uPath[12];
-// A pulsar's beams through dust: the magnetic axis in the view frame, and the beams' light.
-uniform vec4 uLh;
-// The same flash weight: a fast spin may not strobe the forward lobe.
-uniform float uFlashW;
-in vec2 vUv;
-out vec4 o;
+// The bake's grid: longitude, colatitude and radius in the star's frame.
+const BK_W = 384, BK_H = 192, BK_D = 96;
+// The haze and the corona in the star's frame, shared by the march and the bake.
+// Uniforms the caller declares: uNoise, uDust, uBend, uTime.
+const VOLFN = `
 const float R = ${R.toFixed(1)};
 const float SIG = 0.0022;
+const float PI = 3.14159265, TAU = 6.2831853;
+// The bake reaches 3.5 radii: past the corona's march and the giants' dust.
+const float RB = 3.5 * R;
 float nz(vec3 p) { return texture(uNoise, p).r; }
 float fbm3(vec3 p) { return nz(p) * 0.5 + nz(p * 2.03 + 0.31) * 0.25 + nz(p * 4.01 + 0.67) * 0.125 + nz(p * 8.03 + 0.13) * 0.0625; }
-// The density: a shell of haze round the star, and clouds of dust in it.
-float dens(vec3 p, bool lite) {
-  // No haze: skip the seven noise taps.
-  if (uDens <= 0.0) return 0.0;
-  float r = length(p);
-  if (r < R) return 0.0;
+// The haze's noise at q in the star's frame: the full sum, or the lite one for shadows.
+// drift: the noise's slow flow; the bake holds it still.
+float hazeN(vec3 q, vec3 drift, bool lite) {
   // One noise cell is about 90 units; the texture repeats every 64 cells.
-  // The haze sits in the star's frame, so it turns with the star.
-  vec3 q = (uToSun * p) / 5800.0 + vec3(uTime * 0.00012, 0.0, uTime * 0.00006);
-  vec3 w = vec3(nz(q * 0.6), nz(q * 0.6 + 0.37), nz(q * 0.6 + 0.71)) - 0.5;
-  float f = lite ? nz(q + w * 0.6) * 0.7 + nz(q * 2.03 + w + 0.31) * 0.3 : fbm3(q + w * 0.6);
+  vec3 n = q / 5800.0 + drift;
+  vec3 w = vec3(nz(n * 0.6), nz(n * 0.6 + 0.37), nz(n * 0.6 + 0.71)) - 0.5;
+  return lite ? nz(n + w * 0.6) * 0.7 + nz(n * 2.03 + w + 0.31) * 0.3 : fbm3(n + w * 0.6);
+}
+// The haze's shape from its noise f at radius r: a shell, and the star's dust clouds.
+float hazeF(float f, float r) {
   float h = r - R;
   float shell = exp(-h / (320.0 + 160.0 * uDust));
   float cl = smoothstep(0.48 - 0.04 * uDust, 0.76, f);
-  // Less haze straight in front of the disk, so the star's face stays clear.
-  float face = 1.0 - 0.5 * smoothstep(0.2 * R, 1.2 * R, p.z) * smoothstep(1.1 * R, 0.6 * R, length(p.xy));
-  return uDens * face * (shell * (0.08 + 2.4 * cl) + uDust * 0.15 * cl * smoothstep(3.5 * R, R, r));
+  return shell * (0.08 + 2.4 * cl) + uDust * 0.15 * cl * smoothstep(3.5 * R, R, r);
 }
-// The corona in 3D, in the star's own frame: optically thin, it scatters the star's light.
+// The haze's shape at q, before its strength and the face cut.
+float hazeQ(vec3 q, vec3 drift, bool lite) {
+  float r = length(q);
+  if (r < R) return 0.0;
+  return hazeF(hazeN(q, drift, lite), r);
+}
+// The corona in 3D at q in the star's frame: optically thin, it scatters the star's light.
 // Streamers gather on a warped sheet round the magnetic equator and narrow as they climb.
 // They bend in a slow spiral with height; polar plumes stand at the poles; fine rays run radially.
-float corona(vec3 p) {
-  vec3 q = uToSun * p;
+float coronaQ(vec3 q) {
   float r = length(q);
   if (r < R) return 0.0;
   vec3 u = q / r;
@@ -1083,6 +1140,131 @@ float corona(vec3 p) {
   float lumps = 0.45 + 1.1 * nz(vec3(cos(phi) * 0.12, sin(phi) * 0.12, 0.7));
   float polar = smoothstep(0.72, 0.95, abs(u.y)) * rays;
   return pow(R / r, 2.2) * (sheet * lumps * (0.5 + 0.7 * rays) + 0.1 * rays + 0.3 * polar);
+}
+/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
+// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
+// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
+// The key is the star itself: at each point the light comes from its centre.
+const float ABSORB = 2.0, AMBIENT = 0.12, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
+float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+// The light that reaches a point through an optical depth tau.
+// pw: the powder term's weight; it fades near the surface, where it left a dark band.
+float k3(float tau, float pw) {
+  float beer = exp(-tau);
+  float ms = exp(-tau * 0.25) * 0.5;
+  float base = mix(beer, beer + ms, MULTI);
+  float powder = 1.0 - exp(-tau * 2.0);
+  float fin = mix(base, base * powder, POWDER * pw);
+  return clamp(fin + AMBIENT, 0.0, 1.0);
+}
+/* ---------- end K3 lighting ---------- */
+`;
+
+// The bake: one layer of the spherical grid per draw.
+// It holds nothing a star changes, so it runs once at load.
+// A change of the Dev row Corona bend bakes again.
+const BAKE = `${HEAD}
+precision highp sampler3D;
+uniform sampler3D uNoise;
+uniform float uTime, uDust, uBend;
+// This layer's radial place: 0 at the surface, 1 at the bake's edge.
+uniform float uS;
+out vec4 o;
+${VOLFN}
+void main() {
+  // Texel centres: longitude round the spin axis, colatitude from the north pole.
+  float ph = gl_FragCoord.x / ${BK_W}.0 * TAU - PI, th = gl_FragCoord.y / ${BK_H}.0 * PI;
+  vec3 u = vec3(sin(th) * sin(ph), cos(th), sin(th) * cos(ph));
+  // Radius on a square curve: fine layers near the surface, where the haze is dense.
+  vec3 q = u * (R + (RB - R) * uS * uS);
+  o = vec4(hazeN(q, vec3(0.0), false), hazeN(q, vec3(0.0), true), coronaQ(q), 0.0);
+}`;
+
+// The holes' cloud bake: longitude, log radius and height in the disc's frame.
+const HB_W = 512, HB_H = 128, HB_D = 32;
+// The noise has five octaves; one bake at load serves every hole.
+const HBAKE = `${HEAD}
+precision highp sampler3D;
+uniform sampler3D uNoise;
+// This layer's height place: 0 at the layer's foot, 1 at its top.
+uniform float uLayer;
+out vec4 o;
+const float TAU = 6.2831853, CB0 = 2.4, CB1 = 24.0, CREACH = 2.2;
+float holeH(float r) { return 0.3 + 0.06 * r; }
+// Smooth value noise: the lookup snaps to texel centres and blends on a smooth curve.
+float sn(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return texture(uNoise, (i + f + 0.5) / ${NOISE_N.toFixed(1)}).r;
+}
+// Five octaves, each turned, so no grid lines up.
+float fb5(vec3 p) {
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 5; i++) { s += a * sn(p); p = p.yzx * 2.03 + 1.7; a *= 0.5; }
+  return s / 0.96875;
+}
+// The cloud noise at a longitude, radius and height: long along the orbit, fine across it.
+float cloudN(float phi, float r, float y) {
+  float lr = log(r);
+  float a = fb5(vec3(cos(phi) * 3.2, sin(phi) * 3.2, lr * 7.0 + y * 0.9));
+  float b = fb5(vec3(cos(phi) * 4.1 + y * 1.1, lr * 6.0 + 9.3, sin(phi) * 4.1));
+  // Two lookups break each one's lines of sameness; the stretch restores the contrast.
+  return clamp((0.5 * (a + b) - 0.5) * 2.2 + 0.5, 0.0, 1.0);
+}
+void main() {
+  float phi = gl_FragCoord.x / ${HB_W}.0 * TAU;
+  float r = CB0 * pow(CB1 / CB0, gl_FragCoord.y / ${HB_H}.0);
+  float y = (uLayer * 2.0 - 1.0) * CREACH * holeH(r);
+  float n = cloudN(phi, r, y);
+  // The emboss: how much denser the cloud is a little farther out, so inner faces show.
+  o = vec4(n, cloudN(phi, r * 1.03, y) - n, 0.0, 0.0);
+}`;
+
+const VOL = `${HEAD}
+precision highp sampler3D;
+uniform sampler3D uNoise;
+// The haze and corona bake; uBaked is 1 once it holds the current star.
+uniform sampler3D uBake;
+uniform float uBaked;
+uniform vec4 uView;
+uniform mat3 uToSun;
+uniform float uTime, uDens, uDust, uLight, uCorona, uBend;
+// A binary's gas: the partner (centre in R, on), its disc, its axis, and the stream's path.
+// uGas: on, scattered light, own heat. uPath: 12 points in R and the stream's width.
+uniform vec4 uBin, uBinD, uBinN, uGas, uPath[12];
+// A pulsar's beams through dust: the magnetic axis in the view frame, and the beams' light.
+uniform vec4 uLh;
+// The same flash weight: a fast spin may not strobe the forward lobe.
+uniform float uFlashW;
+in vec2 vUv;
+out vec4 o;
+${VOLFN}
+// Less haze straight in front of the disk, so the star's face stays clear.
+float face(vec3 p) { return 1.0 - 0.5 * smoothstep(0.2 * R, 1.2 * R, p.z) * smoothstep(1.1 * R, 0.6 * R, length(p.xy)); }
+// The density: a shell of haze round the star, and clouds of dust in it.
+float dens(vec3 p, bool lite) {
+  // No haze: skip the seven noise taps.
+  if (uDens <= 0.0) return 0.0;
+  // The haze sits in the star's frame, so it turns with the star.
+  return uDens * face(p) * hazeQ(uToSun * p, vec3(uTime * 0.00012, 0.0, uTime * 0.00006), lite);
+}
+float corona(vec3 p) { return coronaQ(uToSun * p); }
+// The bake's place for a direction in the star's frame: longitude and colatitude.
+vec2 bakeDir(vec3 q, float r) { return vec2(atan(q.x, q.z) / TAU + 0.5, acos(clamp(q.y / r, -1.0, 1.0)) / PI); }
+// The bake's texel on that direction at radius r: full noise, lite noise, corona.
+vec4 bakeAt(vec2 dir, float r) {
+  if (r < R || r > RB) return vec4(0.0);
+  return texture(uBake, vec3(dir, sqrt((r - R) / (RB - R))));
+}
+// The self-shadow on the bake: lite taps at 40, 110 and 260 units toward the star.
+// p: the point in the view frame; r: its radius.
+float lightB(vec3 p, vec2 dir, float r) {
+  vec3 k = -p / r;
+  float sum = 0.0;
+  sum += face(p + k * 40.0) * hazeF(bakeAt(dir, r - 40.0).g, r - 40.0) * step(R, r - 40.0) * 40.0;
+  sum += face(p + k * 110.0) * hazeF(bakeAt(dir, r - 110.0).g, r - 110.0) * step(R, r - 110.0) * 70.0;
+  sum += face(p + k * 260.0) * hazeF(bakeAt(dir, r - 260.0).g, r - 260.0) * step(R, r - 260.0) * 150.0;
+  return k3(uDens * sum * SIG * ABSORB * 0.5, smoothstep(R + 40.0, R + 300.0, r));
 }
 // A binary's gas, in donor radii: the partner's flared disc and the stream that feeds it.
 // One noise cell is a quarter radius. Plain trilinear blending shows its cells as boxes,
@@ -1153,24 +1335,12 @@ float gasHeat(vec3 p) {
   return 0.9 * inner + 0.7 * stream(p) + 0.45 * exp(-dot(e, e) / 0.18);
 }
 
-/* ---------- K3 lighting: Fire's smoke shading (shared/fire.js, volume()) ---------- */
-// A short self-shadow march toward the key, Beer plus a multiple-scatter lobe,
-// the powder term, an ambient floor, and a Henyey-Greenstein phase times 4 pi.
-// The key is the star itself: at each point the light comes from its centre.
-const float ABSORB = 2.0, AMBIENT = 0.12, POWDER = 0.59, MULTI = 1.0, G_HG = 0.55;
-float hg(float c, float g) { float g2 = g * g; return (1.0 - g2) / pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5) * 0.079577; }
+// The self-shadow toward the star: three lite taps, then the K3 shading.
 float lightT(vec3 p) {
   vec3 k = -normalize(p);
   float sum = dens(p + k * 40.0, true) * 40.0 + dens(p + k * 110.0, true) * 70.0 + dens(p + k * 260.0, true) * 150.0;
-  float tau = sum * SIG * ABSORB * 0.5;
-  float beer = exp(-tau);
-  float ms = exp(-tau * 0.25) * 0.5;
-  float base = mix(beer, beer + ms, MULTI);
-  float powder = 1.0 - exp(-tau * 2.0);
-  float fin = mix(base, base * powder, POWDER);
-  return clamp(fin + AMBIENT, 0.0, 1.0);
+  return k3(sum * SIG * ABSORB * 0.5, smoothstep(R + 40.0, R + 300.0, length(p)));
 }
-/* ---------- end K3 lighting ---------- */
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
@@ -1180,15 +1350,18 @@ void main() {
   float reach = bin ? 7.6 * R : lh ? 6.5 * R : uCorona > 0.0 ? 3.4 * R : 2.2 * R;
   float z1 = r < R ? sqrt(R * R - r * r) : -reach;
   float z0 = reach;
-  int N = bin || lh ? 48 : 32;
+  // The bake carries the haze and the corona: more steps, and no dither to hide.
+  // A binary's gas and a pulsar's beams still march live, with the dither.
+  bool bk = uBaked > 0.0 && !bin && !lh;
+  int N = bk ? 72 : bin || lh ? 48 : 32;
   // A ray that passes outside the reach meets nothing.
   if (r > reach) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
   float dt = (z0 - z1) / float(N);
   // Interleaved gradient noise, stepped each frame so no pattern holds still.
-  float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
+  float j = bk ? 0.5 : fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
   float T = 1.0;
   float acc = 0.0, accG = 0.0, accL = 0.0;
-  for (int i = 0; i < 48; i++) {
+  for (int i = 0; i < 72; i++) {
     if (i >= N) break;
     vec3 p = vec3(P, z0 - dt * (float(i) + j));
     // A pulsar's lighthouse: two narrow beams sweep through a faint fog of dust and light it.
@@ -1232,12 +1405,17 @@ void main() {
         if (T < 0.02) break;
       }
     }
+    // On the bake: the point's direction and radius in the star's frame, and its texel.
+    vec3 q = uToSun * p;
+    float rq = length(q);
+    vec2 dir = bk ? bakeDir(q, rq) : vec2(0.0);
+    vec4 b = bk ? bakeAt(dir, rq) : vec4(0.0);
     if (uCorona > 0.0) {
       // Thomson scattering: brightest seen side on, a cos squared lobe toward the eye.
       float cz = normalize(p).z;
-      acc += T * corona(p) * (0.75 * (1.0 + cz * cz)) * dt * 0.0009 * uCorona;
+      acc += T * (bk ? b.b : corona(p)) * (0.75 * (1.0 + cz * cz)) * dt * 0.0009 * uCorona;
     }
-    float d = dens(p, false);
+    float d = bk ? (rq > R && rq < RB ? uDens * face(p) * hazeF(b.r, rq) : 0.0) : dens(p, false);
     if (d < 0.002) continue;
     float rr = length(p);
     // The light falls with the square of the distance; it travels outward from the star.
@@ -1245,7 +1423,8 @@ void main() {
     float ph = hg(normalize(p).z, G_HG) * 12.56637;
     float al = 1.0 - exp(-d * SIG * dt);
     // Dust absorbs as well as scatters: an albedo below one, so lanes darken the light.
-    acc += T * al * 0.6 * Ls * lightT(p) * ph;
+    float lt = bk ? lightB(p, dir, rq) : lightT(p);
+    acc += T * al * 0.6 * Ls * lt * ph;
     T *= 1.0 - al;
     if (T < 0.02) break;
   }
@@ -1475,8 +1654,8 @@ vec3 runaway(vec2 P) {
 }
 // The star's own light at a point: full on the disk, falling off above it.
 float starLight(vec2 P) {
-  // A black hole's shadow gives no light; its disc lights the glass through the bloom.
-  if (uHoleF.x > 0.0) return 0.0;
+  // A black hole's shadow gives no light; its disc, round the shadow, lights the glass.
+  if (uHoleF.x > 0.0) return 0.6 * exp(-max(length(P) - R, 0.0) / (3.0 * R));
   float h = length(P) - R;
   return h < 0.0 ? 1.0 : exp(-h / 240.0) * 0.8 + 0.05;
 }
@@ -1515,10 +1694,16 @@ void main() {
   // Heat bends the air above the limb.
   float hr = r - R;
   float hz = exp(-abs(hr) / 25.0) + 0.3 * exp(-max(hr, 0.0) / 120.0);
-  // Its ripples keep one size on the screen, about 22 CSS pixels, so they never shrink to a seethe.
+  // Its ripples ride the star, so a zoom never drags the limb through a still pattern.
+  // Two ripple sizes cross-fade with the zoom; a ripple stays near 22 CSS pixels.
   // Far out the shimmer fades: heat haze has no place at that scale (Tom, 2026-11-24).
-  vec2 sp = gl_FragCoord.xy / (22.0 * uDpr);
-  vec2 wob = vec2(vn(vec3(sp, uTime * 0.3)), vn(vec3(sp + 7.7, uTime * 0.3))) - 0.5;
+  float lev = log2(22.0 * uDpr * 2.0 * uView.z / uRes.x);
+  float k0 = floor(lev), kw = fract(lev);
+  vec2 s0 = P / exp2(k0), s1 = P / exp2(k0 + 1.0) + 3.1;
+  vec2 w0 = vec2(vn(vec3(s0, uTime * 0.3)), vn(vec3(s0 + 7.7, uTime * 0.3))) - 0.5;
+  vec2 w1 = vec2(vn(vec3(s1, uTime * 0.3)), vn(vec3(s1 + 7.7, uTime * 0.3))) - 0.5;
+  // The blend keeps the ripples' strength through the cross-fade.
+  vec2 wob = (w0 * (1.0 - kw) + w1 * kw) / sqrt((1.0 - kw) * (1.0 - kw) + kw * kw);
   uv += wob * hz * uMix.w * uFx3.z * (1.0 - uCam.w) / uRes;
   // The lens splits colour toward the frame's edge.
   vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens) * uFx1.z;
@@ -1612,6 +1797,8 @@ export async function makeRender(gl, opts = {}) {
     strand: program(gl, STRAND_VS, STRAND_FS),
     rays: program(gl, TRI_VS, RAYS),
     vol: program(gl, TRI_VS, VOL),
+    bake: program(gl, TRI_VS, BAKE),
+    hbake: program(gl, TRI_VS, HBAKE),
     blur: program(gl, TRI_VS, BLUR),
     acc: program(gl, TRI_VS, ACC),
     final: program(gl, TRI_VS, FINAL),
@@ -1649,6 +1836,67 @@ export async function makeRender(gl, opts = {}) {
   for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, k, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
   gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  // The haze and corona bake: a spherical grid in the star's frame, in half floats.
+  // Longitude wraps; colatitude and radius stop at their ends.
+  const bakeT = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, bakeT);
+  gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RGBA16F, BK_W, BK_H, BK_D);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  const bakeFb = gl.createFramebuffer();
+  // The corona's bend is the one value the bake holds that can change.
+  let bakedBend = NaN;
+  function rebake(v) {
+    if (v.bend === bakedBend) return;
+    bakedBend = v.bend;
+    const b = P.bake;
+    gl.useProgram(b.p);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.uniform1i(b.u.uNoise, 0);
+    // The bake holds the haze's slow drift and the sheet's slow warp still.
+    gl.uniform1f(b.u.uTime, 0);
+    gl.uniform1f(b.u.uBend, v.bend);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
+    gl.viewport(0, 0, BK_W, BK_H);
+    gl.bindVertexArray(empty);
+    for (let k = 0; k < BK_D; k++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, bakeT, 0, k);
+      gl.uniform1f(b.u.uS, (k + 0.5) / BK_D);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
+  }
+  // The bake runs during the load, at the house bend, so no star waits for it.
+  rebake({ bend: 1 });
+  // The holes' cloud bake: made once at load; no hole changes it.
+  const holeB = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_3D, holeB);
+  gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RG16F, HB_W, HB_H, HB_D);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  {
+    const b = P.hbake;
+    gl.useProgram(b.p);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.uniform1i(b.u.uNoise, 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
+    gl.viewport(0, 0, HB_W, HB_H);
+    gl.bindVertexArray(empty);
+    for (let k = 0; k < HB_D; k++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, holeB, 0, k);
+      gl.uniform1f(b.u.uLayer, (k + 0.5) / HB_D);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
+  }
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // The haze history is empty until a first frame fills it.
@@ -1709,6 +1957,9 @@ export async function makeRender(gl, opts = {}) {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_3D, noise);
     gl.uniform1i(s.u.uNoise3, 5);
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_3D, holeB);
+    gl.uniform1i(s.u.uHoleBake, 6);
     gl.uniform4fv(s.u.uWind, v.band.wind);
     gl.uniformMatrix3fv(s.u.uCamM, false, v.camM);
     gl.uniform1f(s.u.uCore, v.band.core);
@@ -1764,9 +2015,14 @@ export async function makeRender(gl, opts = {}) {
     const volOn = v.volDens > 0 || v.corona > 0 || v.gas[0] > 0 || v.lh[3] > 0;
     const vp = P.vol;
     if (volOn) {
+    rebake(v);
     gl.useProgram(vp.p);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_3D, bakeT);
+    gl.uniform1i(vp.u.uBake, 1);
+    gl.uniform1f(vp.u.uBaked, 1);
     gl.uniform1i(vp.u.uNoise, 0);
     gl.uniform4fv(vp.u.uView, v.view);
     gl.uniform1f(vp.u.uTime, v.time % 9600);
