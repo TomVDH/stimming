@@ -104,39 +104,50 @@ export function makeCard(o) {
   }
 
   // Our Sun at the same scale as the star on screen, above the card (Tom, 2026-11-24).
-  // d is its diameter in CSS pixels; max is the room above the card; view is the stage's height.
-  // Too small to draw, it is a dot; too large for the room, the top of its circle, still to scale.
-  function sunMark({ d, max, view }) {
+  // d is its diameter in CSS pixels; max is the room above the card.
+  // ratio is the Sun's width over the object's; colour is the object's swatch colour.
+  // Too small to draw, the Sun is a dot. Too large for the room, the card shows an inset:
+  // the Sun at a set size, the object inside it at its true ratio, and how many times wider the Sun is.
+  function sunMark({ d, max, ratio, colour }) {
     const el = h('div', 'c-sun');
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
-    const ring = document.createElementNS(NS, 'circle');
-    let w, ht, note;
+    const circle = (cx, cy, r, cls) => {
+      const c = document.createElementNS(NS, 'circle');
+      Object.entries({ cx, cy, r }).forEach(([k, v]) => c.setAttribute(k, v));
+      if (cls) c.setAttribute('class', cls);
+      svg.append(c);
+      return c;
+    };
+    let w, note;
     if (d < 4) {
-      w = ht = 6; note = 'the Sun, a speck at this scale';
-      Object.entries({ cx: 3, cy: 3, r: 2.2, class: 'c-sun-dot' }).forEach(([k, v]) => ring.setAttribute(k, v));
+      w = 6; note = 'the Sun, a speck at this scale';
+      circle(3, 3, 2.2, 'c-sun-dot');
     } else if (d <= max) {
-      w = ht = d + 2; note = 'the Sun, to scale';
-      Object.entries({ cx: w / 2, cy: ht / 2, r: d / 2 }).forEach(([k, v]) => ring.setAttribute(k, v));
+      w = d + 2; note = 'the Sun, to scale';
+      circle(w / 2, w / 2, d / 2);
     } else {
-      // The arc: the top of a circle too large to fit, still at its true curve.
-      w = Math.min(max * 1.6, 300); ht = Math.min(max, d / 2) * 0.45;
-      Object.entries({ cx: w / 2, cy: d / 2 + 1, r: d / 2 }).forEach(([k, v]) => ring.setAttribute(k, v));
-      note = d > view ? 'the Sun, wider than this view' : 'the Sun, to scale';
-      svg.style.overflow = 'hidden';
+      const S = Math.min(72, max);
+      w = S + 2;
+      circle(w / 2, w / 2, S / 2);
+      // Below a pixel the object still shows, as a one-pixel dot in its colour.
+      const obj = circle(w / 2, w / 2, Math.max(0.6, S / 2 / ratio), 'c-sun-obj');
+      obj.style.fill = colour;
+      note = `the Sun, ${fmtRatio(ratio)} times wider`;
     }
-    svg.setAttribute('width', w); svg.setAttribute('height', ht);
-    svg.setAttribute('viewBox', `0 0 ${w} ${ht}`);
-    svg.append(ring);
+    svg.setAttribute('width', w); svg.setAttribute('height', w);
+    svg.setAttribute('viewBox', `0 0 ${w} ${w}`);
     el.append(svg, h('span', 'c-sun-k', note));
     return el;
   }
+  // A ratio in words: one decimal below 10, whole above, spaced thousands.
+  const fmtRatio = r => r < 10 ? String(+r.toFixed(1)) : Math.round(r).toLocaleString('en').replace(/,/g, ' ');
 
   return {
     /**
      * @param {{ name: string, type: string, latin: string | null, rows: [string, string][] }} c
      * @param {string} style One of CARD_STYLES.
-     * @param {{ d: number, max: number } | null} sun Our Sun's size on screen, or null.
+     * @param {{ d: number, max: number, ratio: number, colour: string } | null} sun Our Sun on screen, or null.
      */
     show(c, style = 'intro', sun = null) {
       clear();

@@ -82,13 +82,22 @@ function stepDip(dt) {
   // A new pick on the way up turns back down from the same light.
   if (shown !== st.star && dip.t > DIP_DOWN) dip.t = DIP_DOWN * (1 - (dip.t - DIP_DOWN) / DIP_UP);
   dip.t += dt;
-  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; clearActivity(); applyView(); }
+  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; clearActivity(); toQuarter(); }
   if (dip.t >= DIP_DOWN + DIP_UP) {
     dip = null;
     cardAfter = performance.now() + CARD_AFTER_DIP;
     setTimeout(arrive, CARD_AFTER_DIP + 20);
   }
   return true;
+}
+// At the switch's dark point the camera stands on the new star's quarter cut,
+// then glides out to the full star, where the card plays (Tom, 2026-11-24).
+// The eye takes the quarter cut's light at once, as the frame is black.
+function toQuarter() {
+  Object.assign(cam, { z: 0, aim: 0, to: 0, v: 0, va: 0, moving: false, from: 0, arrived: false });
+  Object.assign(eye, { real: realAt(0), far: farAt(0), vr: 0, vf: 0 });
+  applyView();
+  springTo(NOTCH);
 }
 // The fluid probe (spike stimming-8gez): Fire's fluid as the haze round a prominence, only with ?fluid.
 const FLUID = new URLSearchParams(location.search).has('fluid');
@@ -122,8 +131,8 @@ const view = { cx: 0, cy: R, hw: 280, hh: 175, W: 1, H: 1, asp: 1.6 };
 const VIEWS = ['long', 'wide', 'full'];
 const Z_MAX = 6;
 const fit = { long: { cx: 0, cy: 0, hw: 280, psi: 0 }, longH: { cx: 0, cy: 0, hw: 280 }, wide: { cx: 0, cy: R, hw: 520 }, full: { cx: 0, cy: 0, hw: 1100 } };
-// Every visit opens on the long lens, the quarter cut (Tom, 2026-11-23).
-const z0 = 0;
+// Every visit opens far out and glides in to the full star (Tom, 2026-11-24).
+const z0 = Z_MAX;
 // The zoom rides two critically damped followers: aim follows to, z follows aim.
 // Every input sets to; the camera never overshoots and never jolts.
 const cam = {
@@ -241,7 +250,8 @@ function springTo(z) {
   z = clamp(z, 0, Z_MAX);
   // A move away from the full star fades the star card.
   if (z !== NOTCH) card?.fade();
-  if (!cam.moving) cam.from = cam.z;
+  // A new move starts: note where it began, and let its arrival play the card again.
+  if (!cam.moving) { cam.from = cam.z; cam.arrived = false; }
   cam.to = z;
   // Reduced motion and the first frame jump straight to the target.
   if (!started || calm) {
@@ -272,8 +282,8 @@ function stepZoom(dt) {
   cam.z = clamp(cam.z, 0, Z_MAX);
   if (Math.abs(cam.to - cam.z) < 2e-4 && Math.abs(cam.v) < 2e-3 && Math.abs(cam.va) < 2e-3) {
     cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false;
-    arrive();
   }
+  arrive();
   applyView();
   rail.show(cam.z, cam.to);
   return true;
@@ -418,8 +428,8 @@ function pickStar(v) {
   // Reduced motion swaps at once, so its card need not wait.
   card.clear();
   cardAfter = calm || !started ? 0 : Infinity;
-  // A new star opens on the whole star.
-  springTo(2);
+  // With no dip the new star opens on the whole star at once; else the dip's dark point moves the camera.
+  if (calm || !started) springTo(NOTCH);
   applyView();
   setLabel(labels.star, starLabel());
   chart?.sync();
@@ -491,9 +501,13 @@ const rail = makeRail({
 // It shows only on the full star: zoomed out to it, glided there by a pick, or opened there.
 const card = makeCard({ stage });
 let cardStar = null;
+// The card plays once the view is within a hair of the full star, once per arrival (Tom, 2026-11-24).
+// A heavy zoom creeps for seconds at the end; the card need not wait for the creep.
+const ARRIVE_NEAR = 0.02;
 function arrive() {
-  if (!started || cam.to !== NOTCH || cam.moving || performance.now() < cardAfter) return;
+  if (!started || cam.to !== NOTCH || cam.arrived || Math.abs(cam.z - NOTCH) > ARRIVE_NEAR || performance.now() < cardAfter) return;
   if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
+  cam.arrived = true;
   showCard();
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
@@ -502,13 +516,15 @@ function showCard() {
   cardStar = st.star;
   // A black hole's R is its shadow's edge, BCRIT horizon radii out; its rsun is the horizon's.
   const B = STARS[st.star], horizonR = B.hole ? R / BCRIT : R;
-  const sun = { d: horizonR / B.rsun * cssH / view.hh, max: cssH * 0.3, view: cssH };
-  card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'), sun);
+  const pick = PICKS.find(x => x.value === st.star);
+  const sun = { d: horizonR / B.rsun * cssH / view.hh, max: cssH * 0.3, ratio: 1 / B.rsun, colour: pick.colour };
+  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun);
 }
 // A new card style plays at once when the view rests on the full star.
 function replayCard() {
   if (cam.to !== NOTCH || cam.moving) return;
   cardStar = null;
+  cam.arrived = false;
   arrive();
 }
 addEventListener('keydown', e => {
@@ -1225,8 +1241,8 @@ try {
   await introDone;
   started = true;
   poke();
-  // A visit that opens on the full star shows the card once the intro has gone.
-  if (cam.z === NOTCH) setTimeout(() => { cam.from = -1; arrive(); }, 900);
+  // Once the intro has gone, the view glides in from far out; the card plays when it settles.
+  setTimeout(() => springTo(NOTCH), 400);
 } catch (err) {
   console.error(err);
   fail.removeAttribute('hidden');

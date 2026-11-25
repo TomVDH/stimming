@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T23:12:15Z
-updated_at: 2026-11-25T00:17:03Z
+updated_at: 2026-11-25T00:34:37Z
 parent: stimming-e35i
 ---
 
@@ -30,3 +30,10 @@ Tom, 2026-11-24: "lets actually redo some styles for the info callout (we also w
 - [x] Dev: Star card, Show plays the card at any zoom (Tom: "add dev mode option to trigger the intro card irrespective of zoom")
 
 - [x] Review fix: on a black hole's card the Sun outline scales to the horizon (R / BCRIT), not the shadow; it was 2.6 times too large. Checked on Sagittarius A*: 2.7 px, a speck
+
+## Opening and switching (Tom, 2026-11-24)
+
+- [x] A visit opens far out and glides in to the full star; the card plays as it arrives
+- [x] A switch stands on the new star's quarter cut at the black point, glides out, then the card
+- [x] The card plays within 0.02 of the full star, once per arrival, not after the heavy zoom's creep
+- [x] The Sun larger than the room: an inset, the Sun at a set size with the object inside at its true ratio and how many times wider; no arc, no flat line
