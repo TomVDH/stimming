@@ -158,6 +158,8 @@ export const SETUP = {
   // Noon by Lake Zurich (Tom): the ride starts past Au ZH, on the open shore.
   // With ?x= the train does not wait at a station first.
   trainride: { query: '?time=noon&x=21050' },
+  // The opening glides in from far out for 6.5 s; the card, rail and clock stay off the still.
+  starchart: { store: { 'stimming.starchart.star': 'sun' }, first: [['wait', 7000]], css: '.sl-card, .sl-rail, .sl-clock { display: none !important; }' },
 };
 
 export const sleep = ms => new Promise(done => setTimeout(done, ms));
