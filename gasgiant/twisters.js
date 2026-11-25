@@ -63,7 +63,7 @@ void main() {
 
 /* ---------- The march: a short relief march per twister ---------- */
 export const TW_MAX = 14;
-// uTwA: x, z, width, variety. uTwB: floor altitude, height, spin in rad/s, phase.
+// uTwA: x, z, width, variety plus 4 for a tip at the base. uTwB: floor altitude, height, spin in rad/s, phase.
 // uTwC: the top's x and z, the sag's reach, the dust's reach.
 // A height of 0 turns the twister off.
 // TW_DECL goes before dens(): the ceiling and the floor read the twisters too.
@@ -121,7 +121,7 @@ float twWall(vec2 q, float Y, int v, float R, float spin, out vec4 wl) {
 // One twister along the ray: premultiplied light and alpha. tF takes its first hit.
 vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout float tF) {
   vec4 A = uTwA[i], B = uTwB[i];
-  int v = int(A.w + 0.5);
+  int v = int(A.w + 0.5) % 4;
   float s = B.y / TW_H, w = A.z, spin = B.z, ph = B.w;
   // A vertical cylinder holds the twister, its bend and its flare.
   float Rb = s * (w * twRad(TW_H, v) * 1.8 + 6.0);
@@ -140,7 +140,8 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
   tb = min(tb, tb0);
   if (ta >= tb) return vec4(0.0);
   // Over cloud the foot melts into the deck; over a hole the funnel tapers to a tip.
-  float gr = twGround(A.xy);
+  // Some taper to a tip wherever they stand (Tom, 2026-11-24).
+  float gr = A.w > 3.5 ? 0.0 : twGround(A.xy);
   vec3 upv = normalize(vec3(A.x, 0.0, A.y) - PC);
   // Backlit (Tom, 2026-11-24): the light comes from behind the twister, as the eye sees it, and from above.
   vec3 bk = normalize(vec3(A.x - ro.x, 0.0, A.y - ro.z) + 1e-4);
@@ -236,16 +237,17 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tF) {
 // The eye looks toward -z, within about 55 degrees either way.
 // az is degrees from -z toward +x; d is km; w scales the width.
 // Two stand up front, seven in the middle distance, five far off (Tom, 2026-11-24).
+// One medium wedge; the rest are thin, and about half taper to a tip at the base.
 const NEAR = [
-  { az: 16, d: 42, v: 0, w: 1.0, spin: 0.16 },
-  { az: -30, d: 58, v: 2, w: 1.1, spin: 0.22 },
-  { az: -46, d: 110, v: 1, w: 1.0, spin: 0.1 },
-  { az: 2, d: 120, v: 2, w: 1.1, spin: 0.2 },
-  { az: 44, d: 130, v: 0, w: 1.1, spin: 0.14 },
-  { az: -20, d: 150, v: 0, w: 1.2, spin: 0.15 },
-  { az: 24, d: 170, v: 1, w: 1.3, spin: 0.12 },
-  { az: -8, d: 220, v: 1, w: 1.4, spin: 0.11 },
-  { az: 36, d: 250, v: 2, w: 1.3, spin: 0.2 },
+  { az: 16, d: 42, v: 2, w: 0.85, tip: 1, spin: 0.16 },
+  { az: -30, d: 58, v: 0, w: 0.7, tip: 0, spin: 0.22 },
+  { az: -46, d: 110, v: 2, w: 0.9, tip: 1, spin: 0.2 },
+  { az: 2, d: 140, v: 1, w: 0.8, tip: 0, spin: 0.1 },
+  { az: 44, d: 125, v: 0, w: 0.75, tip: 1, spin: 0.14 },
+  { az: -20, d: 165, v: 2, w: 0.8, tip: 0, spin: 0.18 },
+  { az: 24, d: 185, v: 0, w: 0.8, tip: 1, spin: 0.15 },
+  { az: -6, d: 230, v: 2, w: 1.0, tip: 1, spin: 0.21 },
+  { az: 36, d: 255, v: 0, w: 0.9, tip: 0, spin: 0.13 },
 ];
 // The far ones are seeded, so they stand in the same places every visit.
 function seeded(n) {
@@ -254,8 +256,9 @@ function seeded(n) {
   return Array.from({ length: n }, (_, i) => ({
     az: ((i + 0.5) / n - 0.5) * 100 + (rnd() - 0.5) * 10,
     d: 320 * Math.pow(850 / 320, rnd()),
-    v: Math.floor(rnd() * 3),
-    w: 1.2 + 0.5 * rnd(),
+    v: rnd() < 0.5 ? 0 : 2,
+    w: 0.85 + 0.4 * rnd(),
+    tip: rnd() < 0.5 ? 1 : 0,
     spin: 0.08 + 0.14 * rnd(),
   }));
 }
@@ -278,11 +281,11 @@ export function twisterUniforms(t, a, b, c) {
     const x = Math.sin(r) * e.d + 3 * Math.sin(t * 0.008 + i * 1.7);
     const z = -Math.cos(r) * e.d + 3 * Math.cos(t * 0.006 + i * 2.3);
     const ph = i * 1.9, k = bendK(e.v);
-    a.set([x, z, e.w, e.v], i * 4);
+    a.set([x, z, e.w, e.v + 4 * e.tip], i * 4);
     b.set([FLO, HT, e.spin, ph], i * 4);
     // The top's place: the bend and the sway at the top, as twAxis() has them.
     const tx = k * 4.2 * Math.sin(3.3) + 0.7 * Math.sin(t * 0.05 + ph + 3);
     const tz = k * 2.4 * Math.sin(5.0) + 0.7 * Math.cos(t * 0.04 + ph * 1.3 + 2);
-    c.set([x + tx * s, z + tz * s, s * e.w * radAt(0.9, e.v) * 1.4, s * e.w * radAt(0, e.v) * 2.4], i * 4);
+    c.set([x + tx * s, z + tz * s, s * e.w * radAt(0.9, e.v) * 1.4, e.tip ? 0 : s * e.w * radAt(0, e.v) * 2.4], i * 4);
   });
 }
