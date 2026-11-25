@@ -11,7 +11,7 @@ const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // The key falls as the star grows: the hypergiant hums lowest.
 // The Sun sits in A sharp (Tom, 2026-11-24), set by ear with its choir.
 // The holes, the quasar and the bodies added after them take the roots set in sun.js (2026-11-24).
-export const ROOT = { s5hvs1: 311.13, betalyr: 130.81, j1407: 196, tzo: 103.83, wr124: 155.56, cygx1: 98, sgra: 82.41, qso: 73.42, neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110, st218: 98, wohg64: 103.83, quasi: 87.31, wr140: 146.83, vfts352: 174.61, xxtri: 196, epsaur: 138.59, mothra: 130.81, earendel: 155.56, powehi: 65.41 };
+export const ROOT = { s5hvs1: 311.13, betalyr: 130.81, fomalhaut: 196, tzo: 103.83, wr124: 155.56, cygx1: 98, sgra: 82.41, qso: 73.42, neutron: 440, siriusb: 392, wise: 329.63, luhman: 293.66, proxima: 261.63, epseri: 233.08, sun: 233.08, procyon: 207.65, sirius: 196, vega: 185, ttauri: 185, regulus: 174.61, zetaoph: 164.81, rigel: 146.83, arcturus: 138.59, betelgeuse: 123.47, vycma: 110, st218: 98, wohg64: 103.83, quasi: 87.31, wr140: 146.83, vfts352: 174.61, xxtri: 196, epsaur: 138.59, mothra: 130.81, earendel: 155.56, powehi: 65.41 };
 
 // A hole's full view stands `reach` times farther back, so its nearness reads low.
 // The shift puts its full view back on the full-star stop: x16 sits at -1.4.

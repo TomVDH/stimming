@@ -1,7 +1,7 @@
 // Solar loop: a star's edge at a vast scale, graded like film.
 // Loops rise and drain; giant prominences stand over the limb.
 // A tap flares a region or lifts a prominence off; a drag turns the sun.
-// Plan: docs/plans/solarloop.md. Toy doc: docs/toys/solarloop.md.
+// Plan: docs/plans/starchart.md. Toy doc: docs/toys/starchart.md.
 import { initPage, whenVisible, pageReady, stage as mark, reduced, onReducedChange, audioKit, sound } from '../shared/stim.js';
 import { intro as playIntro } from '../shared/intro.js';
 import { onContextLoss } from '../shared/gl.js';
@@ -27,7 +27,14 @@ if (!new URLSearchParams(location.search).has('dev')) {
 }
 mark('libs');
 
-const ID = 'solarloop';
+const ID = 'starchart';
+// The toy was solarloop until 2026-11-24: its saved settings move to the new id once.
+try {
+  const was = 'stimming.solarloop.', now = `stimming.${ID}.`;
+  for (const k of Object.keys(localStorage)) {
+    if (k.startsWith(was) && localStorage.getItem(now + k.slice(was.length)) == null) localStorage.setItem(now + k.slice(was.length), localStorage.getItem(k));
+  }
+} catch { /* private mode */ }
 const stage = document.getElementById('stage');
 const fail = stage.querySelector('.fail');
 const store = {

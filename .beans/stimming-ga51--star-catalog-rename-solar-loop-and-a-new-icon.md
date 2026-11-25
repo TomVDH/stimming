@@ -37,4 +37,4 @@ Tom, 2026-11-24: "lets redo the name of the toy and also get a new icon pls"; pi
 
 - [x] Name: Star Chart, Dutch Sterrenkaart, everywhere Spectral Sightings stood
 - [x] The pick on the sheet: icons/picks.json, solarloop A of solarloop-4
-- [ ] Slug: solarloop to starchart, with a redirect at solarloop/; after starcatalog-weather lands
+- [x] Slug: solarloop to starchart (the folder, toys.json, the menu tile and hook, the emblem, favicon, toy doc, plan, QA captures, the icon sheet key, picks, the access lab, CREDITS); a redirect at solarloop/index.html; saved settings carry over to the new id; round names (solarloop-1 to 4) stay as file names; tests 276/276, build clean
