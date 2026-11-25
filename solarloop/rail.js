@@ -12,9 +12,9 @@ const h = (tag, cls) => {
 
 /**
  * Builds the zoom rail on the stage's frame.
- * @param {{ frame: HTMLElement, mid: number, max: number, text: (z: number) => string,
+ * @param {{ frame: HTMLElement, mid: number, max: number, notches?: number[], text: (z: number) => string,
  *   cover: () => { top: number, bottom: number }, onPick: (z: number) => void }} o
- * mid is the zoom at the pip; text names a zoom for screen readers.
+ * mid is the zoom at the pip; notches are the smaller magnet marks; text names a zoom for screen readers.
  */
 export function makeRail(o) {
   const link = h('link');
@@ -33,7 +33,14 @@ export function makeRail(o) {
   el.setAttribute('aria-valuemin', '0');
   el.setAttribute('aria-valuemax', String(o.max));
   const mark = h('i', 'sl-rail-mark');
-  el.append(h('i', 'sl-rail-near'), h('i', 'sl-rail-far'), h('i', 'sl-rail-pip'), mark);
+  el.append(h('i', 'sl-rail-near'), h('i', 'sl-rail-far'), h('i', 'sl-rail-pip'));
+  // The other magnet stops: small pips on the close half.
+  for (const z of o.notches || []) {
+    const n = h('i', 'sl-rail-notch');
+    n.style.left = `${at(z) * 100}%`;
+    el.append(n);
+  }
+  el.append(mark);
   el.addEventListener('click', e => {
     const r = el.getBoundingClientRect();
     o.onPick(zAt(Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))));

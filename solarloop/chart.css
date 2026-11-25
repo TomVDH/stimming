@@ -1,146 +1,104 @@
-/* Star catalog: the star tray, a size ladder on a ribbon that scrolls. It copies the Bar v3 sheet look:
-   no box, rows on a soft glass, slab caps with a dark edge. */
+/* Star catalog: the star tray, a Bar v3 sheet in the bar's own layer.
+   No box: one ribbon of icons, group by group, on the bar's soft glass.
+   Two faces, each with one job (Tom, 2026-11-24): a body's name is Iosevka, as in the bar;
+   the quiet labels, a group's name and a body's type, are B612, as on the star card. */
 .sl-glass {
-  position: absolute; left: 0; right: 0; bottom: 0; height: 100%; z-index: 5; opacity: 0; pointer-events: none;
-  border-radius: 18px;
-  -webkit-backdrop-filter: blur(28px) brightness(0.34); backdrop-filter: blur(28px) brightness(0.34);
-  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 130px), transparent);
+  position: absolute; left: 0; right: 0; bottom: 0; height: 260px; z-index: 1; opacity: 0; pointer-events: none;
+  border-radius: 0 0 18px 18px;
+  -webkit-backdrop-filter: blur(18px) brightness(0.5); backdrop-filter: blur(18px) brightness(0.5);
+  /* Its top 70 px fade in, so no edge shows across the sky. */
+  -webkit-mask-image: linear-gradient(to top, #000 calc(100% - 70px), transparent); mask-image: linear-gradient(to top, #000 calc(100% - 70px), transparent);
   transition: opacity 0.1s steps(3, end);
 }
 .sl-glass[data-on] { opacity: 1; }
-.sl-chart {
-  --ink: oklch(0.05 0.01 275); --fg: oklch(0.97 0.005 275); --edge: 3px;
-  position: absolute; z-index: 5; box-sizing: border-box; left: 12px; right: 12px; margin-inline: auto;
-  bottom: calc(var(--foot, 56px) + 14px);
-  width: min(980px, calc(100% - 24px)); max-height: calc(100% - var(--foot, 56px) - var(--head, 58px) - 22px);
-  display: flex; flex-direction: column; container-type: inline-size;
-  font: 800 12px/1 "Iosevka Term Slab Nerd Font", "Iosevka Term Slab", ui-monospace, monospace;
-  letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg);
-  -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill;
-  transform-origin: 50% 100%;
-}
-.sl-chart[hidden] { display: none; }
+/* The tray runs wide: one ribbon through every group, scrolling sideways. */
+.sg-sheet.sl-tray { width: min(980px, calc(100% - 2 * var(--pad, 12px))); overflow: visible; padding-bottom: 2px; }
 /* The sheet lands in five film frames and leaves in two. */
-.sl-chart.is-landing { animation: sl-land 0.167s steps(5, end); }
-.sl-chart.is-closing { opacity: 0; transition: opacity 0.067s steps(2, end); pointer-events: none; }
+.sl-tray.is-landing { animation: sl-land 0.167s steps(5, end); }
+.sl-tray.is-closing { opacity: 0; transition: opacity 0.067s steps(2, end); }
 @keyframes sl-land { from { opacity: 0; transform: translateY(10px) scaleY(0.9); } }
 
-/* The ribbon: one column per object at a fixed width; it scrolls and snaps, never crowds. */
-.sl-ribbon { --col: clamp(44px, 6.4cqw, 62px); --big: calc(var(--col) - 6px); position: relative; }
+/* The two faces. */
+.sl-tray :is(.sl-info b, .sl-name) {
+  font-family: "Iosevka Term Slab Nerd Font", var(--slab, "Iosevka Term Slab"), ui-monospace, monospace;
+  font-weight: 800; text-transform: uppercase; -webkit-text-stroke: var(--edge, 3px) var(--ink); paint-order: stroke fill;
+}
+.sl-tray :is(.sl-info span, .sl-seg-name) {
+  font-family: "B612", sans-serif; font-weight: 700; text-transform: uppercase;
+  -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill;
+}
+
+/* The line over the ribbon: the body's name, then its type. */
+.sl-hd { display: flex; justify-content: center; padding: 0 40px 10px; }
+.sl-info { display: flex; align-items: baseline; gap: 12px; min-width: 0; white-space: nowrap; }
+.sl-info b { font-size: 16px; letter-spacing: 0.06em; }
+.sl-info span { overflow: hidden; text-overflow: ellipsis; font-size: 10px; letter-spacing: 0.18em; opacity: 0.7; }
+
+/* The ribbon: one row that scrolls and snaps; it never wraps or crowds. */
+.sl-ribbon { position: relative; }
 .sl-ladder {
-  display: flex; align-items: flex-start; padding: 4px 10px 0;
-  overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none;
+  display: flex; align-items: flex-start; padding: 0 20px; overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; cursor: grab;
 }
 .sl-ladder::-webkit-scrollbar { display: none; }
-/* The edges fade where more lies past them. */
-.sl-ribbon.more-left .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 48px); mask-image: linear-gradient(to right, transparent, #000 48px); }
-.sl-ribbon.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to left, transparent, #000 48px); mask-image: linear-gradient(to left, transparent, #000 48px); }
-.sl-ribbon.more-left.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(to right, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
-/* The page arrows sit over the faded ends, level with the swatches. */
+/* A drag holds the ribbon to the hand: no snap, no selection. */
+.sl-ladder.is-dragging { cursor: grabbing; scroll-snap-type: none; user-select: none; }
+.sl-ladder.is-dragging .sl-tile { cursor: grabbing; }
+/* The ends fade where more lies past them. */
+.sl-ribbon.more-left .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 64px); mask-image: linear-gradient(to right, transparent, #000 64px); }
+.sl-ribbon.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to left, transparent, #000 64px); mask-image: linear-gradient(to left, transparent, #000 64px); }
+.sl-ribbon.more-left.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); }
+/* The page arrows sit over the faded ends, level with the bodies. */
 .sl-page {
-  appearance: none; position: absolute; z-index: 1; top: 4px; width: 32px; height: calc(var(--big) + 10px);
+  appearance: none; position: absolute; z-index: 1; top: 18px; width: 36px; height: 100px;
   margin: 0; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer;
-  font: 800 26px/1 "Iosevka Term Slab Nerd Font", "Iosevka Term Slab", ui-monospace, monospace;
-  -webkit-text-stroke: var(--edge) var(--ink); paint-order: stroke fill;
+  font: 800 28px/1 "Iosevka Term Slab Nerd Font", var(--slab, ui-monospace), monospace;
+  -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
 }
 .sl-page[hidden] { display: none; }
-.sl-page--prev { left: 0; } .sl-page--next { right: 0; }
-.sl-page:hover, .sl-page:focus-visible { outline: none; transform: scale(1.12); }
-.sl-star {
-  appearance: none; display: flex; flex: 0 0 var(--col); flex-direction: column; align-items: center; gap: 8px; min-width: 0;
-  scroll-snap-align: center;
-  margin: 0; padding: 0 0 4px; border: 0; background: none; color: inherit;
-  font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer;
-}
-.sl-star:focus { outline: none; }
-/* The well holds the largest swatch; each swatch sits on its floor, the ladder's line. */
-.sl-well {
-  display: flex; align-items: flex-end; justify-content: center; width: 100%; height: calc(var(--big) + 6px);
-  border-bottom: 1px solid oklch(1 0 0 / 0.22);
-}
-.sl-sw {
-  --d: max(var(--min, 5px), calc(5px + var(--f) * (var(--big) - 5px)));
-  position: relative; flex: none; width: var(--d); height: var(--d); margin-bottom: 3px; border-radius: 50%;
-  background: radial-gradient(circle at 50% 50%, color-mix(in oklch, var(--c), white 45%) 0, var(--c) 55%, color-mix(in oklch, var(--c), black 45%) 100%);
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.14), 0 0 calc(var(--d) * 0.5) color-mix(in oklch, var(--c), transparent 55%);
-}
-/* ---- each kind of body draws as itself (Tom, 2026-11-24) ---- */
-/* The pseudo parts sit over the swatch's middle. */
-.sl-sw::before, .sl-sw::after { content: none; position: absolute; pointer-events: none; }
-/* Brown dwarf: dim, banded, little glow. */
-.sl-sw[data-kind="brown"] {
-  background: radial-gradient(circle at 50% 50%, transparent 55%, oklch(0 0 0 / 0.55) 100%),
-    repeating-linear-gradient(0deg, color-mix(in oklch, var(--c), black 30%) 0 16%, color-mix(in oklch, var(--c), white 12%) 16% 30%);
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 0.12);
-}
-/* Protostar: an edge-on dust disc across the star. */
-.sl-sw[data-kind="proto"]::after {
-  content: ""; left: -55%; right: -55%; top: 44%; height: 14%; border-radius: 50%;
-  background: radial-gradient(ellipse at 50% 50%, oklch(0.62 0.08 55 / 0.95) 30%, oklch(0.5 0.06 50 / 0.5) 60%, transparent 72%);
-}
-/* Wolf-Rayet: the star hidden in a wide wind. */
-.sl-sw[data-kind="wind"] { box-shadow: 0 0 0 1px oklch(1 0 0 / 0.14), 0 0 calc(var(--d) * 1.1) calc(var(--d) * 0.35) color-mix(in oklch, var(--c), transparent 45%); }
-/* Thorne-Zytkow object: a red giant with a hot core showing through. */
-.sl-sw[data-kind="tzo"] { background: radial-gradient(circle at 50% 50%, #fff 0 7%, oklch(0.88 0.14 70) 13%, var(--c) 38%, color-mix(in oklch, var(--c), black 55%) 100%); }
-/* Ringed: the star inside a wide, tilted ring. */
-.sl-sw[data-kind="ringed"]::after {
-  content: ""; left: -70%; right: -70%; top: 36%; height: 28%; border-radius: 50%;
-  border: 2px solid color-mix(in oklch, var(--c), white 25%); opacity: 0.85; transform: rotate(-14deg);
-}
-/* Binary: two stars, the larger and its partner, joined by a glowing bridge. */
-.sl-sw[data-kind="binary"] {
-  border-radius: 0; box-shadow: none;
-  background:
-    radial-gradient(circle at 34% 50%, color-mix(in oklch, var(--c), white 50%) 0, var(--c) 22%, transparent 31%),
-    radial-gradient(circle at 76% 50%, #fff 0, color-mix(in oklch, var(--c), white 30%) 9%, transparent 16%),
-    linear-gradient(90deg, transparent 40%, color-mix(in oklch, var(--c), transparent 45%) 50% 62%, transparent 70%) 0 47% / 100% 8% no-repeat;
-  filter: drop-shadow(0 0 calc(var(--d) * 0.15) var(--c));
-}
-/* White dwarf: a tiny hot point in a big glow. */
-.sl-sw[data-kind="dwarf"] { background: #fff; box-shadow: 0 0 6px 3px color-mix(in oklch, var(--c), transparent 20%), 0 0 16px 6px color-mix(in oklch, var(--c), transparent 70%); }
-/* Pulsar: a pinpoint with two beams across it. */
-.sl-sw[data-kind="pulsar"] { --min: 6px; background: #fff; box-shadow: 0 0 5px 2px var(--c); }
-.sl-sw[data-kind="pulsar"]::before, .sl-sw[data-kind="pulsar"]::after {
-  content: ""; left: 50%; top: 50%; width: 2px; height: 30px; margin: -15px 0 0 -1px; border-radius: 1px;
-  background: linear-gradient(transparent, color-mix(in oklch, var(--c), white 40%) 30%, #fff 50%, color-mix(in oklch, var(--c), white 40%) 70%, transparent);
-  transform: rotate(28deg);
-}
-.sl-sw[data-kind="pulsar"]::after { transform: rotate(28deg) scaleY(0.55); opacity: 0.6; }
-/* Black hole: a black shadow inside a thin bright ring, a tilted disc across it. */
-.sl-sw[data-kind="hole"] {
-  --min: 16px;
-  background: radial-gradient(circle at 50% 50%, #000 0 50%, color-mix(in oklch, var(--c), white 55%) 55%, var(--c) 61%, transparent 70%);
-  box-shadow: 0 0 calc(var(--d) * 0.35) color-mix(in oklch, var(--c), transparent 55%);
-}
-.sl-sw[data-kind="hole"]::after {
-  content: ""; left: -45%; right: -45%; top: 41%; height: 18%; border-radius: 50%;
-  background: radial-gradient(ellipse at 50% 50%, transparent 34%, color-mix(in oklch, var(--c), white 35%) 48%, color-mix(in oklch, var(--c), transparent 40%) 62%, transparent 72%);
-  transform: rotate(-9deg);
-}
-/* Quasar: a blazing point in a soft glow, jets out both sides; never a disc. */
-.sl-sw[data-kind="quasar"] {
-  --min: 12px;
-  background: radial-gradient(circle, #fff 0 9%, color-mix(in oklch, var(--c), white 30%) 15%, color-mix(in oklch, var(--c), transparent 55%) 30%, transparent 62%);
-  box-shadow: none;
-}
-.sl-sw[data-kind="quasar"]::before {
-  content: ""; left: 50%; top: -40%; width: 3px; height: 180%; margin-left: -1.5px; border-radius: 2px;
-  background: linear-gradient(transparent, color-mix(in oklch, var(--c), white 30%) 22%, #fff 50%, color-mix(in oklch, var(--c), white 30%) 78%, transparent);
-  transform: rotate(-32deg);
-}
+.sl-page--prev { left: -8px; } .sl-page--next { right: -8px; }
+@media (hover: hover) { .sl-page:hover { transform: scale(1.15); } }
 
-/* Names stand on their side, read from the foot up. */
-.sl-name { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; opacity: 0.62; font-size: min(13px, calc(var(--col) * 0.55)); }
-.sl-star:hover .sl-name, .sl-star:focus-visible .sl-name { opacity: 1; }
-/* Keyboard focus: an ink bar beside the name, never a ring. */
-.sl-star:focus-visible .sl-name { text-decoration: underline 2px; text-underline-offset: 4px; }
-/* The current star: a white ring and a full-white name. */
-.sl-star[aria-pressed="true"] .sl-sw { box-shadow: 0 0 0 2px var(--ink), 0 0 0 3.5px var(--fg), 0 0 calc(var(--d) * 0.6) var(--c); }
-.sl-star[aria-pressed="true"] .sl-name { opacity: 1; }
+/* A group: its name over its first body; a wider gap parts it from the next. */
+.sl-seg { flex: none; display: flex; flex-direction: column; }
+.sl-seg + .sl-seg { margin-left: 26px; }
+.sl-seg-name { height: 14px; padding: 0 6px; font-size: 9px; line-height: 14px; letter-spacing: 0.22em; white-space: nowrap; opacity: 0.55; }
+.sl-seg-row { display: flex; gap: 2px; }
 
-.sl-info { flex: none; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 6px 10px 0; min-height: 22px; font-size: 11px; }
-.sl-info b { font-size: 13px; }
-.sl-info span { opacity: 0.66; }
+/* A tile: the body floating in the middle of its well at its own size, the name under it. */
+.sl-tile {
+  --well: 100px; --small: 10px;
+  /* The icon's side: 10 px for the pulsar up to the full well for the quasi-star. */
+  --s: calc(var(--small) + var(--f, 0.5) * (var(--well) - var(--small)));
+  /* A cell is as wide as its body, and never narrower than a name. */
+  --cell: max(64px, calc(var(--s) + 8px));
+  appearance: none; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; width: var(--cell);
+  margin: 0; padding: 4px 0; border: 0; background: none; color: inherit; cursor: pointer;
+  font: inherit; text-transform: inherit; scroll-snap-align: center; -webkit-user-drag: none;
+}
+.sl-tile:focus { outline: none; }
+.sl-well { display: grid; place-items: center; width: 100%; height: var(--well); }
+/* The icon: three flat tones in the body's own colour, at the body's own size (Tom, 2026-11-24).
+   The mix with white keeps the dim colours, such as the brown dwarfs', readable. */
+.sl-tray .sl-glyph { display: block; width: var(--s); height: var(--s); overflow: visible; color: color-mix(in oklch, var(--c), white 25%); }
+/* The bar's star button wears the same icon, small, in place of the square swatch (Tom, 2026-11-24). */
+.sl-bar-glyph { flex: none; width: 18px; height: 18px; overflow: visible; filter: none !important; }
+/* The turn button's circular arrow, drawn in the bar's ink. */
+.sl-turn { flex: none; width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
-@media (max-height: 560px) { .sl-info { padding-top: 2px; } }
+/* The name: Iosevka caps with the bar's dark edge, two lines at most. */
+.sl-name { max-width: calc(100% - 4px); min-height: 2.3em; padding: 1px 4px; font-size: 10.5px; line-height: 1.15; letter-spacing: 0.04em; text-align: center; opacity: 0.8; }
+@media (hover: hover) {
+  .sl-tile:hover .sl-name { opacity: 1; }
+}
+/* Keyboard focus: an ink bar at the name's foot, never a ring. */
+.sl-tile:focus-visible .sl-name { opacity: 1; box-shadow: inset 0 -3px 0 var(--fg); }
+/* The body in hand holds the toy's ink, as a held pick does. */
+.sl-tile[aria-pressed="true"] .sl-name { opacity: 1; color: var(--acc-on, var(--ink)); background: var(--acc-fill, var(--fg)); -webkit-text-stroke: 0; }
+
+@media (max-width: 640px) {
+  .sl-tile { --well: 80px; --small: 8px; }
+  .sl-ladder { padding: 0 8px; }
+  .sl-info b { font-size: 14px; }
+}
 @media (prefers-reduced-motion: reduce) { .sl-glass { transition: none; } }
