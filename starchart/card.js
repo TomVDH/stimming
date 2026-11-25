@@ -112,12 +112,13 @@ export function makeCard(o) {
 
   // Our Sun beside the object at their true ratio, above the card (Tom, 2026-11-24).
   // k is the object's radius in R☉; a black hole gives its horizon's.
-  // Both stand on one centre line, the smaller at the left, at one scale.
+  // The Sun always stands at the left and counts as 1 (Tom, 2026-11-25).
   // The larger is H/2 tall at most; past that the smaller keeps 4 px of radius,
   // and the larger shows only the arc of its edge, as wide as the box allows (Tom, 2026-11-24).
   function sizeMark({ k }) {
     const W = 150, H = 52, MID = H / 2, GAP = 8, BIG = H / 2 - 2, SMALL = 4;
-    const ratio = k >= 1 ? k : 1 / k;
+    const sunBig = k < 1;
+    const ratio = sunBig ? 1 / k : k;
     const fits = SMALL * ratio <= BIG;
     const rBig = fits ? BIG : SMALL * ratio, rSmall = fits ? Math.max(BIG / ratio, 1.5) : SMALL;
     const el = h('div', 'c-sun');
@@ -129,19 +130,34 @@ export function makeCard(o) {
       c.setAttribute('class', cls);
       svg.append(c);
     };
-    const sx = Math.max(rSmall, 1.5) + 1, limb = sx + rSmall + GAP;
-    const w = fits ? Math.ceil(limb + 2 * rBig + 1) : W;
-    circle(sx, rSmall, k >= 1 ? 'c-sun-sol' : 'c-sun-obj');
-    circle(limb + rBig, rBig, (k >= 1 ? 'c-sun-obj' : 'c-sun-sol') + (fits ? '' : ' is-arc'));
+    let w;
+    if (!sunBig) {
+      // A small Sun at the left, the larger object to its right.
+      const sx = rSmall + 1, limb = sx + rSmall + GAP;
+      w = fits ? Math.ceil(limb + 2 * rBig + 1) : W;
+      circle(sx, rSmall, 'c-sun-sol');
+      circle(limb + rBig, rBig, 'c-sun-obj' + (fits ? '' : ' is-arc'));
+    } else {
+      // A large Sun at the left, or the arc of its right edge; the object to its right.
+      // A Sun too large to fit shows its right edge in BIG px.
+      const edge = fits ? 2 * rBig + 1 : Math.min(2 * rBig, BIG);
+      circle(edge - rBig, rBig, 'c-sun-sol');
+      circle(edge + GAP + rSmall, rSmall, 'c-sun-obj');
+      w = Math.ceil(edge + GAP + 2 * rSmall + 1);
+    }
     svg.setAttribute('width', w); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', `0 0 ${w} ${H}`);
-    // The larger body takes the number: Sun to object.
-    el.append(svg, h('span', 'c-sun-k', k >= 1 ? `☉ 1 : ${fmtRatio(k)}` : `☉ ${fmtRatio(ratio)} : 1`));
+    el.append(svg, h('span', 'c-sun-k', `☉ 1 : ${fmtRatio(k)}`));
     return el;
   }
-  // A ratio: two figures below 10, whole to 100,000, then powers of ten.
-  const fmtRatio = r => r < 10 ? String(+r.toPrecision(2)) : r < 1e5 ? Math.round(r).toLocaleString('en')
-    : `${(r / 10 ** Math.floor(Math.log10(r))).toFixed(1)} × 10${String(Math.floor(Math.log10(r))).replace(/\d/g, n => '⁰¹²³⁴⁵⁶⁷⁸⁹'[n])}`;
+  // A ratio: two figures from 0.01 to 10, whole to 100,000, else powers of ten.
+  const SUP = n => String(n).replace(/-/, '⁻').replace(/\d/g, d => '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]);
+  const fmtRatio = r => {
+    if (r >= 0.01 && r < 10) return String(+r.toPrecision(2));
+    if (r >= 10 && r < 1e5) return Math.round(r).toLocaleString('en');
+    const e = Math.floor(Math.log10(r));
+    return `${(r / 10 ** e).toFixed(1)} × 10${SUP(e)}`;
+  };
 
   return {
     /**
