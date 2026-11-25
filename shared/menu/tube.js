@@ -251,7 +251,7 @@ export async function tube(host, span) {
     return rows;
   }
   // With the cadence on, the name's letters stand askew in mixed weights. The same name always falls the same way.
-  // A trial (Tom, 2026-11-16): the name is in B612, the wordmark's face. B612 has two weights.
+  // A trial (Tom, 2026-11-16): the name is in B612, the heading face. B612 has two weights.
   const WEIGHTS = [700, 700, 400, 700];
   const font = (weight, size) => `${weight} ${size}px B612, Gabarito, system-ui, sans-serif`;
   /** @param {string} row @param {number} size @param {number} seed */
