@@ -11,13 +11,16 @@ function toyId(path = location.pathname) {
   if (parts.length && parts[parts.length - 1].endsWith('.html')) parts.pop();
   return parts[parts.length - 1] || '';
 }
-// One fetch that always revalidates; a file slower than 1.5 s or missing gives null.
+// One fetch that always revalidates; a file slower than 5 s or missing gives null.
 // The revalidation keeps a cached copy from hiding new names and icons.
+// stim.js reads the same promise, so the page asks once.
+const allToys = () => (globalThis.__stimToys ||= fetch(TOYS, { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).catch(() => null));
+// The fetch starts at import, ahead of the toy's own module requests.
+allToys();
 async function entry(id = toyId()) {
   try {
-    // stim.js reads the same promise, so the page asks once.
-    const all = (globalThis.__stimToys ||= fetch(TOYS, { cache: 'no-cache' }).then(r => (r.ok ? r.json() : null)).catch(() => null));
-    const toys = await Promise.race([all, new Promise(r => setTimeout(r, 1500, null))]);
+    // A cold load of a heavy toy can take longer than 1.5 s.
+    const toys = await Promise.race([allToys(), new Promise(r => setTimeout(r, 5000, null))]);
     return toys?.[id] || null;
   } catch (err) {
     return null;
