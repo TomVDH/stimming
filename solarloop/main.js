@@ -94,10 +94,21 @@ function stepDip(dt) {
 // then glides out to the full star, where the card plays (Tom, 2026-11-24).
 // The eye takes the quarter cut's light at once, as the frame is black.
 // Glides to the full star; the card waits until 2 s after rest.
+// The glide is slow and methodical: a set time on an even S-curve (Tom, 2026-11-24).
+const GLIDE_MS = 6500;
 function glideIn() {
   springTo(NOTCH);
-  cam.glide = true;
+  cam.glide = { from: cam.z, t0: performance.now() };
   restAt = 0;
+}
+// Steps the glide: no jolt at either end, an even pace between.
+function stepGlide() {
+  const { from, t0 } = cam.glide, k = clamp((performance.now() - t0) / GLIDE_MS);
+  const s = k * k * k * (k * (6 * k - 15) + 10), ds = 30 * k * k * (k - 1) * (k - 1);
+  cam.z = cam.aim = from + (cam.to - from) * s;
+  // The followers take over at this speed if a hand zoom interrupts.
+  cam.v = cam.va = (cam.to - from) * ds / (GLIDE_MS / 1000);
+  if (k >= 1) { cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false; }
 }
 function toQuarter() {
   Object.assign(cam, { z: 0, aim: 0, to: 0, v: 0, va: 0, moving: false, from: 0, arrived: false });
@@ -147,7 +158,7 @@ const cam = {
   from: z0,
   // The followers' speeds, and true while they move.
   v: 0, va: 0, moving: false,
-  // True while the opening or a switch glides in; its card waits for rest.
+  // The opening's or a switch's glide in, or false; its card waits for rest.
   glide: false,
   // The nearest stop names the framing.
   get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
@@ -310,8 +321,8 @@ const ZOOM_T = 0.35;
 // Zooming in is slower and heavier than zooming out (Tom, 2026-11-24).
 const ZOOM_IN = 1.4;
 // Steps both followers; true while the zoom moves.
-function stepZoom(dt) {
-  if (!cam.moving) return false;
+// Steps the two followers toward the target.
+function stepFollow(dt) {
   const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1);
   [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
   [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
@@ -319,6 +330,10 @@ function stepZoom(dt) {
   if (Math.abs(cam.to - cam.z) < 2e-4 && Math.abs(cam.v) < 2e-3 && Math.abs(cam.va) < 2e-3) {
     cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false;
   }
+}
+function stepZoom(dt) {
+  if (!cam.moving) return false;
+  if (cam.glide) stepGlide(); else stepFollow(dt);
   arrive();
   applyView();
   rail.show(cam.z, cam.to);
