@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T21:55:17Z
-updated_at: 2026-11-25T09:35:38Z
+updated_at: 2026-11-25T09:37:09Z
 parent: stimming-e35i
 ---
 
@@ -15,3 +15,7 @@ Tom, 2026-11-24: picked from the object list. The Crab Nebula (the supernova of 
 - [x] Look: the filament shell and its glow; the pulsar at its heart (Crab)
 - [x] Facts for the star card, sourced (Wikipedia: Crab Nebula, Crab Pulsar)
 - [ ] Tom looks at it live
+
+## Tom's first look (2026-11-25)
+
+"crab looks cheap -- volumetrics scale -- pizzaz dude". The volumetric rebuild is stimming-8ljj.
