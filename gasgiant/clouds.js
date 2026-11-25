@@ -640,6 +640,19 @@ float dens(vec3 p, float lod, float fine, float full) {
         gBounceC = pal(vd.w);
       }
       float sd = stormsIn(p, h, vd.x, vd.y, vd.z, vk.x, vk.y, vk.z);
+      // @seg upper
+      // Dev mode 3: the upper void's twisters are the ceiling's own cloud, pulled down.
+      if (vd.z == 3.1 && uTwCard > 2.5) {
+        vec4 tw2;
+        float fd2 = ceilFunnel(p, h, n1, n2, tw2);
+        if (fd2 > sd) {
+          sd = fd2; gTw = tw2;
+          // Its own light terms, so none of the ceiling's switch on or off with height.
+          // The floor's light reaches up under the flare, as under the ceiling.
+          gUnder = 0.35 * smoothstep(0.55, 0.95, tw2.z); gDeep = -1.0; gFold = 0.0; gFace = 1.0;
+        }
+      }
+      // @end
       if (sd <= d) gTw = vec4(0.0);
       if (sd > d) {
         d = sd;
@@ -671,8 +684,9 @@ float topDens(vec3 q) {
 }
 // Optical depth toward the light over four growing taps, to 33 km.
 // A low sun needs the reach: a 6 km head throws a 34 km shadow.
-float lightOD(vec3 p, vec3 ld, float lod) {
-  float od = 0.0, st = 1.2;
+// j shifts the taps along the light by up to one step; 0 keeps them fixed.
+float lightOD(vec3 p, vec3 ld, float lod, float j) {
+  float od = 0.0, st = 1.2 * (1.0 + j);
   bool cheap = lod > 0.8 && altOf(p) > 0.0;
   for (int j = 0; j < 4; j++) {
     p += ld * st;
@@ -789,7 +803,10 @@ void main() {
         if (deep > 0.0) ld = normalize(mix(ld, upv, smoothstep(1.5, 4.0, deep)));
         // Fire's smoke: Beer, multiple scatter, powder, a shadow ambient.
         // Far clouds in the decks take a mean depth; far ones seen from above take none.
-        float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod) : inWin ? 3.0 : 0.0);
+        // A funnel's smooth wall shows the taps as bands where the ceiling enters each one.
+        // Its taps shift per pixel, and the frame history blends them smooth.
+        float lj = tw.w > 0.5 ? fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 7.31, vec2(0.06711056, 0.00583715)))) : 0.0;
+        float tau = SIG * (lod < 2.5 ? lightOD(p, ld, lod, lj) : inWin ? 3.0 : 0.0);
         float beer = exp(-tau);
         // The multiple-scatter term carries the light into the cloud, so thin parts glow.
         float lit = beer + uTune.x * exp(-0.22 * tau);
@@ -828,6 +845,20 @@ void main() {
           float tl = (exp(-tod) + 0.3 * exp(-tod * 0.4) + 0.05 * exp(-tod * 0.16)) / 1.35;
           vec3 amb = (sky + bounce + diffuse * 0.3) * vec3(0.7, 0.85, 1.2) * (0.3 + 0.55 * tw.z) * exp(-max(0.0, 1.0 - tw.y) * 1.6);
           Lc = alb * ((sun + diffuse) * tl * 1.8 + amb * 1.5);
+          // @seg upper
+          // Ceiling funnels are backlit and side-lit (Tom, 2026-11-24): the thin outer wall glows
+          // toward the light behind them, the side to the light lifts, and the body is brighter.
+          if (tw.w > 1.5) {
+            vec3 lb = normalize(normalize(vec3(rd.x, 0.0, rd.z) + 1e-5) + vec3(0.0, 0.35, 0.0));
+            float back = min(clPhase(dot(rd, lb)), 4.0);
+            // The rim is where the view grazes the wall: the silhouette, not the face.
+            float fa = (tw.w - 2.0) * 6.2831853;
+            float graze = 1.0 - abs(dot(vec2(cos(fa), sin(fa)), normalize(rd.xz + 1e-5)));
+            float rim = smoothstep(0.4, 1.0, tw.y) * graze * graze;
+            vec3 lv = L.rgb * mix(1.0, 0.85, L.a) * uTune.y;
+            Lc = Lc * mix(1.0, 1.2, uRimK) + alb * lv * (rim * back * 1.6 + rim * (0.5 + 0.5 * tw.x) * 0.6 + 0.15 * (0.5 + 0.5 * tw.x)) * uRimK;
+          }
+          // @end
         }
         // Shade in the folds takes a bruised violet, never a grey wash.
         Lc *= mix(vec3(1.0), vec3(0.88, 0.8, 1.1), fold * (1.0 - clamp(lit, 0.0, 1.0)) * 0.8);
