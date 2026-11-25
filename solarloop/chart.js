@@ -1,4 +1,4 @@
-// Star catalog: the star tray, grouped by kind of body (Tom, 2026-11-24).
+// Star catalog: the star tray, one ribbon through the groups of bodies (Tom, 2026-11-24).
 // It is a Bar v3 sheet: it mounts in the bar's layer and takes its look.
 // Each object shows a still of the toy itself, baked once by bake.js.
 // Inside a group, the objects run smallest to largest.
@@ -74,7 +74,7 @@ const GROUPS = [
 ];
 
 /**
- * Builds the star tray on the stage's frame.
+ * Builds the star tray on the stage's frame: one ribbon through every group.
  * @param {{ frame: HTMLElement, focusBack: HTMLElement, stars: { value: string, name: string, colour: string, rsun: number }[],
  *   get: () => string, onPick: (v: string) => void, cover: () => { top: number, bottom: number }, onOpen?: (on: boolean) => void }} o
  */
@@ -89,21 +89,36 @@ export function makeChart(o) {
   el.hidden = true;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Star');
-  // The heading names the object in hand; the star card carries the facts.
-  const hd = h('div', 'sg-sheet-hd', '<span>Star</span>');
-  const info = h('em', 'sl-info');
+  // One line over the ribbon names the body in hand and its type; the card carries the facts.
+  const hd = h('div', 'sl-hd');
+  const info = h('div', 'sl-info');
   info.setAttribute('aria-live', 'polite');
   hd.append(info);
-  el.append(hd);
+  const ribbon = h('div', 'sl-ribbon');
+  const ladder = h('div', 'sl-ladder');
+  // Page arrows at the ends; each shows only where more lies.
+  const prev = h('button', 'sl-page sl-page--prev', '‹'), next = h('button', 'sl-page sl-page--next', '›');
+  for (const [b, dir, label] of [[prev, -1, 'Earlier'], [next, 1, 'Later']]) {
+    b.type = 'button';
+    b.setAttribute('aria-label', label);
+    b.tabIndex = -1;
+    b.addEventListener('click', () => glide(ladder.scrollLeft + dir * ladder.clientWidth * 0.75));
+  }
+  ribbon.append(prev, ladder, next);
+  el.append(hd, ribbon);
+
   const byId = new Map(o.stars.map(s => [s.value, s]));
   const placed = new Set(GROUPS.flatMap(g => g[1]));
   const groups = [...GROUPS.map(([name, ids]) => [name, ids.filter(id => byId.has(id))]),
     ['More', o.stars.filter(s => !placed.has(s.value)).map(s => s.value)]]
     .filter(g => g[1].length);
+  /** @type {{ b: HTMLButtonElement, s: any, g: number }[]} */
   const btns = [];
-  for (const [name, ids] of groups) {
-    el.append(h('div', 'sg-group', name));
-    const row = h('div', 'sl-row');
+  groups.forEach(([name, ids], gi) => {
+    // A group is a stretch of the ribbon, its name over its first body.
+    const seg = h('div', 'sl-seg');
+    seg.append(h('div', 'sl-seg-name', name));
+    const row = h('div', 'sl-seg-row');
     for (const id of [...ids].sort((a, b) => byId.get(a).rsun - byId.get(b).rsun)) {
       const s = byId.get(id), c = CHART[id] || {};
       const b = h('button', 'sl-tile');
@@ -113,33 +128,120 @@ export function makeChart(o) {
       // Each body stands at its own size, smallest to largest (Tom, 2026-11-24).
       b.style.setProperty('--f', sizeOf(s.rsun).toFixed(3));
       // The flipbook loads on the first open; until then, or without one, a dot in the star's colour.
-      b.innerHTML = `<span class="sl-well"><span class="sl-still"></span></span><span class="sl-name">${s.name}</span>`;
+      // A non-breaking hyphen keeps a name such as Cygnus X-1 whole.
+      b.innerHTML = `<span class="sl-well"><span class="sl-still"></span></span><span class="sl-name">${s.name.replace(/-/g, '\u2011')}</span>`;
       b.setAttribute('aria-label', [s.name, c.cls, fmtT(c.t), fmtR(s.rsun, id)].filter(Boolean).join(', '));
-      b.addEventListener('click', async () => {
+      b.addEventListener('click', async e => {
+        // A drag that ends on a body is not a pick.
+        if (dragged) { e.preventDefault(); return; }
         o.onPick(id);
         sync();
         if (!RM.matches) await fr(2);
         open(false);
       });
       b.addEventListener('pointerenter', () => tell(s));
-      b.addEventListener('focus', () => tell(s));
+      b.addEventListener('focus', () => { tell(s); centre(b); });
       b.addEventListener('pointerleave', () => tell());
       row.append(b);
-      btns.push({ b, s });
+      btns.push({ b, s, g: gi });
     }
-    el.append(row);
-  }
+    seg.append(row);
+    ladder.append(seg);
+  });
   o.frame.append(glass, el);
 
   // The heading line: the pointed, focused or current object, and its type.
   function tell(s) {
     const cur = s || byId.get(o.get());
-    if (cur) info.innerHTML = `<b>${cur.name}</b> ${FACTS[cur.value]?.type ?? CHART[cur.value]?.cls ?? ''}`;
+    if (cur) info.innerHTML = `<b>${cur.name}</b><span>${FACTS[cur.value]?.type ?? CHART[cur.value]?.cls ?? ''}</span>`;
   }
   function sync() {
     for (const { b, s } of btns) b.setAttribute('aria-pressed', String(s.value === o.get()));
     if (!el.contains(document.activeElement)) tell();
   }
+
+  /* ---------- the ribbon's motion ---------- */
+  let anim = 0;
+  const stop = () => { cancelAnimationFrame(anim); anim = 0; };
+  // A glide eases to a scroll position; reduced motion jumps.
+  function glide(to) {
+    stop();
+    const max = ladder.scrollWidth - ladder.clientWidth;
+    to = Math.max(0, Math.min(max, to));
+    if (RM.matches) { ladder.scrollLeft = to; return; }
+    const from = ladder.scrollLeft, t0 = performance.now(), T = 260;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / T), e = 1 - (1 - k) ** 3;
+      ladder.scrollLeft = from + (to - from) * e;
+      anim = k < 1 ? requestAnimationFrame(step) : 0;
+    };
+    anim = requestAnimationFrame(step);
+  }
+  // The body glides to the ribbon's middle.
+  function centre(b, smooth = true) {
+    // Measured on screen: the tile's offset parent is the sheet, not the ribbon.
+    const r = b.getBoundingClientRect(), l = ladder.getBoundingClientRect();
+    const to = ladder.scrollLeft + r.left + r.width / 2 - l.left - l.width / 2;
+    if (smooth) glide(to); else { stop(); ladder.scrollLeft = to; }
+  }
+  // The arrows and the edge fades show only where more lies.
+  function edges() {
+    const max = ladder.scrollWidth - ladder.clientWidth;
+    const atStart = ladder.scrollLeft <= 2, atEnd = ladder.scrollLeft >= max - 2;
+    prev.hidden = atStart; next.hidden = atEnd;
+    ribbon.classList.toggle('more-left', !atStart);
+    ribbon.classList.toggle('more-right', !atEnd);
+  }
+  ladder.addEventListener('scroll', edges, { passive: true });
+  new ResizeObserver(edges).observe(ladder);
+  // A wheel, either axis, scrolls the ribbon sideways at once.
+  ladder.addEventListener('wheel', e => {
+    e.preventDefault();
+    stop();
+    ladder.scrollLeft += Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  }, { passive: false });
+  // A mouse drag throws the ribbon; it coasts and slows. Touch scrolls natively.
+  let drag = null, dragged = false;
+  ladder.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    stop();
+    drag = { x: e.clientX, left: ladder.scrollLeft, id: e.pointerId, v: 0, t: e.timeStamp, lx: e.clientX };
+    dragged = false;
+  });
+  ladder.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    // A press becomes a drag after 8 px.
+    if (!dragged && Math.abs(dx) < 8) return;
+    if (!dragged) { dragged = true; ladder.setPointerCapture(e.pointerId); ladder.classList.add('is-dragging'); }
+    ladder.scrollLeft = drag.left - dx;
+    const dt = Math.max(1, e.timeStamp - drag.t);
+    drag.v = 0.8 * drag.v + 0.2 * (-(e.clientX - drag.lx) / dt);
+    drag.t = e.timeStamp; drag.lx = e.clientX;
+  });
+  const endDrag = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const v = drag.v;
+    drag = null;
+    ladder.classList.remove('is-dragging');
+    if (!dragged) return;
+    // The click that ends a drag clears after it fires.
+    setTimeout(() => { dragged = false; }, 0);
+    if (RM.matches || Math.abs(v) < 0.05) return;
+    // The throw coasts on, losing speed with a time constant of about 0.3 s.
+    let vel = v * 16, last = performance.now();
+    const coast = now => {
+      const dt = now - last; last = now;
+      ladder.scrollLeft += vel * dt / 16;
+      vel *= Math.exp(-dt / 300);
+      anim = Math.abs(vel) > 0.2 ? requestAnimationFrame(coast) : 0;
+    };
+    anim = requestAnimationFrame(coast);
+  };
+  ladder.addEventListener('pointerup', endDrag);
+  ladder.addEventListener('pointercancel', endDrag);
+  ladder.addEventListener('lostpointercapture', endDrag);
+
   // The tray joins the bar's layer, so it takes the bar's ink.
   // The flipbooks load once, on the first open.
   let loaded = false;
@@ -166,12 +268,14 @@ export function makeChart(o) {
       glass.dataset.on = '';
       el.classList.remove('is-closing');
       el.classList.toggle('is-landing', !RM.matches);
+      // The ribbon opens with the object in hand at its middle.
       const cur = btns.find(x => x.s.value === o.get())?.b;
-      cur?.focus({ preventScroll: true });
-      cur?.scrollIntoView({ block: 'nearest' });
+      if (cur) { centre(cur, false); cur.focus({ preventScroll: true }); }
+      edges();
       o.onOpen?.(true);
       if (!RM.matches) { await fr(5); if (me === run) el.classList.remove('is-landing'); }
     } else {
+      stop();
       closedAt = performance.now();
       const inside = el.contains(document.activeElement);
       delete glass.dataset.on;
@@ -184,41 +288,33 @@ export function makeChart(o) {
   // A press outside closes the sheet; the press on its own button must not reopen it.
   addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target)) open(false); }, true);
 
-  // The nearest tile in the next visual row up or down, by its centre.
-  function vertical(from, dir) {
-    const r = from.getBoundingClientRect(), x = r.left + r.width / 2;
-    let best = null, bd = Infinity;
-    for (const { b } of btns) {
-      const q = b.getBoundingClientRect();
-      const dy = (q.top - r.top) * dir;
-      if (dy < 4) continue;
-      const d = dy * 4 + Math.abs(q.left + q.width / 2 - x);
-      if (d < bd) { bd = d; best = b; }
-    }
-    return best;
-  }
-  // Arrows move through the grid; Home and End go to its ends; Enter picks; Escape or S closes.
+  // Left and right step; up and down jump a group; Home and End go to the ends.
+  // A letter jumps to the next name that starts with it. Enter picks; Escape or S closes.
   // While the sheet is open, the toy's own keys wait.
   addEventListener('keydown', e => {
     if (el.hidden) return;
     const f = btns.findIndex(x => x.b === document.activeElement);
     const at = f >= 0 ? f : Math.max(0, btns.findIndex(x => x.s.value === o.get()));
-    const go = i => { const b = btns[(i + btns.length) % btns.length].b; b.focus({ preventScroll: true }); b.scrollIntoView({ block: 'nearest' }); };
+    // The key moves focus and glides the body to the middle; it does not wait on a focus event.
+    const to = x => { x.b.focus({ preventScroll: true }); tell(x.s); centre(x.b); };
+    const go = i => to(btns[Math.max(0, Math.min(btns.length - 1, i))]);
     const step = { ArrowLeft: -1, ArrowRight: 1, '[': -1, ']': 1 }[e.key];
+    const g = btns[at].g, first = gi => btns.findIndex(x => x.g === gi);
     if (e.key === 'Escape' || e.key === 's' || e.key === 'S') { e.preventDefault(); open(false); }
     else if (step) { e.preventDefault(); go(at + step); }
-    else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      const b = vertical(btns[at].b, e.key === 'ArrowUp' ? -1 : 1);
-      if (b) go(btns.findIndex(x => x.b === b));
-    }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); go(at === first(g) ? first(Math.max(0, g - 1)) : first(g)); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); const i = btns.findIndex(x => x.g > g); if (i >= 0) go(i); }
     else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); go(e.key === 'Home' ? 0 : btns.length - 1); }
-    else if (e.key === 'Tab') {
-      // Tab stays inside the sheet.
+    else if (e.key === 'Tab') { e.preventDefault(); go(at + (e.shiftKey ? -1 : 1)); }
+    else if (/^[a-z0-9]$/i.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      go(at + (e.shiftKey ? -1 : 1));
+      const k = e.key.toLowerCase();
+      for (let n = 1; n <= btns.length; n++) {
+        const x = btns[(at + n) % btns.length];
+        if (x.s.name.toLowerCase().startsWith(k)) { to(x); break; }
+      }
     }
-    // Enter and Space still press the focused star.
+    // Enter and Space still press the focused body.
     e.stopPropagation();
   }, true);
 

@@ -1,6 +1,7 @@
 /* Star catalog: the star tray, a Bar v3 sheet in the bar's own layer.
-   No box: groups of flipbooks stand on the bar's soft glass.
-   Its words are B612, the cockpit face, as on the star card (Tom, 2026-11-24). */
+   No box: one ribbon of flipbooks, group by group, on the bar's soft glass.
+   Two faces, each with one job (Tom, 2026-11-24): a body's name is Iosevka, as in the bar;
+   the quiet labels, a group's name and a body's type, are B612, as on the star card. */
 .sl-glass {
   position: absolute; left: 0; right: 0; bottom: 0; height: 100%; z-index: 1; opacity: 0; pointer-events: none;
   border-radius: 18px;
@@ -9,38 +10,74 @@
   transition: opacity 0.1s steps(3, end);
 }
 .sl-glass[data-on] { opacity: 1; }
-/* The tray is wider than a list sheet: eight bodies to a row on a desktop stage. */
-.sg-sheet.sl-tray { width: min(700px, calc(100% - 2 * var(--pad, 12px))); padding-bottom: 6px; scrollbar-width: none; }
-.sl-tray::-webkit-scrollbar { display: none; }
+/* The tray runs wide: one ribbon through every group, scrolling sideways. */
+.sg-sheet.sl-tray { width: min(980px, calc(100% - 2 * var(--pad, 12px))); overflow: visible; padding-bottom: 2px; }
 /* The sheet lands in five film frames and leaves in two. */
 .sl-tray.is-landing { animation: sl-land 0.167s steps(5, end); }
 .sl-tray.is-closing { opacity: 0; transition: opacity 0.067s steps(2, end); }
 @keyframes sl-land { from { opacity: 0; transform: translateY(10px) scaleY(0.9); } }
-/* Every word in the tray: B612 capitals, tracked wide. */
-.sl-tray :is(.sg-sheet-hd, .sg-group, .sl-name) {
+
+/* The two faces. */
+.sl-tray :is(.sl-info b, .sl-name) {
+  font-family: "Iosevka Term Slab Nerd Font", var(--slab, "Iosevka Term Slab"), ui-monospace, monospace;
+  font-weight: 800; text-transform: uppercase; -webkit-text-stroke: var(--edge, 3px) var(--ink); paint-order: stroke fill;
+}
+.sl-tray :is(.sl-info span, .sl-seg-name) {
   font-family: "B612", sans-serif; font-weight: 700; text-transform: uppercase;
   -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill;
 }
-.sl-tray .sg-sheet-hd { position: sticky; top: 0; z-index: 1; font-size: 11px; letter-spacing: 0.18em; }
-.sl-tray .sg-group { font-size: 10px; letter-spacing: 0.18em; opacity: 0.62; }
-.sl-info { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-transform: none; letter-spacing: 0.06em !important; opacity: 0.85 !important; }
-.sl-info b { margin-right: 10px; text-transform: uppercase; letter-spacing: 0.18em; }
-.sl-row { display: flex; flex-wrap: wrap; gap: 2px 4px; padding: 0 6px; }
 
-/* A tile: the body's flipbook at its own size, standing on the group's line, its name under it. */
+/* The line over the ribbon: the body's name, then its type. */
+.sl-hd { display: flex; justify-content: center; padding: 0 40px 10px; }
+.sl-info { display: flex; align-items: baseline; gap: 12px; min-width: 0; white-space: nowrap; }
+.sl-info b { font-size: 16px; letter-spacing: 0.06em; }
+.sl-info span { overflow: hidden; text-overflow: ellipsis; font-size: 10px; letter-spacing: 0.18em; opacity: 0.7; }
+
+/* The ribbon: one row that scrolls and snaps; it never wraps or crowds. */
+.sl-ribbon { position: relative; }
+.sl-ladder {
+  display: flex; align-items: flex-start; padding: 0 20px; overflow-x: auto; overflow-y: hidden;
+  overscroll-behavior-x: contain; scroll-snap-type: x proximity; scrollbar-width: none; cursor: grab;
+}
+.sl-ladder::-webkit-scrollbar { display: none; }
+/* A drag holds the ribbon to the hand: no snap, no selection. */
+.sl-ladder.is-dragging { cursor: grabbing; scroll-snap-type: none; user-select: none; }
+.sl-ladder.is-dragging .sl-tile { cursor: grabbing; }
+/* The ends fade where more lies past them. */
+.sl-ribbon.more-left .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 64px); mask-image: linear-gradient(to right, transparent, #000 64px); }
+.sl-ribbon.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to left, transparent, #000 64px); mask-image: linear-gradient(to left, transparent, #000 64px); }
+.sl-ribbon.more-left.more-right .sl-ladder { -webkit-mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); mask-image: linear-gradient(to right, transparent, #000 64px, #000 calc(100% - 64px), transparent); }
+/* The page arrows sit over the faded ends, level with the bodies. */
+.sl-page {
+  appearance: none; position: absolute; z-index: 1; top: 18px; width: 36px; height: 76px;
+  margin: 0; padding: 0; border: 0; background: none; color: var(--fg); cursor: pointer;
+  font: 800 28px/1 "Iosevka Term Slab Nerd Font", var(--slab, ui-monospace), monospace;
+  -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill;
+}
+.sl-page[hidden] { display: none; }
+.sl-page--prev { left: -8px; } .sl-page--next { right: -8px; }
+@media (hover: hover) { .sl-page:hover { transform: scale(1.15); } }
+
+/* A group: its name over its first body; a wider gap parts it from the next. */
+.sl-seg { flex: none; display: flex; flex-direction: column; }
+.sl-seg + .sl-seg { margin-left: 26px; }
+.sl-seg-name { height: 14px; padding: 0 6px; font-size: 9px; line-height: 14px; letter-spacing: 0.22em; white-space: nowrap; opacity: 0.55; }
+.sl-seg-row { display: flex; gap: 2px; }
+
+/* A tile: an even cell, the body floating in its middle at its own size, the name under it. */
 .sl-tile {
-  --big: 64px; --n: 12;
-  /* The frame's side: 14 px for the pulsar up to the full well for the quasi-star. */
+  --cell: 76px; --big: 64px; --n: 12;
+  /* The frame's side: 14 px for the pulsar up to 64 px for the largest. */
   --s: calc(14px + var(--f, 0.5) * (var(--big) - 14px));
-  appearance: none; display: flex; flex-direction: column; align-items: center; gap: 4px; width: 78px;
-  margin: 0; padding: 4px 0 6px; border: 0; background: none; color: inherit; cursor: pointer;
-  font: inherit; text-transform: inherit;
+  appearance: none; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; width: var(--cell);
+  margin: 0; padding: 4px 0; border: 0; background: none; color: inherit; cursor: pointer;
+  font: inherit; text-transform: inherit; scroll-snap-align: center; -webkit-user-drag: none;
 }
 .sl-tile:focus { outline: none; }
-.sl-well { display: flex; align-items: flex-end; justify-content: center; width: 100%; height: var(--big); border-bottom: 1px solid oklch(1 0 0 / 0.16); }
+.sl-well { display: grid; place-items: center; width: var(--cell); height: var(--cell); }
 /* Until its flipbook loads, a body is a dot in its own colour. */
 .sl-still {
-  flex: none; width: var(--s); height: var(--s);
+  width: var(--s); height: var(--s);
   background: radial-gradient(circle, color-mix(in oklch, var(--c), white 30%) 0 6%, color-mix(in oklch, var(--c), transparent 40%) 14%, transparent 34%);
 }
 /* The flipbook: colour frames on the strip's top row, their alpha as grey below it.
@@ -58,18 +95,20 @@
     mask-position: calc(var(--s) * var(--n) * -1) calc(var(--s) * -1);
   }
 }
-.sl-name {
-  max-width: 100%; padding: 2px 3px; font-size: 9px; line-height: 1.2; letter-spacing: 0.12em; text-align: center;
-}
-/* Hover: the white flash box behind the name. */
+/* The name: Iosevka caps with the bar's dark edge, two lines at most. */
+.sl-name { max-width: calc(100% - 4px); min-height: 2.3em; padding: 1px 4px; font-size: 10.5px; line-height: 1.15; letter-spacing: 0.04em; text-align: center; opacity: 0.8; }
 @media (hover: hover) {
-  .sl-tile:hover .sl-name { background: var(--fg); color: var(--ink); -webkit-text-stroke: 0; }
+  .sl-tile:hover .sl-name { opacity: 1; }
 }
-/* Keyboard focus: an ink bar at the name's foot. */
-.sl-tile:focus-visible .sl-name { box-shadow: inset 0 -3px 0 var(--fg); }
-/* The object in hand holds the toy's ink, as a held pick does. */
-.sl-tile[aria-pressed="true"] .sl-name { color: var(--acc-on, var(--ink)); background: var(--acc-fill, var(--fg)); -webkit-text-stroke: 0; }
+/* Keyboard focus: an ink bar at the name's foot, never a ring. */
+.sl-tile:focus-visible .sl-name { opacity: 1; box-shadow: inset 0 -3px 0 var(--fg); }
+/* The body in hand holds the toy's ink, as a held pick does. */
+.sl-tile[aria-pressed="true"] .sl-name { opacity: 1; color: var(--acc-on, var(--ink)); background: var(--acc-fill, var(--fg)); -webkit-text-stroke: 0; }
 
-@media (max-width: 640px) { .sl-tile { --big: 60px; width: 64px; } }
+@media (max-width: 640px) {
+  .sl-tile { --cell: 64px; --big: 54px; }
+  .sl-ladder { padding: 0 8px; }
+  .sl-info b { font-size: 14px; }
+}
 /* Reduced motion: each body holds its first frame. */
 @media (prefers-reduced-motion: reduce) { .sl-glass { transition: none; } .is-baked .sl-still { animation: none; } }
