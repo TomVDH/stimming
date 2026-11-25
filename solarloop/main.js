@@ -583,13 +583,12 @@ function arrive() {
   showCard();
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
-// Our Sun's outline above it takes the star's scale on screen.
+// Our Sun stands beside the object at their true ratio; the Sun's own card has none.
 function showCard() {
   cardStar = st.star;
-  // A black hole's R is its shadow's edge, BCRIT horizon radii out; its rsun is the horizon's.
-  const B = STARS[st.star], horizonR = B.hole ? R / BCRIT : R;
+  // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
-  const sun = { d: horizonR / B.rsun * cssH / view.hh, max: cssH * 0.3, ratio: 1 / B.rsun, colour: pick.colour };
+  const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
   card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun);
   showClock();
 }
