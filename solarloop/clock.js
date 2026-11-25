@@ -1,5 +1,6 @@
 // Star catalog: the time clock (Tom, 2026-11-24).
 // It reads like an instrument: the star's own period, the speed-up, the time passed.
+// Plain numbers and words, no powers of ten (Tom, 2026-11-24).
 // A dial shows the turn's phase; an arc sweeps the part turned since the clock showed.
 // It shows on a Turn press and with each star card, and leaves after SHOW ms.
 
@@ -14,6 +15,8 @@ const h = (tag, cls) => {
 const MIN = 60, HOUR = 3600, DAY = 86400, YEAR = 365.25 * DAY;
 // Three significant figures, no trailing zeros.
 const sig = v => String(+v.toPrecision(3));
+// A value and its unit in words, plural past one.
+const unit = (v, w) => `${sig(v)} ${w}${sig(v) === '1' ? '' : 's'}`;
 
 /**
  * A span of time in one unit, three figures.
@@ -23,9 +26,9 @@ export function span(s) {
   if (s < 1) return `${sig(s * 1000)} ms`;
   if (s < MIN) return `${sig(s)} s`;
   if (s < HOUR) return `${sig(s / MIN)} min`;
-  if (s < 2 * DAY) return `${sig(s / HOUR)} h`;
-  if (s < 2 * YEAR) return `${sig(s / DAY)} d`;
-  return `${sig(s / YEAR)} yr`;
+  if (s < 2 * DAY) return unit(s / HOUR, 'hour');
+  if (s < 2 * YEAR) return unit(s / DAY, 'day');
+  return unit(s / YEAR, 'year');
 }
 
 /**
@@ -44,23 +47,21 @@ export function elapsed(s) {
   return `${(s / YEAR).toFixed(2)} yr`;
 }
 
-const SUP = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+// Two significant figures, with thousands separators.
+const two = v => (+v.toPrecision(2)).toLocaleString('en-US');
 /**
- * The speed-up as a factor: ×1, ×212, ×2.4·10⁴; a slowed clock reads ×1/18.
+ * The speed-up in plain numbers: ×26,000, ×9.9 million; a slowed clock reads 18× slower.
  * @param {number} r Star seconds per screen second.
  */
 export function factor(r) {
-  if (r < 0.95) return `×1/${Math.round(1 / r)}`;
-  if (r < 1e3) return `×${Math.round(r)}`;
-  const e = Math.floor(Math.log10(r)), m = r / 10 ** e;
-  const ms = m.toFixed(1);
-  // A mantissa that rounds to 10 carries into the exponent.
-  if (ms === '10.0') return `×1.0·10${[...String(e + 1)].map(d => SUP[+d]).join('')}`;
-  return `×${ms}·10${[...String(e)].map(d => SUP[+d]).join('')}`;
+  if (r < 0.95) return `${Math.round(1 / r)}× slower`;
+  if (r < 1e6) return `×${two(r)}`;
+  if (r < 1e9) return `×${two(r / 1e6)} million`;
+  return `×${two(r / 1e9)} billion`;
 }
 
 // Each kind's period label.
-const KIND = { rot: 'P rot', orb: 'P orb', s2: 'P S2', spin: 'P spin' };
+const KIND = { rot: 'turns in', orb: 'orbits in', s2: 'S2 orbit', spin: 'spins in' };
 
 /**
  * Builds the clock on the stage's frame.
@@ -94,8 +95,8 @@ export function makeClock(o) {
   const grid = h('dl', 'sl-clock-g');
   const row = () => { const dt = h('dt'), dd = h('dd'); grid.append(dt, dd); return [dt, dd]; };
   const rP = row(), rS = row(), rT = row();
-  rS[0].textContent = '1 s ≙';
-  rT[0].textContent = 'Δt';
+  rS[0].textContent = '1 s here';
+  rT[0].textContent = 'passed';
   el.append(dialBox, grid);
   o.frame.append(el);
 
@@ -142,7 +143,7 @@ export function makeClock(o) {
       if (k !== key) { key = k; t0 = c.t; ph0 = c.phase; }
       if (performance.now() > until) { hide(); return false; }
       const P = c.days * DAY, d = Math.max(0, c.t - t0);
-      text(rP[0], KIND[c.kind] || 'P');
+      text(rP[0], KIND[c.kind] || 'period');
       text(rP[1], span(P));
       text(rS[1], span(c.rate));
       text(rT[1], `+${elapsed(d)}`);
