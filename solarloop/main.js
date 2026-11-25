@@ -65,18 +65,24 @@ const dipLight = () => {
 const CARD_AFTER_DIP = 1750;
 // The time before which the card waits, from performance.now().
 let cardAfter = 0;
+// A new star starts calm: no flare or eruption carries over, unseen, and keeps the toy awake.
+function clearActivity() {
+  sun.flares.length = 0;
+  for (const p of sun.proms) { p.erupt = -1; p.lit = 0; }
+  for (const rg of sun.regions) { rg.lastFlare = -1e9; rg.lit = 0; }
+}
 // Steps the dip; the star swaps at the dark point. True while it runs.
 function stepDip(dt) {
   if (shown !== st.star && !dip) {
     // Reduced motion and the first frame swap at once.
-    if (calm || !started) { shown = st.star; applyView(); return false; }
+    if (calm || !started) { shown = st.star; clearActivity(); applyView(); return false; }
     dip = { t: 0 };
   }
   if (!dip) return false;
   // A new pick on the way up turns back down from the same light.
   if (shown !== st.star && dip.t > DIP_DOWN) dip.t = DIP_DOWN * (1 - (dip.t - DIP_DOWN) / DIP_UP);
   dip.t += dt;
-  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; applyView(); }
+  if (dip.t >= DIP_DOWN && shown !== st.star) { shown = st.star; clearActivity(); applyView(); }
   if (dip.t >= DIP_DOWN + DIP_UP) {
     dip = null;
     cardAfter = performance.now() + CARD_AFTER_DIP;
@@ -285,7 +291,9 @@ function setRot() {
   CAM = TP;
   // The star turns on its own axis at its true rate, sped up.
   const B = STARS[shown];
-  const S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.turn / (B.day * 86400)) % 1)) : null;
+  let S = B.day ? axisTurn(B.grav, 2 * Math.PI * ((st.turn / (B.day * 86400)) % 1)) : null;
+  // A pulsar in true physics turns whole with its spin, so taps, flares and field ride the crust.
+  if (pulsarTurns(B)) S = axisTurn(SPIN, 2 * Math.PI * st.spin / SPIN_PERIOD);
   M = S ? mul(TP, S) : TP;
   // A binary's orbit tilts toward the eye, so its disc shows its face; the eclipses stay partial.
   if (B.bin?.tilt) {
@@ -293,6 +301,10 @@ function setRot() {
     M = mul(TP, S ? mul([[1, 0, 0], [0, c, -s], [0, s, c]], S) : [[1, 0, 0], [0, c, -s], [0, s, c]]);
   }
 }
+// True when the pulsar's whole body turns in M; the original look keeps only its axis turning.
+const pulsarTurns = B => !!B.ns && Number(gv('pulsarLook', '2')) > 0;
+// The magnetic axis in the star's frame: fixed on the body when the body turns, else turning.
+const magNow = B => magAxis(pulsarTurns(B) ? 0 : st.spin);
 // A turn by angle a about the axis u (Rodrigues).
 function axisTurn(u, a) {
   const l = Math.hypot(u[0], u[1], u[2]), x = u[0] / l, y = u[1] / l, z = u[2] / l;
@@ -305,9 +317,21 @@ function axisTurn(u, a) {
 const camView = p => [0, 1, 2].map(r => CAM[r][0] * p[0] + CAM[r][1] * p[1] + CAM[r][2] * p[2]);
 const toView = p => [0, 1, 2].map(r => M[r][0] * p[0] + M[r][1] * p[1] + M[r][2] * p[2]);
 // A view point to stage CSS pixels, y down.
-const toCss = v => [((v[0] - view.cx) / view.hw * 0.5 + 0.5) * cssW, (0.5 - (v[1] - view.cy) / view.hh * 0.5) * cssH];
+// The pulsar bends its own light: a point psi round the star shows at angle a on screen,
+// with cos a = 1 - (1 - cos psi)(1 - u) (Beloborodov 2002), as the shader draws its crust.
+// The bent point keeps its distance; z is negative only where the light cannot reach the eye.
+function bendV(v) {
+  const B = STARS[shown];
+  if (!pulsarTurns(B)) return v;
+  const rho = Math.hypot(v[0], v[1], v[2]), q = Math.hypot(v[0], v[1]);
+  if (rho < 1e-6 || q < 1e-9) return v;
+  const ca = 1 - (1 - v[2] / rho) * (1 - B.ns.u);
+  const k = rho * Math.sqrt(Math.max(0, 1 - ca * ca)) / q;
+  return [v[0] * k, v[1] * k, ca * rho];
+}
+const toCss = v0 => { const v = bendV(v0); return [((v[0] - view.cx) / view.hw * 0.5 + 0.5) * cssW, (0.5 - (v[1] - view.cy) / view.hh * 0.5) * cssH]; };
 // The sun hides a point behind it.
-const hidden = v => Math.hypot(v[0], v[1]) < R && v[2] < 0;
+const hidden = v0 => { const v = bendV(v0); return Math.hypot(v[0], v[1]) < R && v[2] < 0; };
 // The point a region shows: its centre on the near side, its loop tops behind the limb.
 function regionPoint(rg) {
   const c = toView(rg.c.map(x => x * R));
@@ -412,6 +436,8 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
     // Weight 2 is the house zoom: heavy, about 3.5 s a stop (Tom, 2026-11-24).
+    // Compares the pulsar redo live (Tom, 2026-11-24): the original, true physics, or true physics with the lighthouse.
+    { type: 'choice', id: 'pulsarLook', group: 'Pulsar', label: 'Pulsar look', hint: 'The original, true physics, or true physics with lighthouse beams and the far strobe.', value: '2', options: [['0', 'Original'], ['1', 'True physics'], ['2', 'Lighthouse']].map(([value, label]) => ({ value, label })), onPick: () => poke() },
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
@@ -474,7 +500,9 @@ function arrive() {
 // Our Sun's outline above it takes the star's scale on screen.
 function showCard() {
   cardStar = st.star;
-  const sun = { d: R / STARS[st.star].rsun * cssH / view.hh, max: cssH * 0.3, view: cssH };
+  // A black hole's R is its shadow's edge, BCRIT horizon radii out; its rsun is the horizon's.
+  const B = STARS[st.star], horizonR = B.hole ? R / BCRIT : R;
+  const sun = { d: horizonR / B.rsun * cssH / view.hh, max: cssH * 0.3, view: cssH };
   card.show(cardLines(st.star, PICKS.find(x => x.value === st.star).name), gv('cardStyle', 'intro'), sun);
 }
 // A new card style plays at once when the view rests on the full star.
@@ -561,7 +589,7 @@ function eruptAt(p) {
 }
 // The target under a stage point: a region or a prominence, and its distance.
 // Only the near side answers the hand: the visible disk and its rim (Tom, 2026-11-23).
-const near = u => toView(u)[2] >= 0;
+const near = u => bendV(toView(u))[2] >= 0;
 // Taps answer only from the full star inward; far out the star is too small (Tom, 2026-11-24).
 // A black hole has no regions to flare.
 const canTap = () => cam.z <= NOTCH + 0.05 && !STARS[shown].hole;
@@ -574,7 +602,8 @@ function pickAt(x, y) {
     const d = Math.hypot(px - x, py - y);
     if (d < bd) { bd = d; best = rg; prom = false; }
   }
-  for (const p of sun.proms) {
+  // A star with no prominences shows none, so none answers the hand.
+  for (const p of STARS[shown].prom > 0 ? sun.proms : []) {
     const v = toView(promApex(p));
     if (!near(p.c) || p.erupt >= 0) continue;
     const [px, py] = toCss(v);
@@ -592,7 +621,13 @@ function diskAt(x, y) {
   const vx = view.cx + (x / cssW * 2 - 1) * view.hw, vy = view.cy + (1 - y / cssH * 2) * view.hh;
   const rr = (vx * vx + vy * vy) / (R * R);
   if (rr >= 0.985) return null;
-  const v = [vx / R, vy / R, Math.sqrt(1 - rr)];
+  let v = [vx / R, vy / R, Math.sqrt(1 - rr)];
+  // On the pulsar the tap undoes the bend: the screen angle a gives the point psi round.
+  const B = STARS[shown];
+  if (pulsarTurns(B)) {
+    const cpsi = 1 - (1 - Math.sqrt(1 - rr)) / (1 - B.ns.u), q = Math.sqrt(rr), sp = Math.sqrt(Math.max(0, 1 - cpsi * cpsi));
+    v = [vx / R / q * sp, vy / R / q * sp, cpsi];
+  }
   // M is a rotation, so its transpose takes the view frame back to the star's.
   return [0, 1, 2].map(c => M[0][c] * v[0] + M[1][c] * v[1] + M[2][c] * v[2]);
 }
@@ -608,7 +643,8 @@ function flareNear(x, y) {
 /* ---------- hover: the cursor reads the region under it ---------- */
 // The mouse over the stage, or null; touch and pen never hover.
 let hoverAt = null, cursor = '';
-function readHover() {
+// From the frame loop it only updates: a target turning under a still mouse is not input.
+function readHover(fromFrame = false) {
   let c = 'default';
   if (pointer.drag && canTurn()) c = 'grabbing';
   else if (hoverAt && pointer.id === null && (pickAt(hoverAt[0], hoverAt[1]).d < reach() || diskAt(hoverAt[0], hoverAt[1]))) c = 'pointer';
@@ -616,7 +652,7 @@ function readHover() {
   if (c !== cursor) { cursor = c; stage.style.cursor = c; }
   const near = c === 'pointer' ? pickAt(hoverAt[0], hoverAt[1]) : null;
   const t = near && near.d < reach() ? near.t : null;
-  if (t !== aimed) { aimed = t; poke(); }
+  if (t !== aimed) { aimed = t; if (!fromFrame) poke(); }
 }
 // The target the mouse points at; it glows a little.
 let aimed = null;
@@ -639,6 +675,8 @@ function stepLit(dt) {
 /* ---------- eggs: a long hold on a star plays its real famous event ---------- */
 // The egg in play, or null. Its clock t reaches 0 at the end of the hold.
 let egg = null;
+// The pulsar's sound: the last flash counted, and true while the voice egg spins it up.
+let lastFlash = null, spinning = false;
 // A view point under the stage point x, y, as a unit vector in the star's frame.
 function surfaceAt(x, y) {
   let vx = view.cx + (x / cssW * 2 - 1) * view.hw, vy = view.cy + (1 - y / cssH * 2) * view.hh;
@@ -714,7 +752,7 @@ const frameState = {
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2),
-  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
+  ring: new Float32Array(4), ring2: new Float32Array(4), bow: new Float32Array(4), bowC: new Float32Array(3), camM: new Float32Array(9), lh: new Float32Array(4), pulse: -1, flashW: 1, nsBend: new Float32Array(2), ns: new Float32Array(4), nsU: new Float32Array(4), nsV: new Float32Array(4),
   bin: new Float32Array(4), binD: new Float32Array(4), binN: new Float32Array(4), gas: new Float32Array(4), path: new Float32Array(48),
 };
 function makeFrame() {
@@ -742,8 +780,10 @@ function makeFrame() {
     // A face-on core stands against the bright disk, so it burns harder (Tom, 2026-11-24).
     let S = fv.kernel[1] * (1 + 1.2 * fl.face);
     if (hidden(v)) { v = toView(fv.c.map(x => x * (R + fl.rg.span[1] * 0.8))); S *= hidden(v) ? 0 : 0.45; }
-    const sx = ((v[0] - view.cx) / view.hw * 0.5 + 0.5) * view.W;
-    const sy = ((v[1] - view.cy) / view.hh * 0.5 + 0.5) * view.H;
+    // The core sits where the bent light shows it.
+    const vb = bendV(v);
+    const sx = ((vb[0] - view.cx) / view.hw * 0.5 + 0.5) * view.W;
+    const sy = ((vb[1] - view.cy) / view.hh * 0.5 + 0.5) * view.H;
     f.sat.set([sx, sy, calm ? S * 0.6 : S, 0], k * 4);
   });
   f.time = st.time;
@@ -756,7 +796,7 @@ function makeFrame() {
   });
   // A black hole: the trace replaces the disk; no loops, haze, corona or glare.
   const hole = star.hole;
-  f.count = hole ? 0 : strands(sun, st.time, { star: shown, activity: act, spin: st.spin }, ren.data);
+  f.count = hole ? 0 : strands(sun, st.time, { star: shown, activity: act, spin: pulsarTurns(STARS[shown]) ? 0 : st.spin }, ren.data);
   f.hole.set(hole ? [1, hole.tilt, hole.light, hole.heat] : [0, 0, 0, 0]);
   f.holeSky.set([2 * view.hh / view.H * BCRIT / R, hole ? hole.stars : 0]);
   f.holeF.set([hole ? 1 : 0, hole ? hole.stars : 0]);
@@ -821,18 +861,36 @@ function makeFrame() {
   f.bodyB.set([qx, qy, bodySize(star, star.long) * 0.5 * ppm, (1 - weight('wide')) * on]);
   f.bodyK.set([BODIES[star.wide].kind, BODIES[star.long].kind]);
   // The pulsar's magnetic axis, in the view frame.
-  if (star.beam) f.beam.set([...toView(magAxis(st.spin)), star.beam]); else f.beam.fill(0);
+  if (star.beam) f.beam.set([...toView(magNow(star)), star.beam]); else f.beam.fill(0);
   // The spin axis carries the wind nebula's torus and jets.
   // True physics: no torus or jets; the striped wind takes their place.
-  if (star.beam) f.spin.set([...toView(SPIN), star.ns ? 0 : star.beam]); else f.spin.fill(0);
+  // The Dev Pulsar look picks which pulsar draws: 0 original, 1 true physics, 2 the lighthouse.
+  const look = Number(gv('pulsarLook', '2'));
+  const ns = look > 0 ? star.ns : null;
+  if (star.beam) f.spin.set([...toView(SPIN), ns ? 0 : star.beam]); else f.spin.fill(0);
   // The spin's in-plane axes, as magAxis builds them, so the sheet's phase follows the caps.
-  if (star.ns) {
+  if (ns) {
     const u0 = [SPIN[1], -SPIN[0], 0], ul = Math.hypot(u0[0], u0[1]), u = [u0[0] / ul, u0[1] / ul, 0];
     const v = [SPIN[1] * u[2] - SPIN[2] * u[1], SPIN[2] * u[0] - SPIN[0] * u[2], SPIN[0] * u[1] - SPIN[1] * u[0]];
-    f.ns.set([1, star.ns.u, star.ns.wind, star.ns.rl]);
-    f.nsU.set([...toView(u), (2 * Math.PI * st.spin / SPIN_PERIOD) % (2 * Math.PI)]);
+    f.ns.set([1, ns.u, ns.wind, ns.rl]);
+    // The body's turn already carries u and v, so the sheet's phase starts at 0.
+    f.nsU.set([...toView(u), pulsarTurns(star) ? 0 : (2 * Math.PI * st.spin / SPIN_PERIOD) % (2 * Math.PI)]);
     f.nsV.set([...toView(v), Math.acos(SPIN[2])]);
   } else { f.ns.fill(0); f.nsU.fill(0); f.nsV.fill(0); }
+  // Every pulsar flash, near or far, keeps under 2.5 flashes a second: fast spins blend to a glow.
+  const flashRate = (egg?.kind === 'voice' ? egg.rate : 1) / SPIN_PERIOD;
+  f.flashW = star.beam ? 1 - 0.8 * clamp((flashRate - 1.5) / 1) : 1;
+  // The lighthouse (Tom, 2026-11-24): the beams light dust in the volume, and the pulse strobes far out.
+  // A strobe faster than 2.5 flashes a second blends to a steady glow: no photosensitive flicker.
+  if (ns && look === 2 && star.beam) {
+    const m = toView(magNow(star));
+    const rate = (egg?.kind === 'voice' ? egg.rate : 1) / SPIN_PERIOD;
+    const steady = clamp((rate - 1.5) / 1);
+    // About a tenth of a second wide, so each flash lands on several frames.
+    const hit = Math.exp(-(1 - Math.abs(m[2])) / 0.01);
+    f.lh.set([...m, ns.beam * (calm ? 0.6 : 1)]);
+    f.pulse = (hit * (1 - steady) + 0.2 * steady) * (calm ? 0.35 : 1);
+  } else { f.lh.fill(0); f.pulse = -1; }
   // A young star's disk and jets turn with the star.
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
@@ -840,7 +898,9 @@ function makeFrame() {
   // Past the full star the view pulls back; the eye's light values trail the zoom.
   const far = eye.far;
   f.far = far;
-  f.cam.set([st.yaw, st.pitch, star.lensing, far]);
+  // The bent pulsar already bends its light in the disk pass; the final shift would bend it twice.
+  f.cam.set([st.yaw, st.pitch, pulsarTurns(star) ? 0 : star.lensing, far]);
+  f.nsBend.set([pulsarTurns(star) ? 1 : 0, star.ns?.u ?? 0]);
   f.sway.set([sway.x, sway.y]);
   // Real light (Tom, 2026-11-24): up close the star is masked so the corona shows.
   // Pulled back, the exposure rises and the disk outshines what lies round it.
@@ -868,6 +928,11 @@ function makeFrame() {
   f.fx5.set([gv('fxWarm', 0), fxv('fxOrb'), fxv('fxGhost'), f.glare]);
   eggFrame(f.egg, f.dim);
   f.fluid = fluidRun ? fluidFrame(fluidRun) : null;
+  // The binary's gas and the lighthouse dim with the light round the disk as the view pulls back.
+  // The full star keeps the look Tom approved: the scale is 1 there and below 1 farther out.
+  const offRel = clamp(f.off / 0.79);
+  if (star.bin) { f.gas[1] *= offRel; f.gas[2] *= offRel; f.gas[3] *= offRel; }
+  f.lh[3] *= offRel;
   f.lens = weight('long');
   // The full view's half exposure is for a bright disk; a black hole keeps its light.
   f.full = hole ? 0 : weight('full');
@@ -931,7 +996,7 @@ function frame(now) {
       }
     }
     // The star turns under a still mouse.
-    if (hoverAt) readHover();
+    if (hoverAt) readHover(true);
     const glowing = stepLit(dt);
     const dipping = stepDip(dt);
     // A still press past the cue starts the star's egg under it.
@@ -942,6 +1007,17 @@ function frame(now) {
       if (startEgg(cssW * (0.3 + 0.4 * Math.random()), cssH * (0.3 + 0.4 * Math.random()))) egg.rare = true;
     }
     stepEgg(dt, holding && pointer.egg);
+    // The pulsar pings as a beam crosses the eye: st.spin mod 1.6 passes 1.2.
+    // The sound guards itself above 2.5 flashes a second; a missing call does nothing.
+    if (STARS[shown].beam) {
+      const k = Math.floor((st.spin - 1.2) / SPIN_PERIOD);
+      if (lastFlash !== null && k > lastFlash) snd.ping?.(clamp(-view.cx / view.hw, -1, 1), shown);
+      lastFlash = k;
+    } else lastFlash = null;
+    // The voice egg's fast spin hums; one call with 0 ends it.
+    const voice = egg?.kind === 'voice';
+    if (voice) snd.spin?.(egg.rate / SPIN_PERIOD, shown); else if (spinning) snd.spin?.(0, shown);
+    spinning = voice;
     draw();
     D.frame(dt);
     frameNo++;

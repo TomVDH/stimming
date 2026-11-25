@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T23:21:11Z
-updated_at: 2026-11-24T23:32:54Z
+updated_at: 2026-11-24T23:37:09Z
 parent: stimming-e35i
 ---
 
@@ -15,3 +15,7 @@ Tom, 2026-11-24: "we significantly wanna redo the pulsar too". Today: a dark vio
 - [x] Build Tom's pick; keep the magnetar (stimming-j8qg) distinct from it
 - [ ] Card facts stay true
 - [ ] Tom looks at it live
+
+## Lighthouse (Tom, 2026-11-24)
+
+"go for 1 -- keep the current version": the lighthouse beams through dust, on top of true physics (landed 9423137d). The far flare strobes with the pulse ("it should pulse like a mother fucker even when zoomed out"), capped below 2.5 flashes a second.

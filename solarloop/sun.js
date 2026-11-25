@@ -63,10 +63,11 @@ export const STARS = {
     ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, lensing: 2.2,
     // True physics (Tom, 2026-11-24): its gravity bends its own light; the striped wind spirals out.
     // u: compactness, the Schwarzschild radius over the radius. rl: the light cylinder in R, not to scale.
-    ns: { u: 0.34, rl: 2.2, wind: 1 },
+    ns: { u: 0.34, rl: 2.2, wind: 1, beam: 1 },
     row: 5, rsun: 1.72e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.7,
     hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
-    disk: [0.6, 0.18, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    // A mottled crust with a strong swirl scale, so its turn reads at a glance.
+    disk: [0.75, 0.55, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [24, 3, 0, 0.35],
     wide: 'none', long: 'none', root: 440,
   },
   // WR 124: a Wolf-Rayet star, twelve suns wide, hidden in its own dense wind.

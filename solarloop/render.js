@@ -234,6 +234,8 @@ vec2 holeJet(vec2 b2) {
   bool near = along * a.z * sign(dot(a.xy, ax)) >= 0.0;
   return near ? vec2(L, 0.0) : vec2(0.0, L * 0.03);
 }
+// 1 / r^5 without pow: the trace's inner loop calls it four times a step.
+float ip5(vec3 x) { float r2 = dot(x, x); return 1.0 / (r2 * r2 * sqrt(r2)); }
 // hot, cool, starlight, the stars' warmth.
 vec4 holeTrace(vec2 P) {
   vec2 b2 = P * BCRIT / R;
@@ -256,13 +258,13 @@ vec4 holeTrace(vec2 P) {
       // Small steps near the photon sphere; long ones far out.
       float dt = clamp(0.045 * r * r, 0.025, min(0.3 * r, 2.4));
       vec3 x0 = x, v0 = v;
-      vec3 k1 = v, a1 = -1.5 * h2 * x / pow(dot(x, x), 2.5);
+      vec3 k1 = v, a1 = -1.5 * h2 * x * ip5(x);
       vec3 xb = x + 0.5 * dt * k1;
-      vec3 k2 = v + 0.5 * dt * a1, a2 = -1.5 * h2 * xb / pow(dot(xb, xb), 2.5);
+      vec3 k2 = v + 0.5 * dt * a1, a2 = -1.5 * h2 * xb * ip5(xb);
       vec3 xc = x + 0.5 * dt * k2;
-      vec3 k3 = v + 0.5 * dt * a2, a3 = -1.5 * h2 * xc / pow(dot(xc, xc), 2.5);
+      vec3 k3 = v + 0.5 * dt * a2, a3 = -1.5 * h2 * xc * ip5(xc);
       vec3 xd = x + dt * k3;
-      vec3 k4 = v + dt * a3, a4 = -1.5 * h2 * xd / pow(dot(xd, xd), 2.5);
+      vec3 k4 = v + dt * a3, a4 = -1.5 * h2 * xd * ip5(xd);
       x += dt / 6.0 * (k1 + 2.0 * k2 + 2.0 * k3 + k4);
       v += dt / 6.0 * (a1 + 2.0 * a2 + 2.0 * a3 + a4);
       // Each crossing of the disc adds light; many crossings make the photon ring.
@@ -325,6 +327,8 @@ uniform float uCore;
 // A neutron star's true physics: on, compactness, the striped wind's light, the light cylinder in R.
 // uNsU, uNsV: the spin's in-plane axes in the view frame, with the spin phase and the magnetic tilt.
 uniform vec4 uNs, uNsU, uNsV;
+// How hard a pulsar's flashes may flash: 1 at its true rate, near 0.2 when fast enough to flicker.
+uniform float uFlashW;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
 uniform vec4 uRing, uRing2;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
@@ -362,6 +366,12 @@ void main() {
       n = vec3(P / max(r, 1e-4) * sqrt(max(1.0 - cpsi * cpsi, 0.0)), cpsi);
     }
     vec3 q = uToSun * n;
+    // The neutron star's crust turns with its spin, about the spin axis, once per pulse.
+    if (uNs.x > 0.0) {
+      vec3 s = cross(uNsU.xyz, uNsV.xyz);
+      float a = -uNsU.w;
+      q = uToSun * (n * cos(a) + cross(s, n) * sin(a) + s * dot(s, n) * (1.0 - cos(a)));
+    }
     // Granules boil: bright cells, dark lanes; each cell lives about 7 s.
     // Noise bends the cells and blurs the lanes, so they never read as hexagons.
     vec3 gq = q * uTex.x + vec3(0.0, 0.0, tb * 7.5);
@@ -561,7 +571,8 @@ void main() {
         }
       }
       // A beam aimed at the eye: the pole flares in a tight burst.
-      float face = pow(max(b.z, 0.0), 60.0);
+      // Above 2.5 flashes a second this blends to a steady glow: no photosensitive flicker.
+      float face = pow(max(b.z, 0.0), 60.0) * uFlashW;
       hot += uBeam.w * face * (6.0 * exp(-dot(P - b.xy * R, P - b.xy * R) / (2.0 * 140.0 * 140.0)) + 0.6 * exp(-max(r - R, 0.0) / 260.0));
     }
   }
@@ -609,7 +620,8 @@ void main() {
   }
   // A young star: a ringed dust disk at a slant, and a jet from each pole.
   if (uYso.w > 0.0) {
-    vec3 a = uYso.xyz;
+    // The axis's sign is free: flipping it keeps the plane and the near half in front.
+    vec3 a = uYso.z < 0.0 ? -uYso.xyz : uYso.xyz;
     // The disk plane under this pixel; the eye looks along z.
     float z = -(P.x * a.x + P.y * a.y) / max(a.z, 0.15);
     vec3 X = vec3(P, z);
@@ -695,7 +707,7 @@ void main() {
     float lit = (1.0 - T) * step(R, r) * (0.04 + 0.35 * exp(-(r - R) / (1.5 * R)) + 0.38 * uFar);
     cool += uRing2.y * uDisk.x * lit;
     // The ringed body at the centre: a dim speck.
-    hot += 0.4 * uDisk.x * exp(-dot(d, d) / 0.3);
+    hot += 0.4 * uDisk.x * uOff * exp(-dot(d, d) / 0.3);
   }
   hot *= shade;
   // Beta Lyrae's partner: its disc and stream are gas in the volume pass.
@@ -707,10 +719,10 @@ void main() {
     // The donor hides the jets behind it.
     float vis = uBin.z > 0.0 ? 1.0 : step(R, r);
     float jet = exp(-pow(u / (0.05 + 0.05 * jy), 2.0)) * smoothstep(uBinD.y, uBinD.y + 0.5, jy) * exp(-jy / 2.5);
-    cool += uBinD.z * uDisk.x * 0.7 * jet * vis * (0.5 + fbm(vec3(jy * 2.0 - uTime * 0.5, u * 5.0, 1.0)));
+    cool += uBinD.z * uDisk.x * uOff * 0.7 * jet * vis * (0.5 + fbm(vec3(jy * 2.0 - uTime * 0.5, u * 5.0, 1.0)));
     // The hidden star shows only as a soft glow through the gas: no hard disc of its own.
     float dd = length(dq);
-    cool += vis * uDisk.x * 0.5 * exp(-dd * dd / 0.3);
+    cool += vis * uDisk.x * uOff * 0.5 * exp(-dd * dd / 0.3);
   }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
@@ -724,6 +736,15 @@ layout(location = 1) in vec4 aB;
 layout(location = 2) in vec4 aC;
 layout(location = 3) in vec4 aD;
 uniform mat3 uRot;
+// A pulsar's bent light: on, and its compactness; the crust bends the same way in the disk pass.
+uniform vec2 uBend;
+vec3 bendP(vec3 p) {
+  if (uBend.x <= 0.0) return p;
+  float rho = length(p), q = length(p.xy);
+  if (q < 1e-4) return p;
+  float ca = 1.0 - (1.0 - p.z / rho) * (1.0 - uBend.y);
+  return vec3(p.xy * rho * sqrt(max(1.0 - ca * ca, 0.0)) / q, ca * rho);
+}
 uniform vec4 uView;
 uniform vec2 uRes;
 out float vV, vS, vI, vDrain, vPh, vKind, vHgt;
@@ -756,8 +777,8 @@ void main() {
   float s = float(i) / float(N - 1);
   float ds = 0.5 / float(N - 1);
   vec3 c = curve(s);
-  vec3 p = uRot * c;
-  vec3 p1 = uRot * curve(min(s + ds, 1.0)), p0 = uRot * curve(max(s - ds, 0.0));
+  vec3 p = bendP(uRot * c);
+  vec3 p1 = bendP(uRot * curve(min(s + ds, 1.0))), p0 = bendP(uRot * curve(max(s - ds, 0.0)));
   vec2 sp = px(p);
   vec2 t2 = px(p1) - px(p0);
   vec2 tn = length(t2) > 1e-4 ? normalize(t2) : vec2(1.0, 0.0);
@@ -786,7 +807,9 @@ in float vV, vS, vI, vDrain, vPh, vKind, vHgt;
 in vec3 vP;
 out vec4 o;
 const float R = ${R.toFixed(1)};
-float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(fract(sin(i * 91.3) * 43758.5), fract(sin((i + 1.0) * 91.3) * 43758.5), f); }
+// A fract hash: sin of large numbers loses precision on some mobile GPUs.
+float hh(float i) { i = fract(i * 0.1031); i *= i + 33.33; return fract(i * (i + i)); }
+float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hh(i), hh(i + 1.0), f); }
 void main() {
   float prof = exp(-5.12 * vV * vV);
   // The sun hides what stands behind it.
@@ -860,6 +883,10 @@ uniform float uTime, uDens, uDust, uLight, uCorona, uBend;
 // A binary's gas: the partner (centre in R, on), its disc, its axis, and the stream's path.
 // uGas: on, scattered light, own heat. uPath: 12 points in R and the stream's width.
 uniform vec4 uBin, uBinD, uBinN, uGas, uPath[12];
+// A pulsar's beams through dust: the magnetic axis in the view frame, and the beams' light.
+uniform vec4 uLh;
+// The same flash weight: a fast spin may not strobe the forward lobe.
+uniform float uFlashW;
 in vec2 vUv;
 out vec4 o;
 const float R = ${R.toFixed(1)};
@@ -868,6 +895,8 @@ float nz(vec3 p) { return texture(uNoise, p).r; }
 float fbm3(vec3 p) { return nz(p) * 0.5 + nz(p * 2.03 + 0.31) * 0.25 + nz(p * 4.01 + 0.67) * 0.125 + nz(p * 8.03 + 0.13) * 0.0625; }
 // The density: a shell of haze round the star, and clouds of dust in it.
 float dens(vec3 p, bool lite) {
+  // No haze: skip the seven noise taps.
+  if (uDens <= 0.0) return 0.0;
   float r = length(p);
   if (r < R) return 0.0;
   // One noise cell is about 90 units; the texture repeats every 64 cells.
@@ -934,6 +963,10 @@ float arms(float s, float phi) {
 // The band between the stars: a tube along the path gravity traced, broadest at the donor's neck.
 // Clumps flow down it toward the disc.
 float stream(vec3 p) {
+  // A cheap bound: far from the line from the donor to the rim, nothing lies.
+  vec3 a0 = uPath[0].xyz, ab0 = uPath[11].xyz - a0;
+  vec3 d0 = p - a0 - ab0 * clamp(dot(p - a0, ab0) / dot(ab0, ab0), 0.0, 1.0);
+  if (dot(d0, d0) > 1.2) return 0.0;
   float st = 0.0;
   for (int i = 0; i < 11; i++) {
     vec3 a = uPath[i].xyz, ab = uPath[i + 1].xyz - a;
@@ -995,19 +1028,36 @@ void main() {
   float r = length(P);
   // The corona reaches far, so the march does too when it shows.
   // A binary's gas reaches past its partner, so the march does too, in more steps.
-  bool bin = uGas.x > 0.0;
-  float reach = bin ? 7.6 * R : uCorona > 0.0 ? 3.4 * R : 2.2 * R;
+  bool bin = uGas.x > 0.0, lh = uLh.w > 0.0;
+  float reach = bin ? 7.6 * R : lh ? 6.5 * R : uCorona > 0.0 ? 3.4 * R : 2.2 * R;
   float z1 = r < R ? sqrt(R * R - r * r) : -reach;
   float z0 = reach;
-  int N = bin ? 48 : 32;
+  int N = bin || lh ? 48 : 32;
+  // A ray that passes outside the reach meets nothing.
+  if (r > reach) { o = vec4(0.0, 0.0, 0.0, 1.0); return; }
   float dt = (z0 - z1) / float(N);
   // Interleaved gradient noise, stepped each frame so no pattern holds still.
   float j = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + 0.618034 * floor(uTime * 30.0));
   float T = 1.0;
-  float acc = 0.0, accG = 0.0;
+  float acc = 0.0, accG = 0.0, accL = 0.0;
   for (int i = 0; i < 48; i++) {
     if (i >= N) break;
     vec3 p = vec3(P, z0 - dt * (float(i) + j));
+    // A pulsar's lighthouse: two narrow beams sweep through a faint fog of dust and light it.
+    // A beam aimed near the eye scatters forward hardest, so its sweep past the eye flashes.
+    if (lh) {
+      vec3 pr = p / R;
+      float rr = length(pr);
+      if (rr > 1.05) {
+        vec3 u = pr / rr;
+        float c = dot(u, uLh.xyz);
+        float th = sqrt(max(2.0 * (1.0 - abs(c)), 0.0));
+        float cone = exp(-pow(th / 0.09, 2.0)) + 0.2 * exp(-pow(th / 0.28, 2.0));
+        float fog = 0.2 + 1.6 * pow(gn(pr * 2.5 + vec3(0.0, 0.0, uTime * 0.05)), 2.0);
+        float fwd = mix(1.0, hg(u.z, 0.55) * 12.56637, uFlashW);
+        accL += T * uLh.w * cone * fog * fwd * exp(-(rr - 1.0) / 3.5) * dt / R * 0.28;
+      }
+    }
     // A binary's gas: lit by the donor with the K3 shading, and glowing with its own heat.
     if (bin) {
       vec3 pr = p / R;
@@ -1051,7 +1101,8 @@ void main() {
     T *= 1.0 - al;
     if (T < 0.02) break;
   }
-  o = vec4(acc, accG, 0.0, T);
+  // Blue holds the lighthouse: the final pass keeps it over the disk, where its flash peaks.
+  o = vec4(acc, accG, accL, T);
 }`;
 
 // A three-tap blur along one axis: it hides the march dither, as in Fire.
@@ -1095,6 +1146,8 @@ uniform vec2 uHoleF;
 // A runaway: on, heading, size in R, kind (0 bow shock, 1 wake); and its colour.
 uniform vec4 uBow;
 uniform vec3 uBowC;
+// A pulsar's pulse: 1 while a beam crosses the eye, 0 between; below 0 for any other star.
+uniform float uPulse;
 uniform vec2 uRes, uC;
 uniform float uFrame, uTime, uExpo, uSc, uRow, uLens, uHaze, uFull;
 // Device pixels per CSS pixel: screen-fixed effects keep their size in CSS pixels.
@@ -1119,13 +1172,14 @@ float kern(vec2 fc) {
 }
 vec2 sig(vec2 uv, float kx) {
   vec4 v = texture(uVol, uv);
+  float lb = v.b;
   // No haze over the disk, save on dusty stars: it read as blobs on every star.
   float off = smoothstep(R * 0.97, R * 1.03, length(uView.xy + (uv * 2.0 - 1.0) * uView.zw));
   v = mix(vec4(0.0, 0.0, 0.0, 1.0), v, max(off, min(uFilm.w, 1.0)));
   // The volume dims what lies behind it and adds the star light it scatters.
   vec3 h = (texture(uHdr, uv).rgb + texture(uRays, uv).rgb * uMix.x * uFx1.y) * v.a + texture(uBloom, uv).rgb * 0.38 * uFx1.x;
   // The volume's green holds a binary's glowing gas: it takes the cool ramp.
-  return vec2(h.r * uMix.y + kx + v.r, h.g * uMix.z + v.r * 0.15 + v.g);
+  return vec2(h.r * uMix.y + kx + v.r + lb, h.g * uMix.z + v.r * 0.15 + v.g);
 }
 // Tone curves on the scene light x; each returns a place on the ramp, 0 to 1.
 // ACES: the Narkowicz fit, then display gamma.
@@ -1343,6 +1397,8 @@ void main() {
   if (uCam.w > 0.0) {
     // A black hole's glow stays off its shadow until the shadow is a few pixels wide.
     float hm = uHoleF.x > 0.0 ? mix(smoothstep(rp * 0.9, rp * 1.6, dl), 1.0, smoothstep(24.0 * uSc, 6.0 * uSc, rp)) : 1.0;
+    // A pulsar strobes far out: dim between beams, a blinding burst as one crosses the eye.
+    hm *= uPulse < 0.0 ? 1.0 : 0.12 + 5.0 * uPulse;
     // A round, globular glow, the eye's bloom on a point of light.
     fl += hm * (gc * 0.8 * exp(-dl / (rp * 1.6 + 14.0 * uSc)) + gw * 0.5 * exp(-dl / (rp * 6.0 + 70.0 * uSc))) * uCam.w;
     // The orb spans about twice the disk.
@@ -1443,6 +1499,13 @@ export async function makeRender(gl, opts = {}) {
     volA = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
     volB = target(gl, Math.max(2, W >> shift), Math.max(2, H >> shift));
   }
+  // Clears a target to one colour: a skipped pass leaves it neutral.
+  function clearTo(t, r, g, b, a) {
+    gl.bindFramebuffer(gl.FRAMEBUFFER, t.fb);
+    gl.viewport(0, 0, t.w ?? W, t.h ?? H);
+    gl.clearColor(r, g, b, a);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+  }
   // v: view, rot, toSun, time, band (the star), regs, flares, sat, count, bloom, frame, centre, bodies, lens.
   function frame(v) {
     if (!hdr) return;
@@ -1452,7 +1515,7 @@ export async function makeRender(gl, opts = {}) {
     gl.useProgram(s.p);
     gl.uniform4fv(s.u.uView, v.view);
     gl.uniformMatrix3fv(s.u.uToSun, false, v.toSun);
-    gl.uniform1f(s.u.uTime, v.time % 4000);
+    gl.uniform1f(s.u.uTime, v.time % 9600);
     gl.uniform4fv(s.u.uDisk, v.band.disk);
     gl.uniform4fv(s.u.uDisk2, v.band.disk2);
     gl.uniform4fv(s.u.uTex, v.band.tex);
@@ -1478,6 +1541,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uNs, v.ns);
     gl.uniform4fv(s.u.uNsU, v.nsU);
     gl.uniform4fv(s.u.uNsV, v.nsV);
+    gl.uniform1f(s.u.uFlashW, v.flashW);
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
     gl.uniform4fv(s.u.uBin, v.bin);
@@ -1494,7 +1558,8 @@ export async function makeRender(gl, opts = {}) {
       gl.uniformMatrix3fv(p.u.uRot, false, v.rot);
       gl.uniform4fv(p.u.uView, v.view);
       gl.uniform2f(p.u.uRes, W, H);
-      gl.uniform1f(p.u.uTime, v.time % 4000);
+      gl.uniform1f(p.u.uTime, v.time % 9600);
+      gl.uniform2fv(p.u.uBend, v.nsBend);
       gl.uniform1f(p.u.uRain, v.band.rain);
       gl.uniform1f(p.u.uGain, (1 + 0.9 * v.lens) * v.off);
       gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -1511,20 +1576,26 @@ export async function makeRender(gl, opts = {}) {
     // The fluid probe's plasma joins the light before bloom, so it glows.
     if (fluid && v.fluid) fluid.draw(v.fluid, W, H, hdr);
     const bt = bloom.render(hdr.tex, W, H, { threshold: 0.9, cap: 6, levels: v.bloomLevels });
+    // Light rays only where the star has them; else the target holds black.
     const r = P.rays;
-    gl.useProgram(r.p);
-    bind(gl, r, 'uSrc', 0, hdr);
-    gl.uniform2fv(r.u.uC, v.centre);
-    gl.uniform1f(r.u.uThr, 0.45);
-    tri(gl, rays, empty);
+    if (v.band.rays > 0) {
+      gl.useProgram(r.p);
+      bind(gl, r, 'uSrc', 0, hdr);
+      gl.uniform2fv(r.u.uC, v.centre);
+      gl.uniform1f(r.u.uThr, 0.45);
+      tri(gl, rays, empty);
+    } else clearTo(rays, 0, 0, 0, 0);
 
+    // The volume only when something lives in it: haze, corona, gas or beams.
+    const volOn = v.volDens > 0 || v.corona > 0 || v.gas[0] > 0 || v.lh[3] > 0;
     const vp = P.vol;
+    if (volOn) {
     gl.useProgram(vp.p);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_3D, noise);
     gl.uniform1i(vp.u.uNoise, 0);
     gl.uniform4fv(vp.u.uView, v.view);
-    gl.uniform1f(vp.u.uTime, v.time % 4000);
+    gl.uniform1f(vp.u.uTime, v.time % 9600);
     gl.uniform1f(vp.u.uDens, v.volDens);
     gl.uniform1f(vp.u.uDust, v.band.dust);
     gl.uniform1f(vp.u.uLight, v.volLight);
@@ -1536,6 +1607,8 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(vp.u.uBinN, v.binN);
     gl.uniform4fv(vp.u.uGas, v.gas);
     gl.uniform4fv(vp.u.uPath, v.path);
+    gl.uniform4fv(vp.u.uLh, v.lh);
+    gl.uniform1f(vp.u.uFlashW, v.flashW);
     tri(gl, volA, empty);
     const bp = P.blur;
     gl.useProgram(bp.p);
@@ -1545,6 +1618,7 @@ export async function makeRender(gl, opts = {}) {
     bind(gl, bp, 'uSrc', 0, volB);
     gl.uniform2f(bp.u.uStep, 0, 1);
     tri(gl, volA, empty);
+    } else clearTo(volA, 0, 0, 0, 1);
 
     const f = P.final;
     gl.useProgram(f.p);
@@ -1567,6 +1641,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform2fv(f.u.uHoleF, v.holeF);
     gl.uniform4fv(f.u.uBow, v.bow);
     gl.uniform3fv(f.u.uBowC, v.bowC);
+    gl.uniform1f(f.u.uPulse, v.pulse);
     gl.uniform4fv(f.u.uFilm, v.film);
     gl.uniform4fv(f.u.uFx1, v.fx1);
     gl.uniform4fv(f.u.uFx2, v.fx2);
@@ -1579,7 +1654,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform2f(f.u.uRes, W, H);
     gl.uniform2fv(f.u.uC, v.centre);
     gl.uniform1f(f.u.uFrame, v.frameNo % 64);
-    gl.uniform1f(f.u.uTime, v.time % 4000);
+    gl.uniform1f(f.u.uTime, v.time % 9600);
     gl.uniform1f(f.u.uExpo, B.expo);
     gl.uniform1f(f.u.uSc, v.sc);
     gl.uniform1f(f.u.uDpr, v.dpr);
