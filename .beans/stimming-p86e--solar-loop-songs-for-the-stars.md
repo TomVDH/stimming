@@ -3,8 +3,9 @@
 title: 'Solar loop: songs for the stars'
 status: in-progress
 type: task
+priority: normal
 created_at: 2026-11-24T20:58:18Z
-updated_at: 2026-11-24T20:58:18Z
+updated_at: 2026-11-25T00:44:44Z
 parent: stimming-oh7b
 ---
 
@@ -35,3 +36,5 @@ Each star gets its own song, shaped in the choir lab and played by the toy. Plan
 - The organ choir maps onto the lab settings at gain 9.25, measured against the old code on three roots (9.09 to 9.33).
 - A steal fade had no anchor event, so a stolen tap faded over its whole life: middle taps of a burst sat 3 to 15 dB low. The fade now starts at the steal: 10 taps 2.5 s apart sit within 0.4 dB of one tap.
 - Live tap edits: the glow level set to 0 mid-glow drops it from -22.6 dB to silence at once.
+
+- [x] Glow tapers in and blends (Tom, 2026-11-24: the tap glow was still too loud). S-curve rise over 6 s, arpeggio notes ease in over 0.6 s, peak 0.015. The tap's reverb send no longer divides by norm, so a loud room cannot swamp the choir. GLOWNORM trims the loud stars. Glow lift per star: 0.4 to 1.9 dB (was 0.7 to 18 dB on the neutron star).

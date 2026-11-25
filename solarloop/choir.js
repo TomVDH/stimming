@@ -47,6 +47,7 @@ const fxOn = o => { const f = fx0(); for (const k in o) f[k] = { on: true, amt: 
 // dist: distance, 0 near, 1 far. gain: Tom's loudness trim for the star, 1 is 0 dB.
 // norm: the measured factor that makes the star as loud as the Sun (NORM below).
 // tapNorm: the same for the star's tap, against the Sun's tap (TAPNORM below).
+// glowNorm: the glow's trim against the star's own choir (GLOWNORM below).
 // key: semitones up or down from the star's home key.
 // harmony, prog, voicing, melody, move, echo: the song. leadOct: the melody's octave.
 // slowed: the second, slower choir layer. aDrift, chorus, swellA, swellAmt: the analog pad.
@@ -62,9 +63,9 @@ export const SUN = {
   harmony: 'cross', prog: null, voicing: 'sun', melody: 'step', move: 'fade', echo: 'reverb', slowed: true,
   aDrift: 0, chorus: 0, swellA: 3, swellAmt: 0,
   blastWave: 'sawtooth', glowWave: 'triangle', chord: 'major', blastLvl: 1, glowLvl: 1,
-  glowStyle: 'chord', arpGap: 0.5, glowRise: 4.5, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
+  glowStyle: 'chord', arpGap: 0.5, glowRise: 6, glowHold: 2, glowFade: 23, stack: false, leadOct: 0,
   blastMix: [1, 1, 1, 1, 1, 1], glowMix: [1, 1, 1, 1, 1], swTurn: false,
-  wob: 0, wobBend: 8, wobOpen: 0.8, wobTail: 0.8, tapNorm: 1,
+  wob: 0, wobBend: 8, wobOpen: 0.8, wobTail: 0.8, tapNorm: 1, glowNorm: 1,
   fx: fx0(),
 };
 const P = o => ({ ...SUN, ...o, oct: o.oct || SUN.oct, fx: o.fx ? fxOn(o.fx) : fx0() });
@@ -181,7 +182,21 @@ export const TAPNORM = {
   sgra: 1.41,
   qso: 1.2,
 };
-for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1 };
+// Glow trim: the glow lifts each star's mix by 1.5 dB at most.
+// K-weighted, glow alone in the star's choir and room, 2 s windows (2026-11-24).
+// A star under 1.5 dB keeps 1: the trim never makes a glow louder.
+export const GLOWNORM = {
+  zetaoph: 0.84,
+  regulus: 0.78,
+  vega: 0.95,
+  epseri: 0.9,
+  proxima: 0.92,
+  wr124: 0.95,
+  betalyr: 0.82,
+  j1407: 0.68,
+  cygx1: 0.67,
+};
+for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 
 // The zoom mix, one for all stars: a level and layer gains at each zoom stop.
@@ -934,7 +949,7 @@ export function blast(ac, { t, root, K, len = 6, p = SUN, out, track = n => n })
 export function glow(ac, { t, root, K, p = SUN, out, notes, track = n => n }) {
   const ns = (p.chord === 'current' && notes) ? notes : CHORDS[p.chord] || CHORDS.major;
   const env = ac.createGain(), lv = ac.createGain();
-  lv.gain.value = p.glowLvl * GLOW_LVL[p.glowWave] * (p.tapNorm ?? 1);
+  lv.gain.value = p.glowLvl * GLOW_LVL[p.glowWave] * (p.tapNorm ?? 1) * (p.glowNorm ?? 1);
   env.connect(lv).connect(out);
   const h = { out: lv, lv, env, K, t0: t + 1.5, oscs: [], root };
   shapeGlow(h, p, t + 1.5);
@@ -953,7 +968,8 @@ export function glow(ac, { t, root, K, p = SUN, out, notes, track = n => n }) {
       const gate = ac.createGain(), at = t + 1.5 + i * p.arpGap;
       gate.gain.setValueAtTime(0, t);
       gate.gain.setValueAtTime(0, at);
-      gate.gain.linearRampToValueAtTime(1, at + 0.08);
+      // Each note eases in over 0.6 s, so it tapers into the pad.
+      gate.gain.linearRampToValueAtTime(1, at + 0.6);
       gate.connect(plp);
       into = gate;
     }
@@ -967,11 +983,15 @@ export function glow(ac, { t, root, K, p = SUN, out, notes, track = n => n }) {
   return h;
 }
 // Schedules a glow's envelope from `from`, or from now on a live change.
+// The glow sits under the choir: at its peak it lifts the Sun's mix 1.5 dB (Tom: taper in, blend).
+const GLOW_PEAK = 0.015;
+// A rise on an S-curve: it starts and lands softly, with no audible edge.
+const sCurve = (peak, n = 64) => Float32Array.from({ length: n }, (_, i) => peak * Math.sin(i / (n - 1) * Math.PI / 2) ** 2);
 function shapeGlow(h, p, from) {
-  const g = h.env.gain, peak = 0.05 * h.K, rise = h.t0 + p.glowRise, hold = rise + p.glowHold;
+  const g = h.env.gain, peak = GLOW_PEAK * h.K, rise = h.t0 + p.glowRise, hold = rise + p.glowHold;
   if (from <= h.t0) {
-    g.setValueAtTime(0, h.t0);
-    g.linearRampToValueAtTime(peak, rise);
+    g.setValueAtTime(0, h.t0 - 0.01);
+    g.setValueCurveAtTime(sCurve(peak), h.t0, p.glowRise);
   } else {
     if (g.cancelAndHoldAtTime) g.cancelAndHoldAtTime(from); else { g.cancelScheduledValues(from); g.setValueAtTime(g.value, from); }
     if (from < rise) g.linearRampToValueAtTime(peak, rise);
@@ -1003,10 +1023,12 @@ export function tapBus(ac, { out, hall, track = n => n }) {
     }
   }
   // One tap sound: a shell, a panner, the hall and the star's room.
-  function route(g, pan, hallAmt, room, roomAmt, stack) {
+  function route(g, pan, hallAmt, room, roomAmt, stack, dry = 1) {
     const pn = ac.createStereoPanner();
     pn.pan.value = clamp(pan, -1, 1);
-    g.connect(pn).connect(stack ? raw : bus);
+    const dg = ac.createGain();
+    dg.gain.value = dry;
+    g.connect(dg).connect(pn).connect(stack ? raw : bus);
     const hg = ac.createGain();
     hg.gain.value = hallAmt;
     g.connect(hg).connect(hall);
@@ -1021,7 +1043,7 @@ export function tapBus(ac, { out, hall, track = n => n }) {
       if (!p.stack) steal(live.blast, 1, t, 0.5); else prune(live.blast, t);
       const sh = shell();
       const h = blast(ac, { t, root: root * fold(chordRoot), K, len, p, out: sh, track });
-      route(sh, pan * 0.3, 0.7, room, 0.5 * p.dist, p.stack);
+      route(sh, pan * 0.3, 0.5, room, 0.5 * p.dist, p.stack);
       live.blast.push({ g: sh, h, end: h.end });
     },
     // A glow: root is the star's key one octave down; notes are the chord's tones.
@@ -1029,7 +1051,9 @@ export function tapBus(ac, { out, hall, track = n => n }) {
       if (!p.stack) steal(live.glow, 1, t, 2.5); else prune(live.glow, t);
       const sh = shell();
       const h = glow(ac, { t, root: root * fold(chordRoot), K, p, out: sh, notes, track });
-      route(sh, pan * 0.5, 0.4, room, 0.8 * p.dist, p.stack);
+      // Most of the glow goes into the star's own reverb, so it sits in the choir's room.
+      // The choir's norm scales this send too, so a loud room cannot swamp the choir.
+      route(sh, pan * 0.5, 0.2, room, 0.6 + 0.4 * p.dist, p.stack, 0.5);
       live.glow.push({ g: sh, h, end: h.end });
     },
     // A star switch: every sounding tap and its echo fade out over len s, so nothing bleeds into the next star.
@@ -1055,7 +1079,7 @@ export function tapBus(ac, { out, hall, track = n => n }) {
         h.vgs.forEach((vg, i) => vg.gain.setTargetAtTime((p.blastMix || SUN.blastMix)[i] ?? 1, at, 0.03));
       }
       for (const { h } of live.glow) {
-        h.lv.gain.setTargetAtTime(p.glowLvl * GLOW_LVL[p.glowWave] * (p.tapNorm ?? 1), at, 0.05);
+        h.lv.gain.setTargetAtTime(p.glowLvl * GLOW_LVL[p.glowWave] * (p.tapNorm ?? 1) * (p.glowNorm ?? 1), at, 0.05);
         const ns = p.chord === 'current' ? notes : CHORDS[p.chord];
         h.oscs.forEach(({ o, vg }, i) => {
           vg.gain.setTargetAtTime((p.glowMix || SUN.glowMix)[i] ?? 1, at, 0.03);
