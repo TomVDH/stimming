@@ -418,10 +418,10 @@ function setRot() {
     M = mul(TP, S ? mul([[1, 0, 0], [0, c, -s], [0, s, c]], S) : [[1, 0, 0], [0, c, -s], [0, s, c]]);
   }
 }
-// True when the pulsar's whole body turns in M; the original look keeps only its axis turning.
-const pulsarTurns = B => !!B.ns && Number(gv('pulsarLook', '2')) > 0;
-// The magnetic axis in the star's frame: fixed on the body when the body turns, else turning.
-const magNow = B => magAxis(pulsarTurns(B) ? 0 : st.spin);
+// True for the pulsar: its whole body turns in M.
+const pulsarTurns = B => !!B.ns;
+// The magnetic axis in the star's frame: fixed on the body, which turns in M.
+const magNow = () => magAxis(0);
 // A turn by angle a about the axis u (Rodrigues).
 function axisTurn(u, a) {
   const l = Math.hypot(u[0], u[1], u[2]), x = u[0] / l, y = u[1] / l, z = u[2] / l;
@@ -609,8 +609,6 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'fxReset', group: 'Post', label: 'Defaults', text: 'Reset', onClick: () => { for (const [id, , , , , d] of FX) ui.setting?.(id)?.set(d, true); poke(); } },
     ...gradeRows(),
     // Weight 2 is the house zoom: heavy, about 3.5 s a stop (Tom, 2026-11-24).
-    // Compares the pulsar redo live (Tom, 2026-11-24): the original, true physics, or true physics with the lighthouse.
-    { type: 'choice', id: 'pulsarLook', group: 'Pulsar', label: 'Pulsar look', hint: 'The original, true physics, or true physics with lighthouse beams and the far strobe.', value: '2', options: [['0', 'Original'], ['1', 'True physics'], ['2', 'Lighthouse']].map(([value, label]) => ({ value, label })), onPick: () => poke() },
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
@@ -997,7 +995,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(4 * MAX_FLARES), flB: new Float32Array(4 * MAX_FLARES),
   sat: new Float32Array(4 * MAX_FLARES), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
+  beam: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2), holeV: new Float32Array(4), holeQ: new Float32Array(4),
@@ -1151,20 +1149,16 @@ function makeFrame() {
     f.ship2.set([sh.heading, sh.tilt, sh.glint, 0]);
   } else f.ship.fill(0);
   // The pulsar's magnetic axis, in the view frame.
-  if (star.beam) f.beam.set([...toView(magNow(star)), star.beam]); else f.beam.fill(0);
-  // The spin axis carries the wind nebula's torus and jets.
-  // True physics: no torus or jets; the striped wind takes their place.
-  // The Dev Pulsar look picks which pulsar draws: 0 original, 1 true physics, 2 the lighthouse.
-  const look = Number(gv('pulsarLook', '2'));
-  const ns = look > 0 ? star.ns : null;
-  if (star.beam) f.spin.set([...toView(SPIN), ns ? 0 : star.beam]); else f.spin.fill(0);
+  if (star.beam) f.beam.set([...toView(magNow()), star.beam]); else f.beam.fill(0);
+  // The pulsar is the lighthouse on true physics (Tom, 2026-11-24): the striped wind, no torus or jets.
+  const ns = star.ns;
   // The spin's in-plane axes, as magAxis builds them, so the sheet's phase follows the caps.
   if (ns) {
     const u0 = [SPIN[1], -SPIN[0], 0], ul = Math.hypot(u0[0], u0[1]), u = [u0[0] / ul, u0[1] / ul, 0];
     const v = [SPIN[1] * u[2] - SPIN[2] * u[1], SPIN[2] * u[0] - SPIN[0] * u[2], SPIN[0] * u[1] - SPIN[1] * u[0]];
     f.ns.set([1, ns.u, ns.wind, ns.rl]);
-    // The body's turn already carries u and v, so the sheet's phase starts at 0.
-    f.nsU.set([...toView(u), pulsarTurns(star) ? 0 : (2 * Math.PI * st.spin / SPIN_PERIOD) % (2 * Math.PI)]);
+    // The body's turn already carries u and v, so the sheet needs no phase of its own.
+    f.nsU.set([...toView(u), 0]);
     f.nsV.set([...toView(v), Math.acos(SPIN[2])]);
   } else { f.ns.fill(0); f.nsU.fill(0); f.nsV.fill(0); }
   // Every pulsar flash, near or far, keeps under 2.5 flashes a second: fast spins blend to a glow.
@@ -1172,8 +1166,8 @@ function makeFrame() {
   f.flashW = star.beam ? 1 - 0.8 * clamp((flashRate - 1.5) / 1) : 1;
   // The lighthouse (Tom, 2026-11-24): the beams light dust in the volume, and the pulse strobes far out.
   // A strobe faster than 2.5 flashes a second blends to a steady glow: no photosensitive flicker.
-  if (ns && look === 2 && star.beam) {
-    const m = toView(magNow(star));
+  if (ns && star.beam) {
+    const m = toView(magNow());
     const rate = (egg?.kind === 'voice' ? egg.rate : 1) / SPIN_PERIOD;
     const steady = clamp((rate - 1.5) / 1);
     // About a tenth of a second wide, so each flash lands on several frames.
@@ -1189,8 +1183,8 @@ function makeFrame() {
   // Past the full star the view pulls back; the eye's light values trail the zoom.
   const far = eye.far;
   f.far = far;
-  // The bent pulsar already bends its light in the disk pass; the final shift would bend it twice.
-  f.cam.set([st.yaw, st.pitch, pulsarTurns(star) ? 0 : star.lensing, far]);
+  // The pulsar bends its own light in the disk pass, so the final pass shifts nothing.
+  f.cam.set([st.yaw, st.pitch, 0, far]);
   f.nsBend.set([pulsarTurns(star) ? 1 : 0, star.ns?.u ?? 0]);
   f.sway.set([sway.x, sway.y]);
   // Real light (Tom, 2026-11-24): up close the star is masked so the corona shows.

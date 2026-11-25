@@ -42,7 +42,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // loop, prom: loop and prominence light. dust: a clumpy envelope of ejecta.
 // rays: light shaft gain. hal: halation tint. streak: lens streak tint.
 // wide, long: the scale body beside the limb and the one in transit.
-// field, beam, lensing: a neutron star's field lines, pulsar beams and bent light.
+// field, beam: a neutron star's field lines and pulsar beams.
 // oblate: how much wider the equator is than the poles, seen side-on.
 // grav: the spin axis in the star's frame, and the gravity darkening at its equator.
 // clouds: a brown dwarf's cloud deck: weight, band count, turbulence, drift speed.
@@ -60,12 +60,12 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
+const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
   neutron: {
-    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, lensing: 2.2,
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1,
     // True physics (Tom, 2026-11-24): its gravity bends its own light; the striped wind spirals out.
     // u: compactness, the Schwarzschild radius over the radius. rl: the light cylinder in R, not to scale.
     ns: { u: 0.34, rl: 2.2, wind: 1, beam: 1 },
