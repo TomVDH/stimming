@@ -669,6 +669,8 @@ const ui = initPage({ id: ID, bar: {
     ['I', 'Star card; again for the article'],
   ],
 } });
+// Star Chart plays by default (Tom, 2026-11-25); a stored mute holds.
+try { if (localStorage.getItem(`stimming.${ID}.sound`) === null) sound.set(true); } catch (err) { /* storage is optional */ }
 // The Bar v2 chips hold the labels; Bar v3 follows them.
 const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
 const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), rate: chipLabel(rateText()) };
@@ -800,7 +802,8 @@ addEventListener('keydown', e => {
   e.preventDefault();
 });
 const introDone = playIntro({ ready: pageReady() });
-const kit = audioKit({ keys: new Set([' ']), sleepMs: 3000 });
+// Any key is a gesture here: I, L, S and the zoom keys wake the sound too.
+const kit = audioKit({ sleepMs: 3000 });
 const snd = makeSound(kit, id => ui?.setting?.(id)?.value);
 
 /* ---------- GL ---------- */

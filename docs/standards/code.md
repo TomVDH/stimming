@@ -79,7 +79,7 @@ Every toy page that uses them carries this importmap, word for word:
 - Settings persist under `stimming.<id>.<key>`.
 - Never build a toy's own Quality chips. Size canvases with `fitCanvas()` or `pixelRatio()`; call `onQuality(resize)`.
 - A toy may keep its own Low tier in front of Standard.
-- Sound: Web Audio, muted by default, starts after a gesture, remembered in `stimming.<id>.sound`. Tone.js comes from `audioKit()`: `await kit.tone()`, connect to `kit.out`.
+- Sound: Web Audio, muted by default (Star Chart plays by default: Tom, 2026-11-25), starts after a gesture, remembered in `stimming.<id>.sound`. Tone.js comes from `audioKit()`: `await kit.tone()`, connect to `kit.out`.
 - Delayed sound runs on the audio clock (`ac.currentTime + delay`), keeps a handle per node, and cancels when the tab hides.
 - Pointer: a press becomes a drag after 8 px or a hold after 260 ms; otherwise a tap. Capture on press; `pointercancel` and `lostpointercapture` end every gesture.
 

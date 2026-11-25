@@ -47,7 +47,7 @@ Success: the visitor plays first, with nothing in the way. A curious visitor fin
 - `toys.json` is the one source for each toy's name, number, Flemish name, IPA, motto, emblem and accent. `series.json` defines the eleven series.
 - Libraries are one fixed set (`docs/standards/code.md`). Add no other library without Tom.
 - Hold 30 fps or better. An idle page does no per-frame work.
-- Sound is synthesized, muted by default, and starts after a gesture.
+- Sound is synthesized, muted by default (Star Chart plays by default), and starts after a gesture.
 - The page scrolls past the stage only into the content zone, never sideways (Bar v2 rule 4).
 - The toy stops when its stage leaves view.
 

@@ -275,7 +275,7 @@ Only with `?fluid` in the address. Fire's 3D fluid (`starchart/fluid.js`, a trim
 
 ## Sound
 
-Muted by default. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
+Plays by default (Tom, 2026-11-25); a mute is stored and holds, so a muted boot makes no audio context at all. Any key or a click wakes the sound. Space makes no sound, so this is a sonification: each part has a visible cause and pans with its region.
 
 - Awake, the star's voice in two layers (Tom, 2026-11-23). The star sets the key: the larger the star, the lower.
   - The space rumble: a constant, dense, deep surround drone, subtle (Tom, 2026-11-23). It renders once per star into a 24 s stereo loop whose last 3 s crossfade into its start, so it repeats with no seam: two independent deep noise beds, one per side, under twelve low sines round the root two octaves down, each placed across the stereo field. No swells: it holds steady.
