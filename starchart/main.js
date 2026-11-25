@@ -572,10 +572,27 @@ const starLabel = () => {
   return glyph(p.value).replace('<svg class="sl-glyph"', `<svg class="sl-glyph sl-bar-glyph" style="color: color-mix(in oklch, ${p.colour}, white 25%)"`) + `<span>${p.name}</span>`;
 };
 // i shows the card in any view; again, while the card stands, the article; again, it shuts.
+// The star whose card the user opened with i; its own card then stays back.
+let handCard = null;
 function infoPress() {
-  if (article.isOpen()) article.close();
-  else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
-  else showCard(true);
+  try {
+    if (article.isOpen()) article.close();
+    else if (card.isOpen()) {
+      const p = PICKS.find(x => x.value === st.star);
+      if (!p) return;
+      article.open(st.star, cardLines(st.star, p.name));
+      // The card goes at once, so a quick second i shows no ghost under the article (Tom, 2026-11-25).
+      card.clear();
+    } else {
+      // A card opened by hand stops the star's own card from playing over it (Tom, 2026-11-25).
+      handCard = st.star;
+      showCard(true);
+    }
+  } catch (err) {
+    // A broken fact never blocks the keys; the card and the article shut.
+    card.clear(); article.close();
+    console.warn('Star Chart: info', err);
+  }
 }
 const zoomText = z => z > 2.02 ? `full ${pullText(z)}` : VIEWS[Math.round(z)];
 function pickStar(v) {
@@ -584,6 +601,7 @@ function pickStar(v) {
   egg?.stop?.();
   egg = null;
   store.set('star', v);
+  handCard = null;
   article.close();
   // The old star's card leaves at once; the new one waits for the switch's light.
   // Reduced motion swaps at once, so its card need not wait.
@@ -762,22 +780,33 @@ function arrive() {
   // An open article holds the card back; the card would stand over it.
   if (article.isOpen()) return;
   cam.arrived = true;
+  // A card opened by hand, or one still standing, is never replaced.
+  if (handCard === st.star || card.isOpen()) return;
   showCard();
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
 // Our Sun stands beside the object at their true ratio; the Sun's own card has none.
 function showCard(again = false) {
   cardStar = st.star;
-  // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
-  const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
-  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, again);
+  if (!pick) return;
+  try {
+    // A black hole's rsun is its horizon's radius.
+    const rsun = STARS[st.star]?.rsun;
+    const sun = st.star === 'sun' || !(rsun > 0) ? null : { k: rsun };
+    card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, again);
+  } catch (err) {
+    card.clear();
+    console.warn('Star Chart: card', err);
+    return;
+  }
   showClock();
 }
 // A new card style plays at once when the view rests on the full star.
 function replayCard() {
   if (cam.to !== NOTCH || cam.moving) return;
   cardStar = null;
+  handCard = null;
   cam.arrived = false;
   arrive();
 }

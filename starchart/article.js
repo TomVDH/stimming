@@ -107,7 +107,7 @@ export function makeArticle(o) {
 
   /**
    * @param {string} id The object's id.
-   * @param {{ name: string, type: string, wiki: string | null }} c The card's name and type, and the source.
+   * @param {{ name: string, type: string, latin?: string | null, rows?: [string, string][], wiki: string | null }} c The card's lines, every fact row, and the source.
    */
   function open(id, c) {
     close();
@@ -136,8 +136,20 @@ export function makeArticle(o) {
     const type = h('p', 'a-type', c.type);
     box.append(name, type);
     lines.push(type);
+    if (c.latin) { const latin = h('p', 'a-latin', c.latin); box.append(latin); lines.push(latin); }
     // The text scrolls inside its own column when it runs long.
     const body = h('div', 'a-body');
+    // Every fact heads the column, so a long list scrolls with the text (Tom, 2026-11-25).
+    if (c.rows?.length) {
+      const facts = h('div', 'a-facts');
+      for (const [k, v] of c.rows) {
+        const r = h('p', 'a-row');
+        r.append(h('span', 'a-k', k), h('span', 'a-v', v));
+        facts.append(r);
+      }
+      body.append(facts);
+      lines.push(facts);
+    }
     const paras = (a?.text ?? '').split('\n\n').filter(Boolean);
     paras.forEach((para, k) => {
       const p = h('p', 'a-text', para);
