@@ -281,6 +281,17 @@ export const STARS = {
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [60, 8, 0.1, 0.4],
     wide: 'none', long: 'none', root: 329.63,
   },
+  // Eta Carinae: a luminous blue variable of about 100 suns' mass, 240 suns wide here (60 to 800).
+  // Its Great Eruption of the 1840s threw off the Homunculus, marched in the final pass (runaway kind 6).
+  // The nebula's lobes stand 22 R out; the full view stands 18 times back.
+  etacar: {
+    ...FLARE, day: 2022, rain: 0.5, bubble: 0.2, reach: 18,
+    bow: { kind: 6, heading: 0, size: 22, col: [1, 0.7, 0.44] },
+    row: 2, rsun: 240, expo: 1, hotW: 1, coolW: 0.8, loop: 0.6, prom: 0.7, dust: 0.3, rays: 1.2,
+    hal: [0.6, 0.75, 1], streak: [0.55, 0.78, 1],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [40, 7, 0.1, 0.4],
+    wide: 'none', long: 'none', root: 110,
+  },
   // Betelgeuse: a red supergiant, 760 suns wide, with a handful of giant cells.
   betelgeuse: {
     ...FLARE, day: 13000, ribbon: 1.2, bubble: 0.15, lump: [0.06, 1.4, 1, 0.35],

@@ -61,6 +61,8 @@ const DRAW = {
   dwarf: () => halo(32, 32, 28) + dot(32, 32, 12),
   pulsar: () => line('M16 0 L48 64', 6) + dot(32, 32, 14),
   // A planetary nebula: a thick glowing ring round a hot point.
+  // Two lobes on a tilted axis round a bright point.
+  bipolar: () => halo(20, 20, 17) + halo(44, 44, 17) + dot(32, 32, 6),
   planetary: () => halo(32, 32, 30) + `<ellipse cx="32" cy="32" rx="22" ry="18" stroke="${I}" stroke-width="8" opacity="0.5"/>` + `<ellipse cx="32" cy="32" rx="22" ry="18" stroke="${I}" stroke-width="2.5" opacity="0.85"/>` + dot(32, 32, 3),
   // A supernova remnant: a ragged filament cage round a bright point.
   remnant: () => halo(32, 32, 27) + line('M8 30 Q20 12 36 10 Q54 14 58 32 Q54 50 34 54 Q14 52 8 30', 2) + line('M18 28 Q30 22 44 30 M24 42 Q34 36 46 42', 1.2) + dot(32, 32, 3.5),
@@ -76,7 +78,7 @@ const DRAW = {
 export const KIND = {
   sun: 'main', proxima: 'main', epseri: 'main', procyon: 'main', przyb: 'main', sirius: 'main',
   vega: 'spinner', regulus: 'spinner', zetaoph: 'runaway', xxtri: 'spotted', fomalhaut: 'belt', s5hvs1: 'hyper',
-  arcturus: 'giant', rigel: 'giant', betelgeuse: 'giant', mira: 'tail', polaris: 'cepheid', rlep: 'giant', vycma: 'giant', st218: 'giant',
+  arcturus: 'giant', rigel: 'giant', etacar: 'bipolar', betelgeuse: 'giant', mira: 'tail', polaris: 'cepheid', rlep: 'giant', vycma: 'giant', st218: 'giant',
   wohg64: 'cocoon', tzo: 'core', quasi: 'quasi',
   luhman: 'brown', wise: 'brown', ttauri: 'proto',
   betalyr: 'interacting', vfts352: 'contact', epsaur: 'darkdisc', wr124: 'wind', wr140: 'shells',

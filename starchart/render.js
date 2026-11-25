@@ -2190,6 +2190,49 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
   return col;
 }
+// Eta Carinae's Homunculus, after Hubble: two dusty lobes and a thin equatorial skirt.
+// uBow.z R is a lobe's far tip; not to scale: the true nebula is about 0.6 light years long.
+// The dust scatters the star's light; the march keeps a transmittance, so the near lobe hides the far one.
+vec3 etaNeb(vec2 pR) {
+  vec2 q = pR / uBow.z;
+  float d = length(q);
+  if (d > 1.7) return vec3(0.0);
+  // The axis leans about 41 degrees from the line of sight.
+  vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
+  vec3 acc = vec3(0.0);
+  float T = 1.0;
+  const int N = 24;
+  float dt = 3.2 / float(N);
+  for (int i = 0; i < N; i++) {
+    vec3 w = uCamM * vec3(q, -1.6 + (float(i) + 0.5) * dt);
+    float a = dot(w, AX);
+    vec3 pe = w - a * AX;
+    float rho = length(pe);
+    // Each lobe is a thin shell round a centre 0.52 out on the axis, a little longer than wide.
+    vec3 lc = w - sign(a) * 0.52 * AX;
+    float la = dot(lc, AX);
+    float sh = length(vec2(la / 0.5, length(lc - la * AX) / 0.44));
+    // Fine cells over broad ones: Hubble's mottled, cauliflower dust.
+    float m = 0.6 * fbm(w * 4.0 + 3.0) + 0.4 * fbm(w * 13.0 + 7.0);
+    float wall = exp(-pow((sh - 1.0) / 0.11, 2.0)) * (0.25 + 1.6 * m * m);
+    // Dust fills each lobe too, thinner than its wall, so the lobes read solid.
+    wall += 0.35 * smoothstep(1.0, 0.55, sh) * m;
+    // The skirt: a thin sheet in the waist plane, streaked along each radius.
+    float sk = exp(-pow(a / 0.035, 2.0)) * smoothstep(1.3, 0.35, rho) * smoothstep(0.08, 0.3, rho);
+    float stk = fbm(pe / max(rho, 1e-3) * 6.0 + vec3(0.0, 0.0, rho * 1.5));
+    sk *= 0.15 + 1.4 * smoothstep(0.45, 0.75, stk);
+    float dens = wall + 0.7 * sk;
+    // Tan and cream dust, paler in the skirt; the light falls off away from the star.
+    vec3 c = mix(vec3(0.5, 0.24, 0.13), vec3(1.0, 0.7, 0.44), smoothstep(0.3, 0.8, m));
+    c = mix(c, vec3(0.95, 0.85, 0.72), clamp(sk / max(dens, 1e-3), 0.0, 1.0) * 0.6);
+    c *= 0.55 / (0.25 + length(w));
+    acc += T * c * dens * dt * 2.2;
+    T *= exp(-dens * dt * 3.0);
+  }
+  // The outer ejecta: faint red knots of gas rich in nitrogen, round the lobes.
+  float oe = exp(-pow((d - 1.3) / 0.22, 2.0)) * 0.16 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
+  return acc + vec3(1.0, 0.3, 0.2) * oe;
+}
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
 // A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
 // Each ray marches through it in the camera's frame, so a drag turns the barrel.
@@ -2287,6 +2330,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // Eta Carinae's Homunculus: two dusty lobes, marched in 3D.
+  if (uBow.w > 5.5) return etaNeb(P / R);
   // The Ring Nebula: a barrel of glowing gas round a white dwarf, marched in 3D.
   if (uBow.w > 4.5) return ringNeb(P / R);
   // The Crab Nebula: the pulsar's wind nebula in its cage of filaments.
