@@ -112,32 +112,31 @@ export function makeCard(o) {
 
   // Our Sun beside the object at their true ratio, above the card (Tom, 2026-11-24).
   // k is the object's radius in R☉; a black hole gives its horizon's.
-  // The larger body is H px wide; the smaller shrinks to scale, at least a 2 px dot.
-  // A dot under 6 px wears a ring, so the eye finds it.
+  // Both stand on one centre line, the smaller at the left, at one scale.
+  // The larger is H/2 tall at most; past that the smaller keeps 4 px of radius,
+  // and the larger shows only the arc of its edge, as wide as the box allows (Tom, 2026-11-24).
   function sizeMark({ k }) {
-    const H = 48, GAP = 10;
+    const W = 150, H = 52, MID = H / 2, GAP = 8, BIG = H / 2 - 2, SMALL = 4;
+    const ratio = k >= 1 ? k : 1 / k;
+    const fits = SMALL * ratio <= BIG;
+    const rBig = fits ? BIG : SMALL * ratio, rSmall = fits ? Math.max(BIG / ratio, 1.5) : SMALL;
     const el = h('div', 'c-sun');
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
-    const circle = (cx, cy, r, cls) => {
+    const circle = (cx, r, cls) => {
       const c = document.createElementNS(NS, 'circle');
-      Object.entries({ cx, cy, r }).forEach(([a, v]) => c.setAttribute(a, v));
+      Object.entries({ cx, cy: MID, r }).forEach(([a, v]) => c.setAttribute(a, v));
       c.setAttribute('class', cls);
       svg.append(c);
     };
-    const dSun = k >= 1 ? H / k : H, dObj = k >= 1 ? H : H * k;
-    const body = (x, d, cls) => {
-      const r = Math.max(1, d / 2);
-      circle(x + r, H - r, r, cls);
-      if (d < 6) circle(x + r, H - r, 5, 'c-sun-ring');
-      return x + Math.max(2 * r, d < 6 ? 10 : 0);
-    };
-    const x = body(0, dSun, 'c-sun-sol') + GAP;
-    const w = body(x, dObj, 'c-sun-obj');
+    const sx = Math.max(rSmall, 1.5) + 1, limb = sx + rSmall + GAP;
+    const w = fits ? Math.ceil(limb + 2 * rBig + 1) : W;
+    circle(sx, rSmall, k >= 1 ? 'c-sun-sol' : 'c-sun-obj');
+    circle(limb + rBig, rBig, (k >= 1 ? 'c-sun-obj' : 'c-sun-sol') + (fits ? '' : ' is-arc'));
     svg.setAttribute('width', w); svg.setAttribute('height', H);
     svg.setAttribute('viewBox', `0 0 ${w} ${H}`);
     // The larger body takes the number: Sun to object.
-    el.append(svg, h('span', 'c-sun-k', k >= 1 ? `☉ 1 : ${fmtRatio(k)}` : `☉ ${fmtRatio(1 / k)} : 1`));
+    el.append(svg, h('span', 'c-sun-k', k >= 1 ? `☉ 1 : ${fmtRatio(k)}` : `☉ ${fmtRatio(ratio)} : 1`));
     return el;
   }
   // A ratio: two figures below 10, whole to 100,000, then powers of ten.
