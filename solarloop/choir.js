@@ -212,6 +212,10 @@ TAPNORM.quasi = TAPNORM.tzo;
 VOICES.wr140 = VOICES.wr124;
 NORM.wr140 = NORM.wr124;
 TAPNORM.wr140 = TAPNORM.wr124;
+// VFTS 352 sings Zeta Ophiuchi's choir.
+VOICES.vfts352 = VOICES.zetaoph;
+NORM.vfts352 = NORM.zetaoph;
+TAPNORM.vfts352 = TAPNORM.zetaoph;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

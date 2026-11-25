@@ -478,6 +478,8 @@ uniform float uFlashW;
 uniform vec4 uRing, uRing2, uRing3;
 // WR 140's dust shells: their light, their spacing in R, the orbits counted.
 uniform vec4 uShell;
+// A contact twin: its centre in R in the view, its z sign the near side; w on.
+uniform vec4 uPair;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
 // uBinN: the disc's axis in the view frame.
 uniform vec4 uBin, uBinD, uBinN;
@@ -914,6 +916,26 @@ void main() {
     // The hidden star shows only as a soft glow through the gas: no hard disc of its own.
     float dd = length(dq);
     cool += vis * uDisk.x * uOff * 0.5 * exp(-dd * dd / 0.3);
+  }
+  // VFTS 352: a twin O star in contact; the two envelopes merge in a neck.
+  // A smooth union of the two disks draws the peanut; side on it shows, end on it hides.
+  if (uPair.w > 0.0) {
+    vec2 c2 = uPair.xy * R;
+    float r2 = length(P - c2);
+    float k = 0.45 * R;
+    float hm = clamp(0.5 + 0.5 * (r2 - r) / k, 0.0, 1.0);
+    float du = mix(r2 - R, r - R, hm) - k * hm * (1.0 - hm);
+    bool inTwin = r2 < R;
+    bool inNeck = du < 0.0 && r >= R && !inTwin;
+    // The primary hides the twin behind it; the twin in front covers the primary.
+    if ((inTwin && (uPair.z > 0.0 || r >= R)) || inNeck) {
+      float mu2 = inTwin ? sqrt(max(1.0 - r2 * r2 / (R * R), 0.0)) : clamp(-du / (0.6 * R), 0.0, 1.0);
+      float tex2 = 1.0 + uDisk.y * 0.6 * (fbm(vec3((P - c2) / R * 6.0, tb * 3.0)) - 0.5);
+      // Gravity darkens the neck, where the two stars meet.
+      float neck = inTwin ? 1.0 : 0.72;
+      hot = uDisk.x * tex2 * pow(max(mu2, 0.02), uTex.w) * neck;
+      cool *= 0.2;
+    }
   }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
@@ -1763,6 +1785,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uRing2, v.ring2);
     gl.uniform4fv(s.u.uRing3, v.ring3);
     gl.uniform4fv(s.u.uShell, v.shell);
+    gl.uniform4fv(s.u.uPair, v.pair);
     gl.uniform4fv(s.u.uBin, v.bin);
     gl.uniform4fv(s.u.uBinD, v.binD);
     gl.uniform4fv(s.u.uBinN, v.binN);

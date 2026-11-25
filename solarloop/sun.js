@@ -326,6 +326,16 @@ export const STARS = {
     disk: [1.4, 0.12, 0.3, 0.3], disk2: [240, 0, 0, 0], tex: [40, 4, 0, 0.3],
     wide: 'none', long: 'none', root: 146.83,
   },
+  // VFTS 352: two hot O stars of nearly equal size, so close their envelopes touch.
+  // They orbit in under 27 hours, tidally locked, so the turn carries the twin round.
+  // pair: the twin's distance in R; the radius is not in the article: 7 suns is the toy's.
+  vfts352: {
+    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: 1.75, reach: 1.7,
+    row: 8, rsun: 7, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 1.25,
+    hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
+    disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],
+    wide: 'none', long: 'none', root: 164.81,
+  },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
 // A parcel of gas leaves L1 and falls in the rotating frame of the pair.

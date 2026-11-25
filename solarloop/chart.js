@@ -40,6 +40,7 @@ export const CHART = {
   wohg64: { kind: 'cocoon', t: 3400, cls: 'M7.5 red supergiant in a dust torus' },
   quasi: { kind: 'core', t: 4000, cls: 'quasi-star, a model' },
   wr140: { kind: 'shells', t: 70000, cls: 'Wolf-Rayet and O star, colliding winds' },
+  vfts352: { kind: 'binary', t: null, cls: 'two O stars in contact' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.
