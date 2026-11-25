@@ -477,9 +477,9 @@ export const STARS = {
   },
   // Epsilon Aurigae: an F supergiant, about 143 to 358 suns wide; 200 here.
   // Every 27 years a disc 3.8 AU wide and 0.475 AU thick crosses it for about two years.
-  // Marched as a tilted 3D dusty disc 2.1 R in half-width; the full view stands 2.4 times back.
+  // Disc centre sits left of the supergiant (after Spitzer's view); full view stands 3.6 times back.
   epsaur: {
-    ...FLARE, day: 0, rain: 0.3, bubble: 0.15, discE: [1, 0.32, 2.1, 0.24], reach: 2.4,
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.15, discE: [1, -1.55, 2.95, 0.42], reach: 3.6,
     row: 11, rsun: 200, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.4, dust: 0.1, rays: 1,
     hal: [1, 0.85, 0.6], streak: [1, 0.9, 0.7],
     disk: [1.6, 0.6, 0.05, 0.35], disk2: [110, 0.3, 0.3, 0.06], tex: [30, 6, 0.06, 0.5],

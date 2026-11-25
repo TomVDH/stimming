@@ -1108,24 +1108,24 @@ void main() {
     float dd = length(dq);
     cool += vis * uDisk.x * uOff * 0.5 * exp(-dd * dd / 0.3);
   }
-  // Epsilon Aurigae: a vast tilted 3D dusty disc round a hidden B star eclipses the supergiant.
-  // Marched front to back through a flared, swirling dust slab; starlight backlights its wispy rims.
+  // Epsilon Aurigae: vast tilted dusty disc round a hidden B5V star eclipsing the supergiant.
+  // Samples a 512x96x32 polar Worley-billow volume baked once on first show (QBAKE uWhich 2).
   if (uDiscE.x > 0.0) {
-    vec3 C = vec3(uDiscE.y, -0.05, 1.85);
+    vec3 C = vec3(uDiscE.y, -0.22, 2.2);
     vec3 Cv = C * uCamM;
-    float Rd = uDiscE.z * 1.15;
+    float Rd = uDiscE.z * 1.12;
     vec2 offC = P / R - Cv.xy;
     float b2 = dot(offC, offC);
     if (b2 < Rd * Rd) {
-      // Tilted 11 degrees toward the eye and canted slightly so the disc reads in 3D.
-      vec3 nD = normalize(vec3(-0.09, 0.975, 0.2));
+      // Tilted 11 degrees toward the eye and canted across the sky, after the Spitzer view.
+      vec3 nD = normalize(vec3(-0.14, 0.975, 0.19));
       vec3 uD = normalize(cross(vec3(0.0, 0.0, 1.0), nD));
       vec3 vD = cross(nD, uD);
       vec3 w0 = uCamM * vec3(P / R, 0.0);
       vec3 dir = uCamM[2];
       float zSph = sqrt(max(Rd * Rd - b2, 0.0));
-      float zStar = r < R ? sqrt(max(1.0 - (r / R) * (r / R), 0.0)) : -4.0;
-      float Hmax = uDiscE.w * 1.65;
+      float zStar = r < R ? sqrt(max(1.0 - (r / R) * (r / R), 0.0)) : -5.0;
+      float Hmax = uDiscE.w * 1.6;
       float h0 = dot(w0 - C, nD), hd = dot(dir, nD);
       float zLo = Cv.z - zSph, zHi = Cv.z + zSph;
       if (abs(hd) > 1e-4) {
@@ -1136,49 +1136,50 @@ void main() {
       zLo = max(zLo, zStar);
       if (zHi > zLo + 1e-3) {
         float T = 1.0, scHot = 0.0, scCool = 0.0;
-        const int ND = 28;
+        const int ND = 40;
         float dt = (zHi - zLo) / float(ND);
-        float jit = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
+        // Interleaved gradient noise breaks step bands cleanly, as in 3C 273.
+        float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
         for (int i = uZero; i < ND; i++) {
-          float z = zHi - (float(i) + 0.5 + jit) * dt;
+          float z = zHi - (float(i) + 0.5 + jq) * dt;
           vec3 w = w0 + z * dir;
           vec3 d = w - C;
           float h = dot(d, nD);
           vec2 pl = vec2(dot(d, uD), dot(d, vD));
           float rc = length(pl);
-          if (rc > uDiscE.z * 1.12 || rc < 0.05) continue;
-          float rf = clamp(rc / uDiscE.z, 0.0, 1.0);
-          // Flared height: thin round the B-star cavity, thickening toward the outer rim.
-          float H = uDiscE.w * (0.28 + 0.72 * pow(rf, 1.25));
-          float ah = abs(h) / max(H, 0.02);
-          if (ah > 2.6) continue;
-          // Swirling Keplerian clouds and concentric dusty lanes.
-          float ang = atan(pl.y, pl.x) + uTime * 0.06 / (0.35 + rc);
-          vec3 nc = vec3(cos(ang) * rc * 1.5, sin(ang) * rc * 1.5, h * 4.5);
-          float turb = hn2(nc * 1.3 + vec3(0.0, 0.0, rc * 2.0));
-          float fine = hn2(nc * 3.1 + vec3(4.2, -1.7, 2.5));
-          float rings = 0.62 + 0.38 * sin(rc * 19.0 + 1.8 * sin(rc * 7.0));
-          float gap = 1.0 - 0.52 * exp(-pow((rc - uDiscE.z * 0.56) / 0.075, 2.0));
-          float radEnv = smoothstep(0.16, 0.34, rc) * smoothstep(uDiscE.z * 1.1, uDiscE.z * 0.76, rc);
-          float prof = exp(-ah * ah * 1.6) + 0.42 * exp(-ah * ah * 0.42);
-          float dens = prof * radEnv * rings * gap * (0.35 + 1.5 * turb * (0.55 + 0.75 * fine));
-          if (dens < 0.004) continue;
-          // Supergiant behind the disc backlights the wispy upper, lower and outer dust rims.
+          float rf = rc / uDiscE.z;
+          if (rf > 1.1 || rf < 0.06) continue;
+          // Flared height: thin round the B-star cavity, thickening outward.
+          float H = uDiscE.w * (0.28 + 0.72 * pow(clamp(rf, 0.0, 1.0), 1.2));
+          float yu = h / max(H, 0.02);
+          if (abs(yu) > 1.35) continue;
+          float phi = atan(pl.y, pl.x);
+          // Lookup turns smoothly with time; .r is Worley dust density, .g is baked self-shade.
+          vec2 t = texture(uBandBake, vec3((phi - uTime * 0.045) / TAU, (rf - 0.06) / 1.04, clamp(yu * 0.5 + 0.5, 0.0, 1.0))).rg;
+          float dd = t.x;
+          if (dd < 0.004) continue;
+          // Directional self-shading per billow (QBAKE style).
+          float selfSh = 0.06 + exp(-1.85 * t.y);
+          // Blazing supergiant at (0,0,0) backlights wispy dust rims and eclipsing edges.
           float rS = max(length(w), 0.35);
-          float rim = smoothstep(0.32, 1.35, ah) * 0.85 + 0.55 * smoothstep(0.68, 1.04, rf);
-          float back = uDiscE.x * uDisk.x * (0.32 / (0.35 + rS * rS * 0.55)) * rim * exp(-dens * 1.35);
-          // Hidden B5V companion warms the inner cavity wall from within.
-          float inner = uDiscE.x * uDisk.x * 0.55 * exp(-pow((rc - 0.24) / 0.16, 2.0)) * exp(-ah * ah * 0.8);
-          float stepW = T * dens * dt * 2.0;
-          scHot += stepW * (back * 0.95 + inner * 0.15);
-          scCool += stepW * (back * 0.25 + inner * 0.85);
-          T *= exp(-dens * dt * 2.8);
-          if (T < 0.02) break;
+          float rim = smoothstep(0.28, 1.15, abs(yu)) * 0.9 + 0.5 * smoothstep(0.66, 1.02, rf);
+          float superL = uDiscE.x * uDisk.x * (0.52 / (0.28 + rS * rS * 0.42)) * (0.25 + rim) * selfSh;
+          // Hidden B5V companion at C lights the inner dust cavity in pearly blue-white.
+          float bCav = uDiscE.x * uDisk.x * (0.95 / (0.08 + rf * rf * 5.2)) * exp(-yu * yu * 0.7) * selfSh;
+          // Subtle warm-umber dust scatter keeps the brooding left wing readable in space.
+          float amb = uDiscE.x * uDisk.x * 0.055 * (0.35 + 0.65 * smoothstep(-0.3, 0.9, yu)) * selfSh;
+          float sw = T * dd * dt * 1.45;
+          scHot += sw * (superL * 0.95 + amb * 0.9 + bCav * 0.25);
+          scCool += sw * (superL * 0.2 + amb * 0.25 + bCav * 0.95);
+          T *= exp(-dd * dt * 3.8);
+          if (T < 0.015) break;
         }
         hot = hot * T + scHot;
         cool = cool * T + scCool;
-        // Hidden B star's soft blue-white heart peeking through the central cavity.
-        cool += T * uDiscE.x * uDisk.x * 0.28 * exp(-b2 / 0.014);
+        // Hidden B5V star's crisp pearly heart peeking through the central dust cavity.
+        float bCore = T * uDiscE.x * uDisk.x * (0.65 * exp(-b2 / 0.008) + 0.28 * exp(-b2 / 0.06));
+        hot += bCore * 0.35;
+        cool += bCore * 0.95;
       }
     }
   }
@@ -1532,7 +1533,7 @@ const QB_W = 512, QB_H = 96;
 const QBAKE = `${HEAD}
 precision highp sampler3D;
 uniform sampler3D uNoise3;
-// 0 bakes the band, 1 the broad-line clouds.
+// 0 bakes the quasar band, 1 its broad-line clouds, 2 Epsilon Aurigae's dusty disc.
 uniform int uWhich;
 // This layer's height place, 0 at the bottom, 1 at the top.
 uniform float uLayer;
@@ -1587,9 +1588,34 @@ float blrDust(vec3 q, float env) {
   float w = 0.7 * wor(q * 0.3) + 0.3 * hn(q * 0.8 + 2.7);
   return smoothstep(0.56, 0.34, w + 0.55 * (1.0 - env)) * env;
 }
+// Epsilon Aurigae's dusty disc point: Keplerian shear pulls billows into spiral chevrons.
+vec3 epsQ(float rf, float phi, float yu) {
+  float pt = phi + 2.4 * rf + 0.65 * rf * rf;
+  float rs = 4.0 + 16.0 * rf;
+  return vec3(cos(pt) * rs, yu * 2.2, sin(pt) * rs);
+}
+// Epsilon Aurigae's Worley-billow dust density: dense dark lanes, clear holes and trailing outer fingers.
+float epsDust(float rf, float phi, float yu) {
+  vec3 q = epsQ(rf, phi, yu);
+  float w = 0.72 * wor(q * 0.52) + 0.28 * hn(q * 1.15 + 4.3);
+  float lanes = 0.74 + 0.26 * sin(rf * 26.0 + 1.4 * hn(q * 0.4));
+  float gap = 1.0 - 0.55 * exp(-pow((rf - 0.56) / 0.045, 2.0));
+  float feather = exp(-1.9 * yu * yu) + 0.45 * exp(-0.55 * yu * yu);
+  float taper = smoothstep(0.68, 1.04, rf);
+  float fing = smoothstep(0.28, 0.84, 0.5 + 0.5 * sin(12.0 * atan(q.z, q.x) + 3.5 * hn(q * 0.35)));
+  float fill = clamp(feather * 0.85 - 0.72 * taper, -0.4, 1.0);
+  float billow = smoothstep(0.58 + 0.28 * fill, 0.32 + 0.28 * fill, w);
+  return clamp(billow * lanes * gap * mix(1.0, fing, taper * 0.75) * smoothstep(0.08, 0.22, rf) * smoothstep(1.08, 0.72, rf) * feather, 0.0, 1.0);
+}
 void main() {
   float a = gl_FragCoord.x / ${QB_W}.0 * TAU, fy = gl_FragCoord.y / ${QB_H}.0;
-  if (uWhich == 0) {
+  if (uWhich == 2) {
+    float rf = 0.06 + fy * 1.04, yu = uLayer * 2.0 - 1.0;
+    float dd = epsDust(rf, a, yu);
+    // One step inward toward the central B5V star bakes directional self-shading.
+    float sh = epsDust(max(rf - 0.06, 0.05), a, yu * 0.85);
+    o = vec4(dd, sh, 0.0, 1.0);
+  } else if (uWhich == 0) {
     float r = ${QB.r0.toFixed(1)} + fy * ${(QB.r1 - QB.r0).toFixed(1)}, y = (uLayer - 0.5) * ${(2 * QB.y).toFixed(2)};
     float RT = 30.0, ar = 6.0, ay = 1.5;
     vec3 q = bandQ(r, a, y);
@@ -3157,6 +3183,8 @@ export async function makeRender(gl, opts = {}) {
     return t;
   }
   const bandB = qbakeTex(QB.d, 0), blrB = qbakeTex(QC.d, 1);
+  // Epsilon Aurigae's polar Worley disc bakes lazily on first show.
+  let epsB = null;
   await settled(gl); step();
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
@@ -3239,6 +3267,7 @@ export async function makeRender(gl, opts = {}) {
   function frame(v) {
     if (!hdr) return;
     // A nebula's dust bakes once, the first time its star shows.
+    if (v.band.discE[0] > 0 && !epsB) epsB = qbakeTex(32, 2);
     const nk = v.bow[0] > 0 ? Math.round(v.bow[3]) : 0;
     const nw = { 6: 0, 7: 1, 4: 2, 5: 3, 8: 4 }[nk];
     if (nw !== undefined && !nebT[nk]) nebT[nk] = nebTex(nw);
@@ -3282,7 +3311,7 @@ export async function makeRender(gl, opts = {}) {
     gl.bindTexture(gl.TEXTURE_3D, holeB);
     gl.uniform1i(s.u.uHoleBake, 6);
     gl.activeTexture(gl.TEXTURE7);
-    gl.bindTexture(gl.TEXTURE_3D, bandB);
+    gl.bindTexture(gl.TEXTURE_3D, v.band.discE[0] > 0 ? epsB : bandB);
     gl.uniform1i(s.u.uBandBake, 7);
     gl.activeTexture(gl.TEXTURE8);
     gl.bindTexture(gl.TEXTURE_3D, blrB);
