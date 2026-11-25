@@ -224,6 +224,13 @@ TAPNORM.xxtri = TAPNORM.arcturus;
 VOICES.epsaur = VOICES.procyon;
 NORM.epsaur = NORM.procyon;
 TAPNORM.epsaur = TAPNORM.procyon;
+// Mothra sings Beta Lyrae's choir; Earendel sings Rigel's.
+VOICES.mothra = VOICES.betalyr;
+NORM.mothra = NORM.betalyr;
+TAPNORM.mothra = TAPNORM.betalyr;
+VOICES.earendel = VOICES.rigel;
+NORM.earendel = NORM.rigel;
+TAPNORM.earendel = TAPNORM.rigel;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

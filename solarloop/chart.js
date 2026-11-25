@@ -43,6 +43,8 @@ export const CHART = {
   vfts352: { kind: 'binary', t: null, cls: 'two O stars in contact' },
   xxtri: { t: 4620, cls: 'K0 III giant, giant starspots' },
   epsaur: { kind: 'disc', t: 7750, cls: 'F0 supergiant, eclipsed by a dark disc' },
+  mothra: { kind: 'arc', t: 5250, cls: 'yellow hypergiant and blue supergiant, lensed' },
+  earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
 };
 
 // A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.

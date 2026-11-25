@@ -330,9 +330,9 @@ export const STARS = {
   },
   // VFTS 352: two hot O stars of nearly equal size, so close their envelopes touch.
   // They orbit in under 27 hours, tidally locked, so the turn carries the twin round.
-  // pair: the twin's distance in R; the radius is not in the article: 7 suns is the toy's.
+  // pair: the twin's place in R and its size; the radius is not in the article: 7 suns is the toy's.
   vfts352: {
-    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: 1.85, reach: 1.75,
+    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: { at: [1.85, 0, 0], size: 1, neck: 1, cool: 0 }, reach: 1.75,
     row: 8, rsun: 7, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],
@@ -356,6 +356,29 @@ export const STARS = {
     hal: [1, 0.85, 0.6], streak: [1, 0.9, 0.7],
     disk: [1.6, 0.6, 0.05, 0.35], disk2: [110, 0.3, 0.3, 0.06], tex: [30, 6, 0.06, 0.5],
     wide: 'none', long: 'none', root: 138.59,
+  },
+  // Mothra: a yellow hypergiant, 271 suns, and a blue supergiant, 60 suns, 10.5 billion light years off.
+  // An unseen lens of 10,000 to a million suns magnifies them; the orbit is unknown.
+  // Far out the host galaxy shows as an arc. The partner holds still; its place is the toy's.
+  mothra: {
+    ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 2.2,
+    pair: { at: [2.5, 0.35, 1.2], size: 0.22, neck: 0, cool: 1 },
+    bow: { kind: 2, heading: 0.5, size: 36, col: [1, 0.45, 0.6] },
+    row: 28, rsun: 271, expo: 1, hotW: 1, coolW: 1, loop: 0.3, prom: 0, dust: 0.1, rays: 1,
+    hal: [1, 0.8, 0.45], streak: [1, 0.85, 0.6],
+    disk: [1.7, 0.7, 0.04, 0.3], disk2: [120, 0, 0.3, 0.06], tex: [20, 5, 0.06, 0.55],
+    wide: 'none', long: 'none', root: 130.81,
+  },
+  // Earendel: perhaps the most distant star, its light 12.9 billion years old.
+  // If single, a B star of 13,000 to 16,000 K and 103 to 393 suns; 200 here.
+  // A galaxy cluster magnifies it; far out its host galaxy shows as the Sunrise Arc.
+  earendel: {
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 1.5,
+    bow: { kind: 2, heading: 2.6, size: 45, col: [1, 0.38, 0.3] },
+    row: 2, rsun: 200, expo: 1, hotW: 1, coolW: 0.8, loop: 0.45, prom: 0.5, dust: 0, rays: 1.15,
+    hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
+    wide: 'none', long: 'none', root: 155.56,
   },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */

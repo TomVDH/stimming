@@ -104,6 +104,9 @@ const LUTS = [
   // WR 140: a blue-white blaze; its soot shells glow warm cream.
   [['000000', 0], ['04060e', 0.1], ['121c3c', 0.26], ['32508e', 0.44], ['7092d8', 0.6], ['b6cbff', 0.74], ['ecf1ff', 0.86], ['ffffff', 1]],
   [['000000', 0], ['0a0804', 0.12], ['2a2412', 0.3], ['6a5a32', 0.5], ['b4a068', 0.68], ['e8dcae', 0.84], ['fffbea', 1]],
+  // Mothra: a gold hypergiant; its blue supergiant partner takes the cool ramp.
+  [['000000', 0], ['0e0802', 0.1], ['3a2006', 0.26], ['7e4a0c', 0.44], ['c88a1e', 0.62], ['f4c450', 0.78], ['ffe8a8', 0.9], ['fffaee', 1]],
+  [['000000', 0], ['02060e', 0.12], ['0c2040', 0.3], ['2a5aa0', 0.5], ['6c9ce8', 0.68], ['b8d4ff', 0.84], ['f4f8ff', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -478,8 +481,9 @@ uniform float uFlashW;
 uniform vec4 uRing, uRing2, uRing3;
 // WR 140's dust shells: their light, their spacing in R, the orbits counted.
 uniform vec4 uShell;
-// A contact twin: its centre in R in the view, its z sign the near side; w on.
-uniform vec4 uPair;
+// A partner star: its centre in R in the view, its z sign the near side; w on.
+// uPair2: its radius over R, a contact neck (1) or none, the cool channel (1) or the hot.
+uniform vec4 uPair, uPair2;
 // Giant starspots: weight, the caps' edge latitude, the big spot's latitude and longitude.
 uniform vec4 uStarspot;
 // A dark disc in front, edge on: light, its centre in R, its half width and half thickness in R.
@@ -951,24 +955,26 @@ void main() {
     // The hidden B star glows faintly at the disc's heart.
     cool += uDiscE.x * uDisk.x * 0.2 * exp(-dot(e, e) / 0.015);
   }
-  // VFTS 352: a twin O star in contact; the two envelopes merge in a neck.
+  // A partner star. VFTS 352: a twin O star in contact; the envelopes merge in a neck.
   // A smooth union of the two disks draws the peanut; side on it shows, end on it hides.
+  // Mothra: a small blue supergiant apart from the gold one, in the cool channel.
   if (uPair.w > 0.0) {
     vec2 c2 = uPair.xy * R;
     float r2 = length(P - c2);
+    float Rt = R * uPair2.x;
     float k = 0.3 * R;
     float hm = clamp(0.5 + 0.5 * (r2 - r) / k, 0.0, 1.0);
-    float du = mix(r2 - R, r - R, hm) - k * hm * (1.0 - hm);
-    bool inTwin = r2 < R;
-    bool inNeck = du < 0.0 && r >= R && !inTwin;
-    // The primary hides the twin behind it; the twin in front covers the primary.
+    float du = mix(r2 - Rt, r - R, hm) - k * hm * (1.0 - hm);
+    bool inTwin = r2 < Rt;
+    bool inNeck = uPair2.y > 0.0 && du < 0.0 && r >= R && !inTwin;
+    // The primary hides the partner behind it; the partner in front covers the primary.
     if ((inTwin && (uPair.z > 0.0 || r >= R)) || inNeck) {
-      float mu2 = inTwin ? sqrt(max(1.0 - r2 * r2 / (R * R), 0.0)) : clamp(-du / (0.6 * R), 0.0, 1.0);
-      float tex2 = 1.0 + uDisk.y * 0.6 * (fbm(vec3((P - c2) / R * 6.0, tb * 3.0)) - 0.5);
+      float mu2 = inTwin ? sqrt(max(1.0 - r2 * r2 / (Rt * Rt), 0.0)) : clamp(-du / (0.6 * R), 0.0, 1.0);
+      float tex2 = 1.0 + uDisk.y * 0.6 * (fbm(vec3((P - c2) / Rt * 6.0, tb * 3.0)) - 0.5);
       // Gravity darkens the neck, where the two stars meet.
       float neck = inTwin ? 1.0 : 0.85;
-      hot = uDisk.x * tex2 * pow(max(mu2, 0.02), uTex.w) * neck;
-      cool *= 0.2;
+      float L2 = uDisk.x * tex2 * pow(max(mu2, 0.02), uTex.w) * neck;
+      if (uPair2.z > 0.0) { cool = 1.3 * L2; hot = 0.0; } else { hot = L2; cool *= 0.2; }
     }
   }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
@@ -1565,6 +1571,18 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // A lensed arc: the host galaxy smeared along a circle round an unseen lens.
+  // The star sits on the arc; the lens's centre lies uBow.z radii off along the heading.
+  if (uBow.w > 1.5) {
+    vec2 lc = q - vec2(uBow.z, 0.0);
+    float rl = length(lc);
+    float th = atan(lc.y, -lc.x);
+    float band = exp(-pow((rl - uBow.z) / (0.5 + 0.02 * uBow.z), 2.0));
+    float ends = smoothstep(0.45, 0.15, abs(th));
+    // Lensing shears the galaxy's knots along the arc.
+    float kn = 0.3 + 1.2 * pow(fbm(vec3(th * uBow.z * 0.12, (rl - uBow.z) * 1.4, 7.0)), 2.0);
+    return uBowC * band * ends * kn;
+  }
   // A wake: a long faint trail behind, widening, its knots streaming away.
   float back = -q.x;
   float w = 0.35 + 0.035 * back;
@@ -1641,7 +1659,7 @@ void main() {
     c += mix(vec3(0.72, 0.84, 1.0), vec3(1.0, 0.8, 0.62), clamp(hs.a, 0.0, 1.0)) * hs.b;
   } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w < 0.5 || uBow.w > 1.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < 2; k++) {
@@ -1822,6 +1840,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uRing3, v.ring3);
     gl.uniform4fv(s.u.uShell, v.shell);
     gl.uniform4fv(s.u.uPair, v.pair);
+    gl.uniform4fv(s.u.uPair2, v.pair2);
     gl.uniform4fv(s.u.uBin, v.bin);
     gl.uniform4fv(s.u.uBinD, v.binD);
     gl.uniform4fv(s.u.uBinN, v.binN);
