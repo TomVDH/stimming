@@ -16,4 +16,12 @@ Tom, 2026-11-25: "we want gentle and clear readouts of what's loading"; picked o
 - [x] A toy with no notes looks as before
 - [x] Verify: slow load (CPU throttle or ?slow), reduced motion, 375 px
 - [x] Docs: shared/AGENTS.md or stim.js JSDoc, docs/plans/loading.md, starchart.md
-- [ ] PR with /code-review
+- [x] PR with /code-review (5 nits, all fixed)
+
+## Summary of Changes
+
+- `shared/intro.js`: `loadNote(text, k, n)`; the load line carries a caption above it with the step and its count. A note holds 0.4 s and wipes on. Under reduced motion it replaces the word Loading. Words come from `data-t`, so no element's textContent changes.
+- `shared/intro.css`: the caption spans the line exactly and wraps upward, balanced; it shows by `data-on`.
+- `shared/stim.js`: `buildSteps(n, notes)` feeds the notes.
+- Star Chart names its six build steps.
+- A toy without notes looks as before. Verified at 1024 and 375 px, side layout, no emblem, reduced motion.
