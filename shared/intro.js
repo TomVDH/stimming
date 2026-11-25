@@ -77,7 +77,7 @@ export function progress(part) {
 // The step the toy works on now, in words; empty when the toy names none.
 let note = { text: '', k: 0, n: 0 };
 /**
- * Names the load step that starts now; the intro shows it under the load line.
+ * Names the load step that starts now; the intro shows it above the load line.
  * A toy that never calls it shows the line alone, as before.
  * @param {string} text The step in plain words, for example 'Baking the haze'.
  * @param {number} [k] This step's number, from 1.
@@ -103,7 +103,7 @@ function loadLine(root, host, still = false) {
   el.setAttribute('aria-valuemin', '0');
   el.setAttribute('aria-valuemax', '100');
   host.append(el);
-  // The caption under the line: the step in words, and its count.
+  // The caption above the line: the step in words, and its count.
   const cap = document.createElement('span');
   cap.className = 'intro-note';
   cap.setAttribute('role', 'status');

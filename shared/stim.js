@@ -1290,7 +1290,7 @@ let framed = false;
 /**
  * A build in n steps, for the intro's load line. Call the returned function once per finished step.
  * It returns its argument, so it fits a promise chain: bake().then(step).
- * With notes, the intro names each step under the line as it starts: 'Baking the haze   3 / 6'.
+ * With notes, the intro names each step above the line as it starts: 'Baking the haze   3 / 6'.
  * @param {number} n The steps from stage('build') to the first frame.
  * @param {string[]} [notes] Each step in plain words, in order; a toy without notes shows the line alone.
  */

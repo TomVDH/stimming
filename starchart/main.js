@@ -1750,7 +1750,7 @@ onContextLoss(canvas, {
 
 mark('build');
 // The load line: programs, three bakes, the first star's pass, the first frame.
-// The intro names each step under the line as it starts.
+// The intro names each step above the line as it starts.
 const firstName = st.star === 'sun' ? 'the Sun' : PICKS.find(x => x.value === st.star)?.name || 'the star';
 const built = buildSteps(6, ['Compiling shaders', 'Baking the haze', 'Baking the black holes', 'Baking the quasar', `Compiling ${firstName}`, 'Drawing the first frame']);
 try {
