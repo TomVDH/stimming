@@ -593,8 +593,22 @@ function pickStar(v) {
   if (calm || !started) springTo(NOTCH);
   applyView();
   setLabel(labels.star, starLabel());
+  barTint();
   chart?.sync();
   poke();
+}
+// The bar's accent follows the picked star, lifted so dark text on it keeps 4.5:1.
+function barTint() {
+  const el = (stage.closest('.stim-frame') || stage.parentElement).querySelector('.sg-ui');
+  if (!el) return;
+  const [, L, C, H] = PICKS.find(x => x.value === st.star).colour.match(/oklch\(([\d.]+) ([\d.]+) ([\d.]+)/);
+  el.style.setProperty('--sc-acc', `oklch(${Math.max(+L, 0.8)} ${Math.min(+C, 0.14)} ${H})`);
+  el.style.setProperty('--acc-ink', 'var(--sc-acc)');
+  el.style.setProperty('--acc-img', 'linear-gradient(var(--sc-acc), var(--sc-acc))');
+  el.style.setProperty('--acc-fill', 'linear-gradient(var(--sc-acc), var(--sc-acc))');
+  el.style.setProperty('--acc-on', 'var(--bg)');
+  // The first colour lands at once; later picks ease.
+  requestAnimationFrame(() => el.classList.add('sc-ease'));
 }
 const ui = initPage({ id: ID, bar: {
   // The bar holds only the star (Tom, 2026-11-24); Space and L stay as keys.
@@ -677,6 +691,8 @@ const chart = makeChart({
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
   onOpen: on => { if (on) { rail.hide(); card.clear(); clock.hide(); } },
 });
+// Each bar draw sets the toy's accent again, so the star's colour follows it.
+(stage.closest('.stim-frame') || stage.parentElement).addEventListener('stim:bar', barTint);
 // The time clock: the star's own period, rate and elapsed time, for a while (Tom, 2026-11-24).
 const clock = makeClock({
   frame: stage.closest('.stim-frame') || stage.parentElement,
