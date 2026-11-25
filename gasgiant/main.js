@@ -86,7 +86,7 @@ const TUNE_DEF = {
   // The far view bakes from this many km out; 0 marches every ray in full.
   bake: 25,
   // The upper void's twisters: the live march, or flipbook cards (Tom, 2026-11-24).
-  twMode: 'live', cardK: 3,
+  twMode: 'live', cardK: 3, twMix: 80,
   tCrush: 2.5, tWipe: 0.6, wipeSpeed: 1, melt: 0.8, frostBack: 0.2, jolt: 0.8, rushK: 1,
 };
 // An effect's level: its depth value, none, or full.
@@ -97,7 +97,7 @@ let sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
 const RESIZE = new Set(['pix', 'march', 'cabin']);
 const tune = (id, v) => {
   TUNE[id] = v;
-  if (id === 'twMode' && v === 'cards') makeCards();
+  if (id === 'twMode' && v !== 'live') makeCards();
   if (id === 'sunAz' || id === 'sunEl') sunV = sunDir(TUNE.sunAz, TUNE.sunEl);
   if (RESIZE.has(id) && P) resize(true);
   BK.gen++;
@@ -126,7 +126,8 @@ const DEV = [
   choice('Render', 'march', 'Clouds', [['half', 'Half size'], ['full', 'Full size']]),
   choice('Render', 'steps', 'Steps', [['1', '1x'], ['1.5', '1.5x'], ['2', '2x']]),
   slider('Render', 'bake', 'Bake past, km (0 off)', 0, 200, 5),
-  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards']]),
+  choice('Twisters', 'twMode', 'Draw as', [['live', 'Live march'], ['cards', 'Flipbook cards'], ['mixed', 'Live near, cards far']]),
+  slider('Twisters', 'twMix', 'Live within, km', 0, 400, 5),
   slider('Twisters', 'cardK', 'Card light', 0, 12, 0.1),
   slider('Sun', 'sunAz', 'Azimuth', -180, 180, 1),
   slider('Sun', 'sunEl', 'Elevation', 2, 60, 1),
@@ -324,7 +325,7 @@ async function setup() {
   for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
   T.map = target(gl, 1024, 1024);
   bloom = bloomChain(gl);
-  if (TUNE.twMode === 'cards') makeCards();
+  if (TUNE.twMode !== 'live') makeCards();
 }
 
 // Bakes the flipbook cards in the background, one frame each animation frame.
@@ -602,7 +603,8 @@ function render(dt) {
     gl.uniform1f(u.uTwLo, 0);
     gl.uniform1f(u.uTwHi, TW_MAX);
     // The live march draws until the cards are baked.
-    gl.uniform1f(u.uTwCard, TUNE.twMode === 'cards' && cards ? 1 : 0);
+    gl.uniform1f(u.uTwCard, !cards ? 0 : TUNE.twMode === 'cards' ? 1 : TUNE.twMode === 'mixed' ? 2 : 0);
+    gl.uniform1f(u.uTwMix, TUNE.twMix);
     gl.uniform1f(u.uCardK, TUNE.cardK);
     gl.activeTexture(gl.TEXTURE8);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, cards ? cards.tex : wall);

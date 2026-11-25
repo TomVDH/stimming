@@ -682,15 +682,16 @@ float lightOD(vec3 p, vec3 ld, float lod) {
 // The upper void's twisters: baked walls, lit live (twisters.js).
 ${CARD_GL}
 ${TW_MARCH}
-// A twister layer over the baked far view: the haze in front fades it, and behind the bake's
-// first cloud only what shows through counts. fd is that cloud's depth.
-vec4 twFar(vec4 f, float fd, vec4 L, float tL) {
+// A twister layer over the baked far view. fd is the depth where the bake's clouds reach half cover.
+// The twister stays opaque (Tom, 2026-11-24): the haze in front tints it toward the horizon's colour,
+// and behind the bake's clouds only what shows through counts.
+vec4 twFar(vec4 f, float fd, vec4 L, float tL, vec3 hz) {
   if (tL <= 0.0 || L.a < 1e-3) return f;
   // The glow of the lit haze in front counts as haze too, so the fade runs faster than the gas alone.
   float th = exp(-max(tL - uNear, 0.0) * 2.5 / (690.0 * uTune.w));
   // A twister that enters a cloud fades into it over a few km.
-  float k = th * L.a * mix(1.0, 1.0 - f.a, smoothstep(fd - 4.0, fd + 4.0, tL));
-  return vec4(mix(f.rgb, L.rgb / L.a, k), mix(f.a, 1.0, k));
+  float k = L.a * mix(1.0, 1.0 - f.a, smoothstep(fd - 4.0, fd + 4.0, tL));
+  return vec4(mix(f.rgb, mix(hz, L.rgb / L.a, th), k), mix(f.a, 1.0, k));
 }
 // @end
 void main() {
@@ -950,8 +951,10 @@ void main() {
     // @seg upper
     // Twisters past the near reach go over the bake, the farther first.
     float fd = texture(uFarD, rd).r;
-    far = twFar(far, fd, twC2, twT2);
-    far = twFar(far, fd, twC, twT);
+    // The horizon's colour in this bearing: what the haze turns a far twister to.
+    vec3 hz = texture(uFar, normalize(vec3(rd.x, 0.02, rd.z))).rgb;
+    far = twFar(far, fd, twC2, twT2, hz);
+    far = twFar(far, fd, twC, twT, hz);
     // @end
     res = vec4(res.rgb + (1.0 - res.a) * far.rgb, res.a + (1.0 - res.a) * far.a);
   }

@@ -33,3 +33,5 @@ Round 6 (Tom: greener; "warp them alterally -- to make the funnels bend"): a slo
 - [x] Dev, Twisters: Draw as live march or flipbook cards; Card light
 - [x] Far bake depth at half cloud cover (Tom: "they seem all see throough"): a thin wisp no longer hides a twister past 25 km
 - [ ] Tom's look at cards against the live march
+- [x] Opaque cards (Tom: "they need to be opaque"): the body's alpha ramps to 1; past 25 km haze tints a twister toward the horizon's colour instead of showing the bake through it
+- [x] Mixed mode (Tom: "renderd in front / close -- and cards far"): the live march within 80 km, cards past it

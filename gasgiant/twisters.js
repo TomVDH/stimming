@@ -72,9 +72,10 @@ uniform mediump sampler2DArray uWall;
 uniform vec4 uTwA[${TW_MAX}];
 uniform vec4 uTwB[${TW_MAX}];
 uniform vec4 uTwC[${TW_MAX}];
-// Dev (Tom, 2026-11-24): 1 draws flipbook cards in place of the live march.
+// Dev (Tom, 2026-11-24): 0 draws the live march, 1 flipbook cards,
+// 2 the live march within uTwMix km of the eye and cards past it.
 // uCardK scales the cards' light to the void's.
-uniform float uTwCard, uCardK;
+uniform float uTwCard, uCardK, uTwMix;
 ${TW_SHAPE}
 // The axis sways slowly; the top sways most.
 vec2 twAxis(float Y, int v, float ph) {
@@ -275,7 +276,8 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tA, out vec4 cB, o
   for (int i = 0; i < ${TW_MAX}; i++) {
     if (uTwB[i].y <= 0.0 || float(i) < uTwLo || float(i) >= uTwHi) continue;
     float tf = -1.0;
-    vec4 r = uTwCard > 0.5 ? twCard(i, ro, rd, ta, tb, tf) : twister(i, ro, rd, ta, tb, jit, tf);
+    bool asCard = uTwCard > 0.5 && (uTwCard < 1.5 || length(uTwA[i].xy - ro.xz) > uTwMix);
+    vec4 r = asCard ? twCard(i, ro, rd, ta, tb, tf) : twister(i, ro, rd, ta, tb, jit, tf);
     if (tf < 0.0) continue;
     // A nearer one takes layer A; the old A joins layer B in depth order.
     if (tA < 0.0 || tf < tA) {
@@ -543,7 +545,9 @@ vec4 card(int v, vec2 vT, float t, float ph, float spin) {
   float mask = smoothstep(0.01, 0.17, vT.y + wb) * (1.0 - smoothstep(0.72, 0.97, vT.y + wb));
   // The warp must not pull the frame's edge into view.
   mask *= smoothstep(0.0, 0.03, uv.x) * smoothstep(1.0, 0.97, uv.x);
-  return vec4(rgb, c.g) * mask;
+  // The body is opaque (Tom, 2026-11-24); only the soft edge lets light through.
+  float a = smoothstep(0.04, 0.45, c.g);
+  return vec4(rgb / max(c.g, 1e-3) * a, a) * mask;
 }`;
 
 /**
