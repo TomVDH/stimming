@@ -157,6 +157,17 @@ stage.prepend(canvas);
 const watch = loadWatch(ID, canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null, wall = null;
+// The march settles over frames: each frame blends into the last one.
+// Thin and far things then read whole instead of boiling into grain.
+const HIST_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uCur, uPrev;
+uniform float uK;
+void main() { o = mix(texture(uPrev, vUv), texture(uCur, vUv), uK); }`;
+// The last frame's view, for how much new march to take.
+const lastView = { fwd: [0, 0, -1], alt: 0, fresh: true };
 const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4), twC = new Float32Array(TW_MAX * 4);
 let W = 1, H = 1, cssW = 1, cssH = 1;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
@@ -197,7 +208,7 @@ async function setup() {
   // Only the march zone the eye starts in links before the first frame.
   const zone = zoneFor(S.alt);
   const src = {
-    bake: BAKE_FS, swirl: SWIRL_FS, wall: WALL_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
+    bake: BAKE_FS, swirl: SWIRL_FS, wall: WALL_FS, hist: HIST_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
   };
   const set = {};
   for (const [k, fs] of Object.entries(src)) set[k] = program(gl, TRI_VS, pruneGLSL(fs));
@@ -289,7 +300,11 @@ function resize(force = false) {
   canvas.width = W; canvas.height = H;
   const m = marchCut();
   free(gl, T.march); free(gl, T.scene); free(gl, T.cabin); free(gl, T.bok);
-  T.march = target(gl, Math.max(1, Math.round(W * m.scale)), Math.max(1, Math.round(H * m.scale)));
+  for (const h of T.hist || []) free(gl, h);
+  const mw = Math.max(1, Math.round(W * m.scale)), mh = Math.max(1, Math.round(H * m.scale));
+  T.march = target(gl, mw, mh);
+  T.hist = [target(gl, mw, mh), target(gl, mw, mh)];
+  lastView.fresh = true;
   T.scene = target(gl, W, H);
   T.cabin = target(gl, W, H);
   // The view through fog on the pane: the scene in discs, at half size.
@@ -488,10 +503,22 @@ function render(dt) {
   for (let i = 3; i < 16; i += 4) flash[i] *= fk;
   gl.uniform4fv(u.uFlash, flash);
   tri(gl, T.march, vao);
+  // Pass 3b: blend into the last frame. A turn, a fast fall or a flash takes more of the new frame.
+  const fwl = Math.hypot(...b.fwd), fw = b.fwd.map(x => x / fwl);
+  const dA = Math.acos(Math.min(1, fw[0] * lastView.fwd[0] + fw[1] * lastView.fwd[1] + fw[2] * lastView.fwd[2]));
+  const flashing = Math.max(flash[3], flash[7], flash[11], flash[15]) > 0.02;
+  const hk = lastView.fresh ? 1 : Math.min(1, Math.max(0.15 + dA * 40 + Math.abs(S.alt - lastView.alt) * 0.8, flashing ? 0.6 : 0));
+  lastView.fwd = fw; lastView.alt = S.alt; lastView.fresh = false;
+  gl.useProgram(P.hist.p);
+  bind(gl, P.hist, 'uCur', 0, T.march);
+  bind(gl, P.hist, 'uPrev', 1, T.hist[1]);
+  gl.uniform1f(P.hist.u.uK, hk);
+  tri(gl, T.hist[0], vao);
+  T.hist.reverse();
   // Pass 4: the composite.
   gl.useProgram(P.comp.p);
   sunTo(P.comp);
-  bind(gl, P.comp, 'uClouds', 0, T.march);
+  bind(gl, P.comp, 'uClouds', 0, T.hist[1]);
   gl.uniform3fv(P.comp.u.uCam, cam);
   gl.uniform3fv(P.comp.u.uFwd, b.fwd); gl.uniform3fv(P.comp.u.uRight, b.right); gl.uniform3fv(P.comp.u.uUp, b.up);
   tri(gl, T.scene, vao);

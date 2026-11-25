@@ -685,7 +685,8 @@ void main() {
   if (t1 > t0) {
     float mu = dot(rd, SUN);
     float ph = clPhase(mu);
-    float t = t0 + (0.3 + 0.006 * t0) * fract(sin(dot(gl_FragCoord.xy + uSeed, vec2(12.9898, 78.233))) * 43758.5453);
+    // Interleaved gradient noise: an even spread that the history pass settles fast.
+    float t = t0 + (0.3 + 0.006 * t0) * fract(52.9829189 * fract(dot(gl_FragCoord.xy + uSeed * 5.588, vec2(0.06711056, 0.00583715))));
     vec3 col = vec3(0.0);
     float T = 1.0, tHit = -1.0;
     // @seg upper
