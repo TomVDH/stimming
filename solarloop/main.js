@@ -242,33 +242,41 @@ function toggleLens() {
   springTo(cam.to < 0.5 ? 2 : cam.to > 1.5 ? 1 : 0);
 }
 // The wheel, a pinch and the - and = keys move the zoom by dz.
-// One magnet notch: a pause near the full star settles the zoom on it (Tom, 2026-11-24).
-const NOTCH = 2, NOTCH_REACH = 0.3;
-// The full star is a sticky stop on the way in (Tom, 2026-11-24).
-// An inward gesture stops there; a later, separate gesture goes on in.
-// A pause of GAP ms ends a gesture; PUSH is the inward travel that leaves the stop.
+// Magnet notches: a pause near a stop settles the zoom on it (Tom, 2026-11-24).
+// The full star's shows on the rail; the quarter's and the half's are hidden.
+const NOTCH = 2, NOTCH_REACH = 0.3, MAGNETS = [0, 1, NOTCH];
+// Sticky stops (Tom, 2026-11-24): the full star on the way in, the half view both ways.
+// A gesture that crosses one stops there; a later, separate gesture goes on.
+// Each entry: the stop, then the travel that it catches (-1 in, +1 out).
+const STICKY = [[NOTCH, -1], [1, -1], [1, 1]];
+// A pause of GAP ms ends a gesture; PUSH is the travel that leaves the stop.
 const GAP = 220, PUSH = 0.25;
-const stick = { held: false, armed: false, push: 0, last: 0 };
+const stick = { at: null, dir: 0, armed: false, push: 0, last: 0 };
 let settle = 0;
 function zoomBy(dz) {
-  if (chart?.isOpen) return;
-  const now = performance.now(), fresh = now - stick.last > GAP;
+  if (chart?.isOpen || !dz) return;
+  const now = performance.now(), fresh = now - stick.last > GAP, dir = Math.sign(dz);
   stick.last = now;
-  if (dz < 0 && cam.to > NOTCH && cam.to + dz <= NOTCH) {
-    Object.assign(stick, { held: true, armed: false, push: 0 });
-    return springTo(NOTCH);
-  }
-  if (stick.held && cam.to === NOTCH && dz < 0) {
+  if (stick.at === cam.to && stick.dir === dir) {
     // Trackpad momentum from the catching gesture stays absorbed.
     if (fresh) stick.armed = true;
-    if (!stick.armed || (stick.push -= dz) < PUSH) return;
-    dz = -stick.push;
+    if (!stick.armed || (stick.push += Math.abs(dz)) < PUSH) return;
+    dz = dir * stick.push;
+  } else {
+    const hit = STICKY.find(([n, d]) => d === dir && (cam.to - n) * d < 0 && (cam.to + dz - n) * d >= 0);
+    if (hit) {
+      Object.assign(stick, { at: hit[0], dir, armed: false, push: 0 });
+      return springTo(hit[0]);
+    }
   }
-  stick.held = false;
+  stick.at = null;
   springTo(cam.to + dz);
   clearTimeout(settle);
   settle = setTimeout(() => {
-    if (Math.abs(cam.to - NOTCH) < NOTCH_REACH && cam.to !== NOTCH) springTo(NOTCH);
+    // A magnet pulls ahead, so it never undoes an inward step.
+    // The full star also pulls back a small overshoot on the way out.
+    const m = MAGNETS.find(n => Math.abs(cam.to - n) < NOTCH_REACH && ((n - cam.to) * dz >= 0 || (n === NOTCH && dz > 0)));
+    if (m != null && cam.to !== m) springTo(m);
   }, 300);
 }
 // Every zoom input sets the target here; the followers carry the view.
@@ -435,7 +443,7 @@ const PICKS = [
   ['procyon', 'Procyon', 'oklch(0.9 0.07 90)'], ['sun', 'Sun', 'oklch(0.82 0.15 80)'],
   ['epseri', 'Epsilon Eridani', 'oklch(0.7 0.17 50)'], ['proxima', 'Proxima', 'oklch(0.62 0.19 35)'],
   ['luhman', 'Luhman 16', 'oklch(0.5 0.12 10)'], ['wise', 'WISE 0855', 'oklch(0.4 0.04 10)'],
-  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['j1407', 'V1400 Centauri', 'oklch(0.72 0.14 55)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
+  ['ttauri', 'T Tauri', 'oklch(0.72 0.15 60)'], ['j1407', 'Ringed star', 'oklch(0.72 0.14 55)'], ['arcturus', 'Arcturus', 'oklch(0.7 0.15 50)'],
   ['betalyr', 'Beta Lyrae', 'oklch(0.84 0.08 240)'], ['s5hvs1', 'S5-HVS1', 'oklch(0.9 0.05 245)'],
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
@@ -860,10 +868,12 @@ function makeFrame() {
   const rg = star.ring;
   if (rg) {
     // The rings hang in space: the camera's turn carries their centre and their tilt.
-    const c = camView([rg.cx + 7 * Math.sin(st.time * 0.03), rg.cy + 2 * Math.cos(st.time * 0.021), 0]);
+    // Rings round the star stay centred on it; a companion's drift slowly across.
+    const sway = rg.outer ? 0 : 1;
+    const c = camView([rg.cx + 7 * sway * Math.sin(st.time * 0.03), rg.cy + 2 * sway * Math.cos(st.time * 0.021), 0]);
     const e = camView([Math.cos(rg.angle), Math.sin(rg.angle), 0]);
     f.ring.set([rg.tau, c[0], c[1], rg.ratio]);
-    f.ring2.set([Math.atan2(e[1], e[0]), rg.glow, 0, 0]);
+    f.ring2.set([Math.atan2(e[1], e[0]), rg.glow, rg.inner ?? 0, rg.outer ?? 0]);
   } else { f.ring.fill(0); f.ring2.fill(0); }
   // A runaway: its bow shock or wake, in the view's frame.
   const bw = star.bow;

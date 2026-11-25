@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-25T00:40:28Z
-updated_at: 2026-11-25T00:40:36Z
+updated_at: 2026-11-25T00:42:19Z
 ---
 
 Tom, 2026-11-24: "make the zoom stick to full star -- only when zooming in repeatedly will we zoom in" and "the zoom in on init is SLOW and HEAVY -- ensure that the title card only shows 2s AFTER rest -- just like the switcher".
@@ -19,3 +19,6 @@ Tom, 2026-11-24: "make the zoom stick to full star -- only when zooming in repea
 ## Summary of Changes
 
 zoomBy holds an inward gesture at NOTCH (stick state, GAP 220 ms, PUSH 0.25). glideIn() marks the opening and switch glides; arrive() waits for rest (within 0.004 and slow) plus CARD_REST 2000 ms.
+
+- [x] Hidden magnet notches at the half and the quarter; they pull only ahead (Tom: "inivisble notches to stick to for the half view and the quart view -- they are not on the rail")
+- [x] The half view is a sticky stop both ways (tested: bursts stop at 2, then 1, then 0; out stops at 1, then passes 2)
