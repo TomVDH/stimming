@@ -14,6 +14,8 @@ Tom, 2026-11-24: the hint / controls menu copy is unwieldy; rework the Sun compa
 - [x] Sun comparison diagram reworked
 - [x] The Sun's card drops measures against itself
 - [x] Units as symbols (R☉, M☉, K, ly, AU)
-- [ ] i shows the card in any view (overlaps stimming-ew7y's item); a hint to press i again
-- [ ] Second i opens the article: our own words, a photo, its credit (photos need Tom's yes: download, licences, size)
+- [x] i shows the card in any view (overlaps stimming-ew7y's item); a hint to press i again
+- [x] Second i opens the article panel (article.js): text, source link, a photo slot; i, Escape or × shuts it
+- [ ] Every object's text, facts checked (articles.js)
+- [ ] Photos: Tom's yes on the download, licences and size; credits on the panel and in CREDITS.md
 - [ ] Doc lines; Tom looks

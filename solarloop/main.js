@@ -14,6 +14,7 @@ import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimmin
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeCard, CARD_STYLES } from './card.js';
+import { makeArticle } from './article.js';
 import { cardLines } from './facts.js';
 mark('libs');
 
@@ -477,6 +478,7 @@ function pickStar(v) {
   st.star = v;
   egg = null;
   store.set('star', v);
+  article.close();
   // The old star's card leaves at once; the new one waits for the switch's light.
   // Reduced motion swaps at once, so its card need not wait.
   card.clear();
@@ -519,6 +521,7 @@ const ui = initPage({ id: ID, bar: {
     ['1', 'Main sequence and brown dwarfs, 1 to 0'],
     ['[', 'Previous or next star, [ and ]'],
     ['T', 'Turn speed'],
+    ['I', 'Star card; again for the article'],
   ],
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
@@ -561,6 +564,8 @@ const rail = makeRail({
 // The star card: the star's name and facts type on, then fade (Tom, 2026-11-24).
 // It shows only on the full star: zoomed out to it, glided there by a pick, or opened there.
 const card = makeCard({ stage });
+// The article: the second i opens it over the card (Tom, 2026-11-24).
+const article = makeArticle({ stage });
 let cardStar = null;
 // The card plays once the view is within a hair of the full star, once per arrival (Tom, 2026-11-24).
 // A heavy zoom creeps for seconds at the end; the card need not wait for the creep.
@@ -584,12 +589,12 @@ function arrive() {
 }
 // Plays the star card; Dev calls it at any zoom (Tom, 2026-11-24).
 // Our Sun stands beside the object at their true ratio; the Sun's own card has none.
-function showCard() {
+function showCard(hint = false) {
   cardStar = st.star;
   // A black hole's rsun is its horizon's radius.
   const pick = PICKS.find(x => x.value === st.star);
   const sun = st.star === 'sun' ? null : { k: STARS[st.star].rsun };
-  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun);
+  card.show(cardLines(st.star, pick.name), gv('cardStyle', 'intro'), sun, hint);
   showClock();
 }
 // A new card style plays at once when the view rests on the full star.
@@ -610,6 +615,12 @@ addEventListener('keydown', e => {
   else if (e.key === 's' || e.key === 'S') chart.open(true);
   else if (e.key === ' ') flareNext();
   else if (e.key === 'l' || e.key === 'L') toggleLens();
+  // i shows the card in any view; again, while the card stands, the article; again, it shuts.
+  else if (e.key === 'i' || e.key === 'I') {
+    if (article.isOpen()) article.close();
+    else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
+    else showCard(true);
+  } else if (e.key === 'Escape' && article.isOpen()) article.close();
   else if (step) {
     const at = PICKS.findIndex(x => x.value === st.star);
     pickStar(PICKS[(at + step + PICKS.length) % PICKS.length].value);

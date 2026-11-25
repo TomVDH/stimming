@@ -142,8 +142,9 @@ export function makeCard(o) {
      * @param {{ name: string, type: string, latin: string | null, rows: [string, string][] }} c
      * @param {string} style One of CARD_STYLES.
      * @param {{ k: number } | null} sun The object's radius in R☉ beside our Sun, or null on the Sun.
+     * @param {boolean} hint Shows the hint to press i again for the article.
      */
-    show(c, style = 'intro', sun = null) {
+    show(c, style = 'intro', sun = null, hint = false) {
       clear();
       box = h('div', `sl-card sl-card--${style}`);
       box.setAttribute('aria-hidden', 'true');
@@ -153,6 +154,13 @@ export function makeCard(o) {
         const mark = sizeMark(sun);
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
+      }
+      // The i key's hint shows a beat after the card, under it (Tom, 2026-11-24).
+      if (hint) {
+        const tip = h('p', 'c-hint');
+        tip.append(h('kbd', null, 'i'), ' again for the article');
+        box.append(tip);
+        if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
       }
       if (style === 'caption') {
         if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
@@ -165,5 +173,7 @@ export function makeCard(o) {
     },
     fade,
     clear,
+    /** True while the card stands on the stage, before it fades. */
+    isOpen: () => !!box && !box.classList.contains('out'),
   };
 }

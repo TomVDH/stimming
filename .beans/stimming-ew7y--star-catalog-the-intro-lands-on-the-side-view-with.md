@@ -12,6 +12,6 @@ Tom, 2026-11-24: "when the initial camera anim plays -- for the intro, we'll ins
 
 - [ ] The opening glide ends on the side view: the wide view (Tom, 2026-11-24: yes)
 - [ ] The intro card stands right of the object, aligned to it
-- [ ] i shows the card in any view
+- [x] i shows the card in any view (built under stimming-3gpd, Tom 2026-11-24: a second i opens the article)
 - [ ] The quarter view leaves more negative space
 - [ ] Doc lines; Tom looks
