@@ -157,7 +157,7 @@ stage.prepend(canvas);
 const watch = loadWatch(ID, canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
 let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null, wall = null;
-const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4);
+const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4), twC = new Float32Array(TW_MAX * 4);
 let W = 1, H = 1, cssW = 1, cssH = 1;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 const flash = new Float32Array(16);
@@ -464,11 +464,12 @@ function render(dt) {
     gl.activeTexture(gl.TEXTURE5);
     gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
     gl.uniform1i(u.uWall, 5);
-    twisterUniforms(S.tC, twA, twB);
+    twisterUniforms(S.tC, twA, twB, twC);
     // ?qa: __gg.noTw = true hides them, to time the march without them.
-    if (globalThis.__gg?.noTw) twB.fill(0);
+    if (globalThis.__gg?.noTw) { twB.fill(0); twC.fill(0); }
     gl.uniform4fv(u.uTwA, twA);
     gl.uniform4fv(u.uTwB, twB);
+    gl.uniform4fv(u.uTwC, twC);
   }
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);

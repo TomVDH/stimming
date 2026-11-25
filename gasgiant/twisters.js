@@ -62,14 +62,16 @@ void main() {
 }`;
 
 /* ---------- The march: a short relief march per twister ---------- */
-export const TW_MAX = 6;
+export const TW_MAX = 14;
 // uTwA: x, z, width, variety. uTwB: floor altitude, height, spin in rad/s, phase.
+// uTwC: the top's x and z, the sag's reach, the dust's reach.
 // A height of 0 turns the twister off.
 // TW_DECL goes before dens(): the ceiling and the floor read the twisters too.
 export const TW_DECL = /* glsl */`
 uniform mediump sampler2DArray uWall;
 uniform vec4 uTwA[${TW_MAX}];
 uniform vec4 uTwB[${TW_MAX}];
+uniform vec4 uTwC[${TW_MAX}];
 ${TW_SHAPE}
 // The axis sways slowly; the top sways most.
 vec2 twAxis(float Y, int v, float ph) {
@@ -87,15 +89,14 @@ float twGround(vec2 xz) {
   return smoothstep(0.18, 0.36, 1.0 - nc.a) * (1.0 - breakAt(xz, 7.7, 0.0));
 }
 // How far the ceiling sags at xz, in km: a wall cloud round each twister's top.
+// uTwC holds each top's place and the sag's and the dust's reach, set in JS.
 float twSag(vec2 xz) {
   float g = 0.0;
   for (int i = 0; i < ${TW_MAX}; i++) {
-    vec4 A = uTwA[i], B = uTwB[i];
-    if (B.y <= 0.0) continue;
-    int v = int(A.w + 0.5);
-    float s = B.y / TW_H, rt = s * A.z * twRad(TW_H * 0.9, v) * 1.4;
-    vec2 d = xz - A.xy - twAxis(TW_H, v, B.w) * s;
-    g = max(g, exp(-dot(d, d) / (rt * rt)));
+    vec4 C = uTwC[i];
+    if (C.z <= 0.0) continue;
+    vec2 d = xz - C.xy;
+    g = max(g, exp(-dot(d, d) / (C.z * C.z)));
   }
   return 9.0 * g;
 }
@@ -103,11 +104,9 @@ float twSag(vec2 xz) {
 float twDust(vec2 xz) {
   float g = 0.0;
   for (int i = 0; i < ${TW_MAX}; i++) {
-    vec4 A = uTwA[i], B = uTwB[i];
-    if (B.y <= 0.0) continue;
-    int v = int(A.w + 0.5);
-    float rf = B.y / TW_H * A.z * twRad(0.0, v) * 2.4;
-    vec2 d = xz - A.xy;
+    float rf = uTwC[i].w;
+    if (rf <= 0.0) continue;
+    vec2 d = xz - uTwA[i].xy;
     g = max(g, exp(-dot(d, d) / (rf * rf)));
   }
   return 4.5 * g;
@@ -143,7 +142,9 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
   // Over cloud the foot melts into the deck; over a hole the funnel tapers to a tip.
   float gr = twGround(A.xy);
   vec3 upv = normalize(vec3(A.x, 0.0, A.y) - PC);
-  vec3 ld = deepLight(upv);
+  // Backlit (Tom, 2026-11-24): the light comes from behind the twister, as the eye sees it, and from above.
+  vec3 bk = normalize(vec3(A.x - ro.x, 0.0, A.y - ro.z) + 1e-4);
+  vec3 ld = normalize(mix(deepLight(upv), normalize(bk + upv * 0.8), 0.75));
   float phL = clPhase(dot(rd, ld));
   vec3 alb0 = mix(pal(0.5), vec3(0.85), 0.35);
   vec3 col = vec3(0.0);
@@ -196,10 +197,10 @@ vec4 twister(int i, vec3 ro, vec3 rd, float ta0, float tb0, float jit, inout flo
       vec3 amb = L.rgb * (0.05 + 0.1 * (1.0 - L.a)) * vec3(0.7, 0.85, 1.2) * (0.3 + 0.55 * f) * exp(-(1.0 - depth) * 1.6);
       amb += lut(B.x + 3.0).rgb * 0.12 * (1.0 - f) * max(0.0, -N.y + 0.3) * uTune.z;
       // Rim: the thin grazing edge glows toward the light.
-      float rim = pow(1.0 - abs(dot(N, rd)), 3.0) * depth * phL;
+      float rim = pow(1.0 - abs(dot(N, rd)), 3.0) * depth * depth * phL;
       // The colour blends into the ceiling's only where the top meets it.
       vec3 alb = mix(alb0 * mix(vec3(1.0), vec3(0.92, 0.88, 1.08), f), ceilC, 0.6 * smoothstep(0.88, 0.99, f));
-      vec3 Lc = alb * (key * (tl * 1.8 + rim * 0.6) + amb * 1.5);
+      vec3 Lc = alb * (key * (tl * 1.8 + rim * 1.0) + amb * 1.5);
       for (int j = 0; j < 4; j++) {
         vec4 fl = uFlash[j];
         if (fl.w <= 0.0) continue;
@@ -232,25 +233,56 @@ vec4 twisters(vec3 ro, vec3 rd, float ta, float tb, out float tF) {
 }`;
 
 /* ---------- The set in the upper void ---------- */
-// The eye looks toward -z, within 50 degrees either way.
+// The eye looks toward -z, within about 55 degrees either way.
 // az is degrees from -z toward +x; d is km; w scales the width.
-const SET = [
-  { az: 14, d: 38, v: 0, w: 1.0, spin: 0.16 },
-  { az: -32, d: 62, v: 2, w: 1.1, spin: 0.22 },
-  { az: 38, d: 95, v: 1, w: 1.0, spin: 0.1 },
-  { az: -8, d: 140, v: 1, w: 1.3, spin: 0.12 },
-  { az: -44, d: 190, v: 0, w: 1.25, spin: 0.14 },
-  { az: 28, d: 240, v: 2, w: 1.4, spin: 0.2 },
+// Two stand up front, seven in the middle distance, five far off (Tom, 2026-11-24).
+const NEAR = [
+  { az: 16, d: 42, v: 0, w: 1.0, spin: 0.16 },
+  { az: -30, d: 58, v: 2, w: 1.1, spin: 0.22 },
+  { az: -46, d: 110, v: 1, w: 1.0, spin: 0.1 },
+  { az: 2, d: 120, v: 2, w: 1.1, spin: 0.2 },
+  { az: 44, d: 130, v: 0, w: 1.1, spin: 0.14 },
+  { az: -20, d: 150, v: 0, w: 1.2, spin: 0.15 },
+  { az: 24, d: 170, v: 1, w: 1.3, spin: 0.12 },
+  { az: -8, d: 220, v: 1, w: 1.4, spin: 0.11 },
+  { az: 36, d: 250, v: 2, w: 1.3, spin: 0.2 },
 ];
+// The far ones are seeded, so they stand in the same places every visit.
+function seeded(n) {
+  let a = 0x2f6b1c9d;
+  const rnd = () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  return Array.from({ length: n }, (_, i) => ({
+    az: ((i + 0.5) / n - 0.5) * 100 + (rnd() - 0.5) * 10,
+    d: 320 * Math.pow(850 / 320, rnd()),
+    v: Math.floor(rnd() * 3),
+    w: 1.2 + 0.5 * rnd(),
+    spin: 0.08 + 0.14 * rnd(),
+  }));
+}
+const SET = [...NEAR, ...seeded(TW_MAX - NEAR.length)];
 // The foot sinks 1.5 km into the floor; the top reaches the ceiling.
-const FLO = -41.5, HT = 42.5;
+const FLO = -41.5, HT = 42.5, SH = 24;
+// The shape in JS, as in TW_SHAPE: the bend, the radius.
+const bendK = v => (v === 1 ? 0.45 : v === 2 ? 1.25 : 1);
+const radAt = (f, v) => {
+  const fl = Math.pow(Math.min(1, Math.max(0, (f - 0.7) / 0.3)) ** 2 * (3 - 2 * Math.min(1, Math.max(0, (f - 0.7) / 0.3))), 2);
+  if (v === 1) return 1.5 + 4.4 * Math.pow(f, 1.2) + 3 * Math.exp(-f * 10) + 4.5 * fl;
+  if (v === 2) return 0.42 + 1.5 * Math.pow(f, 2.2) + 1.1 * Math.exp(-f * 20) + 6.5 * fl;
+  return 0.55 + 2.4 * Math.pow(f, 1.6) + 2.2 * Math.exp(-f * 16) + 6 * fl;
+};
 /** Fills the twister uniforms for time t (s): each wanders slowly round its spot. */
-export function twisterUniforms(t, a, b) {
-  SET.forEach((s, i) => {
-    const r = s.az * Math.PI / 180;
-    const x = Math.sin(r) * s.d + 3 * Math.sin(t * 0.008 + i * 1.7);
-    const z = -Math.cos(r) * s.d + 3 * Math.cos(t * 0.006 + i * 2.3);
-    a.set([x, z, s.w, s.v], i * 4);
-    b.set([FLO, HT, s.spin, i * 1.9], i * 4);
+export function twisterUniforms(t, a, b, c) {
+  const s = HT / SH;
+  SET.forEach((e, i) => {
+    const r = e.az * Math.PI / 180;
+    const x = Math.sin(r) * e.d + 3 * Math.sin(t * 0.008 + i * 1.7);
+    const z = -Math.cos(r) * e.d + 3 * Math.cos(t * 0.006 + i * 2.3);
+    const ph = i * 1.9, k = bendK(e.v);
+    a.set([x, z, e.w, e.v], i * 4);
+    b.set([FLO, HT, e.spin, ph], i * 4);
+    // The top's place: the bend and the sway at the top, as twAxis() has them.
+    const tx = k * 4.2 * Math.sin(3.3) + 0.7 * Math.sin(t * 0.05 + ph + 3);
+    const tz = k * 2.4 * Math.sin(5.0) + 0.7 * Math.cos(t * 0.04 + ph * 1.3 + 2);
+    c.set([x + tx * s, z + tz * s, s * e.w * radAt(0.9, e.v) * 1.4, s * e.w * radAt(0, e.v) * 2.4], i * 4);
   });
 }

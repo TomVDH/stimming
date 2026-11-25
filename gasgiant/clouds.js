@@ -797,7 +797,7 @@ void main() {
         float hg = altOf(p);
         // The voids stay clear to the horizon; the gaps between sheets stay fairly clear.
         // Over the tops the air clears, so the deck runs to its far horizon.
-        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 700.0 * smoothstep(16.0, 34.0, hg) + 300.0 * band(hg, -40.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -50.0, 3.0)
+        float mfp = mix(45.0, 170.0, smoothstep(-90.0, 0.0, hg)) + 700.0 * smoothstep(16.0, 34.0, hg) + 520.0 * band(hg, -40.0, 0.0, 3.0) + 300.0 * band(hg, -64.0, -50.0, 3.0)
           + 500.0 * band(hg, -230.0, -158.0, 6.0) + 700.0 * band(hg, -360.0, -262.0, 6.0)
           + 60.0 * band(hg, -140.0, -92.0, 6.0) + 60.0 * band(hg, -470.0, -425.0, 6.0) + 300.0 * band(hg, -425.0, -385.0, 3.0) + 40.0 * step(hg, -500.0);
         float sg = 1.0 / (mfp * uTune.w);
