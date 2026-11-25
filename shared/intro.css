@@ -39,8 +39,8 @@
 /* Before the script runs: a hairline waits where the foot of the flash box will be.
    It is CSS only and comes in after 0.5 s, so a fast load never shows it. */
 .intro:not(.is-live)::before, .intro:not(.is-live)::after {
-  content: ""; position: absolute; left: calc(50% - var(--logo-box) / 2); top: calc(var(--origin) + var(--logo-box) / 2 - var(--load-h));
-  width: var(--logo-box); height: var(--load-h); background: oklch(1 0 0 / 0.16);
+  content: ""; position: absolute; left: calc(50% - var(--loader-w) / 2); bottom: calc(var(--foot-y) + var(--rail-h) / 2 - var(--load-h) / 2);
+  width: var(--loader-w); height: var(--load-h); background: oklch(1 0 0 / 0.16);
   opacity: 0; animation: intro-load-in 0.4s steps(12, end) 0.5s forwards;
 }
 /* A sheen crosses it. It moves by translate and opacity only, so a busy main thread cannot stop it. */
@@ -49,10 +49,21 @@
   animation: intro-wait 1.5s steps(45, end) 0.5s infinite;
 }
 @keyframes intro-load-in { to { opacity: 1; } }
-@keyframes intro-wait { 0% { translate: 0 0; opacity: 0; } 20%, 80% { opacity: 1; } 100% { translate: calc(var(--logo-box) * 0.66) 0; opacity: 0; } }
+@keyframes intro-wait { 0% { translate: 0 0; opacity: 0; } 20%, 80% { opacity: 1; } 100% { translate: calc(var(--loader-w) * 0.66) 0; opacity: 0; } }
 /* The load line: the same hairline, at the foot of the flash box. It fills with the toy's progress.
    intro.js shows it only when the toy still loads after the titles open. */
 .intro { --load-h: max(2px, calc(var(--logo) * 0.016)); }
+/* The rail: the row the tech tags sit on, at the foot. A tag is 1.8em at 0.85 of --tech-fs. */
+.intro { --foot-y: max(14px, 2.4cqh); --tech-fs: clamp(11px, 1.4cqw, 14px); --rail-h: calc(var(--tech-fs) * 1.53);
+  --loader-w: clamp(180px, 24cqw, 280px); --loader-fs: clamp(10px, 1.3cqh, 12px); --loader-h: calc(var(--loader-fs) * 2.4 + var(--load-h)); }
+/* The loader: the load note over the load line, at the foot's centre. */
+/* One width and one type in every look; its line's middle sits on the rail's middle. */
+.intro-loader { position: absolute; left: 50%; bottom: calc(var(--foot-y) + var(--rail-h) / 2 - var(--load-h) / 2); translate: -50% 0; z-index: 3;
+  width: var(--loader-w); max-width: calc(100cqw - 32px); height: var(--loader-h); display: grid; align-content: end; gap: calc(var(--loader-fs) * 0.8); pointer-events: none; }
+.intro-loader > .intro-load { position: relative; inset: auto; display: block; width: 100%; }
+.intro-loader > .intro-note { order: -1; position: relative; inset: auto; font: 800 var(--loader-fs)/1.25 "Iosevka Term Slab Nerd Font", monospace; letter-spacing: 0.12em; }
+/* Reduced motion's still line takes the same place, width and type. */
+.intro-loader > .intro-wait { position: relative; left: auto; bottom: auto; translate: none; width: 100%; padding-bottom: 0.9em; font: 800 var(--loader-fs)/1.25 "Iosevka Term Slab Nerd Font", monospace; letter-spacing: 0.12em; }
 .intro-load {
   position: absolute; left: 0; right: 0; bottom: 0; height: var(--load-h); overflow: hidden; pointer-events: none;
   background: oklch(1 0 0 / 0.16); opacity: 0; transition: opacity 0.2s steps(6, end);
@@ -209,6 +220,45 @@
 /* The subtitle translation keeps the detail font, Gabarito. */
 .intro-tag--nl { font-family: var(--intro-tag-nl, inherit); }
 
+/* ---------- The block, the access row and the tech tags ---------- */
+/* placeBlock() writes --origin and --dx: the block's middle at 47 %, its box centred. */
+.intro .intro-text { translate: var(--dx, 0px) 0; transform-origin: var(--origin-x, 50%) var(--origin); }
+/* The foot keeps its own place at the bottom. */
+.intro .intro-foot { translate: calc(-1 * var(--dx, 0px)) 0; bottom: calc(var(--foot-y) + var(--rail-h) / 2 + var(--loader-h) + var(--g-m, 16px)); }
+.intro-probe { position: absolute; visibility: hidden; width: 0; height: var(--origin); }
+/* The access row: flags on one line, then Best with sound on its own line. */
+.intro .acc { display: grid; justify-items: center; gap: 0.5em; margin-top: var(--g-m); opacity: 1; font: 800 calc(0.8em * var(--snd-k, 1))/1 "Iosevka Term Slab Nerd Font", monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+.intro .acc .g { flex: none; width: 1.6em; height: 1.07em; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; color: var(--acc-ink, #fff); }
+.intro .acc-flags { display: flex; flex-wrap: wrap; justify-content: center; gap: 0.5em 1.5em; }
+.intro .acc { width: max-content; max-width: calc(100cqw - 32px); }
+/* The row keeps its own layout; a toy's styles for b or svg never reach it. */
+.intro .acc-i { display: inline-flex; flex: none; align-items: center; gap: 0.75em; white-space: nowrap; }
+.intro .acc-i b { display: inline; margin: 0; font: inherit; letter-spacing: inherit; }
+.intro .acc .g { display: block; }
+.intro .acc-i.acc-snd { position: relative; margin-top: 0.5em; opacity: 0.62; }
+.intro .acc-i.acc-snd .g { color: #fff; }
+.intro .acc-flags + .acc-i.acc-snd { margin-top: 1.1em; }
+/* The sound line waits for its row, then lands with its own Signal flash box. */
+/* Bar v3's beat at 30 fps: oversize for one frame, snaps to size, holds, parts in three. */
+.intro .acc.snd-wait .acc-i.acc-snd { opacity: 0; }
+.intro .acc .acc-i.acc-snd.flashin { opacity: 0.62; animation: snd-show 0.3s steps(1, end) both; }
+/* Shadows draw the box's side margins: a shadow adds no scroll width, so the fit ignores it. */
+.intro .acc-i.acc-snd.flashin::before, .intro .acc-i.acc-snd.flashin::after { content: ""; position: absolute; inset: -0.25em 0; background: #fff; box-shadow: -0.35em 0 0 #fff, 0.35em 0 0 #fff; animation: 0.3s both; animation-timing-function: steps(1, end); }
+.intro .acc-i.acc-snd.flashin::before { animation-name: snd-left; }
+.intro .acc-i.acc-snd.flashin::after { animation-name: snd-right; }
+@keyframes snd-show { 0% { opacity: 0; } 11.1% { opacity: 1; } 100% { opacity: 0.62; } }
+@keyframes snd-left { 0% { box-shadow: -0.35em 0 0 #fff, -1.2em 0 0 0.45em #fff, 0 0 0 0.45em #fff; clip-path: inset(-1em calc(0.5 * (100% + 0.7em) - 0.35em) -1em -2em); } 11.1%, 55.5% { clip-path: inset(0 calc(0.5 * (100% + 0.7em) - 0.35em) 0 -0.35em); } 66.6% { clip-path: inset(0 calc(0.67 * (100% + 0.7em) - 0.35em) 0 -0.35em); } 77.7% { clip-path: inset(0 calc(0.84 * (100% + 0.7em) - 0.35em) 0 -0.35em); } 88.8%, 100% { clip-path: inset(0 calc(100% + 0.35em) 0 -0.35em); } }
+@keyframes snd-right { 0% { box-shadow: 0.35em 0 0 #fff, 1.2em 0 0 0.45em #fff, 0 0 0 0.45em #fff; clip-path: inset(-1em -2em -1em calc(0.5 * (100% + 0.7em) - 0.35em)); } 11.1%, 55.5% { clip-path: inset(0 -0.35em 0 calc(0.5 * (100% + 0.7em) - 0.35em)); } 66.6% { clip-path: inset(0 -0.35em 0 calc(0.67 * (100% + 0.7em) - 0.35em)); } 77.7% { clip-path: inset(0 -0.35em 0 calc(0.84 * (100% + 0.7em) - 0.35em)); } 88.8%, 100% { clip-path: inset(0 -0.35em 0 calc(100% + 0.35em)); } }
+@media (prefers-reduced-motion: reduce) { .acc .acc-i.acc-snd.flashin { animation: none; } .acc-i.acc-snd.flashin::before, .intro .acc-i.acc-snd.flashin::after { display: none; } }
+/* Tech tags: the bottom-left corner, on the rail. Outline supports, filled runs now. */
+.intro-tech { position: absolute; left: clamp(14px, 2.4cqw, 28px); bottom: var(--foot-y); z-index: 3; font-size: var(--tech-fs); color: oklch(0.64 0.02 275); }
+.intro-tech .tags { display: inline-flex; gap: 4px; }
+.intro-tech .tag { display: inline-flex; align-items: center; height: 1.8em; padding: 0 0.5em; border: 1px solid currentColor; border-radius: 3px; font: 700 0.85em/1 "Iosevka Term Slab Nerd Font", monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+.intro-tech .tag.now { background: oklch(0.64 0.02 275); border-color: oklch(0.64 0.02 275); color: var(--intro-bg); }
+.intro-tech .tag.off { opacity: 0.55; text-decoration: line-through; }
+/* The flags in words for screen readers; the intro itself is hidden from them. */
+.intro-sr { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
 /* ---------- Restyle looks: proposals on Classic's beats ---------- */
 /* Each look is style only; the logo's point and every beat stay Classic's. */
 
@@ -254,7 +304,8 @@
 .intro[data-look="signal"] { --ink: #fff; background: oklch(0.1 0.02 275 / 0.45); }
 .intro[data-look="signal"] .intro-badge:not(.is-flash) .intro-emblem { background: var(--ink); }
 /* The title is Iosevka Term Slab; the other lines are B612 (Tom, 2026-11-24). */
-.intro[data-look="signal"] .intro-name { font-family: var(--intro-display, "Iosevka Term Slab Nerd Font", monospace); font-weight: 800; letter-spacing: 0; }
+/* Caps, set tighter: a monospace gives every letter and space a full cell (Tom, 2026-11-25). */
+.intro[data-look="signal"] .intro-name { font-family: var(--intro-display, "Iosevka Term Slab Nerd Font", monospace); font-weight: 800; letter-spacing: -0.03em; word-spacing: -0.22em; text-transform: uppercase; }
 .intro[data-look="signal"] .intro-nl { font-family: var(--intro-nl, "B612", sans-serif); }
 .intro[data-look="signal"] .intro-tag { font-family: var(--intro-tag, "B612", sans-serif); }
 .intro[data-look="signal"] .intro-tag--nl { font-family: var(--intro-tag-nl, "B612", sans-serif); }

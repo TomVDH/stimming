@@ -648,7 +648,7 @@ async function run() {
     });
   }
   await (calm ? CALM : MADE).intro({ id: it.id, gate, soundNote: { glyph: false, words: ' ', nudge: false }, timing: { ...inColumn(), ...(S.tune[S.variety] || {}) }, ready, variety: S.variety, fill,
-    nameFlash: !!S.nameFlash, textFlash: !!S.textFlash, classic: !!S.classic, min: calm && (S.stopAt || S.step) ? 1e9 : undefined });
+    nameFlash: !!S.nameFlash, textFlash: !!S.textFlash, classic: !!S.classic, access: false, min: calm && (S.stopAt || S.step) ? 1e9 : undefined });
   if (my === gen) { strip('toy'); placeOg(); }
 }
 // Applies the size and Y knobs to the intro on screen, then places the block again.

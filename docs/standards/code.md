@@ -91,8 +91,9 @@ Every toy page that uses them carries this importmap, word for word:
 
 ## `toys.json`
 
-- The one source for each toy's name, Dutch name, IPA, motto, number, series, release stage, toy version, emblem, accent, sound, legacy and lab tag. Add a new toy here.
-- One entry per toy, every field present, in this order: `name`, `nl`, `ipa`, `tag`, `tagNl`, `number`, `series`, `stage`, `version`, `emblem`, `accent`, `sound`, `legacy`, `sub`. Use null, not a missing key.
+- The one source for each toy's name, Dutch name, IPA, motto, number, series, release stage, toy version, emblem, accent, sound, access record, tech tags, legacy and lab tag. Add a new toy here.
+- One entry per toy, every field present, in this order: `name`, `nl`, `ipa`, `tag`, `tagNl`, `number`, `series`, `stage`, `version`, `emblem`, `accent`, `sound`, `access`, `tech`, `legacy`, `sub`. Use null, not a missing key.
+- `access` is the toy's access record (`docs/plans/access.md`, section 2); the intro shows its flags. `tech` comes from `node tools/techtags.mjs --write`; never edit it by hand.
 - Main shelf first by number, then the Lab by name.
 - `version` is a string. Main shelf toys start at `"1.5"`; Lab toys hold null.
 - Docs carry no counts or lists of toys. `toys.json` is the list.
