@@ -57,7 +57,25 @@ function figure(ph, ink) {
     g.fillStyle = ink;
     g.fillRect(0, 0, w, hh);
   }, { once: true });
+  // Both loads share one CORS mode, so the swap reuses the cached copy.
+  img.crossOrigin = 'anonymous';
   img.src = new URL(ph.src, import.meta.url).href;
+  // The Commons copy streams in once the photo nears view (Tom, 2026-11-25).
+  // The small local file stays as the dither source and the fallback.
+  if (ph.full) {
+    const io = new IntersectionObserver(es => {
+      if (!es.some(e => e.isIntersecting)) return;
+      io.disconnect();
+      const big = new Image();
+      big.decoding = 'async';
+      big.referrerPolicy = 'no-referrer';
+      // CORS keeps the canvas clean if the dither draws from it.
+      big.crossOrigin = 'anonymous';
+      big.addEventListener('load', () => { img.src = big.src; }, { once: true });
+      big.src = ph.full;
+    }, { rootMargin: '200px' });
+    io.observe(fig);
+  }
   fig.addEventListener('click', () => fig.classList.toggle('is-open'));
   return fig;
 }
