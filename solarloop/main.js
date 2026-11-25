@@ -421,6 +421,7 @@ const FX = [
   ['fxVol', 'Volume', 'Haze density', 0, 4, 1, 2, 'How thick the haze and dust round the star are.'],
   ['fxVolLight', 'Volume', 'Haze light', 0, 4, 1, 1, 'How much starlight the haze scatters.'],
   ['fxCorona', 'Volume', 'Corona (full view)', 0, 4, 1, 1, 'The star\'s outer atmosphere, seen on the full view.'],
+  ['fxDenoise', 'Volume', 'Haze denoise', 0, 1.1, 1, 1, 'Blends the haze with past frames at rest, so its speckle settles; moving views take none.'],
   ['fxBend', 'Volume', 'Corona bend', 0, 3, 1, 3, 'How much the corona\'s streamers curve on the full view.'],
   ['fxOrb', 'Flare', 'Orb', 0, 3, 1, 1, 'The soft round glow of the lens flare.'],
   ['fxStreak', 'Flare', 'Streak', 0, 3, 1, 1, 'The thin horizontal anamorphic streak.'],
@@ -836,7 +837,7 @@ const frameState = {
   regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(8), flB: new Float32Array(8),
   sat: new Float32Array(8), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
   centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), shimmer: 0, lens: 0,
-  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
+  beam: new Float32Array(4), spin: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
   hole: new Float32Array(4), holeSky: new Float32Array(2), holeF: new Float32Array(2), holeV: new Float32Array(4), holeQ: new Float32Array(4),
@@ -944,7 +945,8 @@ function makeFrame() {
   // The haze's history weight: it holds while the view rests and lets go while it moves (Tom, 2026-11-24).
   // A new star on screen starts it afresh.
   const move = Math.abs(cam.z - hold.z) * 10 + (Math.abs(st.yaw - hold.yaw) + Math.abs(st.pitch - hold.pitch)) * 20;
-  f.volHold = shown === hold.star ? 0.85 * Math.exp(-move * 40) : 0;
+  // Dev Haze denoise scales the history; 1.1 reaches 0.935, 0 turns it off.
+  f.volHold = shown === hold.star ? 0.85 * fxv('fxDenoise') * Math.exp(-move * 40) : 0;
   Object.assign(hold, { z: cam.z, yaw: st.yaw, pitch: st.pitch, star: shown });
   // The sun's centre on the screen, in 0 to 1: the light rays aim at it.
   f.centre.set([0.5 - view.cx / view.hw * 0.5, 0.5 - view.cy / view.hh * 0.5]);
@@ -1002,6 +1004,7 @@ function makeFrame() {
   // A young star's disk and jets turn with the star.
   const ya = Math.hypot(star.yso[0], star.yso[1], star.yso[2]);
   f.yso.set([...toView(star.yso.slice(0, 3).map(x => x / ya)), star.yso[3]]);
+  f.lump.set([star.lump[0], star.lump[1], churn, star.lump[3]]);
   // The haze layers slide with the pan; gravity bends light round a neutron star.
   // Past the full star the view pulls back; the eye's light values trail the zoom.
   const far = eye.far;
@@ -1215,6 +1218,8 @@ const hold = { z: 0, yaw: 0, pitch: 0, star: null };
 /* ---------- the star's turn ---------- */
 // Advances the star's own turn at its eased rate; true while the rate still eases.
 // Reduced motion jumps to the new rate.
+// The giant cells' churn phase (Tom, 2026-11-24).
+let churn = 0;
 function stepTurn(dt) {
   const target = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
   let easing = false;
@@ -1224,6 +1229,8 @@ function stepTurn(dt) {
     easing = true;
   } else { turn.lr = target; turn.vr = 0; }
   st.turn += dt * drifting * 10 ** turn.lr;
+  // A giant's cells churn with the turn clock: a lobe lives about 40 s at x10k.
+  churn += dt * drifting * 10 ** turn.lr / 4e5 * STARS[shown].lump[2];
   return easing;
 }
 

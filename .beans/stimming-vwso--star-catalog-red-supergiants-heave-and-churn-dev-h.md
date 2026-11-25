@@ -3,8 +3,9 @@
 title: 'Star catalog: red supergiants heave and churn; Dev Haze denoise row'
 status: completed
 type: task
+priority: normal
 created_at: 2026-11-25T00:52:49Z
-updated_at: 2026-11-25T00:52:49Z
+updated_at: 2026-11-25T00:56:19Z
 ---
 
 Tom, 2026-11-24: "can red super giants have undulations in their surface -- as real red giants look like a bubbling lump", then "run autonomously"; and "the denoiser option add to dev menu".
@@ -18,3 +19,5 @@ Tom, 2026-11-24: "can red super giants have undulations in their surface -- as r
 ## Summary of Changes
 
 sun.js lump settings; main.js churn phase and f.lump, the fxDenoise row; render.js uLump, lumpAt, the warp and the cell light. Committed as hunks: the objects chat has uncommitted hole work in the same files.
+
+- [x] Re-landed after 01aa9649 (the black-hole wisps commit) dropped these lines from main

@@ -411,6 +411,8 @@ uniform vec4 uView;
 uniform mat3 uToSun;
 uniform float uTime;
 uniform vec4 uDisk, uDisk2, uTex, uBeam, uSpin, uGrav, uCloud, uYso;
+// A cool giant's giant cells: limb heave, lobe scale, churn phase, cell light.
+uniform vec4 uLump;
 // far: 0 on the full star, 1 at the farthest zoom; the star reads as one light.
 uniform float uFar;
 // off: the weight of light round the disk against the disk's own light.
@@ -450,9 +452,20 @@ out vec4 o;
 const float R = ${R.toFixed(1)};
 ${NOISE}
 ${HOLE}
+// The cells as slow lobes on the sphere, from about -0.3 to 0.3.
+float lumpAt(vec3 d) {
+  vec3 p = d * uLump.y + vec3(0.0, 0.0, uLump.z);
+  return 0.65 * vn(p) + 0.35 * vn(p * 2.1 + vec3(5.2, 1.3, uLump.z * 0.6)) - 0.5;
+}
 void main() {
   vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
   if (uHole.x > 0.0) { o = holeTrace(P); return; }
+  // A red supergiant heaves: its giant cells push the limb in and out (Tom, 2026-11-24).
+  // The plane warps along each ray from the centre, so the disk and its glow move as one.
+  if (uLump.x > 0.0) {
+    vec2 dl = P / max(length(P), 1e-4);
+    P /= 1.0 + 2.0 * uLump.x * lumpAt(uToSun * vec3(dl, 0.0));
+  }
   float r = length(P);
   float hot = 0.0, cool = 0.0;
   // The sunspots' shade, applied last so no later light fills them.
@@ -491,6 +504,8 @@ void main() {
     // Filaments: dark sinuous lanes of cool plasma seen from above.
     float fil = smoothstep(0.035, 0.0, abs(fbm(q * 5.0 + 3.1) - 0.5)) * smoothstep(0.45, 0.65, fbm(q * 3.0 + 8.0));
     float tex = 1.0 + uDisk.y * ((gran - 0.6) * 0.35 + (turb - 0.5) * 1.6 + (mot - 0.5) * 0.5 + net * uTex.z) - 0.55 * fil * min(uDisk2.y, 1.0);
+    // A rising giant cell is hot and bulges; a sinking one is cool and falls back.
+    tex *= 1.0 + 2.0 * uLump.w * lumpAt(q);
     // A brown dwarf: a cloud deck in bands round its spin axis, no granules.
     if (uCloud.x > 0.0) {
       float lat = q.y;
@@ -1649,6 +1664,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
+    gl.uniform4fv(s.u.uLump, v.lump);
     gl.uniform1f(s.u.uFar, v.far);
     gl.uniform1f(s.u.uOff, v.off);
     gl.uniform4fv(s.u.uReg, v.regs);
