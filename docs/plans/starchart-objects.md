@@ -9,14 +9,14 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 48 |
+| Built, in the tray | 49 |
 | Picked by Tom, not built | 1 |
 | Asked for by Tom, not built | 0 |
 | Offered, no answer | 14 |
-| Offered, not picked | 10 |
+| Offered, not picked | 9 |
 | Parked | 4 |
 
-## Built (48)
+## Built (49)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
@@ -29,7 +29,7 @@ All in the tray now. A bean marked open waits for Tom's live look.
 | Runaways | S5-HVS1 (`q5aa`) |
 | Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`), the Crab Nebula (`404a`), the Ring Nebula (`wcfv`) |
 | Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`), Gargantua (`9q7x`) |
-| Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`), UHZ1 (`901h`), MoM-z14 (`dk4z`) |
+| Far and strange | 3C 273 (`vd4z`), Earendel (`3me5`), Mothra (`ggkj`), UHZ1 (`901h`), MoM-z14 (`dk4z`), Einstein Cross (`pcod`) |
 
 Tom's notes on built bodies:
 
@@ -82,7 +82,6 @@ Tom chose others from the same list.
 |---|---|---|
 | TON 618 | A quasar of 40 to 66 billion suns | Pōwehi, the quasi-star, WR 140 |
 | QSO J0529−4351 | The brightest object known | Same |
-| Einstein Cross | A quasar lensed four times | Same |
 | Crab pulsar | The pulsar of 1054 | Same |
 | PSR J1748−2446ad | The fastest-spinning pulsar | Same |
 | Double pulsar J0737−3039 | Two pulsars in orbit | Same |

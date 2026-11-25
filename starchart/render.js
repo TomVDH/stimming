@@ -2252,6 +2252,37 @@ vec3 dormantHole(vec2 P) {
   c += vec3(0.85, 0.9, 1.0) * 0.5 * exp(-pow((rr - 0.43 * tE) / (0.025 * tE), 2.0));
   return c;
 }
+// The Einstein Cross (Q2237+030), after Hubble: a quasar 8 billion light years back,
+// lensed into four images round the bulge of a near barred spiral, Huchra's Lens.
+// p: the view in R, the lens at the centre; uBow.z sets the scene's scale.
+vec3 einCross(vec2 p) {
+  float D = uBow.z, tE = 0.12 * D;
+  float pw = max(length(fwidth(p)), 1e-3);
+  vec2 sw = uSway * D * 0.05;
+  vec2 t = p - sw * 0.5;
+  float tl = max(length(t), 1e-3);
+  // The deep field behind, bent round the lens.
+  vec3 col = deepField(t - tE * t / tl + sw * 0.35 + vec2(7.1, 3.3) * D * 0.01, D) * 0.8;
+  // The quasar's host galaxy, drawn out into a faint ring through the four images.
+  col += vec3(0.75, 0.6, 1.0) * 0.1 * exp(-pow((tl - tE) / (0.1 * tE), 2.0));
+  // The lens galaxy, seen near face on: a gold bulge, a short bar, blue arms with dust.
+  float r = tl / D, a = atan(t.y, t.x);
+  vec3 gold = vec3(1.0, 0.82, 0.58);
+  col += gold * (1.5 * galaxy(t, 0.06 * D, 0.85, 0.6) + 0.5 * galaxy(t, 0.1 * D, 0.3, 0.6));
+  float arms = pow(0.5 + 0.5 * cos(2.0 * a - 7.0 * log(r + 0.03)), 4.0);
+  float dust = fbm(vec3(t / D * 18.0, 1.0));
+  col += vec3(0.65, 0.78, 1.0) * 0.4 * exp(-r / 0.22) * arms * smoothstep(0.12, 0.25, r) * (0.4 + dust);
+  col *= 1.0 - 0.35 * arms * smoothstep(0.08, 0.2, r) * smoothstep(0.55, 0.3, dust);
+  // The four images on a cross, each flickering slowly as stars in the lens pass in front.
+  for (int k = 0; k < 4; k++) {
+    float fk = float(k);
+    float ang = 0.45 + 1.5708 * fk;
+    vec2 c = tE * (mod(fk, 2.0) < 0.5 ? 1.05 : 0.88) * vec2(cos(ang), sin(ang));
+    float b = (k == 0 ? 1.0 : k == 1 ? 0.75 : k == 2 ? 0.85 : 0.55) * (0.8 + 0.2 * sin(uTime * (0.05 + 0.02 * fk) + fk * 2.0));
+    col += vec3(0.8, 0.88, 1.0) * pip(t - c, pw, 0.006 * D) * b * 1.3;
+  }
+  return col;
+}
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
 // A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
 // Each ray marches through it in the camera's frame, so a drag turns the barrel.
@@ -2360,7 +2391,7 @@ vec3 runaway(vec2 P) {
   // Mira: a bow shock ahead and a long turbulent tail behind, as GALEX saw it in 2007.
   if (uBow.w > 2.5) return miraTail(q);
   // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
-  if (uBow.w > 1.5) return lensScene(q, P / R);
+  if (uBow.w > 1.5) return uBow.x > 4.5 ? einCross(P / R) : lensScene(q, P / R);
   // A wake: a long faint trail behind, widening, its knots streaming away.
   float back = -q.x;
   float w = 0.35 + 0.035 * back;

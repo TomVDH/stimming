@@ -508,6 +508,16 @@ export const STARS = {
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
     wide: 'none', long: 'none', root: 103.83,
   },
+  // The Einstein Cross: a quasar lensed four times by the bulge of a near spiral galaxy.
+  // A far object: no near view, so the zoom stops at the full view.
+  eincross: {
+    ...FLARE, day: 0, rain: 0, rope: 0, bubble: 0, sat: 0, reach: 400, far: true,
+    bow: { kind: 2, style: 4, heading: 0, size: 820, col: [0.8, 0.88, 1] },
+    row: 2, rsun: 1, expo: 1, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [0.7, 0.8, 1], streak: [0.7, 0.8, 1],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
+    wide: 'none', long: 'none', root: 98,
+  },
   // Earendel: perhaps the most distant star, its light 12.9 billion years old.
   // If single, a B star of 13,000 to 16,000 K and 103 to 393 suns; 200 here.
   // A galaxy cluster magnifies it; far out its host galaxy shows as the Sunrise Arc.

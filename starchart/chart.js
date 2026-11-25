@@ -56,6 +56,7 @@ export const CHART = {
   mothra: { kind: 'arc', t: 5250, cls: 'yellow hypergiant and blue supergiant, lensed' },
   uhz1: { kind: 'arc', t: null, cls: 'galaxy with a feeding black hole, lensed' },
   momz14: { kind: 'arc', t: null, cls: 'galaxy, the most distant known' },
+  eincross: { kind: 'cross', t: null, cls: 'quasar lensed four times by a near galaxy' },
   earendel: { kind: 'arc', t: 14500, cls: 'B star, lensed, the most distant known' },
   powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
   gargantua: { kind: 'hole', t: null, cls: 'supermassive black hole, after a film' },
@@ -98,7 +99,7 @@ const GROUPS = [
   ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur', 'etacar', 'gaiabh1']],
   ['Dead stars', ['magnetar', 'neutron', 'crab', 'siriusb', 'ring']],
   ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi', 'gargantua']],
-  ['Far and strange', ['quasi', 'earendel', 'mothra', 'uhz1', 'momz14']],
+  ['Far and strange', ['quasi', 'earendel', 'mothra', 'uhz1', 'momz14', 'eincross']],
 ];
 
 /**
