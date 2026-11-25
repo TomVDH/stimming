@@ -563,7 +563,7 @@ const PICKS = [
   ['rigel', 'Rigel', 'oklch(0.8 0.1 240)'], ['mira', 'Mira', 'oklch(0.62 0.19 30)'], ['betelgeuse', 'Betelgeuse', 'oklch(0.68 0.18 45)'], ['rlep', 'R Leporis', 'oklch(0.52 0.2 25)'],
   ['vycma', 'VY CMa', 'oklch(0.5 0.17 28)'], ['st218', 'Stephenson 2-18', 'oklch(0.42 0.15 25)'], ['wohg64', 'WOH G64', 'oklch(0.66 0.15 55)'], ['quasi', 'Quasi-star', 'oklch(0.6 0.19 35)'], ['wr140', 'WR 140', 'oklch(0.84 0.07 255)'], ['vfts352', 'VFTS 352', 'oklch(0.76 0.13 270)'], ['xxtri', 'XX Trianguli', 'oklch(0.7 0.15 55)'], ['epsaur', 'Epsilon Aurigae', 'oklch(0.9 0.07 90)'], ['mothra', 'Mothra', 'oklch(0.86 0.12 85)'], ['earendel', 'Earendel', 'oklch(0.85 0.08 250)'], ['powehi', 'Pōwehi', 'oklch(0.72 0.16 55)'], ['wr124', 'WR 124', 'oklch(0.78 0.12 270)'],
   ['siriusb', 'Sirius B', 'oklch(0.88 0.06 210)'],
-  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['magnetar', 'SGR 1806-20', 'oklch(0.74 0.14 295)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
+  ['neutron', 'Pulsar', 'oklch(0.72 0.15 270)'], ['magnetar', 'SGR 1806-20', 'oklch(0.74 0.14 295)'], ['crab', 'Crab Nebula', 'oklch(0.72 0.14 40)'], ['tzo', 'Thorne–Żytkow', 'oklch(0.58 0.17 35)'], ['cygx1', 'Cygnus X-1', 'oklch(0.78 0.1 255)'],
   ['sgra', 'Sagittarius A*', 'oklch(0.75 0.15 60)'], ['qso', '3C 273', 'oklch(0.86 0.06 260)'],
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
@@ -1290,13 +1290,13 @@ function makeFrame() {
     f.quake.set([flash * k, 1 + 3.5 * (1 - Math.exp(-t / 1.5)), ring * k, tail * k]);
   } else { f.quake.fill(0); quakeOf = ''; }
   // Every pulsar flash, near or far, keeps under 2.5 flashes a second: fast spins blend to a glow.
-  const flashRate = (egg?.kind === 'voice' ? egg.rate : 1) / SPIN_PERIOD;
+  const flashRate = (egg?.kind === 'voice' ? egg.rate : 1) / spinOf(star);
   f.flashW = star.beam ? 1 - 0.8 * clamp((flashRate - 1.5) / 1) : 1;
   // The lighthouse (Tom, 2026-11-24): the beams light dust in the volume, and the pulse strobes far out.
   // A strobe faster than 2.5 flashes a second blends to a steady glow: no photosensitive flicker.
   if (ns && star.beam) {
     const m = toView(magNow());
-    const rate = (egg?.kind === 'voice' ? egg.rate : 1) / SPIN_PERIOD;
+    const rate = (egg?.kind === 'voice' ? egg.rate : 1) / spinOf(star);
     const steady = clamp((rate - 1.5) / 1);
     // About a tenth of a second wide, so each flash lands on several frames.
     const hit = Math.exp(-(1 - Math.abs(m[2])) / 0.01);
@@ -1453,7 +1453,7 @@ function frame(now) {
     // The pulsar pings as a beam crosses the eye: st.spin mod 1.6 passes 1.2.
     // The sound guards itself above 2.5 flashes a second; a missing call does nothing.
     if (STARS[shown].beam) {
-      const k = Math.floor((st.spin - 1.2) / SPIN_PERIOD);
+      const k = Math.floor((st.spin - 1.2) / spinOf(STARS[shown]));
       if (lastFlash !== null && k > lastFlash) snd.ping?.(clamp(-view.cx / view.hw, -1, 1), shown);
       lastFlash = k;
     } else lastFlash = null;

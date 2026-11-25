@@ -235,6 +235,10 @@ TAPNORM.earendel = TAPNORM.rigel;
 VOICES.rlep = VOICES.vycma;
 NORM.rlep = NORM.vycma;
 TAPNORM.rlep = TAPNORM.vycma;
+// The Crab sings the pulsar's choir.
+VOICES.crab = VOICES.neutron;
+NORM.crab = NORM.neutron;
+TAPNORM.crab = TAPNORM.neutron;
 // SGR 1806-20 sings the pulsar's choir.
 VOICES.magnetar = VOICES.neutron;
 NORM.magnetar = NORM.neutron;
@@ -273,11 +277,13 @@ Object.assign(VOICES, {
   mira: from('betelgeuse', { swR: 0.05, swD: 0.38 }),
   // R Leporis: a crimson carbon star in its soot. VY CMa's pad, darker, on a slow swell.
   // SGR 1806-20: a magnetar, its field wound tight. The pulsar's choir, lower and darker, slower.
+  // The Crab Nebula: the pulsar of 1054 in its glowing cage. The pulsar's choir, wider and farther.
+  crab: from('neutron', { dist: 0.95, rev: 14, mix: 1.9, width: 1.9 }),
   magnetar: from('neutron', { bright: 0.8, metal: 0.4, step: 10, swR: 0.03 }),
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['magnetar', 'neutron']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['powehi', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['magnetar', 'neutron'], ['crab', 'neutron']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];

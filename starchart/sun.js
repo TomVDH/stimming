@@ -61,6 +61,7 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // kind 2, a lensed far star: the heading and distance in R to the lensing cluster, the host galaxy's colour.
 // kind 3, Mira: a bow shock and a long tail; size is the bow's stand-off in R.
+// kind 4, the Crab Nebula: its filament cage round the pulsar; size is the half length in R.
 // beat: a pulsing star: the period in days, the radius swell and the light swell, each a fraction.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
 const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
@@ -77,6 +78,18 @@ export const STARS = {
     // A mottled crust with a strong swirl scale, so its turn reads at a glance.
     disk: [0.75, 0.55, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [24, 3, 0, 0.35],
     wide: 'none', long: 'none', root: 440,
+  },
+  // The Crab Nebula: the remnant of the supernova of 1054, round the Crab pulsar.
+  // The pulsar turns 30 times a second; on screen it turns in 0.3 s, so its beams blend to a glow.
+  // The nebula stands 30 R out each way here; the true one is 11 light years wide.
+  crab: {
+    ...FLARE, ribbon: 2, rain: 0, bubble: 0.1, field: 1, beam: 1, reach: 18,
+    ns: { u: 0.34, rl: 2.2, wind: 1, beam: 1, spin: 0.3, real: 0.0333924 },
+    bow: { kind: 4, heading: 0.45, size: 30, col: [1, 0.4, 0.2] },
+    row: 5, rsun: 1.44e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.7,
+    hal: [0.6, 0.65, 1], streak: [0.6, 0.7, 1],
+    disk: [0.75, 0.55, 0.15, 0.25], disk2: [60, 0, 0, 0], tex: [24, 3, 0, 0.35],
+    wide: 'none', long: 'none', root: 415.3,
   },
   // SGR 1806-20: a magnetar, the strongest known magnetic field, about 10^15 gauss.
   // It turns every 7.56 s, drawn at true speed; no beams sweep the eye.

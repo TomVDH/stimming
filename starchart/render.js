@@ -2149,6 +2149,30 @@ vec3 lensScene(vec2 q, vec2 Pv) {
   col += vec3(1.0) * pip(q - ci, pw, 0.007 * D) * 0.45;
   return col;
 }
+// The Crab Nebula, in R along its long axis; not to scale: the true nebula is 11 light years wide.
+// A blue synchrotron glow from the pulsar's wind fills an oval cage of red and gold filaments.
+// The helium torus crosses the pulsar; a faint jet leaves along its axis.
+vec3 crabNeb(vec2 q) {
+  float S = uBow.z;
+  vec2 u = q / (S * vec2(1.0, 0.68));
+  // The rim is ragged: the shell's edge wanders by about a tenth.
+  float a = atan(u.y, u.x);
+  float e = length(u) / (1.0 + 0.24 * (fbm(vec3(cos(a) * 2.0, sin(a) * 2.0, 5.0)) - 0.5));
+  if (e > 1.4) return vec3(0.0);
+  float syn = exp(-e * e * 1.7) * (0.55 + 0.8 * fbm(vec3(u * 3.0, 1.3 + uTime * 0.004)));
+  // The filaments: ridges of two noise layers, brightest in the outer half of the cage.
+  vec3 p = vec3(u * 4.5, 2.0);
+  float r1 = pow(1.0 - abs(fbm(p) - 0.5) * 2.0, 16.0);
+  float r2 = pow(1.0 - abs(fbm(p * 2.3 + 3.0) - 0.5) * 2.0, 20.0);
+  // A soft haze of the same gas lies between the ridges.
+  float haze = 0.35 * fbm(p * 0.7 + 9.0);
+  float fil = (r1 + 0.7 * r2 + haze) * smoothstep(0.25, 0.75, e) * smoothstep(1.1, 0.9, e);
+  vec3 filC = mix(vec3(1.0, 0.2, 0.1), vec3(1.0, 0.7, 0.36), smoothstep(0.3, 0.7, fbm(vec3(u * 1.5, 8.0))));
+  // The inner torus and the jet, round the pulsar.
+  float tor = exp(-pow((length(u / vec2(1.0, 0.4)) - 0.09) / 0.025, 2.0)) * 0.5;
+  float jet = exp(-pow(u.x / 0.012, 2.0)) * smoothstep(0.22, 0.02, abs(u.y)) * 0.25;
+  return vec3(0.55, 0.7, 1.0) * (syn * 0.85 + tor + jet) + filC * fil * 0.6;
+}
 // Mira's bow shock and tail, in R along its heading; not to scale.
 // The true tail is 13 light years long; uBow.z is the bow's stand-off.
 vec3 miraTail(vec2 q) {
@@ -2187,6 +2211,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // The Crab Nebula: the pulsar's wind nebula in its cage of filaments.
+  if (uBow.w > 3.5) return crabNeb(q);
   // Mira: a bow shock ahead and a long turbulent tail behind, as GALEX saw it in 2007.
   if (uBow.w > 2.5) return miraTail(q);
   // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
@@ -2315,7 +2341,7 @@ void main() {
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
   // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
   // A lensed far star's scene comes in as the star shrinks to a pip, and draws over it with no seam.
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 && uBow.w < 2.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 || uBow.w > 2.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 3.5 ? smoothstep(R, R * 1.5, r) : uBow.w > 1.5 && uBow.w < 2.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 || uBow.w > 2.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
   if (uQuake.x + uQuake.z + uQuake.w > 0.0) c += quake(P, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);

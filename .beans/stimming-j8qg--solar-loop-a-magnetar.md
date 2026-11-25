@@ -1,11 +1,11 @@
 ---
 # stimming-j8qg
 title: 'Solar loop: a magnetar'
-status: in-progress
+status: completed
 type: task
 priority: normal
 created_at: 2026-11-24T21:55:17Z
-updated_at: 2026-11-25T09:30:56Z
+updated_at: 2026-11-25T09:33:03Z
 parent: stimming-e35i
 ---
 
@@ -13,4 +13,4 @@ Tom, 2026-11-24: picked from the object list. SGR 1806-20, a neutron star with t
 
 - [x] Look: the neutron star, its field, a starquake flare; apart from the Vela pulsar
 - [x] Facts for the star card, sourced (Wikipedia: SGR 1806-20)
-- [ ] Tom looks at it live
+- [x] Tom looks at it live (2026-11-25: "Looks good")
