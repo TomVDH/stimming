@@ -4,7 +4,7 @@
 // The final pass bends the air at the limb, grades through the band's ramps and adds the lens.
 import { TRI_VS, program, linked, target, free, bind, tri, to, uniforms } from '../shared/gl.js';
 import { bloomChain } from '../shared/glow.js';
-import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES } from './sun.js';
+import { R, BCRIT, STRIDE, MAX_STRANDS, NR, MAX_FLARES, STARS } from './sun.js';
 import { fluidPrograms, makeFluid } from './fluid.js';
 import { FLARE } from '../shared/flare.js';
 
@@ -658,6 +658,8 @@ float bandTau(float id, float lon, float wl, float b) {
   // A storm's eye is clearer than its wall.
   return tau * mix(1.0, 0.65 + 0.8 * smoothstep(0.3, 0.9, e), exp(-e * e * 0.8));
 }
+// Zero at run time, unknown to D3D: a loop from it keeps one copy of its body.
+#define ROLL0 int(min(gl_FragCoord.x, 0.0))
 // A brown dwarf's cloud deck: its optical depth at the unit point q, about 0 to 3.
 // Bands sit in latitude, so seen side-on they crowd toward the poles.
 float deckTau(vec3 q) {
@@ -669,7 +671,12 @@ float deckTau(vec3 q) {
   // Two neighbour bands blend across a soft shear zone at their edge.
   float i0 = floor(b - 0.5), fr = fract(b - 0.5);
   float s = smoothstep(0.3, 0.7, fr);
-  float tau = mix(bandTau(i0, lon, wl, b), bandTau(i0 + 1.0, lon, wl, b), s);
+  // One copy of the band code, run twice: D3D cannot count a loop that starts at ROLL0.
+  float tau = 0.0;
+  for (int i = ROLL0; i < 2; i++) {
+    float j = float(i);
+    tau += mix(1.0 - s, s, j) * bandTau(i0 + j, lon, wl, b);
+  }
   // The shear zone churns: its cloud is a little thicker.
   tau += 0.35 * (1.0 - abs(2.0 * s - 1.0));
   // An L dwarf's mottle: soft round blotches of rising and sinking gas, in two sizes.
@@ -731,10 +738,14 @@ void main() {
       float m = max(mu, 0.1);
       // Deeper along the view ray, the point under the eye slides toward the limb.
       vec3 sink = uToSun * (n * mu - vec3(0.0, 0.0, 1.0));
-      float t1 = deckTau(q);
-      float t2 = deckTau(normalize(q + sink * min(0.04 / m, 0.09)));
+      // The deck at the surface point and deeper along the ray: one copy of the deck code, run twice.
+      float tt = 0.0;
+      for (int i = ROLL0; i < 2; i++) {
+        float j = float(i);
+        tt += mix(0.35, 0.65, j) * deckTau(normalize(q + j * sink * min(0.04 / m, 0.09)));
+      }
       // The slant path through the deck grows as 1 / mu, so the limb dims by itself.
-      float tr = exp(-(0.35 * t1 + 0.65 * t2) / m);
+      float tr = exp(-tt / m);
       // A high haze glows at the limb, lit from below.
       float deck = mix(0.4, 1.8, tr) + 0.9 * pow(1.0 - mu, 3.0);
       tex = mix(tex, deck, uCloud.x);
@@ -1132,6 +1143,40 @@ void main() {
   }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
+
+/* ---------- the disk pass in versions (Tom, 2026-11-25: it crashed Edge and Zen) ---------- */
+// D3D's compiler took 45 s on SKY with every feature in it, and the GPU process died.
+// Each version holds only its star's features: an unused feature uniform becomes a zero constant,
+// so its branch is dead code and D3D drops it. A plain star's version compiles in about 5 s.
+// Each entry: the uniform, its type, on in this frame's data, on for a star's data.
+const SKY_FEATURES = [
+  ['uHole', 'vec4', v => v.hole[0] > 0, B => !!B.hole],
+  ['uBeam', 'vec4', v => v.beam[3] > 0, B => B.beam > 0],
+  ['uCloud', 'vec4', v => v.band.clouds[0] > 0, B => B.clouds?.[0] > 0],
+  ['uYso', 'vec4', v => v.yso[3] > 0, B => B.yso?.[3] > 0],
+  ['uLump', 'vec4', v => v.lump[0] > 0, B => B.lump?.[0] > 0],
+  ['uWind', 'vec4', v => v.band.wind[0] > 0 || v.band.wind[2] > 0, B => B.wind?.[0] > 0 || B.wind?.[2] > 0],
+  ['uCore', 'float', v => v.band.core > 0, B => B.core > 0],
+  ['uNs', 'vec4', v => v.ns[0] > 0, B => !!B.ns],
+  ['uRing', 'vec4', v => v.ring[0] > 0, B => !!B.ring],
+  ['uShell', 'vec4', v => v.shell[0] > 0, B => !!B.shells],
+  ['uPair', 'vec4', v => v.pair[3] > 0, B => !!B.pair],
+  ['uStarspot', 'vec4', v => v.band.starspot[0] > 0, B => B.starspot?.[0] > 0],
+  ['uDiscE', 'vec4', v => v.band.discE[0] > 0, B => B.discE?.[0] > 0],
+  ['uBin', 'vec4', v => v.bin[3] > 0, B => !!B.bin],
+];
+// The SKY source for one set of features that are on.
+function skySource(on) {
+  // One uniform a line, so each can turn into a constant on its own.
+  let src = SKY.replace(/^uniform (vec4|float) ([^;[]+);/gm, (m, t, names) => names.split(',').map(n => `uniform ${t} ${n.trim()};`).join('\n'));
+  for (const [u, t] of SKY_FEATURES) if (!on.has(u)) src = src.replace(`uniform ${t} ${u};`, `const ${t} ${u} = ${t}(0.0);`);
+  // A hole's version draws only the hole: the star's code after it is dead.
+  if (on.has('uHole')) src = src.replace('if (uHole.x > 0.0) { o = holeTrace(P); return; }', 'o = holeTrace(P); return;');
+  return src;
+}
+// The features a star's data turns on.
+const starOn = B => new Set(SKY_FEATURES.filter(f => f[3](B)).map(f => f[0]));
+const skyKey = on => SKY_FEATURES.filter(f => on.has(f[0])).map(f => f[0]).join(',');
 
 /* ---------- strands: one camera-facing ribbon per thread ---------- */
 // Kinds: 0 loop, 1 ribbon, 2 rope, 3 prominence, 4 erupting prominence.
@@ -2235,8 +2280,50 @@ void main() {
 // opts.fluid: the fluid probe (?fluid) builds its programs and grid.
 export async function makeRender(gl, opts = {}) {
   if (!gl.getExtension('EXT_color_buffer_float') && !gl.getExtension('EXT_color_buffer_half_float')) throw new Error('no float targets');
+  // The disk pass's versions: compiled on demand, the first star's before the first frame.
+  const par = gl.getExtension('KHR_parallel_shader_compile');
+  const skies = new Map();
+  function skyStart(on) {
+    const k = skyKey(on);
+    if (!skies.has(k)) skies.set(k, { q: program(gl, TRI_VS, skySource(on)), ready: false });
+    return skies.get(k);
+  }
+  // True once a version links; it never blocks while the driver still compiles.
+  function skyReady(e) {
+    if (e.ready) return true;
+    if (par && !gl.getProgramParameter(e.q.p, par.COMPLETION_STATUS_KHR)) return false;
+    if (!gl.getProgramParameter(e.q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(e.q.f) || gl.getProgramInfoLog(e.q.p) || 'sky link failed');
+    uniforms(gl, e.q);
+    return (e.ready = true);
+  }
+  // Each star's features; a feature its frame data turns on joins them for good.
+  const bandOn = new WeakMap();
+  const lastSky = new WeakMap();
+  function skyFor(v) {
+    let on = bandOn.get(v.band);
+    if (!on) bandOn.set(v.band, (on = starOn(v.band)));
+    for (const f of SKY_FEATURES) if (!on.has(f[0]) && f[2](v)) on.add(f[0]);
+    const e = skyStart(on);
+    if (skyReady(e)) { lastSky.set(v.band, e); return e.q; }
+    // While a new feature's version compiles, the star keeps its last one.
+    const was = lastSky.get(v.band);
+    return was && skyReady(was) ? was.q : null;
+  }
+  // Compiles the versions for these stars in idle time, one at a time.
+  let warming = Promise.resolve();
+  function warm(ids) {
+    for (const id of ids) {
+      const B = STARS[id];
+      if (!B) continue;
+      warming = warming.then(async () => {
+        const e = skyStart(bandOn.get(B) || starOn(B));
+        while (!gl.isContextLost() && !skyReady(e)) await new Promise(r => setTimeout(r, 120));
+      });
+    }
+    return warming;
+  }
+  const first = skyStart(starOn(STARS[opts.star] || STARS.sun));
   const P = await linked(gl, {
-    sky: program(gl, TRI_VS, SKY),
     strand: program(gl, STRAND_VS, STRAND_FS),
     rays: program(gl, TRI_VS, RAYS),
     vol: program(gl, TRI_VS, VOL),
@@ -2420,7 +2507,9 @@ export async function makeRender(gl, opts = {}) {
     if (!hdr) return;
     gl.disable(gl.BLEND);
     if (fluid && v.fluid) fluid.step(v.fluid.step);
-    const s = P.sky;
+    // The star's disk version; a frame waits while it still compiles.
+    const s = skyFor(v);
+    if (!s) return false;
     gl.useProgram(s.p);
     gl.uniform4fv(s.u.uView, v.view);
     gl.uniformMatrix3fv(s.u.uToSun, false, v.toSun);
@@ -2626,5 +2715,5 @@ export async function makeRender(gl, opts = {}) {
     pp.i = 1 - pp.i;
     pp.fresh = false;
   }
-  return { resize, frame, data };
+  return { resize, frame, data, warm, ready: () => skyReady(first) };
 }

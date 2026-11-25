@@ -316,3 +316,11 @@ Muted by default. Space makes no sound, so this is a sonification: each part has
 | Q8 | 1 to 9 and 0, [ and ], S, L (three stops), - and =, the wheel, and Space each do their job; while the chart is open, the toy's keys wait |
 | Q9 | The context runs after a gesture and is suspended once the toy sleeps |
 | Q10 | Frame times through a flare, after the cinema pass: median 7.7 ms, p95 8.4 ms. Build to first frame: 1.0 s |
+
+## Windows compile (2026-11-25, `stimming-al27`)
+
+Edge and Zen on Windows run WebGL through ANGLE on D3D11, and D3D's compiler slows sharply with one large program. Measured with `tools/fxc/` (d3dcompiler_47 at ANGLE's level), the disk pass (SKY) took 18 s on 2026-11-24 at 18:02, 33 s after the brown dwarf deck (four pasted copies of the cloud code), 28 s after the quasar's Worley clouds on their own line, and 44.5 s on main on 2026-11-25; the GPU process died. Every other program links under 1.3 s.
+
+The disk pass now compiles in versions. Each holds only its star's features: a feature uniform the star never uses becomes a zero constant, so its branch is dead code. A frame's data that turns a feature on adds it to the star's set for good. The star on screen compiles before the first frame (first frame about 3.5 s headless, was about 48 s); the others compile in idle time, nearest in the list first. A star whose version still compiles holds the last frame. The dwarf deck runs its two bands and two depths as one copy in loops that start at ROLL0, which D3D cannot count.
+
+Measured per version (seconds, a busy machine): plain star 5 to 6, black hole 1.1, ring 5.0, lumps 5.5, binary 5.6, pulsar 5.2, partner 5.4, T Tauri 6.4, wind and shells 6.3, Thorne-Zytkow core 7.0, starspot 7.1, edge-on disc 5.0, brown dwarf 7.2.

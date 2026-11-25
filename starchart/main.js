@@ -1559,7 +1559,8 @@ ui.onCover?.(() => resize());
 async function setup() {
   gl = canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, powerPreference: 'high-performance' });
   if (!gl) throw new Error('no webgl2');
-  ren = await makeRender(gl, { fluid: FLUID });
+  // The renderer compiles the disk pass for the star on screen first.
+  ren = await makeRender(gl, { fluid: FLUID, star: st.star });
   sizeKey = '';
 }
 onContextLoss(canvas, {
@@ -1582,6 +1583,9 @@ try {
   poke();
   // Once the intro has gone, the view glides in from far out; the card plays when it settles.
   setTimeout(glideIn, 400);
+  // The other stars' disk passes compile in idle time, nearest in the list first.
+  const at = PICKS.findIndex(x => x.value === st.star);
+  ren.warm?.(PICKS.map((x, i) => [x.value, Math.min(Math.abs(i - at), PICKS.length - Math.abs(i - at))]).sort((a, b) => a[1] - b[1]).map(x => x[0]));
 } catch (err) {
   console.error(err);
   fail.removeAttribute('hidden');
