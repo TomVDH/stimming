@@ -94,8 +94,8 @@ function place(s, t) {
 
 // Samples per trail: enough that a pericentre whip stays a smooth curve.
 const TRAIL = 120;
-// The disc runs from the ISCO to 14 Schwarzschild radii; a hole radius is 2.6.
-const DISC = [3 / 2.6, 14 / 2.6];
+// The disc runs from the ISCO to 20 Schwarzschild radii; a hole radius is 2.6.
+const DISC = [3 / 2.6, 20 / 2.6];
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 /**
@@ -166,7 +166,7 @@ export function makeSStars(after) {
         for (let k = 0; k < TRAIL; k++) {
           const p = o.cam(place(s, t - span * k / (TRAIL - 1)));
           // Near the hole the trail fades, so no line cuts across the disc.
-          pts.set([p[0], p[1], seen(p) * (0.2 + 0.8 * smooth(1.3, 3.5, Math.hypot(p[0], p[1])))], k * 3);
+          pts.set([p[0], p[1], seen(p) * (0.2 + 0.8 * smooth(1.3, 5, Math.hypot(p[0], p[1])))], k * 3);
         }
         const [r, gr, b] = s.col;
         g.lineWidth = 1.25;
