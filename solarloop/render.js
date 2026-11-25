@@ -242,9 +242,9 @@ vec2 holeJet(vec2 b2) {
   float grain = 0.7 + 0.6 * fbm(vec3(ld * 6.0 - uTime * 0.3, across / w * 2.0, 3.0));
   // It leaves the hole a few radii out and fades slowly, so it reaches past any frame.
   float L = uJet * (1.1 * core + 0.3 * sheath + 0.9 * hel) * knots * grain * smoothstep(2.0, 6.0, d) * pow(1.0 + d / 8.0, -0.7);
-  // Beaming: the jet toward the eye shines; the counter-jet is all but gone.
+  // Beaming: the jet toward the eye shines; the counter-jet keeps about a third (Tom, 2026-11-24).
   bool near = along * a.z * sign(dot(a.xy, ax)) >= 0.0;
-  return near ? vec2(L, 0.0) : vec2(0.0, L * 0.03);
+  return near ? vec2(L, 0.0) : vec2(0.0, L * 0.35);
 }
 /* ---------- the cloud layer round a hole (Tom, 2026-11-24) ---------- */
 // After MisterPrada's singularity: a thick, puffy volume round the disc, lit from within.
@@ -263,6 +263,35 @@ float hn(vec3 p) {
   return texture(uNoise3, (i + f + 0.5) / 64.0).r;
 }
 float hn2(vec3 p) { return 0.65 * hn(p) + 0.35 * hn(p.zxy * 2.07 + 5.3); }
+// Worley F1: the distance to the nearest point, over all 27 neighbour cells.
+// A smaller search leaves straight seams.
+float wor(vec3 p) {
+  vec3 i = floor(p), f = p - i;
+  float d = 9.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec3 g = vec3(x, y, z);
+    vec3 o = vec3(h13(i + g), h13(i + g + 17.3), h13(i + g + 41.9));
+    d = min(d, dot(g + o - f, g + o - f));
+  }
+  return sqrt(d);
+}
+// The torus's dust: Worley billows, with clear gaps between them.
+// Texture noise erodes their edges; a second Worley scale costs too much.
+// fill: 0 at the band's edges, 1 in its middle, where the gaps close.
+float torusDust(vec3 q, float fill) {
+  float w = 0.75 * wor(q * 0.45) + 0.25 * hn(q * 0.9 + 5.1);
+  return smoothstep(0.6 + 0.3 * fill, 0.36 + 0.3 * fill, w);
+}
+// A band point in the dust's frame: the dust turns with the disc.
+// The radius stretches, so each billow draws out along the orbit.
+// Inner gas runs ahead, so the billows lean back as trailing chevrons.
+vec3 bandQ(float r, float phi, float y) {
+  // One turn in about 2.6 minutes (Tom, 2026-11-24: turn faster).
+  // 61 whole turns per 9600 s clock wrap, so the wrap shows no jump.
+  float pt = phi - uTime * (TAU * 61.0 / 9600.0) + 0.3 * (r - 30.0);
+  float rs = 30.0 + 2.2 * (r - 30.0);
+  return vec3(cos(pt) * rs, y, sin(pt) * rs);
+}
 // The cloud layer's reach: radii CB0 to CB1, heights to CREACH times the layer's height.
 const float CB0 = 2.4, CB1 = 24.0, CREACH = 2.2;
 // The layer's height: thin inside, flaring outward, as a disc does.
@@ -362,31 +391,66 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
   vec2 L = vec2(0.0);
   if (uHoleQ.x > 0.0) {
     // The dusty torus: thick, clumpy, dark; its inner rim glows hot where the disc lights it.
-    float RT = 30.0, a = 7.0;
-    float dt0 = length(vec2(r - RT, y));
-    if (dt0 < a * 1.2) {
-      float n = hn2(vec3(cos(phi) * r, y, sin(phi) * r) * 0.35 + uTime * 0.002);
-      float dd = smoothstep(a, a * 0.5, dt0) * (0.35 + 1.3 * n * n) * uHoleQ.y;
-      ext += dd * 0.9;
-      float rim = exp(-pow((r - (RT - a * 0.75)) / 2.0, 2.0)) * exp(-y * y / 18.0);
-      L.x += dd * rim * 0.9;
+    // A flat band, 12 wide and 3 tall (Tom, 2026-11-24: "much less tall").
+    float RT = 30.0, ar = 6.0, ay = 1.5;
+    if (abs(r - RT) < ar * 1.1 && abs(y) < ay * 3.5) {
+      // The shear is fixed, so it never winds up.
+      vec3 q = bandQ(r, phi, y);
+      // Worley holes run through the band; its inner and outer edges stay sharp.
+      // The top and bottom feather off as volume (Tom, 2026-11-24).
+      float feather = exp(-0.5 * y * y / (ay * ay));
+      // The middle of the band is denser (Tom, 2026-11-24).
+      float fill = exp(-pow((r - RT) / (ar * 0.5), 2.0)) * feather;
+      float dd = torusDust(q, fill) * smoothstep(ar * 1.1, ar * 0.85, abs(r - RT)) * feather * uHoleQ.y;
+      if (dd > 1e-3) {
+        // The disc's light falls across the band's face; its inner edge burns.
+        float lit = 0.25 * pow((RT - ar) / r, 2.0) + 0.75 * exp(-0.6 * max(r - (RT - ar), 0.0));
+        // A billow shades its own far side: dust a step toward the hole blocks the light.
+        lit *= exp(-1.2 * smoothstep(0.55, 0.3, wor(bandQ(r - 0.9, phi, y) * 0.45)));
+        // The billows block light; the holes between them let it through.
+        ext += dd * 0.7;
+        L.x += dd * (0.03 + lit) * 0.6;
+      }
     }
-    // Broad-line clouds: bright clumps orbiting above and below the disc, lit by it.
-    if (r > 12.0 && r < 26.0 && abs(y) < 9.0) {
-      float om = sqrt(0.5 / (r * r * r)) * 0.5;
-      float pc = phi - uTime * om;
-      float n = hn2(vec3(cos(pc) * r, y * 1.3, sin(pc) * r) * 0.45);
-      float cl = smoothstep(0.68, 0.88, n) * smoothstep(12.0, 15.0, r) * smoothstep(26.0, 22.0, r) * exp(-y * y / 30.0) * uHoleQ.z;
-      L.y += cl * 0.3 * 14.0 / R3;
-      ext += cl * 0.15;
+    // Broad-line clouds: soft clumps above and below the disc, lit by it.
+    // Cells 5 apart in shells, 7 along the orbit; each shell turns whole at its own Kepler rate.
+    // A clump stays inside its cell, so no cell edge cuts it.
+    if (r > 10.5 && r < 25.5 && abs(y) < 10.0) {
+      float k = floor((r - 10.5) / 5.0), rk = 13.0 + 5.0 * k;
+      // Whole turns per 9600 s clock wrap, so the wrap shows no jump.
+      float om = TAU / 9600.0 * floor(sqrt(0.5 / (rk * rk * rk)) * 0.5 * 9600.0 / TAU + 0.5);
+      float nc = floor(TAU * rk / 7.0);
+      float u = (phi - uTime * om) / TAU * nc;
+      float jy = floor((y + 10.0) / 5.0), yc = -7.5 + 5.0 * jy;
+      vec3 id = vec3(k, mod(floor(u), nc), jy);
+      float h = h13(id + 3.1);
+      // More clumps near the disc, fewer high above it.
+      if (h < 0.55 * exp(-yc * yc / 80.0)) {
+        float hr = h13(id + 11.7), hs = h13(id + 23.9);
+        vec3 o = vec3(r - rk - 0.4 * (hr - 0.5), y - yc - 0.4 * (hs - 0.5), (fract(u) - 0.5) * TAU * rk / nc);
+        // Sizes vary about 2.5 times; the orbit draws each clump out a little.
+        float rad = 0.8 + 1.2 * pow(h13(id + 37.3), 1.5);
+        vec3 oq = o * vec3(1.0, 1.0, 1.0 / 1.4);
+        // A puffy edge, still inside the cell.
+        float dq = length(oq) / rad + 0.25 * (hn(o * 0.9 + id * 7.3) - 0.5);
+        float s = pow(max(1.0 - dq * dq, 0.0), 2.0);
+        // The side toward the hole catches the disc's light.
+        float lit = 0.35 + 0.65 * smoothstep(0.7, -0.7, dot(oq / rad, normalize(vec3(rk, yc, 0.0))));
+        float cl = s * (0.4 + h13(id + 51.1)) * smoothstep(10.5, 12.5, r) * uHoleQ.z;
+        L.y += cl * lit * 0.5 * 14.0 / R3;
+        ext += cl * 0.25;
+      }
     }
     // Winds: streaks blown off the disc's faces, rising at 30 to 60 degrees and streaming out.
+    // The noise reads the direction, so no seam shows at the back.
     float el = atan(abs(y), r);
-    if (r > 4.0 && R3 < 38.0 && el > 0.4 && el < 1.15) {
-      float n = hn(vec3(log(R3) * 6.0 - uTime * 0.25, el * 6.0, phi * 4.0));
-      float w = smoothstep(0.55, 0.8, n) * smoothstep(0.4, 0.6, el) * smoothstep(1.15, 0.9, el) * 6.0 / R3 * uHoleQ.w;
-      L.y += w * 0.12;
-      ext += w * 0.03;
+    if (r > 4.0 && R3 < 40.0 && el > 0.35 && el < 1.2) {
+      vec3 dn = p / R3;
+      float n = hn(vec3(dn.x * 5.0, dn.z * 5.0 + sign(y) * 7.0, log(R3) * 1.6 - uTime * 0.25));
+      float w = smoothstep(0.5, 0.85, n) * smoothstep(0.35, 0.6, el) * smoothstep(1.2, 0.9, el);
+      w *= smoothstep(4.0, 8.0, r) * smoothstep(36.0, 14.0, R3) * 6.0 / R3 * uHoleQ.w;
+      L.y += w * 0.04;
+      ext += w * 0.01;
     }
   }
   return L;
@@ -438,11 +502,16 @@ vec4 holeTrace(vec2 P) {
         holeCloudSeg(x0, x, v0, v, 0.0, tc, segL, sPath, hot, cool, tr);
         // A quasar's torus, clouds and winds: four samples a step where they live.
         // A fixed per-pixel offset breaks step bands into a still, fine dither: no flicker.
-        float rm = length(mix(x0, x, 0.5)), ym = abs(mix(x0.y, x.y, 0.5));
-        if (uHoleQ.x > 0.0 && rm < uHoleV.w && rm > 4.0 && ym < 12.0) {
-          float seg = dt * length(mix(v0, v, 0.5)) / 4.0;
-          for (int k = 0; k < 4; k++) {
-            float tt = (float(k) + jq) / 4.0;
+        // The torus and clouds lie low; the winds rise in a cone above and below.
+        vec3 xm = mix(x0, x, 0.5);
+        float rm = length(xm), ym = abs(xm.y);
+        if (uHoleQ.x > 0.0 && rm < uHoleV.w && rm > 4.0 && (ym < 12.0 || ym > 0.3 * length(xm.xz))) {
+          // The torus band takes eight samples a step: its Worley holes are fine.
+          float ns = abs(length(xm.xz) - 30.0) < 9.0 && ym < 6.0 ? 8.0 : 4.0;
+          float seg = dt * length(mix(v0, v, 0.5)) / ns;
+          for (int k = 0; k < 8; k++) {
+            if (float(k) >= ns) break;
+            float tt = (float(k) + jq) / ns;
             float ex;
             vec2 e = holeVol(mix(x0, x, tt), normalize(mix(v0, v, tt)), ex);
             hot += tr * e.x * seg;
