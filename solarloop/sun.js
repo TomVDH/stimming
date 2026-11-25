@@ -332,7 +332,7 @@ export const STARS = {
   // They orbit in under 27 hours, tidally locked, so the turn carries the twin round.
   // pair: the twin's distance in R; the radius is not in the article: 7 suns is the toy's.
   vfts352: {
-    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: 1.75, reach: 1.7,
+    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: 1.85, reach: 1.75,
     row: 8, rsun: 7, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 1.25,
     hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
     disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],

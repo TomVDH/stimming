@@ -956,7 +956,7 @@ void main() {
   if (uPair.w > 0.0) {
     vec2 c2 = uPair.xy * R;
     float r2 = length(P - c2);
-    float k = 0.45 * R;
+    float k = 0.3 * R;
     float hm = clamp(0.5 + 0.5 * (r2 - r) / k, 0.0, 1.0);
     float du = mix(r2 - R, r - R, hm) - k * hm * (1.0 - hm);
     bool inTwin = r2 < R;
@@ -966,7 +966,7 @@ void main() {
       float mu2 = inTwin ? sqrt(max(1.0 - r2 * r2 / (R * R), 0.0)) : clamp(-du / (0.6 * R), 0.0, 1.0);
       float tex2 = 1.0 + uDisk.y * 0.6 * (fbm(vec3((P - c2) / R * 6.0, tb * 3.0)) - 0.5);
       // Gravity darkens the neck, where the two stars meet.
-      float neck = inTwin ? 1.0 : 0.72;
+      float neck = inTwin ? 1.0 : 0.85;
       hot = uDisk.x * tex2 * pow(max(mu2, 0.02), uTex.w) * neck;
       cool *= 0.2;
     }
