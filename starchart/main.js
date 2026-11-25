@@ -907,7 +907,7 @@ function resize(force = false) {
 function flareAt(rg) {
   if (!rg) return;
   const fl = startFlare(sun, rg, st.time, calm ? 0.7 : 1);
-  // Eight flares already run: this tap waits, silent.
+  // Sixteen flares already run: this tap waits, silent.
   if (!fl) return;
   const p = regionPoint(rg);
   snd.flare(clamp(toCss(p.v)[0] / cssW * 2 - 1, -1, 1), st.star, fl.k);

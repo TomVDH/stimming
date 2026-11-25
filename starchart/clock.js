@@ -37,7 +37,7 @@ export function span(s) {
 export function elapsed(s) {
   const two = (u1, w1, u2, w2) => {
     const a = Math.floor(s / u1), b = Math.floor(s % u1 / u2);
-    return b ? `${a} ${w1} ${String(b).padStart(2, '0')} ${w2}` : `${a} ${w1}`;
+    return `${a} ${w1} ${String(b).padStart(2, '0')} ${w2}`;
   };
   if (s < MIN) return `${s.toFixed(1)} s`;
   if (s < HOUR) return two(MIN, 'min', 1, 's');

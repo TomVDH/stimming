@@ -10,9 +10,9 @@ export const BCRIT = 2.598;
 // The toy runs each star's rotation this many times faster than life.
 export const SPIN_UP = 1e4;
 export const STRIDE = 16;
-export const MAX_STRANDS = 2048;
-// Up to eight flares run at once; a ninth tap waits for one to end (Tom, 2026-11-24).
-export const MAX_FLARES = 8;
+export const MAX_STRANDS = 3072;
+// Up to sixteen flares run at once; a seventeenth tap waits for one to end (Tom, 2026-11-25).
+export const MAX_FLARES = 16;
 // A flare runs this long, then the region is calm again.
 export const FLARE_END = 50;
 
