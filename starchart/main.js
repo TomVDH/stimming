@@ -337,6 +337,9 @@ const NOTCH = 2, NOTCH_REACH = 0.4, MAGNETS = [0, 1, NOTCH];
 const STICKY = [[NOTCH, -1], [1, -1], [1, 1]];
 // A pause of GAP ms ends a gesture; PUSH is the travel that leaves the stop.
 const GAP = 220, PUSH = 0.25;
+// A hand gesture leads the view by one stop at most: four wheel ticks.
+// A fling cannot run the target to the end, so the view stops near the hand.
+const LEAD = 1;
 const stick = { at: null, dir: 0, armed: false, push: 0, last: 0 };
 let settle = 0;
 function zoomBy(dz) {
@@ -356,7 +359,9 @@ function zoomBy(dz) {
     }
   }
   stick.at = null;
-  springTo(cam.to + dz);
+  // A lead that is already longer, from L or the rail, stays.
+  const lead = Math.max(LEAD, Math.abs(cam.to - cam.z));
+  springTo(clamp(cam.to + dz, cam.z - lead, cam.z + lead));
   clearTimeout(settle);
   settle = setTimeout(() => {
     // A magnet pulls ahead, so it never undoes an inward step.
@@ -376,6 +381,8 @@ function springTo(z) {
   // A new move starts: note where it began, and let its arrival play the card again.
   if (!cam.moving) { cam.from = cam.z; cam.arrived = false; }
   cam.to = z;
+  // A turn back drops the hidden follower's speed; the view's own speed stays, so it eases round.
+  if ((z - cam.aim) * cam.va < 0) cam.va = 0;
   // Reduced motion and the first frame jump straight to the target.
   if (!started || calm) {
     cam.z = cam.aim = z; cam.v = cam.va = 0; cam.moving = false;
@@ -387,10 +394,17 @@ function springTo(z) {
   poke();
 }
 // One critically damped step toward x (the SmoothDamp integral); T is its time constant.
-function follow(x, X, v, T, dt) {
+// Firm: the step never passes X.
+function follow(x, X, v, T, dt, firm = false) {
   const w = 2 / T, k = w * dt, e = 1 / (1 + k + 0.48 * k * k + 0.235 * k * k * k);
-  const c = x - X, tmp = (v + w * c) * dt;
-  return [X + (c + tmp) * e, (v - w * tmp) * e];
+  const c = x - X;
+  // Faster than w|c| toward X runs past it; firm caps the speed there.
+  if (firm && c * (v + w * c) < 0) v = -w * c;
+  const tmp = (v + w * c) * dt;
+  const nx = X + (c + tmp) * e, nv = (v - w * tmp) * e;
+  // A long frame can still step past X; firm lands on it.
+  if (firm && (X - x) * (nx - X) > 0) return [X, 0];
+  return [nx, nv];
 }
 // Each follower's time constant at Zoom weight 1; the house weight 2 settles a stop in about 3.5 s.
 const ZOOM_T = 0.35;
@@ -400,8 +414,8 @@ const ZOOM_IN = 1.4;
 // Steps the two followers toward the target.
 function stepFollow(dt) {
   const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1) * (cam.snap ? 0.5 : 1);
-  [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
-  [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
+  [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt, true);
+  [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt, true);
   cam.z = clamp(cam.z, 0, Z_MAX);
   if (Math.abs(cam.to - cam.z) < 2e-4 && Math.abs(cam.v) < 2e-3 && Math.abs(cam.va) < 2e-3) {
     cam.z = cam.aim = cam.to; cam.v = cam.va = 0; cam.moving = false;
@@ -1670,7 +1684,9 @@ function stepSway(dt) {
 // Zoom through every view: the wheel, a two-finger pinch, the - and = keys.
 stage.addEventListener('wheel', e => {
   e.preventDefault();
-  zoomBy(clamp(e.deltaY, -120, 120) * 0.0025);
+  // Line and page scrolls, as from some mice, count as pixels.
+  const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
+  zoomBy(clamp(e.deltaY * px, -120, 120) * 0.0025);
 }, { passive: false });
 const touches = new Map();
 let pinch0 = 0;
