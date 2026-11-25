@@ -5,6 +5,11 @@
 const KEEP = 'stimming.icons.marks', CUT = 'stimming.icons.cuts';
 const load = (/** @type {string} */ k) => { try { return new Set(JSON.parse(localStorage.getItem(k) || '[]')); } catch { return new Set(); } };
 const store = (/** @type {string} */ k, /** @type {Set<string>} */ set) => { try { localStorage.setItem(k, JSON.stringify([...set])); } catch {} };
+// Promote: the one card per toy that replaces its icon. Toy id to card key.
+const PROMO = 'stimming.icons.promote';
+const promos = () => { try { return JSON.parse(localStorage.getItem(PROMO) || '{}'); } catch { return {}; } };
+// A card key starts with its toy id; ids hold no hyphen.
+const toyOfKey = (/** @type {string} */ key) => key.split('-')[0];
 const stateOf = (/** @type {string} */ key) => (load(CUT).has(key) ? 'cut' : load(KEEP).has(key) ? 'keep' : '');
 const day = (/** @type {string} */ d) => new Date(`${d}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
@@ -29,7 +34,7 @@ const STYLE = `
 .ic-cell .pick, .pick2 .pk { position: absolute; right: -6px; top: -6px; z-index: 2; padding: 4px 6px; background: var(--acc-ink); color: var(--bg); font: 800 10px/1 var(--slab); letter-spacing: 0.08em; text-transform: uppercase; }
 /* The menu fits its icons to its own width, so the frame stays desktop size. */
 .ic-live { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; }
-.acts { display: flex; align-items: center; white-space: nowrap; margin: -6px 0 0 -11px; font: 800 11px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; }
+.acts { display: flex; flex-wrap: wrap; align-items: center; white-space: nowrap; margin: -6px 0 0 -11px; font: 800 11px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; }
 .acts .w { height: 30px; padding: 0 11px; }
 .acts .w[data-act="cut"]:hover, .acts .w[data-act="yes"] { color: var(--warn); }
 .acts .w[data-act="yes"]:hover { color: var(--bg); }
@@ -50,7 +55,7 @@ body.every > :not(#every) { display: none !important; }
 .pick2 > p { margin: 0; color: oklch(0.64 0.02 275); font: 800 10px/1.3 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pick2 > p b { color: oklch(0.94 0.008 275); }
 .pick2 .emb, .pick2 .embs { display: none !important; }
-.acts { display: flex; align-items: center; white-space: nowrap; margin: -6px 0 0 -11px; font: 800 11px/1 "Iosevka Term Slab", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.94 0.008 275); }
+.acts { display: flex; flex-wrap: wrap; align-items: center; white-space: nowrap; margin: -6px 0 0 -11px; font: 800 11px/1 "Iosevka Term Slab", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: oklch(0.94 0.008 275); }
 .acts .w { appearance: none; position: relative; isolation: isolate; height: 30px; padding: 0 11px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; }
 .acts .w::before { content: ""; position: absolute; inset: 5px 0; z-index: -1; background: #fff; clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end); }
 .acts .w:hover::before, .acts .w[aria-pressed="true"]::before { clip-path: inset(0 0); }
@@ -117,7 +122,9 @@ let item = null;
 const actsHTML = key => {
   const st = stateOf(key);
   if (st === 'cut') return '<button class="w" type="button" data-act="restore">Restore</button>';
-  return `<button class="w" type="button" data-act="keep" aria-pressed="${st === 'keep'}">${st === 'keep' ? 'Kept' : 'Keep'}</button><span class="sl">/</span><button class="w" type="button" data-act="cut">Cut</button>`;
+  const up = promos()[toyOfKey(key)] === key;
+  return `<button class="w" type="button" data-act="keep" aria-pressed="${st === 'keep'}">${st === 'keep' ? 'Kept' : 'Keep'}</button><span class="sl">/</span><button class="w" type="button" data-act="cut">Cut</button>`
+    + `<span class="sl">/</span><button class="w" type="button" data-act="promote" aria-pressed="${up}" title="This card becomes the toy's icon">${up ? 'Promoted' : 'Promote'}</button>`;
 };
 /** @param {string} key @param {string} st */
 function setVote(key, st) {
@@ -138,6 +145,14 @@ function onAct(/** @type {Event} */ e) {
   const acts = /** @type {HTMLElement} */ (btn.closest('.acts')), key = /** @type {string} */ (acts.dataset.key), name = acts.dataset.name || key, act = /** @type {HTMLElement} */ (btn).dataset.act;
   const was = stateOf(key);
   if (act === 'keep') setVote(key, was === 'keep' ? '' : 'keep');
+  if (act === 'promote') {
+    // One promoted card per toy; a second click takes it back.
+    const p = promos(), id = toyOfKey(key);
+    if (p[id] === key) delete p[id]; else p[id] = key;
+    try { localStorage.setItem(PROMO, JSON.stringify(p)); } catch {}
+    desk.toast(p[id] ? `Promoted ${name}` : `Unpromoted ${name}`);
+    paint();
+  }
   if (act === 'restore') { setVote(key, ''); desk.toast(`Restored ${name}`); }
   // Cut asks once, in place, before it hides the icon.
   if (act === 'cut') acts.innerHTML = '<span class="ask">Cut?</span><button class="w" type="button" data-act="yes">Yes</button><span class="sl">/</span><button class="w" type="button" data-act="no">No</button>';
@@ -391,16 +406,17 @@ export default {
     const votes = /** @type {Record<string, string>} */ ({});
     for (const k of load(KEEP)) if (k.startsWith(`${it.id}-`)) votes[k.slice(it.id.length + 1)] = 'keep';
     for (const k of load(CUT)) if (k.startsWith(`${it.id}-`)) votes[k.slice(it.id.length + 1)] = 'cut';
-    const pick = D.picks[it.id]?.pick;
-    if (!Object.keys(votes).length) return null;
+    const pick = D.picks[it.id]?.pick, up = promos()[it.id];
+    if (!Object.keys(votes).length && !up) return null;
     // Each vote names its card and where it comes from, so a swap can find the file.
     const src = (/** @type {string} */ k) => {
       const [card, where] = k.split('@');
+      if (!where) return { card, from: 'the icon now' };
       if (where === 'menu') return { card, from: 'menu tile' };
       if (where === 'lab') return { card, from: 'icon lab' };
       return { card, round: where, file: `icons/spike-${where}.html` };
     };
     const by = (/** @type {string} */ v) => Object.keys(votes).filter(k => votes[k] === v).map(src);
-    return { pick: pick || null, keep: by('keep'), cut: by('cut'), rounds: roundsOf(it.id) };
+    return { promote: up ? src(up.slice(it.id.length + 1)) : null, pick: pick || null, keep: by('keep'), cut: by('cut'), rounds: roundsOf(it.id) };
   },
 };
