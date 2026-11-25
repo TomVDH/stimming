@@ -5,7 +5,8 @@ status: draft
 type: feature
 priority: normal
 created_at: 2026-11-25T08:58:17Z
-updated_at: 2026-11-25T18:12:48Z
+updated_at: 2026-11-25T18:16:16Z
+parent: stimming-0cau
 ---
 
 Tom, 2026-11-25: standard generation of SEO images in our style, with the toy's full-colour icon.

@@ -5,7 +5,8 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-25T07:24:50Z
-updated_at: 2026-11-25T08:56:11Z
+updated_at: 2026-11-25T18:16:17Z
+parent: stimming-0cau
 ---
 
 From spike stimming-9ex4. The toy desk (accesslab/) works; these parts are not done.

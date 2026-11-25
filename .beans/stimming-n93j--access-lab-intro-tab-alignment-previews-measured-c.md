@@ -5,7 +5,8 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-25T17:30:29Z
-updated_at: 2026-11-25T17:55:36Z
+updated_at: 2026-11-25T18:16:17Z
+parent: stimming-0cau
 ---
 
 Tom, 2026-11-25: "we have bottom centre, centre -- and centre text left aligned -- ensure all are clean, properly measured and aligned".

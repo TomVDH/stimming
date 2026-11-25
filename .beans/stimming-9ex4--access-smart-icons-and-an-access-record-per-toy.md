@@ -5,7 +5,8 @@ status: completed
 type: spike
 priority: normal
 created_at: 2026-11-25T05:21:26Z
-updated_at: 2026-11-25T07:25:01Z
+updated_at: 2026-11-25T18:16:17Z
+parent: stimming-0cau
 ---
 
 Tom, 2026-11-24: "we also need a system of smart icons and accessibility ... we want epilepsy, motor and accessibility issues -- colorsym can be useful here".
