@@ -393,6 +393,14 @@ export default {
     for (const k of load(CUT)) if (k.startsWith(`${it.id}-`)) votes[k.slice(it.id.length + 1)] = 'cut';
     const pick = D.picks[it.id]?.pick;
     if (!Object.keys(votes).length) return null;
-    return { pick: pick || null, rounds: roundsOf(it.id), votes };
+    // Each vote names its card and where it comes from, so a swap can find the file.
+    const src = (/** @type {string} */ k) => {
+      const [card, where] = k.split('@');
+      if (where === 'menu') return { card, from: 'menu tile' };
+      if (where === 'lab') return { card, from: 'icon lab' };
+      return { card, round: where, file: `icons/spike-${where}.html` };
+    };
+    const by = (/** @type {string} */ v) => Object.keys(votes).filter(k => votes[k] === v).map(src);
+    return { pick: pick || null, keep: by('keep'), cut: by('cut'), rounds: roundsOf(it.id) };
   },
 };
