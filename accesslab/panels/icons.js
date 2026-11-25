@@ -67,6 +67,38 @@ const IC = new URL('../../icons/', import.meta.url).href;
 const ALIAS = /** @type {Record<string, string>} */ ({ vent: 'deepvent' });
 const roundsOf = (/** @type {string} */ id) => [...new Set([...(D.archive[id] || []), ...[D.gallery[id] ?? []].flat()].map(String))].reverse();
 
+// The icon sheet's emblem fix, word for word: icons/sheet.html, EMB_FIX.
+// Inside a gallery, each emblem comes from the gallery's own copy.
+// A cut emblem without one comes from the archive; nothing asks for a moved file.
+let EMB_FIX = '';
+const embFix = (/** @type {string[]} */ gone) => `<script>
+(() => {
+  const CUT = new Set(${JSON.stringify(gone)});
+  const enc = s => encodeURIComponent(s).replace(/[()'!*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+  const swap = v => v.replace(/url\\((["']?)spike\\/emblems\\/([\\w-]+)\\.svg\\1\\)/g, (m, q, f) => {
+    const s = window.EMBLEMS && window.EMBLEMS[f];
+    if (s) return 'url(data:image/svg+xml,' + enc(s) + ')';
+    return CUT.has(f) ? 'url(archive/emblems/' + f + '.svg)' : m;
+  });
+  const html = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
+  Object.defineProperty(Element.prototype, 'innerHTML', { ...html, set(v) { html.set.call(this, typeof v === 'string' && v.includes('spike/emblems/') ? swap(v) : v); } });
+  const adj = Element.prototype.insertAdjacentHTML;
+  Element.prototype.insertAdjacentHTML = function (p, v) { return adj.call(this, p, typeof v === 'string' && v.includes('spike/emblems/') ? swap(v) : v); };
+  const fix = el => {
+    const v = el.getAttribute('style');
+    if (!v || !v.includes('spike/emblems/')) return;
+    const w = swap(v);
+    if (w !== v) el.setAttribute('style', w);
+  };
+  new MutationObserver(ms => {
+    for (const m of ms) {
+      if (m.type === 'attributes') { fix(m.target); continue; }
+      for (const n of m.addedNodes) if (n.nodeType === 1) { fix(n); n.querySelectorAll('[style*="spike/emblems/"]').forEach(fix); }
+    }
+  }).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+})();
+<\/script>`;
+
 let gen = 0, showCut = false;
 /** @type {Set<HTMLIFrameElement>} */
 const frames = new Set();
@@ -152,7 +184,7 @@ async function mountRound(host, id, r, my, pick) {
   frame.className = 'ic-round wait';
   frame.title = `Round ${r}`;
   frame.setAttribute('scrolling', 'no');
-  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${IC}">`).replace(/<\/head>/i, `<style>${FRAME_CSS}</style></head>`);
+  frame.srcdoc = src.replace(/<head>/i, `<head><base href="${IC}">${EMB_FIX}`).replace(/<\/head>/i, `<style>${FRAME_CSS}</style></head>`);
   host.append(frame);
   // The cards are ready before fonts and emblems finish; do not wait for those.
   await new Promise(res => {
@@ -251,7 +283,8 @@ export default {
     st.textContent = STYLE;
     document.head.append(st);
     const get = (/** @type {string} */ u, /** @type {'json'|'text'} */ as) => fetch(IC + u).then(r => (r.ok ? r[as]() : null)).catch(() => null);
-    const [sheet, rounds, picks, menu, lab] = await Promise.all([get('sheet.html', 'text'), get('rounds.json', 'json'), get('picks.json', 'json'), get('history/menu.json', 'json'), get('index.html', 'text')]);
+    const [sheet, rounds, picks, menu, lab, cut] = await Promise.all([get('sheet.html', 'text'), get('rounds.json', 'json'), get('picks.json', 'json'), get('history/menu.json', 'json'), get('index.html', 'text'), get('archive/cut.json', 'json')]);
+    EMB_FIX = embFix(Object.entries(cut?.cut || {}).flatMap(([id, ls]) => /** @type {string[]} */ (ls).map(l => `${id}-${l.toLowerCase()}`)));
     // The sheet's GALLERY literal ends at the first "\n};".
     try { D.gallery = Function(`return ${String(sheet).match(/const GALLERY = (\{[\s\S]*?\n\});/)?.[1]}`)() || {}; } catch { D.gallery = {}; }
     D.archive = rounds?.rounds || {};
