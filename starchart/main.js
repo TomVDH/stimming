@@ -11,7 +11,7 @@ import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
 import { glyph } from './glyphs.js';
-import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR, makePrimes, primes, PULSES, PRIME_END, makeProbe, probe, stepProbe, PROBE_END, makeMoon, moonX, MOON_R, MOON_D, MOON_IN, MOON_OUT, MOON_END, makeNotYet, notYet, stepNotYet, NY_PEAK, NY_END } from './eggs.js';
+import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice, makeSunshine, sunshine, SHIP_END, makeBlueDot, blueDot, DOT_END, DOT_FAR, makePrimes, primes, PULSES, PRIME_END, makeProbe, probe, stepProbe, PROBE_END, makeNotYet, notYet, stepNotYet, NY_PEAK, NY_END } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
 import { makeSStars, YEAR_S } from './sstars.js';
@@ -689,7 +689,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
     // The choir and rumble switches and levels live in Settings (Tom, 2026-11-24).
     ...[['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
-    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming'], ['sndPrime', 'Egg: primes'], ['sndProbe', 'Egg: probe beacon'], ['sndHiss', 'Egg: radio hiss'], ['sndTick', 'Egg: neutrino ticks']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
+    ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming'], ['sndPrime', 'Egg: primes'], ['sndProbe', 'Egg: probe beacon'], ['sndTick', 'Egg: neutrino ticks']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
   help: [
@@ -1037,7 +1037,6 @@ function startEgg(x, y, rare = false) {
   // Far out, the Sun's hold plays the pale blue dot.
   if (kind === 'carrington' && farAt(cam.z) > DOT_FAR) { egg = makeBlueDot(); return true; }
   if (kind === 'probe') { egg = makeProbe(); return true; }
-  if (kind === 'moon') { egg = makeMoon(); return true; }
   const m = mercury();
   if (kind === 'carrington' && m.on) {
     const [mx, my] = cssAt(m.x, m.y);
@@ -1101,10 +1100,6 @@ function stepEgg(dt, holding) {
     // The beacon pips on each blink, its pitch shifted down with the light.
     if (stepProbe(egg, dt) && egg.t > 0) snd.pip?.(880 * probe(egg).g, probe(egg).g * probe(egg).w);
     if (egg.t >= PROBE_END) egg = null;
-  } else if (egg.kind === 'moon') {
-    // The radio hiss: on at the end of the hold, cut by the limb, back when it uncovers.
-    if (egg.t >= 0 && !egg.fired) { egg.fired = true; egg.stop = snd.hiss?.(MOON_IN, MOON_OUT - MOON_IN, MOON_END - MOON_OUT - 2) || null; }
-    if (egg.t >= MOON_END) { egg.stop?.(); egg = null; }
   } else if (egg.kind === 'notyet') {
     if (stepNotYet(egg, dt)) snd.tick?.(0.4 + 0.6 * notYet(egg).light);
     if (egg.t >= NY_PEAK && !egg.fired) { egg.fired = true; snd.flare(0, st.star, 1); }
@@ -1129,7 +1124,7 @@ const frameState = {
   view: new Float32Array(4), rot: new Float32Array(9), toSun: new Float32Array(9),
   regs: new Float32Array(4 * NR), spots: new Float32Array(4 * NR), sway: new Float32Array(2), fl: new Float32Array(4 * MAX_FLARES), flB: new Float32Array(4 * MAX_FLARES),
   sat: new Float32Array(4 * MAX_FLARES), time: 0, band: null, count: 0, data: null, bloomLevels: 5, frameNo: 0, sc: 1,
-  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), dot: new Float32Array(4), probe: new Float32Array(4), probe2: new Float32Array(4), moon: new Float32Array(4), shimmer: 0, lens: 0,
+  centre: new Float32Array(2), bodyA: new Float32Array(4), bodyB: new Float32Array(4), bodyK: new Float32Array(2), ship: new Float32Array(4), ship2: new Float32Array(4), dot: new Float32Array(4), probe: new Float32Array(4), probe2: new Float32Array(4), shimmer: 0, lens: 0,
   beam: new Float32Array(4), yso: new Float32Array(4), lump: new Float32Array(4), beat: new Float32Array(4), cam: new Float32Array(4), film: new Float32Array(4), volDens: 1, volLight: 0.4, full: 0, corona: 0, bend: 1, far: 0, off: 1,
   fx1: new Float32Array(4), fx2: new Float32Array(4), fx3: new Float32Array(4), fx4: new Float32Array(4), fx5: new Float32Array(4),
   egg: new Float32Array(16), dim: new Float32Array(8),
@@ -1314,13 +1309,6 @@ function makeFrame() {
     f.probe.set([x, y, 2.6 * view.H / cssH, p.w]);
     f.probe2.set([p.g, blink, 0, 0]);
   } else f.probe.fill(0);
-  // The Moon's edge: its centre and radius in pixels; how much of the quasar it hides.
-  if (egg?.kind === 'moon') {
-    const [qx, qy] = px(0, 0), H = view.H;
-    const mx = qx + moonX(egg) * H, my = qy - MOON_D * H, mr = MOON_R * H;
-    const aa = 2 * view.H / cssH;
-    f.moon.set([mx, my, mr, clamp((mr + aa - Math.hypot(qx - mx, qy - my)) / (2 * aa))]);
-  } else f.moon.fill(0);
   // The pulsar's magnetic axis, in the view frame.
   if (star.beam) f.beam.set([...toView(magNow()), star.beam]); else f.beam.fill(0);
   // The pulsar is the lighthouse on true physics (Tom, 2026-11-24): the striped wind, no torus or jets.

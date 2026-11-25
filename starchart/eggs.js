@@ -6,7 +6,6 @@
 // Sun, a hold far out: the pale blue dot, one pixel in a ray of scattered light.
 // Vega: its light pulses in prime counts, after Contact.
 // Cygnus X-1: a probe falls in, slows, reddens and freezes at the shadow's edge.
-// 3C 273: the Moon's dark limb sweeps over it, as at Parkes in 1962.
 // Betelgeuse, a second hold during the Dimming: it starts to go supernova, then rewinds.
 // Each egg also comes on its own, now and then, while the toy is awake.
 
@@ -23,7 +22,7 @@ export const CUE = 0.6;
 // An egg comes on its own about once per this many awake seconds.
 export const RARE = 25 * 60;
 // The star that holds each egg.
-export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice', vega: 'primes', cygx1: 'probe', qso: 'moon' };
+export const EGGS = { sun: 'carrington', betelgeuse: 'dimming', neutron: 'voice', vega: 'primes', cygx1: 'probe' };
 
 /* ---------- the Carrington flare ---------- */
 // Carrington and Hodgson saw two white kernels flash over a huge spot group.
@@ -160,20 +159,6 @@ export function stepProbe(egg, dt) {
   egg.beat = beat;
   return blink;
 }
-
-/* ---------- the Moon's edge (Tom, 2026-11-25) ---------- */
-// Cyril Hazard timed the Moon's limb over 3C 273 at Parkes in 1962 to fix its place.
-// The Moon is drawn in frame heights: radius 1.6, its centre 1.3 below the quasar.
-export const MOON_R = 1.6, MOON_D = 1.3;
-// The chord's half length at the quasar, and the speed in frame heights a second.
-const MOON_HALF = Math.sqrt(MOON_R * MOON_R - MOON_D * MOON_D), MOON_V = 0.23;
-// The limb covers the quasar at MOON_IN and uncovers it at MOON_OUT.
-export const MOON_IN = 4, MOON_OUT = MOON_IN + 2 * MOON_HALF / MOON_V, MOON_END = MOON_OUT + 9;
-export function makeMoon() {
-  return { kind: 'moon', t: CUE - HOLD };
-}
-/** The Moon's centre x from the quasar, in frame heights; it moves left to right. */
-export const moonX = egg => -MOON_HALF + MOON_V * (egg.t - MOON_IN);
 
 /* ---------- not yet (Tom, 2026-11-25) ---------- */
 // The Great Dimming set off talk of a supernova; a second hold plays one, then rewinds it.
