@@ -92,6 +92,24 @@ const LUTS = [
   // Beta Lyrae: a blue-white giant; the disc, the stream and the jets glow warm white.
   [['000000', 0], ['03070d', 0.1], ['0e2036', 0.26], ['2a5888', 0.44], ['6a9ed6', 0.62], ['b4d4f6', 0.78], ['eaf4ff', 0.9], ['ffffff', 1]],
   [['000000', 0], ['0c0806', 0.12], ['32241a', 0.3], ['7a5a40', 0.5], ['caa07a', 0.68], ['f2dcc0', 0.84], ['fffaf2', 1]],
+  // Stephenson 2-18: oxblood, the coolest here; its brightest light stays a dull orange.
+  [['000000', 0], ['0a0101', 0.1], ['220403', 0.28], ['4e0c05', 0.46], ['86180a', 0.64], ['c23a14', 0.8], ['f07a42', 0.92], ['ffcaa8', 1]],
+  [['000000', 0], ['0c0203', 0.12], ['2a0709', 0.3], ['5a1412', 0.5], ['943222', 0.68], ['d0683e', 0.84], ['f8d8c4', 1]],
+  // WOH G64: a dust-veiled glow, rust to amber gold; the torus burnt orange.
+  [['000000', 0], ['0e0402', 0.1], ['341004', 0.26], ['782a06', 0.44], ['c45a12', 0.62], ['f09a2e', 0.78], ['ffd27a', 0.9], ['fff4d8', 1]],
+  [['000000', 0], ['0e0402', 0.12], ['361204', 0.3], ['74300a', 0.5], ['b85818', 0.68], ['e89048', 0.84], ['fde2c0', 1]],
+  // The quasi-star: a crimson envelope, the heart burning gold to white.
+  [['000000', 0], ['100202', 0.1], ['3a0804', 0.26], ['821c08', 0.44], ['cc4a12', 0.6], ['f8922e', 0.75], ['ffd890', 0.88], ['fffaf0', 1]],
+  [['000000', 0], ['100204', 0.12], ['3a0a12', 0.3], ['7a1e1c', 0.5], ['c04a30', 0.68], ['f09060', 0.84], ['fff0e4', 1]],
+  // WR 140: a blue-white blaze; its soot shells glow warm cream.
+  [['000000', 0], ['04060e', 0.1], ['121c3c', 0.26], ['32508e', 0.44], ['7092d8', 0.6], ['b6cbff', 0.74], ['ecf1ff', 0.86], ['ffffff', 1]],
+  [['000000', 0], ['0a0804', 0.12], ['2a2412', 0.3], ['6a5a32', 0.5], ['b4a068', 0.68], ['e8dcae', 0.84], ['fffbea', 1]],
+  // Mothra: a gold hypergiant; its blue supergiant partner takes the cool ramp.
+  [['000000', 0], ['0e0802', 0.1], ['3a2006', 0.26], ['7e4a0c', 0.44], ['c88a1e', 0.62], ['f4c450', 0.78], ['ffe8a8', 0.9], ['fffaee', 1]],
+  [['000000', 0], ['02060e', 0.12], ['0c2040', 0.3], ['2a5aa0', 0.5], ['6c9ce8', 0.68], ['b8d4ff', 0.84], ['f4f8ff', 1]],
+  // Powehi: the EHT's ember ring, red to orange gold; the approaching side burns pale gold.
+  [['000000', 0], ['0e0301', 0.1], ['3a0c02', 0.26], ['842806', 0.44], ['d0600e', 0.62], ['f8a030', 0.78], ['ffd88a', 0.9], ['fff6e0', 1]],
+  [['000000', 0], ['0c0602', 0.12], ['36200a', 0.3], ['8a5a1c', 0.5], ['dca450', 0.68], ['fde2a4', 0.84], ['fffbf0', 1]],
 ];
 const LUT_W = 256;
 function lutPixels() {
@@ -639,7 +657,16 @@ uniform vec4 uNs, uNsU, uNsV;
 // How hard a pulsar's flashes may flash: 1 at its true rate, near 0.2 when fast enough to flicker.
 uniform float uFlashW;
 // A giant ring system: opacity, centre in R (x, y), axis ratio; tilt, glow.
-uniform vec4 uRing, uRing2;
+uniform vec4 uRing, uRing2, uRing3;
+// WR 140's dust shells: their light, their spacing in R, the orbits counted.
+uniform vec4 uShell;
+// A partner star: its centre in R in the view, its z sign the near side; w on.
+// uPair2: its radius over R, a contact neck (1) or none, the cool channel (1) or the hot.
+uniform vec4 uPair, uPair2;
+// Giant starspots: weight, the caps' edge latitude, the big spot's latitude and longitude.
+uniform vec4 uStarspot;
+// A dark disc in front, edge on: light, its centre in R, its half width and half thickness in R.
+uniform vec4 uDiscE;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
 // uBinN: the disc's axis in the view frame.
 uniform vec4 uBin, uBinD, uBinN;
@@ -783,7 +810,17 @@ void main() {
     // A Thorne-Zytkow object in cutaway: the envelope thins toward the middle, so the inside shows.
     // Within: a white-gold core zone, a ragged burning shell, the neutron star at the heart.
     // The neutron star is drawn far larger than its true 20 km.
-    if (uCore > 0.0) {
+    // uCore 2 is a quasi-star: a black hole at the heart, and no burning shell.
+    if (uCore > 1.5) {
+      float x = r / R;
+      float pulse = 0.8 + 0.2 * sin(uTime * 0.5) * sin(uTime * 0.17 + 2.0);
+      hot *= 1.0 - 0.6 * smoothstep(0.9, 0.1, x);
+      // Gas falling into the hole heats the whole inside, brightest near the middle.
+      float heat = exp(-x * x / 0.07) * (0.55 + 0.9 * fbm(q * 5.0 + vec3(0.0, 0.0, tb * 2.0)));
+      // A blazing infall ring hugs the hole's shadow.
+      float ring = exp(-pow((x - 0.034) / 0.011, 2.0)) * 5.0 + exp(-x * x / 0.006) * 0.8;
+      hot = (hot + uDisk.x * (1.1 * heat + ring) * pulse) * smoothstep(0.02, 0.027, x);
+    } else if (uCore > 0.0) {
       float x = r / R;
       float pulse = 0.75 + 0.25 * sin(uTime * 0.7) * sin(uTime * 0.23 + 1.0);
       hot *= 1.0 - uCore * 0.7 * smoothstep(0.9, 0.15, x);
@@ -797,6 +834,18 @@ void main() {
       // The neutron star: a white-hot point and its halo.
       float ns = exp(-x * x / 0.00012) * 6.0 + exp(-x * x / 0.0025) * 1.2;
       hot += uCore * uDisk.x * (0.75 * shell + 0.9 * zone * pulse + ns * pulse);
+    }
+    // XX Trianguli: dark caps round the poles and one spot wider than the Sun.
+    // They sit in the star's frame, so they turn with it.
+    if (uStarspot.x > 0.0) {
+      float lat = asin(clamp(dot(q, uGrav.xyz), -1.0, 1.0));
+      float rag = 0.12 * (fbm(q * 6.0 + 2.0) - 0.5);
+      float cap = smoothstep(uStarspot.y - 0.1, uStarspot.y + 0.05, abs(lat) + rag);
+      vec3 sc = vec3(cos(uStarspot.z) * cos(uStarspot.w), sin(uStarspot.z), cos(uStarspot.z) * sin(uStarspot.w));
+      float sa = acos(clamp(dot(q, sc), -1.0, 1.0)) + 0.15 * (fbm(q * 9.0 + 5.0) - 0.5);
+      // A dark umbra in a ragged penumbra.
+      float spot = max(0.9 * smoothstep(0.3, 0.22, sa), 0.5 * smoothstep(0.5, 0.36, sa));
+      shade *= 1.0 - uStarspot.x * max(0.9 * cap, spot);
     }
     // A fast spinner is hotter at its poles than at its equator.
     if (uGrav.w > 0.0) { float c = dot(q, uGrav.xyz); hot *= mix(1.0 - uGrav.w, 1.0 + 0.35 * uGrav.w, c * c); }
@@ -1005,12 +1054,31 @@ void main() {
     cool += neb * (0.16 + 1.0 * kn * kn);
     hot += neb * 0.15 * kn;
   }
+  // WR 140: each close pass of the pair puffs out a soot shell, every 7.9 years.
+  // The shells nest at even steps and drift out; JWST counts more than 17.
+  if (uShell.x > 0.0 && r > R) {
+    // The shells hang in space: a drag turns them with the camera.
+    vec2 Pc = (uCamM * vec3(P, 0.0)).xy;
+    float rr = length(Pc) / (R * uShell.y);
+    float sp = rr - fract(uShell.z);
+    float n = floor(sp + 0.5);
+    float d = sp - n;
+    // Each shell keeps its own clumps as it drifts out.
+    float id = n - floor(uShell.z);
+    float ang = atan(Pc.y, Pc.x);
+    // The dust forms in a broad fan: two opposite lobes, as in the JWST picture.
+    float fan = 0.2 + 0.8 * pow(abs(cos(ang - 0.95)), 1.6);
+    float clump = 0.5 + 0.9 * fbm(vec3(cos(ang) * 4.0, sin(ang) * 4.0, id * 1.7));
+    float shell = exp(-d * d / 0.01) * smoothstep(1.6, 2.6, rr) * smoothstep(19.0, 13.0, rr) * exp(-rr / 14.0);
+    cool += uShell.x * uDisk.x * shell * fan * clump * (0.5 * uOff + 0.25 + 0.3 * uFar);
+  }
   // Fomalhaut's dust belts (Tom, 2026-11-24: a real ringed star), scaled from 133 AU to a few radii.
   // A narrow main belt with a sharp inner edge, its centre a little off the star; a faint inner belt;
   // and the dust cloud once called Fomalhaut b. The dust is thin: it glows with scattered starlight
   // and barely dims the star. Tilted, so an ellipse; the star hides the far half.
   // uRing.yz: the belt's centre in R; uRing.w: the minor ratio, its sign the near half.
   // uRing2: the major axis's angle, the glow, the inner belt's radius, the main belt's radius.
+  // uRing3: the dust cloud's weight, the belt's outer width, the clump strength.
   if (uRing.x > 0.0) {
     vec2 d = P / R - uRing.yz;
     float ca = cos(uRing2.x), sa = sin(uRing2.x), k = abs(uRing.w);
@@ -1020,11 +1088,11 @@ void main() {
     float rho = length(pl), rb = uRing2.w;
     float ang = atan(pl.y, pl.x);
     // Clumps along the belt, as Hubble and JWST show it.
-    float clump = 0.55 + 0.9 * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
-    float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * 0.1));
-    float inner = 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
+    float clump = 0.55 + uRing3.z * fbm(vec3(cos(ang) * 3.0, sin(ang) * 3.0, rho * 1.5));
+    float belt = smoothstep(rb * 0.9, rb * 0.97, rho) * exp(-max(rho - rb * 0.97, 0.0) / (rb * uRing3.y));
+    float inner = uRing2.z <= 0.0 ? 0.0 : 0.22 * exp(-pow((rho - uRing2.z) / (0.08 * rb), 2.0));
     vec2 cp = vec2(-0.45, 0.72) * rb;
-    float cloud = 0.45 * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
+    float cloud = 0.45 * uRing3.x * exp(-dot(pl - cp, pl - cp) / (0.03 * rb * rb));
     float hide = e.y * sign(uRing.w) > 0.0 && r < R ? 0.0 : 1.0;
     // Dust scatters forward: the near half glows a little brighter.
     float fwd = 0.75 + 0.5 * smoothstep(0.0, -0.8 * rb * k, e.y * sign(uRing.w));
@@ -1047,6 +1115,46 @@ void main() {
     // The hidden star shows only as a soft glow through the gas: no hard disc of its own.
     float dd = length(dq);
     cool += vis * uDisk.x * uOff * 0.5 * exp(-dd * dd / 0.3);
+  }
+  // Epsilon Aurigae: a vast dusty disc round a hidden B star crosses the supergiant.
+  // It is edge on and blocks about 70 percent of the light: the toy holds it mid-eclipse.
+  if (uDiscE.x > 0.0) {
+    // The disc hangs in space: a drag turns it with the camera.
+    vec2 e = (uCamM * vec3(P, 0.0)).xy / R - vec2(uDiscE.y, -0.08);
+    e = vec2(0.9988 * e.x + 0.05 * e.y, -0.05 * e.x + 0.9988 * e.y);
+    // The disc flares: it thickens toward its rim.
+    float th = uDiscE.w * (0.65 + 0.35 * smoothstep(0.2, 1.0, abs(e.x) / uDiscE.z));
+    float edge = length(vec2(e.x / uDiscE.z, e.y / th));
+    float inD = smoothstep(1.0, 0.92, edge);
+    float block = 0.7 * inD * (0.8 + 0.4 * fbm(vec3(e * 4.0, 4.0)));
+    hot *= 1.0 - block;
+    cool *= 1.0 - block;
+    // Starlight scatters forward through the dust and lights the rim.
+    cool += uDiscE.x * uDisk.x * 0.1 * exp(-pow((edge - 0.97) / 0.05, 2.0));
+    // The hidden B star glows faintly at the disc's heart.
+    cool += uDiscE.x * uDisk.x * 0.2 * exp(-dot(e, e) / 0.015);
+  }
+  // A partner star. VFTS 352: a twin O star in contact; the envelopes merge in a neck.
+  // A smooth union of the two disks draws the peanut; side on it shows, end on it hides.
+  // Mothra: a small blue supergiant apart from the gold one, in the cool channel.
+  if (uPair.w > 0.0) {
+    vec2 c2 = uPair.xy * R;
+    float r2 = length(P - c2);
+    float Rt = R * uPair2.x;
+    float k = 0.3 * R;
+    float hm = clamp(0.5 + 0.5 * (r2 - r) / k, 0.0, 1.0);
+    float du = mix(r2 - Rt, r - R, hm) - k * hm * (1.0 - hm);
+    bool inTwin = r2 < Rt;
+    bool inNeck = uPair2.y > 0.0 && du < 0.0 && r >= R && !inTwin;
+    // The primary hides the partner behind it; the partner in front covers the primary.
+    if ((inTwin && (uPair.z > 0.0 || r >= R)) || inNeck) {
+      float mu2 = inTwin ? sqrt(max(1.0 - r2 * r2 / (Rt * Rt), 0.0)) : clamp(-du / (0.6 * R), 0.0, 1.0);
+      float tex2 = 1.0 + uDisk.y * 0.6 * (fbm(vec3((P - c2) / Rt * 6.0, tb * 3.0)) - 0.5);
+      // Gravity darkens the neck, where the two stars meet.
+      float neck = inTwin ? 1.0 : 0.85;
+      float L2 = uDisk.x * tex2 * pow(max(mu2, 0.02), uTex.w) * neck;
+      if (uPair2.z > 0.0) { cool = 1.3 * L2; hot = 0.0; } else { hot = L2; cool *= 0.2; }
+    }
   }
   o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0);
 }`;
@@ -1759,6 +1867,18 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // A lensed arc: the host galaxy smeared along a circle round an unseen lens.
+  // The star sits on the arc; the lens's centre lies uBow.z radii off along the heading.
+  if (uBow.w > 1.5) {
+    vec2 lc = q - vec2(uBow.z, 0.0);
+    float rl = length(lc);
+    float th = atan(lc.y, -lc.x);
+    float band = exp(-pow((rl - uBow.z) / (0.5 + 0.02 * uBow.z), 2.0));
+    float ends = smoothstep(0.45, 0.15, abs(th));
+    // Lensing shears the galaxy's knots along the arc.
+    float kn = 0.3 + 1.2 * pow(fbm(vec3(th * uBow.z * 0.12, (rl - uBow.z) * 1.4, 7.0)), 2.0);
+    return uBowC * band * ends * kn;
+  }
   // A wake: a long faint trail behind, widening, its knots streaming away.
   float back = -q.x;
   float w = 0.35 + 0.035 * back;
@@ -1841,7 +1961,7 @@ void main() {
     c += mix(vec3(0.72, 0.84, 1.0), vec3(1.0, 0.8, 0.62), clamp(hs.a, 0.0, 1.0)) * hs.b;
   } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w < 0.5 || uBow.w > 1.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < 2; k++) {
@@ -2054,6 +2174,8 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uBeam, v.beam);
     gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
+    gl.uniform4fv(s.u.uStarspot, v.band.starspot);
+    gl.uniform4fv(s.u.uDiscE, v.band.discE);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uLump, v.lump);
@@ -2083,6 +2205,10 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform1f(s.u.uFlashW, v.flashW);
     gl.uniform4fv(s.u.uRing, v.ring);
     gl.uniform4fv(s.u.uRing2, v.ring2);
+    gl.uniform4fv(s.u.uRing3, v.ring3);
+    gl.uniform4fv(s.u.uShell, v.shell);
+    gl.uniform4fv(s.u.uPair, v.pair);
+    gl.uniform4fv(s.u.uPair2, v.pair2);
     gl.uniform4fv(s.u.uBin, v.bin);
     gl.uniform4fv(s.u.uBinD, v.binD);
     gl.uniform4fv(s.u.uBinN, v.binN);

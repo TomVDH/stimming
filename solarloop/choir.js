@@ -196,6 +196,45 @@ export const GLOWNORM = {
   j1407: 0.68,
   cygx1: 0.67,
 };
+// Stephenson 2-18 sings VY CMa's choir; its root in sound.js sits lower.
+VOICES.st218 = VOICES.vycma;
+NORM.st218 = NORM.vycma;
+TAPNORM.st218 = TAPNORM.vycma;
+// WOH G64 sings Betelgeuse's choir.
+VOICES.wohg64 = VOICES.betelgeuse;
+NORM.wohg64 = NORM.betelgeuse;
+TAPNORM.wohg64 = TAPNORM.betelgeuse;
+// The quasi-star sings the Thorne-Zytkow object's choir, lower.
+VOICES.quasi = VOICES.tzo;
+NORM.quasi = NORM.tzo;
+TAPNORM.quasi = TAPNORM.tzo;
+// WR 140 sings WR 124's choir.
+VOICES.wr140 = VOICES.wr124;
+NORM.wr140 = NORM.wr124;
+TAPNORM.wr140 = TAPNORM.wr124;
+// VFTS 352 sings Zeta Ophiuchi's choir.
+VOICES.vfts352 = VOICES.zetaoph;
+NORM.vfts352 = NORM.zetaoph;
+TAPNORM.vfts352 = TAPNORM.zetaoph;
+// XX Trianguli sings Arcturus's choir.
+VOICES.xxtri = VOICES.arcturus;
+NORM.xxtri = NORM.arcturus;
+TAPNORM.xxtri = TAPNORM.arcturus;
+// Epsilon Aurigae sings Procyon's choir.
+VOICES.epsaur = VOICES.procyon;
+NORM.epsaur = NORM.procyon;
+TAPNORM.epsaur = TAPNORM.procyon;
+// Mothra sings Beta Lyrae's choir; Earendel sings Rigel's.
+VOICES.mothra = VOICES.betalyr;
+NORM.mothra = NORM.betalyr;
+TAPNORM.mothra = TAPNORM.betalyr;
+VOICES.earendel = VOICES.rigel;
+NORM.earendel = NORM.rigel;
+TAPNORM.earendel = TAPNORM.rigel;
+// Powehi sings Sagittarius A*'s choir, lower.
+VOICES.powehi = VOICES.sgra;
+NORM.powehi = NORM.sgra;
+TAPNORM.powehi = TAPNORM.sgra;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

@@ -410,7 +410,7 @@ const hist = id => (past[id]?.length ? `<section class="row old" data-toy="${id}
     <div class="none"></div>
     <p class="rl"><b>Menu, earlier</b> · ${past[id].length} tile${past[id].length > 1 ? 's' : ''} the menu had, newest first</p>
     <div class="alts"><div class="past">${past[id].map((t, i) => [t, i + 1]).reverse().map(([t, n]) => `<div data-key="${id}-menu${n}@menu" tabindex="0" role="button" aria-label="${nameOf(id)}, menu tile ${n}, ${span(t)}">
-      <span class="still"><img src="${t.file}" alt="" width="128" height="128" loading="lazy" decoding="async">${t.page ? `<iframe src="${t.page}?lab#${t.id || id}" title="${nameOf(id)}, menu tile ${n}" loading="lazy" tabindex="-1" scrolling="no"></iframe>` : ''}</span>
+      <span class="still"><img src="${t.file}" alt="" width="128" height="128" loading="lazy" decoding="async">${t.page ? `<iframe data-src="${t.page}?lab&tile=${encodeURIComponent(t.id || id)}" title="${nameOf(id)}, menu tile ${n}" tabindex="-1" scrolling="no"></iframe>` : ''}</span>
       <p><b>Menu ${n}</b> · ${span(t)}</p>
     </div>`).join('')}</div></div>
   </section>` : '');
@@ -807,6 +807,7 @@ async function mountAll(sec) {
   frame.classList.remove('wait');
   fitAll();
   place();
+  galFar.observe(sec);
 }
 // Two galleries load at a time; the local server drops large bursts.
 const queue = [];
@@ -817,6 +818,22 @@ const pump = async () => {
   while (queue.length) await mount(queue.shift()).catch(() => {});
   busy--;
 };
+// Far off, a gallery frame goes back to its slot; near again, it mounts again.
+// Its box keeps its height, so the page does not jump.
+const galFar = new IntersectionObserver(es => {
+  for (const e of es) {
+    if (e.isIntersecting) continue;
+    const sec = e.target, alts = sec.querySelector('.alts'), f = alts.querySelector(':scope > iframe:not(.wait)');
+    if (!f) continue;
+    galFar.unobserve(sec);
+    alts.style.minHeight = `${f.offsetHeight}px`;
+    const i = docs.indexOf(f.contentDocument);
+    if (i >= 0) docs.splice(i, 1);
+    f.remove();
+    alts.insertAdjacentHTML('afterbegin', `<div class="slot load">${sec.dataset.round}</div>`);
+    near.observe(sec);
+  }
+}, { rootMargin: '2400px 0px' });
 const near = new IntersectionObserver(es => {
   for (const e of es) {
     if (!e.isIntersecting) continue;
@@ -844,7 +861,43 @@ const wirePast = f => {
     f.dataset.ready = '1';
   }, 100);
 };
-for (const f of document.querySelectorAll('.past iframe')) f.addEventListener('load', () => wirePast(f), { once: true });
+// Earlier menu tiles load near the view, three at a time, and unload far off.
+// All of them at once ran the browser out of resources.
+const loads = [];
+let loading = 0;
+const nextLoad = () => {
+  while (loading < 3 && loads.length) {
+    const f = loads.shift();
+    if (!f.isConnected || f.getAttribute('src')) continue;
+    loading++;
+    let done = false;
+    const free = () => { if (done) return; done = true; loading--; nextLoad(); };
+    f.addEventListener('load', () => { free(); wirePast(f); }, { once: true });
+    setTimeout(free, 8000);
+    f.src = f.dataset.src;
+  }
+};
+const pastNear = new IntersectionObserver(es => {
+  for (const e of es) if (e.isIntersecting && !e.target.getAttribute('src') && !loads.includes(e.target)) loads.push(e.target);
+  nextLoad();
+}, { rootMargin: '800px 0px' });
+// Far off, a tile goes back to its still.
+const pastFar = new IntersectionObserver(es => {
+  for (const e of es) {
+    if (e.isIntersecting) continue;
+    const f = e.target, i = loads.indexOf(f);
+    if (i >= 0) loads.splice(i, 1);
+    if (!f.getAttribute('src')) continue;
+    const fresh = f.cloneNode(false);
+    fresh.removeAttribute('src');
+    delete fresh.dataset.ready;
+    f.parentElement.classList.remove('live');
+    f.replaceWith(fresh);
+    watchPast(fresh);
+  }
+}, { rootMargin: '2400px 0px' });
+const watchPast = f => { pastNear.observe(f); pastFar.observe(f); };
+document.querySelectorAll('.past iframe').forEach(watchPast);
 goLive();
 layout();
 paint();

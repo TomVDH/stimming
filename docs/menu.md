@@ -11,7 +11,7 @@ Terms follow `GLOSSARY.md`. Prose: ASD-STE100, double density.
   | Address | `data-view` | Shows |
   |---|---|---|
   | `./` | `clock` | The Clock: twelve main-shelf toys on a dial. The default. |
-  | `./?all` | `all` | The whole main shelf. Only this view shows the Series switch, the Lab link and a Clock link. |
+  | `./?all` | `all` | The whole main shelf. Only this view shows the Series switch, the Lab link and a Clock link. Its footer also has a Credits link. |
   | `./?lab` | `lab` | The Lab. `lab/` redirects here. |
 
 - `toys.json` is the list of toys. The menu shows English names only.
@@ -75,7 +75,7 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 ### Footer
 - The glow is `mesh.js` (raw WebGL2 on `shared/gl.js`, 0.4 of its CSS size): slow noise picks from six hues (magenta, violet, cyan, green, amber, red) mixed in OKLab, rising as a low horizon (340 px at most), dimmer at the foot.
 - The pointer stirs and brightens it. It moves for 2.6 s after the last pointer move, then rests on one frame. Reduced motion draws one frame. Without WebGL2 the CSS glow stays.
-- The credit chip sits in the middle. On hover or focus its bands light and "onnøzelaer" rises in under it, letter by letter, out of a blur, in a kept place. Under that, one row of quips in lower-case mono: "some of these are very wonky and may suffer from *ss performance", a faded dash, "made with the help of ai". A phone stacks them and drops the dash.
+- The credit chip sits in the middle. On hover or focus its bands light and "onnøzelaer" rises in under it, letter by letter, out of a blur, in a kept place. Under that, one row of quips in lower-case mono: "some of these are very wonky and may suffer from *ss performance", a faded dash, "made with the help of ai", a faded dash, and a "credits" link to `credits/`. A phone stacks them and drops the dash.
 - The Clock shows no site version. `?all` keeps it.
 - `clock.js` builds the footer from its own markup.
 - Never clip on the root: the body then clips at its 8 px margin and boxes the glow.

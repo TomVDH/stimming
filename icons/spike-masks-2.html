@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Icon masks · spike 2</title>
+<style>
+  @font-face { font-family: "Iosevka Term Slab"; src: url("../shared/fonts/IosevkaTermSlab-Medium.woff2") format("woff2"); font-weight: 500; }
+  @font-face { font-family: B612; src: url("../shared/fonts/B612-Bold.woff2") format("woff2"); font-weight: 700; }
+  :root {
+    --bg: oklch(0.16 0.012 275);
+    --fg: oklch(0.95 0.01 275);
+    --muted: oklch(0.6 0.02 275);
+    --hair: oklch(0.3 0.02 275);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 500 14px/1.4 system-ui, sans-serif; }
+  .page { padding: 28px 32px 80px; max-width: 1400px; margin: 0 auto; }
+  h1 { font: 700 30px/1.1 B612, sans-serif; margin: 0 0 6px; }
+  h2 { font: 700 18px/1.2 B612, sans-serif; margin: 40px 0 4px; }
+  h2 small { color: var(--muted); font-weight: 400; }
+  p { color: var(--muted); margin: 0 0 8px; max-width: 76ch; }
+  a { color: var(--fg); }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 16px 0 4px; font: 500 12px "Iosevka Term Slab", monospace; letter-spacing: 0.08em; text-transform: uppercase; }
+  .bar button { font: inherit; letter-spacing: inherit; color: var(--fg); background: none; border: 1px solid var(--hair); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
+  .bar button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .bar span { color: var(--muted); margin-right: 4px; }
+
+  /* Matrix: one column per scheme, one row per toy. */
+  .matrix { display: grid; gap: 10px 14px; margin-top: 14px; align-items: center; }
+  .matrix .head { font: 500 11px/1.25 "Iosevka Term Slab", monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg); text-align: center; align-self: end; }
+  .matrix .head small { display: block; color: var(--muted); letter-spacing: 0.04em; text-transform: none; font-size: 11px; }
+  .matrix .row-name { font: 500 11px "Iosevka Term Slab", monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .cell { display: grid; place-items: center; }
+  .cell svg.m, .tile svg.m { display: block; overflow: visible; cursor: pointer; }
+
+  /* Shelf rows: the ?all tile, 150 wide, icon at 70%, label 10 px below. */
+  .shelf { display: flex; flex-wrap: wrap; gap: 12px 8px; margin-top: 10px; }
+  .tile { width: 150px; display: grid; justify-items: center; gap: 10px; }
+  .tile .obj { width: 150px; height: 150px; display: grid; place-items: center; }
+  .tile .name { font: 500 13px "Iosevka Term Slab", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg); }
+
+  /* Fill modes. Hue and ink fill the backing; none keeps only the outline. */
+  .f-hue { --cc: 1; }
+  .f-ink { --cc: 0.28; }
+  .f-ink svg.m { --h: 285 !important; }
+  svg.m .bk0 { stop-color: oklch(0.47 calc(0.12 * var(--cc)) var(--h)); }
+  svg.m .bk1 { stop-color: oklch(0.25 calc(0.075 * var(--cc)) var(--h)); }
+  svg.m .sd0 { stop-color: oklch(0.3 calc(0.09 * var(--cc)) var(--h)); }
+  svg.m .sd1 { stop-color: oklch(0.17 calc(0.05 * var(--cc)) var(--h)); }
+  svg.m .edge { stroke: oklch(1 0 0 / 0.3); }
+  svg.m .ring { stroke: oklch(0.8 calc(0.15 * var(--cc)) calc(var(--h) + 60)); }
+  .f-none svg.m :is(.back, .side, .shade) { opacity: 0; }
+  .f-none svg.m .edge { stroke: oklch(0.8 0.15 var(--h)); stroke-width: 2.5; }
+  .f-none svg.m .ring { stroke: oklch(0.8 0.15 calc(var(--h) + 60)); }
+
+  /* The source tiles render off screen; every mask shows them through use. */
+  .src { position: fixed; left: -4000px; top: 0; width: 1200px; pointer-events: none; }
+  .src .obj svg { width: 128px; height: 128px; overflow: visible; }
+  .src .defs { position: absolute; width: 0; height: 0; }
+  .note { margin-top: 48px; border-top: 1px solid var(--hair); padding-top: 14px; }
+  .err { color: oklch(0.7 0.2 25); }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Icon masks · round 2</h1>
+  <p>Spike 2 (stimming-t1h5). Offset, shaded and strange shapes, each filled and with no fill. Tom on round 1: "lets try offset or shaded or strange shapes -- i like the direction -- let's also ahve with no fill". Round 1: <a href="spike-masks-1.html">spike-masks-1</a>.</p>
+  <p>Hover any copy: every copy of that toy moves with it. Each copy shows the one live menu icon.</p>
+
+  <h2>Filled <small>· at 128</small></h2>
+  <div class="bar" id="fills"><span>Backing</span>
+    <button data-fill="hue" aria-pressed="true">Toy hue</button>
+    <button data-fill="ink" aria-pressed="false">One ink</button>
+  </div>
+  <div class="matrix f-hue" id="m128"></div>
+
+  <h2>No fill <small>· at 128</small></h2>
+  <div class="matrix f-none" id="m128n"></div>
+
+  <h2>At 64 <small>· filled, then no fill</small></h2>
+  <div class="matrix f-hue" id="m64"></div>
+  <div class="matrix f-none" id="m64n"></div>
+
+  <h2>On the shelf</h2>
+  <p>Real tile size from the whole shelf (<code>?all</code>): a 150 tile, the icon at 70%, the label under it.</p>
+  <div class="bar" id="shelfFills"><span>Backing</span>
+    <button data-fill="hue" aria-pressed="true">Toy hue</button>
+    <button data-fill="ink" aria-pressed="false">One ink</button>
+    <button data-fill="none" aria-pressed="false">No fill</button>
+  </div>
+  <div id="shelves" class="f-hue"></div>
+
+  <p class="note" id="status">Loading the menu icons…</p>
+</div>
+
+<div class="src" id="src" aria-hidden="true"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0/MorphSVGPlugin.min.js"></script>
+<script>
+(async () => {
+  const NS = 'http://www.w3.org/2000/svg';
+  const TOYS = [
+    // id, label, backing hue.
+    ['prism', 'Prism', 295],
+    ['fidget', 'Fidget board', 62],
+    ['putty', 'Heat putty', 330],
+    ['fire', 'Fire', 38],
+    ['lava', 'Lava lamp', 350],
+    ['bubbles', 'Bubble wand', 215],
+    ['drone', 'Zena', 270],
+    ['eyes', 'Googly eyes', 145],
+  ];
+
+  // Shape helpers in the 128 box.
+  const soft = (pts, r) => pts.map((q, i) => {
+    const a = pts[(i + pts.length - 1) % pts.length], b = pts[(i + 1) % pts.length];
+    const la = Math.hypot(a[0] - q[0], a[1] - q[1]), lb = Math.hypot(b[0] - q[0], b[1] - q[1]);
+    const A = [q[0] + (a[0] - q[0]) / la * r, q[1] + (a[1] - q[1]) / la * r], B = [q[0] + (b[0] - q[0]) / lb * r, q[1] + (b[1] - q[1]) / lb * r];
+    return `${i ? 'L' : 'M'}${A[0].toFixed(2)} ${A[1].toFixed(2)}Q${q[0].toFixed(2)} ${q[1].toFixed(2)} ${B[0].toFixed(2)} ${B[1].toFixed(2)}`;
+  }).join('') + 'Z';
+  const circle = (cx, cy, r) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0Z`;
+  const poly = (n, cx, cy, r, rot) => Array.from({ length: n }, (_, k) => [cx + r * Math.cos(rot + k * 2 * Math.PI / n), cy + r * Math.sin(rot + k * 2 * Math.PI / n)]);
+  // A closed curve from a radius function of the angle.
+  const radial = (cx, cy, fr) => 'M' + Array.from({ length: 180 }, (_, k) => {
+    const a = k / 180 * 2 * Math.PI, r = fr(a);
+    return `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+  }).join('L') + 'Z';
+  const blob = radial(64, 70, a => 47 + 5 * Math.sin(3 * a + 0.6) + 3.5 * Math.sin(5 * a + 1.9) + 2 * Math.cos(2 * a));
+  // Twelve lobes, one per hour on the Clock.
+  const wave = radial(64, 64, a => 54 + 3.4 * Math.sin(12 * a));
+  // A leaf: two arcs between two tips on the diagonal.
+  const leaf = 'M20 108A70 70 0 0 1 108 20A70 70 0 0 1 20 108Z';
+  const puckTop = 'M10 98a54 17 0 1 0 108 0a54 17 0 1 0 -108 0Z';
+  const puckSide = 'M10 98V110A54 17 0 0 0 118 110V98A54 17 0 0 1 10 98Z';
+  const hexAt = (cx, cy, r) => soft(poly(6, cx, cy, r, -Math.PI / 2), 6);
+
+  // Fit: clip keeps the object inside; out lets the top break out; free never clips.
+  // Box is the object frame; floor puts the object's foot on that line.
+  const SCHEMES = [
+    { name: 'Now', sub: 'no mask', fit: 'free', box: [0, 0, 128, 128] },
+    { name: 'Offset disc', sub: 'disc sits low right', shape: circle(74, 76, 46), fit: 'free', box: [-6, -6, 124, 124] },
+    { name: 'Misprint', sub: 'fill and line off register', shape: hexAt(62, 76, 46), ring: hexAt(70, 68, 46), fit: 'out', cut: 76, box: [4, -2, 120, 120], floor: 114 },
+    { name: 'Shaded dome', sub: 'glossy, top breaks out', shape: circle(64, 74, 48), dome: true, fit: 'out', cut: 74, box: [4, -2, 120, 120], floor: 112 },
+    { name: 'Puck', sub: 'shaded, stands on it', shape: puckTop, side: puckSide, fit: 'free', box: [8, 0, 112, 112], floor: 100 },
+    { name: 'Blob', sub: 'top breaks out', shape: blob, fit: 'out', cut: 70, box: [4, -2, 120, 120], floor: 112 },
+    { name: 'Wave', sub: 'clipped inside', shape: wave, fit: 'clip', box: [6, 6, 116, 116] },
+    { name: 'Leaf', sub: 'object in front', shape: leaf, fit: 'free', box: [4, 4, 120, 120] },
+  ];
+
+  const status = document.getElementById('status');
+  try {
+    const html = await (await fetch('../index.html', { cache: 'no-store' })).text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const src = document.getElementById('src');
+    // The whole menu body goes in: the script also binds the wordmark and footer.
+    for (const n of [...doc.body.children]) if (n.tagName !== 'SCRIPT' && n.tagName !== 'LINK') src.append(document.importNode(n, true));
+    // The icon script builds parts and binds the timelines to the source tiles.
+    const code = [...doc.querySelectorAll('script:not([src])')].find(s => s.textContent.includes('registerPlugin(MorphSVGPlugin)'));
+    const s = document.createElement('script');
+    s.textContent = code.textContent;
+    document.body.append(s);
+  } catch (e) {
+    status.innerHTML = `<span class="err">Menu load failed: ${e.message}</span>`;
+    return;
+  }
+
+  // Each source icon gets an id for use, and its drawn foot in 0..1.
+  const SRC = {};
+  for (const [id] of TOYS) {
+    const tile = document.querySelector(`#src #${id}`);
+    const svg = tile.querySelector('.obj svg');
+    svg.id = 'src-' + id;
+    const v = svg.viewBox.baseVal, b = svg.dataset.box ? (([x, y, w, h]) => ({ x, y, width: w, height: h }))(svg.dataset.box.split(' ').map(Number)) : svg.getBBox();
+    SRC[id] = { tile, svg, foot: (b.y + b.height - v.y) / v.height };
+  }
+
+  let uid = 0;
+  const make = (sc, toy, px) => {
+    const [id, , hue] = toy, n = ++uid;
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 128 128');
+    svg.setAttribute('class', 'm');
+    svg.setAttribute('width', px);
+    svg.setAttribute('height', px);
+    svg.style.setProperty('--h', hue);
+    let [bx, by, bw, bh] = sc.box;
+    if (sc.floor != null) by = sc.floor - SRC[id].foot * bh;
+    const use = `<use href="#src-${id}" x="${bx}" y="${by.toFixed(2)}" width="${bw}" height="${bh}"/>`;
+    let body = `<defs>
+      <radialGradient id="bk${n}" cx="0.36" cy="0.28" r="0.85"><stop offset="0" class="bk0"/><stop offset="1" class="bk1"/></radialGradient>
+      <linearGradient id="sd${n}" x1="0" y1="0" x2="1" y2="0"><stop offset="0" class="sd1"/><stop offset="0.3" class="sd0"/><stop offset="1" class="sd1"/></linearGradient>
+      <radialGradient id="dk${n}" cx="0.46" cy="0.4" r="0.62"><stop offset="0.62" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity="0.5"/></radialGradient>
+      <radialGradient id="gl${n}" cx="0.5" cy="0" r="0.75"><stop offset="0" stop-color="#fff" stop-opacity="0.34"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+    </defs>`;
+    if (sc.side) body += `<path class="side" d="${sc.side}" fill="url(#sd${n})"/>`;
+    if (sc.shape) {
+      body += `<path class="back" d="${sc.shape}" fill="url(#bk${n})"/><path class="back" d="${sc.shape}" fill="url(#lit)" opacity="0.5"/>`;
+      // The dome: a dark edge, and a soft glint across its top.
+      if (sc.dome) body += `<path class="shade" d="${sc.shape}" fill="url(#dk${n})"/><ellipse class="shade" cx="64" cy="44" rx="30" ry="14" fill="url(#gl${n})"/>`;
+      body += `<path class="edge" d="${sc.shape}" fill="none" stroke-width="2" stroke-linejoin="round"/>`;
+    }
+    if (sc.side) body += `<path class="edge" d="${sc.side}" fill="none" stroke-width="1.5" stroke-linejoin="round" opacity="0.6"/>`;
+    if (sc.ring) body += `<path class="ring" d="${sc.ring}" fill="none" stroke-width="2.2" stroke-linejoin="round"/>`;
+    if (sc.fit === 'clip') {
+      body += `<clipPath id="c${n}"><path d="${sc.shape}"/></clipPath><g clip-path="url(#c${n})">${use}</g>`;
+    } else if (sc.fit === 'out') {
+      // The shape plus everything above its cut line.
+      body += `<clipPath id="c${n}"><path d="${sc.shape}"/><rect x="-64" y="-64" width="256" height="${sc.cut + 64}"/></clipPath><g clip-path="url(#c${n})">${use}</g>`;
+    } else body += use;
+    svg.innerHTML = body;
+    svg.dataset.toy = id;
+    svg.box = [bx, by, bw, bh];
+    return svg;
+  };
+
+  // Pointer events map from a copy to the source tile in its coordinates.
+  const relay = (svg, type, e) => {
+    const { tile, svg: s } = SRC[svg.dataset.toy];
+    const r = svg.getBoundingClientRect(), k = r.width / 128, [bx, by, bw, bh] = svg.box;
+    const fx = (e.clientX - r.left - bx * k) / (bw * k), fy = (e.clientY - r.top - by * k) / (bh * k);
+    const sr = s.getBoundingClientRect();
+    tile.dispatchEvent(new PointerEvent(type, { clientX: sr.left + fx * sr.width, clientY: sr.top + fy * sr.height, pointerType: e.pointerType || 'mouse' }));
+  };
+  const bind = svg => {
+    for (const t of ['pointerenter', 'pointermove', 'pointerleave']) svg.addEventListener(t, e => relay(svg, t, e));
+    return svg;
+  };
+
+  const matrix = (host, px) => {
+    host.style.gridTemplateColumns = `110px repeat(${SCHEMES.length}, ${px}px)`;
+    host.insertAdjacentHTML('beforeend', '<div></div>' + SCHEMES.map(s => `<div class="head">${s.name}<small>${s.sub}</small></div>`).join(''));
+    for (const toy of TOYS) {
+      host.insertAdjacentHTML('beforeend', `<div class="row-name">${toy[1]}</div>`);
+      for (const sc of SCHEMES) {
+        const c = document.createElement('div');
+        c.className = 'cell';
+        c.append(bind(make(sc, toy, px)));
+        host.append(c);
+      }
+    }
+  };
+  for (const [id, px] of [['m128', 128], ['m128n', 128], ['m64', 64], ['m64n', 64]]) matrix(document.getElementById(id), px);
+
+  const shelves = document.getElementById('shelves');
+  for (const sc of SCHEMES) {
+    shelves.insertAdjacentHTML('beforeend', `<h2>${sc.name} <small>· ${sc.sub}</small></h2>`);
+    const row = document.createElement('div');
+    row.className = 'shelf';
+    for (const toy of TOYS) {
+      const t = document.createElement('div');
+      t.className = 'tile';
+      const o = document.createElement('div');
+      o.className = 'obj';
+      o.append(bind(make(sc, toy, 105)));
+      t.append(o);
+      t.insertAdjacentHTML('beforeend', `<span class="name">${toy[1]}</span>`);
+      row.append(t);
+    }
+    shelves.append(row);
+  }
+
+  // A fill bar sets the mode class on its targets.
+  const fillBar = (bar, targets) => document.getElementById(bar).addEventListener('click', e => {
+    const k = e.target.dataset.fill;
+    if (!k) return;
+    for (const t of targets) document.getElementById(t).className = t === 'shelves' ? 'f-' + k : 'matrix f-' + k;
+    document.querySelectorAll(`#${bar} button`).forEach(b => b.setAttribute('aria-pressed', b.dataset.fill === k));
+  });
+  fillBar('fills', ['m128', 'm64']);
+  fillBar('shelfFills', ['shelves']);
+
+  status.textContent = 'Icons and timelines load from index.html at run time. This page copies no icon by hand, so it always shows the live menu icons.';
+})();
+</script>
+</body>
+</html>

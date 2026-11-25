@@ -54,9 +54,11 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // wind: a Wolf-Rayet wind's glow, its clumps, the nebula's light and its radius in R.
 // core: a buried neutron star shown in cutaway through the disk.
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
+// starspot: giant spots: weight, the caps' edge latitude, the big spot's latitude and longitude.
+// discE: a dark disc in front, edge on: light, centre, half width, half thickness, in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
+const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -283,6 +285,111 @@ export const STARS = {
     hal: [0.6, 0.7, 1], streak: [0.7, 0.8, 1],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 73.42,
+  },
+  // Stephenson 2-18: the largest known star, about 1,840 suns wide, 3,200 K.
+  // It sheds mass fast, so its dust is the thickest here; few, broad cells.
+  st218: {
+    ...FLARE, day: 25000, ribbon: 0.9, bubble: 0.1, lump: [0.1, 1.2, 0.7, 0.45],
+    row: 24, rsun: 1840, expo: 0.9, hotW: 1, coolW: 1.1, loop: 0.14, prom: 0.5, dust: 1.25, rays: 0.7,
+    hal: [0.85, 0.2, 0.1], streak: [1, 0.4, 0.26],
+    disk: [1.9, 1.6, 0, 0.14], disk2: [150, 0.45, 0.2, 0.05], tex: [4, 2, 0, 0.75],
+    wide: 'none', long: 'none', root: 98,
+  },
+  // WOH G64: a red supergiant in the Large Magellanic Cloud, about 1,540 suns wide.
+  // VLTI imaged it in 2024: an egg-shaped glow inside a ragged dust torus.
+  // The thick dust hides the surface; the glow stretches across, the torus stands upright.
+  wohg64: {
+    ...FLARE, day: 25000, ribbon: 0.9, bubble: 0.1, oblate: 0.3, lump: [0.05, 1.4, 0.7, 0.3], reach: 1.7,
+    ring: { tau: 1, ratio: 0.62, angle: 1.35, glow: 1.6, cx: 0.05, cy: -0.05, inner: 0, outer: 2.3, cloud: 0, width: 0.3, clump: 1.5 },
+    row: 25, rsun: 1540, expo: 1, hotW: 1, coolW: 1.1, loop: 0.1, prom: 0.35, dust: 1.4, rays: 0.8,
+    hal: [1, 0.45, 0.12], streak: [1, 0.6, 0.3],
+    disk: [1.9, 0.6, 0.06, 0.2], disk2: [150, 0.4, 0.2, 0.05], tex: [4, 2, 0, 0.45],
+    wide: 'none', long: 'none', root: 103.83,
+  },
+  // A quasi-star: a model from the early universe, 8,200 to 40,700 suns wide.
+  // A black hole at its heart feeds on the envelope instead of fusion.
+  // Drawn in cutaway, as the Thorne-Zytkow object is; 18,000 suns sits between the models.
+  quasi: {
+    ...FLARE, day: 50000, ribbon: 1, bubble: 0.1, core: 2, lump: [0.05, 1.8, 0.6, 0.3],
+    row: 26, rsun: 18000, expo: 1, hotW: 1, coolW: 1.1, loop: 0.2, prom: 0.5, dust: 0.3, rays: 0.9,
+    hal: [1, 0.35, 0.12], streak: [1, 0.55, 0.3],
+    disk: [1.85, 1.2, 0, 0.3], disk2: [160, 0.6, 0.3, 0.05], tex: [3, 1.6, 0, 0.7],
+    wide: 'none', long: 'none', root: 87.31,
+  },
+  // WR 140: a Wolf-Rayet star and an O star whose winds collide.
+  // Each close pass, every 2,895 days, puffs out a new shell of soot.
+  // The disk is the O star, 35 suns wide, veiled by the pair's winds.
+  // shells: their light, their spacing in R, the orbit in days.
+  wr140: {
+    ...FLARE, rain: 0, bubble: 0.3, wind: [0.8, 0.6, 0, 9], reach: 2.6,
+    shells: { light: 1.6, gap: 0.62, orbit: 2895 },
+    row: 27, rsun: 35, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 1.2,
+    hal: [0.6, 0.65, 1], streak: [0.65, 0.75, 1],
+    disk: [1.4, 0.12, 0.3, 0.3], disk2: [240, 0, 0, 0], tex: [40, 4, 0, 0.3],
+    wide: 'none', long: 'none', root: 146.83,
+  },
+  // VFTS 352: two hot O stars of nearly equal size, so close their envelopes touch.
+  // They orbit in under 27 hours, tidally locked, so the turn carries the twin round.
+  // pair: the twin's place in R and its size; the radius is not in the article: 7 suns is the toy's.
+  vfts352: {
+    ...FLARE, day: 1.124, rain: 0, bubble: 0.2, pair: { at: [1.85, 0, 0], size: 1, neck: 1, cool: 0 }, reach: 1.75,
+    row: 8, rsun: 7, expo: 0.95, hotW: 1, coolW: 0.8, loop: 0, prom: 0, dust: 0, rays: 1.25,
+    hal: [0.5, 0.6, 1], streak: [0.5, 0.65, 1],
+    disk: [1.5, 0.3, 0.05, 0.3], disk2: [100, 0.1, 0, 0.04], tex: [80, 9, 0.04, 0.38],
+    wide: 'none', long: 'none', root: 164.81,
+  },
+  // XX Trianguli: an orange giant, 9 to 11 suns wide, blotched with giant spots.
+  // Doppler images show dark polar caps and a spot wider than the whole Sun.
+  xxtri: {
+    ...FLARE, spots: 1.5, day: 24, ribbon: 1.6, bubble: 0.2, starspot: [1, 1.0, 0.75, 0.6],
+    row: 16, rsun: 10, expo: 1, hotW: 1, coolW: 1.1, loop: 0.6, prom: 0.7, dust: 0.1, rays: 0.85,
+    hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
+    disk: [1.85, 1, 0.02, 0.32], disk2: [100, 0.6, 0.4, 0.1], tex: [40, 7, 0.08, 0.7],
+    wide: 'none', long: 'none', root: 196,
+  },
+  // Epsilon Aurigae: an F supergiant, about 143 to 358 suns wide; 200 here.
+  // Every 27 years a disc 3.8 AU wide and 0.475 AU thick crosses it for about two years.
+  // At this size the disc spans 2 R each way and stands 0.26 R thick each way.
+  epsaur: {
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.15, discE: [1, 0.45, 2.04, 0.26], reach: 1.8,
+    row: 11, rsun: 200, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.4, dust: 0.1, rays: 1,
+    hal: [1, 0.85, 0.6], streak: [1, 0.9, 0.7],
+    disk: [1.6, 0.6, 0.05, 0.35], disk2: [110, 0.3, 0.3, 0.06], tex: [30, 6, 0.06, 0.5],
+    wide: 'none', long: 'none', root: 138.59,
+  },
+  // Mothra: a yellow hypergiant, 271 suns, and a blue supergiant, 60 suns, 10.5 billion light years off.
+  // An unseen lens of 10,000 to a million suns magnifies them; the orbit is unknown.
+  // Far out the host galaxy shows as an arc. The partner holds still; its place is the toy's.
+  mothra: {
+    ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 2.2,
+    pair: { at: [2.5, 0.35, 1.2], size: 0.22, neck: 0, cool: 1 },
+    bow: { kind: 2, heading: 0.5, size: 36, col: [1, 0.45, 0.6] },
+    row: 28, rsun: 271, expo: 1, hotW: 1, coolW: 1, loop: 0.3, prom: 0, dust: 0.1, rays: 1,
+    hal: [1, 0.8, 0.45], streak: [1, 0.85, 0.6],
+    disk: [1.7, 0.7, 0.04, 0.3], disk2: [120, 0, 0.3, 0.06], tex: [20, 5, 0.06, 0.55],
+    wide: 'none', long: 'none', root: 130.81,
+  },
+  // Earendel: perhaps the most distant star, its light 12.9 billion years old.
+  // If single, a B star of 13,000 to 16,000 K and 103 to 393 suns; 200 here.
+  // A galaxy cluster magnifies it; far out its host galaxy shows as the Sunrise Arc.
+  earendel: {
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 1.5,
+    bow: { kind: 2, heading: 2.6, size: 45, col: [1, 0.38, 0.3] },
+    row: 2, rsun: 200, expo: 1, hotW: 1, coolW: 0.8, loop: 0.45, prom: 0.5, dust: 0, rays: 1.15,
+    hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
+    disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
+    wide: 'none', long: 'none', root: 155.56,
+  },
+  // Powehi (M87*): the first black hole imaged, 6.5 billion suns, in the galaxy Messier 87.
+  // The EHT sees its ring about 17 degrees from face on; the jet leaves near the line of sight.
+  // It feeds slowly, so its disc burns less than the quasar's.
+  powehi: {
+    ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
+    hole: { tilt: 1.27, light: 0.75, heat: 0.7, stars: 1, vol: { dens: 1.1, light: 1 } }, reach: 3, jet: 0.6,
+    row: 29, rsun: 25800, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    hal: [1, 0.5, 0.18], streak: [1, 0.72, 0.4],
+    disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
+    wide: 'none', long: 'none', root: 65.41,
   },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */
