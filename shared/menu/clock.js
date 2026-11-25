@@ -340,7 +340,11 @@ function start() {
     const notes = Object.assign(document.createElement('span'), { className: 'clock-notes' });
     const quip = (/** @type {string} */ text) => Object.assign(document.createElement('span'), { className: 'clock-note', textContent: text });
     notes.append(quip('some of these are very wonky and may suffer from *ss performance'));
-    if (note) notes.append(Object.assign(document.createElement('span'), { className: 'clock-dash', textContent: '\u2014', ariaHidden: 'true' }), quip(note.toLowerCase()));
+    const dash = () => Object.assign(document.createElement('span'), { className: 'clock-dash', textContent: '\u2014', ariaHidden: 'true' });
+    if (note) notes.append(dash(), quip(note.toLowerCase()));
+    // The Credits link ends the row; the Clock shows no other links.
+    const credits = credit.querySelector('.credits-link');
+    if (credits) { credits.className = 'clock-note clock-credits'; notes.append(dash(), credits); }
     sig.after(notes);
     credit.setAttribute('data-inline', '');
     // The glow is a small shader; without WebGL2 the footer keeps its CSS glow.
