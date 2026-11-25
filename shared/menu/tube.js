@@ -227,7 +227,7 @@ export async function tube(host, span) {
   }
   await build();
   // The words need their fonts; the menu loads both.
-  const fonts = Promise.all([document.fonts.load('700 32px B612'), document.fonts.load('400 32px B612'), document.fonts.load('500 12px "Iosevka Term Slab"')]).catch(() => {});
+  const fonts = Promise.all([document.fonts.load('400 12px B612'), document.fonts.load('800 32px "Iosevka Term Slab"'), document.fonts.load('700 32px "Iosevka Term Slab"'), document.fonts.load('400 32px "Iosevka Term Slab"')]).catch(() => {});
 
   // Breaks a line of words to fit a width; the rows come out near one length.
   function wrap(text, width) {
@@ -251,9 +251,9 @@ export async function tube(host, span) {
     return rows;
   }
   // With the cadence on, the name's letters stand askew in mixed weights. The same name always falls the same way.
-  // A trial (Tom, 2026-11-16): the name is in B612, the heading face. B612 has two weights.
-  const WEIGHTS = [700, 700, 400, 700];
-  const font = (weight, size) => `${weight} ${size}px B612, Gabarito, system-ui, sans-serif`;
+  // The name is in Iosevka Term Slab, as the wordmark (Tom, 2026-11-25); the menu loads 400 to 800.
+  const WEIGHTS = [800, 700, 400, 800];
+  const font = (weight, size) => `${weight} ${size}px "Iosevka Term Slab", ui-monospace, monospace`;
   /** @param {string} row @param {number} size @param {number} seed */
   function letters(row, size, seed) {
     let h = seed >>> 0;
@@ -285,7 +285,7 @@ export async function tube(host, span) {
       let seed = 7;
       for (const ch of words.name) seed = Math.imul(seed, 31) + ch.codePointAt(0) | 0;
       const rows = names.map((row, i) => letters(row, nameSize, seed + i * 101));
-      pen.font = `500 ${tagSize}px "Iosevka Term Slab", ui-monospace, monospace`;
+      pen.font = `400 ${tagSize}px B612, Gabarito, system-ui, sans-serif`;
       if ('letterSpacing' in pen) pen.letterSpacing = `${0.02 * tagSize}px`;
       const tags = words.tag ? wrap(words.tag, face * 0.38 * k) : [];
       const nameStep = nameSize * 1.1, tagStep = tagSize * 1.45, gap = tags.length ? tagSize * 2.1 : 0;
@@ -311,7 +311,7 @@ export async function tube(host, span) {
           // A short hairline parts the name from the motto.
           pen.fillRect(mid - 11 * k, y + gap * 0.42, 22 * k, Math.max(1.5, 1.5 * k));
           y += gap;
-          pen.font = `500 ${tagSize}px "Iosevka Term Slab", ui-monospace, monospace`;
+          pen.font = `400 ${tagSize}px B612, Gabarito, system-ui, sans-serif`;
           if ('letterSpacing' in pen) pen.letterSpacing = `${0.02 * tagSize}px`;
           for (const row of tags) { y += tagStep; pen.fillText(row, mid, y - tagSize * 0.45); }
         }

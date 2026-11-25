@@ -20,7 +20,9 @@
   --foot: calc(var(--gap) + var(--foot-gap) + var(--chip) + 58px + var(--foot-pad));
   /* The clock takes the height that is left: the window less the blocks above and the footer below.
      So the whole page fits the window. Below 200 px the page scrolls instead. */
-  --free: calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px);
+  /* The Re-roll stands under the clock (Tom, 2026-11-25): its gap and height come off too. */
+  --roll: 44px;
+  --free: calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px - var(--gap) - var(--roll));
   --clk: max(200px, min(92vw, 1200px, calc(var(--free) - var(--foot))));
 }
 /* Phones: the dial keeps 24 px clear of each edge, so a held toy never meets it.
@@ -40,6 +42,8 @@
 :root[data-view="clock"] .title { font-size: var(--title); }
 :root[data-view="clock"] .tagline { font-size: var(--tag); margin-top: calc(-0.6 * var(--gap)); }
 :root[data-view="clock"] main { gap: var(--gap); }
+/* The Re-roll hangs under the clock; this room keeps the footer clear of it. */
+:root[data-view="clock"] main { padding-bottom: calc(var(--gap) + var(--roll)); }
 
 /* The shelf and the face share one grid cell, so the face lies under the toys. */
 :root[data-view="clock"] main > .shelf {
@@ -61,7 +65,6 @@
   width: 14%; left: calc(50% + var(--x, 0) * 40.5% - 7%); top: calc(50% + var(--y, 0) * 40.5% - 7%);
 }
 :root[data-view="clock"][data-dial="24"] .clock-mid { inset: 28%; }
-:root[data-view="clock"][data-dial="24"] .clock-roll { top: 69%; }
 /* The wait dot sits where the comet starts: between the rings at twelve. */
 :root[data-view="clock"][data-dial="24"] main::before { top: calc(var(--clk) * 0.14); width: calc(var(--clk) * 0.14); }
 :root[data-view="clock"] main > .shelf > li[data-out] { display: none; }
@@ -142,17 +145,18 @@
 .clock-face[data-blink] .clock-plate { opacity: 1; }
 /* The tube draws the words in its picture; the page's own words stay for screen readers only. */
 .clock-face[data-tube] :is(.clock-name, .clock-tag) { opacity: 0; }
-.clock-name { max-width: 44cqw; font: 800 clamp(17px, 5cqw, 32px)/1.02 var(--sans); letter-spacing: -0.035em; text-wrap: balance; }
-.clock-tag { max-width: 38cqw; font: 500 clamp(10.5px, 1.9cqw, 12.5px)/1.45 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.02em; color: color-mix(in oklch, var(--fg) 76%, transparent); text-wrap: balance; }
+/* The name is Iosevka Term Slab and the motto B612 (Tom, 2026-11-25). */
+.clock-name { max-width: 44cqw; font: 800 clamp(17px, 5cqw, 32px)/1.02 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0; text-wrap: balance; }
+.clock-tag { max-width: 38cqw; font: 400 clamp(10.5px, 1.9cqw, 12.5px)/1.45 "B612", var(--sans); letter-spacing: 0.02em; color: color-mix(in oklch, var(--fg) 76%, transparent); text-wrap: balance; }
 .clock-tag:empty { display: none; }
 /* A short hairline parts the name from the motto. */
 .clock-tag::before { content: ""; display: block; width: 22px; height: 1px; margin: 0.4cqw auto 1.5cqw; background: color-mix(in oklch, var(--fg) 40%, transparent); }
 
-/* The Re-roll waits five seconds, then shows in the clock, low in the middle.
-   It sits under the motto and over the six o'clock toy; it scales with the face. */
+/* The Re-roll waits five seconds, then shows under the clock, in the middle (Tom, 2026-11-25).
+   It keeps its font; it scales with the face. */
 .clock-roll { display: none; }
 :root[data-view="clock"] .clock-roll {
-  position: absolute; left: 50%; top: 73%; translate: -50% -50%; z-index: 1;
+  position: absolute; left: 50%; top: calc(100% + var(--gap)); translate: -50% 0; z-index: 1;
   display: inline-flex; align-items: center; gap: max(6px, 1.2cqw); min-height: max(26px, 5cqw); padding: max(6px, 1.3cqw) max(11px, 2.4cqw); border-radius: 999px; cursor: pointer;
   border: 1px solid color-mix(in oklch, var(--fg) 26%, transparent); background: none; color: var(--fg);
   font: 500 clamp(10px, 1.8cqw, 12px)/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
@@ -220,6 +224,7 @@
   :root[data-view="clock"] main > .shelf .name { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
   /* The face gives up its box, so the Re-roll becomes the next row of the page. */
   :root[data-view="clock"] .clock-face { display: contents; }
+  :root[data-view="clock"] main { padding-bottom: 0; }
   :root[data-view="clock"] :is(.clock-comet, .clock-mid), :root[data-view="clock"] main::before { display: none; }
   :root[data-view="clock"] .clock-roll {
     position: static; translate: none; justify-self: center;
@@ -238,4 +243,4 @@
 
 /* A trial (Tom, 2026-11-16): every heading in B612.
    Delete this block to end the trial; tube.js names the same font for the toy's name. */
-:is(h2, h3, .sec-hd, .clock-name) { font-family: "B612", var(--sans) !important; }
+:is(h2, h3, .sec-hd) { font-family: "B612", var(--sans) !important; }
