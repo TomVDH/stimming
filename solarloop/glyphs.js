@@ -33,31 +33,33 @@ const hole = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${B}" stro
 const spot = (x, y, r) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${B}" opacity="0.4"/>`;
 
 /* ---------- the kinds ---------- */
+// Every kind draws its main body at about radius 20 of 64, so the box's size is the body's size.
+// Rings, discs, winds and jets reach past it toward the box's edge.
 const DRAW = {
-  main: () => body(32, 32, 22),
-  spinner: () => body(32, 32, 18, { rx: 24 }),
-  spotted: () => body(32, 32, 22) + spot(25, 30, 4) + spot(37, 40, 3) + spot(41, 26, 2),
-  belt: () => ring(32, 32, 27, 8, -12, 0) + body(32, 32, 11) + ring(32, 32, 27, 8, -12, 1),
-  runaway: () => body(36, 34, 11) + line('M14 14 Q6 34 16 54', 3),
-  hyper: () => body(42, 32, 10) + line('M30 30 L4 26 M30 34 L6 40', 1.5),
-  giant: () => body(32, 32, 26) + spot(40, 41, 8) + spot(19, 38, 4) + spot(36, 18, 3),
-  cocoon: () => halo(32, 32, 27) + body(32, 32, 13, { dim: 1 }),
-  core: () => body(32, 32, 22, { dim: 1 }) + halo(32, 32, 9) + dot(32, 32, 3),
-  quasi: () => body(32, 32, 26, { dim: 1 }) + hole(32, 32, 5),
-  brown: () => bands(32, 32, 16),
-  proto: () => line('M32 4 V18 M32 46 V60', 1.5) + ring(32, 32, 24, 5, 0, 0) + body(32, 32, 9) + ring(32, 32, 24, 5, 0, 1),
-  interacting: () => body(20, 32, 12) + line('M31 30 Q40 25 46 31', 3) + halo(48, 32, 9) + dot(48, 32, 2.5),
-  contact: () => body(24, 32, 13) + body(40, 32, 13),
-  darkdisc: () => body(22, 32, 13) + ring(44, 32, 16, 4, -70, 1),
-  wind: () => halo(32, 32, 24) + body(32, 32, 8),
-  shells: () => dot(32, 32, 3) + line('M18 32 A14 14 0 0 1 46 32', 1) + line('M10 32 A22 22 0 0 1 54 32', 1) + line('M3 32 A29 29 0 0 1 61 32', 1),
-  // The smallest bodies draw at 18 px, so their marks run heavier.
-  dwarf: () => halo(32, 32, 22) + dot(32, 32, 7),
-  pulsar: () => line('M18 4 L46 60', 5) + dot(32, 32, 8),
-  hole: () => ring(32, 34, 28, 6, 0, 0) + hole(32, 32, 11) + ring(32, 34, 28, 6, 0, 1),
-  sstars: () => ring(32, 32, 26, 14, 30, 1) + ring(32, 32, 20, 8, -40, 1) + hole(32, 32, 7) + dot(52, 22, 2) + dot(16, 40, 1.5),
-  quasar: () => line('M32 2 V22 M32 42 V62', 2) + ring(32, 32, 22, 7, 0, 1) + dot(32, 32, 4),
-  arc: () => line('M8 46 A30 30 0 0 1 56 46', 3) + dot(32, 17, 3) + halo(32, 50, 6),
+  main: () => body(32, 32, 20),
+  spinner: () => body(32, 32, 17, { rx: 22 }),
+  spotted: () => body(32, 32, 20) + spot(25, 30, 4) + spot(37, 40, 3) + spot(41, 26, 2),
+  belt: () => ring(32, 32, 31, 9, -12, 0) + body(32, 32, 16) + ring(32, 32, 31, 9, -12, 1),
+  runaway: () => body(36, 33, 18) + line('M12 10 Q2 33 12 56', 3),
+  hyper: () => body(40, 32, 16) + line('M24 28 L0 22 M24 36 L2 44', 1.5),
+  giant: () => body(32, 32, 22) + spot(40, 40, 7) + spot(20, 38, 3.5) + spot(36, 18, 2.5),
+  cocoon: () => halo(32, 32, 31) + body(32, 32, 18, { dim: 1 }),
+  core: () => body(32, 32, 22, { dim: 1 }) + halo(32, 32, 10) + dot(32, 32, 3.5),
+  quasi: () => body(32, 32, 24, { dim: 1 }) + hole(32, 32, 6),
+  brown: () => bands(32, 32, 20),
+  proto: () => line('M32 0 V14 M32 50 V64', 1.5) + ring(32, 32, 30, 6, 0, 0) + body(32, 32, 14) + ring(32, 32, 30, 6, 0, 1),
+  interacting: () => body(22, 32, 17) + line('M37 29 Q45 24 50 30', 3) + halo(52, 32, 9) + dot(52, 32, 2.5),
+  contact: () => body(21, 32, 14) + body(43, 32, 14),
+  darkdisc: () => body(24, 32, 17) + ring(47, 32, 19, 5, -70, 1),
+  wind: () => halo(32, 32, 31) + body(32, 32, 12),
+  shells: () => dot(32, 32, 4) + line('M18 32 A14 14 0 0 1 46 32', 1.2) + line('M10 32 A22 22 0 0 1 54 32', 1.2) + line('M2 32 A30 30 0 0 1 62 32', 1.2),
+  // The smallest bodies draw a few pixels wide, so their marks run heavy.
+  dwarf: () => halo(32, 32, 28) + dot(32, 32, 12),
+  pulsar: () => line('M16 0 L48 64', 6) + dot(32, 32, 14),
+  hole: () => ring(32, 34, 31, 7, 0, 0) + hole(32, 32, 14) + ring(32, 34, 31, 7, 0, 1),
+  sstars: () => ring(32, 32, 29, 15, 30, 1) + ring(32, 32, 22, 9, -40, 1) + hole(32, 32, 10) + dot(56, 20, 2.5) + dot(14, 42, 2),
+  quasar: () => line('M32 0 V20 M32 44 V64', 2.5) + ring(32, 32, 26, 8, 0, 1) + dot(32, 32, 6),
+  arc: () => line('M6 48 A31 31 0 0 1 58 48', 3) + dot(32, 17, 4) + halo(32, 50, 8),
 };
 
 // Each object's kind; an object not listed draws as a main sequence star.

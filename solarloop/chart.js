@@ -71,7 +71,8 @@ const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const fr = n => new Promise(r => setTimeout(r, n * 1000 / 30));
 
 // A body's size in the tray, 0 (the pulsar) to 1 (the quasi-star), on a log scale of radius.
-const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3));
+// The power spreads the large end, so a giant stands clearly over a dwarf (Tom, 2026-11-24).
+const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3)) ** 1.4;
 
 // The groups, by kind of body; an object in none of them joins "More".
 const GROUPS = [
