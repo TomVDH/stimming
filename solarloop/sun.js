@@ -260,7 +260,7 @@ export const STARS = {
   cygx1: {
     ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
     hole: { tilt: 0.16, light: 0.9, heat: 1.2, stars: 1, vol: { dens: 1, light: 1 } }, reach: 3,
-    row: 18, rsun: 9.0e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    row: 18, rsun: 9.0e-5, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.6,
     hal: [0.55, 0.7, 1], streak: [0.6, 0.75, 1],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 98,
@@ -268,8 +268,8 @@ export const STARS = {
   // Sagittarius A*: the hole at the centre of our galaxy, 4.3 million suns.
   sgra: {
     ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
-    hole: { tilt: 0.18, light: 0.8, heat: 0.85, stars: 1.2, vol: { dens: 1, light: 1 } }, reach: 3,
-    row: 17, rsun: 18.3, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    hole: { tilt: 0.18, light: 0.8, heat: 0.85, stars: 1.2, vol: { dens: 1.7, light: 1.25 } }, reach: 3,
+    row: 17, rsun: 18.3, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.6,
     hal: [1, 0.45, 0.15], streak: [1, 0.7, 0.4],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 82.41,
@@ -281,7 +281,7 @@ export const STARS = {
     // Overhauled (Tom, 2026-11-24): a blazing disc, a dusty torus, broad-line clouds, winds, a helical jet.
     // The tilt looks over the torus's rim into the nucleus, as a quasar is seen.
     hole: { tilt: 0.38, light: 1.25, heat: 1.9, stars: 0.8, vol: { dens: 1.3, light: 1.6 }, qso: { torus: 1, clouds: 1, winds: 1 } }, reach: 4.2, jet: 1.3,
-    row: 19, rsun: 1100, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
+    row: 19, rsun: 1100, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0.6,
     hal: [0.6, 0.7, 1], streak: [0.7, 0.8, 1],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],
     wide: 'none', long: 'none', root: 73.42,

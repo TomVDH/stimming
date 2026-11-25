@@ -301,7 +301,7 @@ Intro copy in the Signal look: the Flemish name, the motto and its translation a
 - The shelf is a grid of square tiles, each `clamp(96px, 26vw, 150px)` wide, centred. The main shelf holds six a row at most; the Lab holds five. Gaps are `clamp(16px, 2.6vw, 28px)` by `clamp(12px, 2.4vw, 28px)`.
 - A tile is an icon, then its label 10 px below. The icon SVG takes 70% of the tile and may overflow it.
 - With the Series switch on, each series is its own grid under a Wave divider. Sections sit `clamp(20px, 3.4vw, 40px)` apart.
-- The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link and a Clock link. The Clock view shows neither link.
+- The footer sits `clamp(48px, 9vh, 120px)` below the shelf: credit line, the onnozelaer mark (34 px high), the version on hover, the Lab link, a Clock link and a Credits link. The Clock view shows neither of the first two; it puts Credits at the end of its quips row.
 
 **A toy page** (`shared/stim.css:47`, `:134`, `:148-153`)
 - `.wrap` is a grid with `clamp(20px, 3.4vw, 40px)` gaps and 28 px above. Body gutters are 16 px or the safe-area inset, whichever is larger.
@@ -394,7 +394,7 @@ Keycap, then a verb in lower case: `[CLICK] place`. No backing. Verbs at 62% `--
 - **Bar v2:** the wordmark, unboxed, top left. Then `/ TOY NAME` in bold slab caps at 0.1em; the slash is `--muted` (`shared/stim.css:374-392`). Hover, focus or a tap waves the mark into colour and slides in a `‹`. A Lab toy adds a small boxed tag.
 - **v1 header:** a back arrow, the mark at 22 px, the sound button at the right (`shared/stim.css:84-98`).
 - **The wave:** each letter lifts, flashes its colour and settles, one letter every 33.333 ms, in held frames (`stim-wave`, `shared/stim.css:103-132`).
-- **Menu:** no nav bar. The Clock has no links; the whole shelf (`?all`) holds a Lab link and a Clock link in its footer.
+- **Menu:** no nav bar. The Clock's only link is Credits, in its footer quips; the whole shelf (`?all`) holds a Lab link, a Clock link and a Credits link in its footer.
 
 ### Stage
 
