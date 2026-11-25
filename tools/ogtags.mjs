@@ -6,7 +6,9 @@
 //   node tools/ogtags.mjs [id ...]
 //
 // No ids writes every main-shelf toy. Run it after tools/sharecards.mjs.
+// The image URL carries ?v=<hash of the card>, so rerun it whenever a card changes.
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,7 +29,10 @@ let done = 0;
 for (const id of ids) {
   const t = toys[id], page = pageOf(id), file = join(ROOT, page);
   if (!t || !existsSync(file)) { console.error(`${id}: no page at ${page}`); process.exitCode = 1; continue; }
-  if (!existsSync(join(ROOT, 'shared', 'cards', `${id}.jpg`))) { console.error(`${id}: no card; run tools/sharecards.mjs ${id}`); process.exitCode = 1; continue; }
+  const card = join(ROOT, 'shared', 'cards', `${id}.jpg`);
+  if (!existsSync(card)) { console.error(`${id}: no card; run tools/sharecards.mjs ${id}`); process.exitCode = 1; continue; }
+  // Previews cache by URL; a hash of the card gives a new card a new URL.
+  const v = createHash('sha1').update(readFileSync(card)).digest('hex').slice(0, 8);
   // The motto describes the toy; a toy with none gets a plain line.
   const desc = t.tag || `${t.name}, a desk toy from Stimming.`;
   const url = SITE + page.replace(/index\.html$/, '');
@@ -37,7 +42,7 @@ for (const id of ids) {
     `<meta property="og:title" content="${esc(t.name)}">`,
     `<meta property="og:description" content="${esc(desc)}">`,
     `<meta property="og:url" content="${url}">`,
-    `<meta property="og:image" content="${SITE}shared/cards/${id}.jpg">`,
+    `<meta property="og:image" content="${SITE}shared/cards/${id}.jpg?v=${v}">`,
     '<meta property="og:image:width" content="1200">',
     '<meta property="og:image:height" content="630">',
     `<meta property="og:image:alt" content="${esc(`${t.name}: the Stimming share card`)}">`,
