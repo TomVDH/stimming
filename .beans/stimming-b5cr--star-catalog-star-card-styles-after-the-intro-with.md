@@ -5,7 +5,7 @@ status: in-progress
 type: task
 priority: normal
 created_at: 2026-11-24T23:12:15Z
-updated_at: 2026-11-24T23:34:50Z
+updated_at: 2026-11-25T00:17:03Z
 parent: stimming-e35i
 ---
 
@@ -28,3 +28,5 @@ Tom, 2026-11-24: "lets actually redo some styles for the info callout (we also w
 - [x] Our Sun's outline at the star's scale above the card: a circle, a speck, or the top of its circle; checked on Betelgeuse, Arcturus, Procyon, the Sun and the pulsar (Tom: "an outline of our sun's diameter above the intro call out")
 
 - [x] Dev: Star card, Show plays the card at any zoom (Tom: "add dev mode option to trigger the intro card irrespective of zoom")
+
+- [x] Review fix: on a black hole's card the Sun outline scales to the horizon (R / BCRIT), not the shadow; it was 2.6 times too large. Checked on Sagittarius A*: 2.7 px, a speck
