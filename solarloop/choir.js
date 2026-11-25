@@ -118,7 +118,8 @@ export const VOICES = {
   qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 1 }),
   // The Vela pulsar, nearer the quasar (Tom, 2026-11-24: less uncomfortable): the quasar's detuned pulse pad,
   // a trace of metal and machine for the neutron star, no screech, more body in the middle and low singers.
-  neutron: P({ ...song('overtones'), ...ARP, ...ANALOG, wob: 1, blastWave: 'square', glowWave: 'sine', wave: 'pulse', det: 10, res: 4, fmot: 0.45, metal: 0.25, bright: 1.2, step: 7, dist: 0.85, rev: 13, mix: 1.8, width: 1.8, oct: [1, 0.6, 0.5], swR: 0.04, swD: 0.1, fx: { radio: 0.3, sweep: 0.3, echo: 0.4, machine: 0.2 }, gain: 1 }),
+  // Tom set it in the lab (2026-11-24): up 11 semitones to G♯5, voice drift 19 cents, filter swell 0.75.
+  neutron: P({ ...song('overtones'), ...ARP, ...ANALOG, key: 11, aDrift: 19, swellAmt: 0.75, wob: 1, blastWave: 'square', glowWave: 'sine', wave: 'pulse', det: 10, res: 4, fmot: 0.45, metal: 0.25, bright: 1.2, step: 7, dist: 0.85, rev: 13, mix: 1.8, width: 1.8, oct: [1, 0.6, 0.5], swR: 0.04, swD: 0.1, fx: { radio: 0.3, sweep: 0.3, echo: 0.4, machine: 0.2 }, gain: 1 }),
 };
 // Normalization: each star's level against the Sun, measured offline.
 // K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render (2026-11-24).
@@ -143,7 +144,7 @@ export const NORM = {
   vycma: 0.27,
   wr124: 0.31,
   siriusb: 0.5,
-  neutron: 0.06,
+  neutron: 0.05,
   tzo: 0.12,
   cygx1: 0.26,
   sgra: 0.16,
