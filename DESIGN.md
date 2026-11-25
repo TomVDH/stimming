@@ -267,7 +267,7 @@ No type scale exists as tokens. Each size is a literal in its rule. These are th
 
 - **Wordmark** (B612, mixed weights per letter, `clamp(48px, 9vw, 104px)`, line-height 1, -0.02em): the menu title (`index.html:44-50`, `:142`). In the toy header it is 22 px (`shared/stim.css:97`); in Bar v2 it is 70% of the chip height (`:380`). Each letter rests white, tilted and lifted by its own amount.
 - **Display** (Gabarito 700, `clamp(44px, 8vw, 96px)`, 0.9, -0.04em): the toy's name above the vignette (`shared/stim.css:144`). Hidden today with its section.
-- **Intro name** (Gabarito 800, `clamp(30px, min(9cqw, 7.5cqh), 84px)`, 1.12, -0.035em): the title in the Signal intro (`shared/intro.css:81-84`, `:178`). It scales with the shorter side of the screen.
+- **Intro name** (Iosevka Term Slab 800, `clamp(30px, min(9cqw, 7.5cqh), 84px)`, 1.12, 0): the title in the Signal intro (`shared/intro.css:81-84`, `:178`). It scales with the shorter side of the screen.
 - **Headline** (Gabarito 800, `clamp(17px, 2.4vw, 22px)`, 1, -0.01em): the series name in a Wave divider (`index.html:190`), in the series colour.
 - **Title** (Gabarito 600, `clamp(18px, 1.8vw, 22px)`, 1.2, -0.015em): the vignette heading (`shared/stim.css:279`).
 - **Body** (Gabarito 500, 14 px, 1.35): the toy page default (`shared/stim.css:27`). The menu sets 16 px / 1.3 (`index.html:24`).
@@ -276,11 +276,11 @@ No type scale exists as tokens. Each size is a literal in its rule. These are th
 - **Toy label** (Iosevka Term Slab 500, 13 px, 0.06em, caps): the name under each menu icon (`index.html:144`). The Series switch and the Lab link use 12 px at 0.12em.
 - **Keycap** (Iosevka Term Slab 700, 9 to 10 px, 0.06em): keys in the strip, on actions and in sheet headers (`shared/stim.css:426`, `:479`).
 
-Intro copy in the Signal look: the Flemish name, the motto and its translation are set in B612 (`shared/intro.css:179-181`). Their size is `--copy`, `clamp(13px, min(3.6cqw, 1.9cqh), 18px)`.
+Intro copy in the Signal look: the subtitle, the Flemish name, the motto and its translation are set in B612 (`shared/intro.css:179-181`). Their size is `--copy`, `clamp(13px, min(3.6cqw, 1.9cqh), 18px)`.
 
 ### Named Rules
 
-**The Two Voices Rule.** Gabarito is for names and writing. Iosevka Term Slab in caps is for labels and controls. Bar v2 moved every control to slab caps because round Gabarito pills were "off-brand" (`docs/plans/bar-v2.md`, Why 2).
+**The Two Voices Rule.** Gabarito is for names and writing. Iosevka Term Slab in caps is for labels and controls. Bar v2 moved every control to slab caps because round Gabarito pills were "off-brand" (`docs/plans/bar-v2.md`, Why 2). One exception: the intro title is Iosevka Term Slab in mixed case (Tom, 2026-11-24).
 
 **The Askew Mark Rule.** The wordmark's letters never sit straight. Each has its own weight, tilt (-8 to 7 degrees) and lift (-0.05 to 0.04 em), from `MARK`.
 
