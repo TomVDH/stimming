@@ -56,12 +56,15 @@ body.is-full .is-bar { position: fixed; left: 0; right: 0; bottom: 8px; z-index:
 /* Bar v3's beat at 30 fps: oversize for one frame, snaps to size, holds, parts in three. */
 .acc.snd-wait .acc-i.snd { opacity: 0; }
 .acc .acc-i.snd.flashin { opacity: 0.62; animation: snd-show 0.3s steps(1, end) both; }
-.acc-i.snd.flashin::before, .acc-i.snd.flashin::after { content: ""; position: absolute; inset: -0.25em -0.35em; background: #fff; animation: 0.3s both; animation-timing-function: steps(1, end); }
+/* Shadows draw the box's side margins: a shadow adds no scroll width, so the fit ignores it. */
+.acc-i.snd.flashin::before, .acc-i.snd.flashin::after { content: ""; position: absolute; inset: -0.25em 0; background: #fff; box-shadow: -0.35em 0 0 #fff, 0.35em 0 0 #fff; animation: 0.3s both; animation-timing-function: steps(1, end); }
 .acc-i.snd.flashin::before { animation-name: snd-left; }
 .acc-i.snd.flashin::after { animation-name: snd-right; }
 @keyframes snd-show { 0% { opacity: 0; } 11.1% { opacity: 1; } 100% { opacity: 0.62; } }
-@keyframes snd-left { 0% { transform: scale(1.3, 1.6); clip-path: inset(0 50% 0 0); } 11.1%, 55.5% { transform: none; clip-path: inset(0 50% 0 0); } 66.6% { clip-path: inset(0 67% 0 0); } 77.7% { clip-path: inset(0 84% 0 0); } 88.8%, 100% { clip-path: inset(0 100% 0 0); } }
-@keyframes snd-right { 0% { transform: scale(1.3, 1.6); clip-path: inset(0 0 0 50%); } 11.1%, 55.5% { transform: none; clip-path: inset(0 0 0 50%); } 66.6% { clip-path: inset(0 0 0 67%); } 77.7% { clip-path: inset(0 0 0 84%); } 88.8%, 100% { clip-path: inset(0 0 0 100%); } }
+/* Each cut is a share of the whole box, side margins included. */
+/* The oversize frame grows by shadows too; a transform would count as overflow. */
+@keyframes snd-left { 0% { box-shadow: -0.35em 0 0 #fff, -1.2em 0 0 0.45em #fff, 0 0 0 0.45em #fff; clip-path: inset(-1em calc(0.5 * (100% + 0.7em) - 0.35em) -1em -2em); } 11.1%, 55.5% { clip-path: inset(0 calc(0.5 * (100% + 0.7em) - 0.35em) 0 -0.35em); } 66.6% { clip-path: inset(0 calc(0.67 * (100% + 0.7em) - 0.35em) 0 -0.35em); } 77.7% { clip-path: inset(0 calc(0.84 * (100% + 0.7em) - 0.35em) 0 -0.35em); } 88.8%, 100% { clip-path: inset(0 calc(100% + 0.35em) 0 -0.35em); } }
+@keyframes snd-right { 0% { box-shadow: 0.35em 0 0 #fff, 1.2em 0 0 0.45em #fff, 0 0 0 0.45em #fff; clip-path: inset(-1em -2em -1em calc(0.5 * (100% + 0.7em) - 0.35em)); } 11.1%, 55.5% { clip-path: inset(0 -0.35em 0 calc(0.5 * (100% + 0.7em) - 0.35em)); } 66.6% { clip-path: inset(0 -0.35em 0 calc(0.67 * (100% + 0.7em) - 0.35em)); } 77.7% { clip-path: inset(0 -0.35em 0 calc(0.84 * (100% + 0.7em) - 0.35em)); } 88.8%, 100% { clip-path: inset(0 -0.35em 0 calc(100% + 0.35em)); } }
 @media (prefers-reduced-motion: reduce) { .acc .acc-i.snd.flashin { animation: none; } .acc-i.snd.flashin::before, .acc-i.snd.flashin::after { display: none; } }
 .acc-i.snd .g { color: var(--fg); }
 .acc-flags { display: grid; justify-items: start; gap: 0.5em; }
@@ -71,8 +74,9 @@ body.is-full .is-bar { position: fixed; left: 0; right: 0; bottom: 8px; z-index:
 /* Tech tags: always the bottom-left corner of the intro. */
 .intro-tech { position: absolute; left: clamp(14px, 2.4cqw, 28px); bottom: max(14px, 2.4cqh); z-index: 3; font-size: clamp(11px, 1.4cqw, 14px); }
 .intro-tech .tag { height: 1.8em; padding: 0 0.5em; font-size: 0.85em; }
-.intro .acc--rail { position: absolute; top: var(--origin); left: calc(50% + var(--logo-box) / 2 + clamp(12px, 2.6cqw, 30px)); transform: translateY(-50%); margin: 0;
-  max-width: calc(50% - var(--logo-box) / 2 - clamp(20px, 3.6cqw, 40px)); padding-left: 1em; border-left: 1px solid oklch(1 0 0 / 0.3); font-size: clamp(10px, min(2.6cqw, 1.6cqh), 14px); }
+/* measure() sets --rail-x and --rail-y: the logo's right edge and centre. */
+.intro .acc--rail { position: absolute; top: var(--rail-y, var(--origin)); left: calc(var(--rail-x, 50% + var(--logo-box) / 2) + clamp(12px, 2.6cqw, 30px)); transform: translateY(-50%); margin: 0;
+  max-width: calc(100% - var(--rail-x, 50% + var(--logo-box) / 2) - clamp(20px, 3.6cqw, 40px)); padding-left: 1em; border-left: 1px solid oklch(1 0 0 / 0.3); font-size: clamp(10px, min(2.6cqw, 1.6cqh), 14px); }
 .intro .acc--rail .acc-i { white-space: normal; }
 /* Icon colour: the logo at rest and the access glyphs. The flash box stays as made. */
 /* The lab's !important beats the engine's inline --ink, in the Calm intro too. */
@@ -82,17 +86,28 @@ body.is-full .is-bar { position: fixed; left: 0; right: 0; bottom: 8px; z-index:
 .is-og { position: absolute; z-index: 3; overflow: hidden; pointer-events: none; }
 .is-og[hidden] { display: none; }
 .is-og iframe { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; transform-origin: 0 0; }
-/* Alignment: Centre as shipped; Left keeps the block centred with its lines flush left; */
-/* Bottom left sets the whole block in the corner, clear of the tech tags under it. */
-.is-stage .intro:is([data-align="left"], [data-align="bl"]) .intro-text { justify-items: start; text-align: left; grid-template-columns: max-content max-content; justify-content: center; }
-.is-stage .intro[data-align="bl"] .intro-text { justify-content: start; align-content: end; padding: 0 clamp(20px, 6cqw, 72px) calc(max(14px, 2.4cqh) + 3.2em); transform-origin: 0 100%; }
-.is-stage .intro:is([data-align="left"], [data-align="bl"]) .intro-text > * { grid-column: 1 / -1; }
-/* Rail stays beside the logo: the logo takes the first track, the row the second. */
-/* The flash box pads the emblem; it hangs out by that pad, so the emblem lines up with the text. */
-.is-stage .intro:is([data-align="left"], [data-align="bl"]) .intro-badge { grid-column: 1; grid-row: 1; margin-left: calc(-1 * var(--pad)); }
-.is-stage .intro:is([data-align="left"], [data-align="bl"]) .acc--rail { position: static; grid-column: 2; grid-row: 1; transform: none; align-self: center; max-width: 40cqw; margin: 0 0 var(--g-l) clamp(12px, 2.6cqw, 30px); }
-.is-stage .intro:is([data-align="left"], [data-align="bl"]) .acc--line { justify-items: start; }
-.is-stage .intro:is([data-align="left"], [data-align="bl"]) .acc--line .acc-flags { justify-content: flex-start; }
+/* Alignment: Centre as shipped, Bottom centre and Left as trials. */
+/* measure() writes --origin, --origin-x and --foot-clear from the real boxes. */
+/* Bottom centre: the Centre column sits at the foot, clear of the tech tags. */
+.is-stage .intro[data-align="bc"] .intro-text { align-content: end; padding: 0 16px var(--foot-clear, 64px); }
+/* An empty notes row would set the engine's fit limit above the block. */
+.is-stage .intro[data-align="bc"] .intro-notes:not(:has(.intro-num, .intro-snd)) { display: none; }
+/* Left: one column centred on the axis; every line starts at the emblem's edge. */
+.is-stage .intro[data-align="left"] .intro-text { justify-items: start; text-align: left; justify-content: center; grid-template-columns: minmax(0, max-content); }
+/* The flash box hangs out by its pad on both sides, so the emblem sets the edge. */
+.is-stage .intro[data-align="left"] .intro-badge { margin-inline: calc(-1 * var(--pad)); }
+/* The row adds no width to the column, so the logo holds in every row layout. */
+/* A negative margin does it; a zero width would let the reveal's clip cut the words. */
+.is-stage .intro[data-align="left"] .acc:not(.acc--rail) { width: max-content; max-width: calc(100cqw - var(--col-x, 16px) - 16px); margin-right: -100cqw; }
+.is-stage .intro[data-align="left"] .acc--line { justify-items: start; }
+/* The Line row wraps only at the stage's edge. */
+.is-stage .intro[data-align="left"] .acc--line .acc-flags { justify-content: flex-start; width: max-content; max-width: calc(100cqw - var(--col-x, 16px) - 16px); }
+/* The column scales about the measured logo centre. */
+.is-stage .intro:is([data-align="bc"], [data-align="left"]) .intro-text { transform-origin: var(--origin-x, 50%) var(--origin); }
+/* Left: the foot's lines start at the column's edge, too. */
+.is-stage .intro[data-align="left"] .intro-foot { justify-items: start; text-align: left; padding-left: var(--col-x, 16px); }
+/* A hidden probe resolves --g-m to pixels for measure(). */
+.is-stage .intro-probe { position: absolute; visibility: hidden; width: 0; height: var(--g-m); }
 /* Knobs: a Bar v3 Dev popover at the right; no glass, the intro stays in view. */
 .is-knobs { position: fixed; right: 12px; top: 12px; bottom: 64px; z-index: 220; width: min(360px, calc(100% - 24px)); overflow: auto; padding: 8px 12px 12px;
   background: oklch(0.1 0.012 275 / 0.86); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); font: 800 11px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase; }
@@ -150,7 +165,7 @@ function barHTML() {
   const sl = '<span class="sl">/</span>';
   return w('vprev', '‹') + `<button class="w" type="button" data-a="replay" title="Effect">${vName(S.variety)}${S.variety === 'strobe' ? glyph('flash') : ''}</button>` + w('vnext', '›')
     + sl + [['stack', 'List'], ['line', 'Line'], ['rail', 'Rail']].map(([v, l]) => `<button class="w" type="button" data-l="${v}" aria-pressed="${S.layout === v}">${l}</button>`).join('')
-    + sl + [['centre', 'Centre'], ['bl', 'Bottom left'], ['left', 'Left']].map(([v, l]) => `<button class="w" type="button" data-al="${v}" aria-pressed="${(S.align || 'centre') === v}" title="Alignment">${l}</button>`).join('')
+    + sl + [['centre', 'Centre'], ['bc', 'Bottom centre'], ['left', 'Left']].map(([v, l]) => `<button class="w" type="button" data-al="${v}" aria-pressed="${(S.align || 'centre') === v}" title="Alignment">${l}</button>`).join('')
     + sl + [['og', 'OG'], ['mono', 'Mono'], ['gradient', 'Gradient'], ['flat', 'Flat']].map(([v, l]) => `<button class="w" type="button" data-ic="${v}" aria-pressed="${(S.ic || 'gradient') === v}" title="Icon colour">${l}</button>`).join('')
     + sl + [[0, 'Load now'], [3000, '3 s'], [8000, '8 s'], [20000, '20 s']].map(([ms, l]) => `<button class="w" type="button" data-slow="${ms}" aria-pressed="${(S.slow || 0) === ms}" title="Simulated load">${l}</button>`).join('') + w('words', 'Stage words', !!S.stageWords)
     + sl + w('gate', 'Gate', !S.noGate) + w('calm', 'Calm', !!S.calm) + w('hold', 'Hold', !!S.hold)
@@ -237,7 +252,52 @@ const place = (/** @type {HTMLElement} */ root, /** @type {HTMLElement} */ row) 
   const text = /** @type {HTMLElement} */ (root.querySelector('.intro-text')), foot = text.querySelector('.intro-foot');
   if (S.layout === 'rail') text.append(row); else if (foot) foot.before(row); else text.append(row);
   MADE.fitIntro(root, TT());
+  measure(root);
 };
+// Reads the boxes at rest and writes the layout's anchors on the intro.
+// Offsets ignore transforms, so a beat in progress does not count.
+function measure(/** @type {HTMLElement} */ root) {
+  const text = /** @type {HTMLElement | null} */ (root.querySelector('.intro-text'));
+  if (!text) return;
+  for (const p of ['--origin', '--origin-x', '--foot-clear', '--col-x', '--rail-x', '--rail-y']) root.style.removeProperty(p);
+  const al = root.dataset.align;
+  const big = /** @type {HTMLElement | null} */ (text.querySelector('.intro-badge') || text.querySelector('.intro-name'));
+  if (!big) return;
+  // Rail hangs beside the logo, or the name when a toy has no emblem.
+  const rail = () => {
+    root.style.setProperty('--rail-x', `${(big.offsetLeft + big.offsetWidth).toFixed(1)}px`);
+    root.style.setProperty('--rail-y', `${(big.offsetTop + big.offsetHeight / 2).toFixed(1)}px`);
+  };
+  if (al !== 'bc' && al !== 'left') { rail(); return; }
+  let probe = /** @type {HTMLElement | null} */ (text.querySelector('.intro-probe'));
+  // The probe goes first: the engine's fit reads the last child.
+  if (!probe) { probe = document.createElement('span'); probe.className = 'intro-probe'; text.prepend(probe); }
+  const H = root.clientHeight, gm = () => /** @type {HTMLElement} */ (probe).offsetHeight;
+  const mid = () => [big.offsetLeft + big.offsetWidth / 2, big.offsetTop + big.offsetHeight / 2];
+  if (al === 'bc') {
+    // The block clears the highest thing at the foot: tech tags, motto or number.
+    const foots = [...root.querySelectorAll('.intro-tech, .intro-foot .intro-tag, .intro-foot .intro-num')]
+      .map(el => /** @type {HTMLElement} */ (el).getBoundingClientRect()).filter(r => r.height > 0);
+    const top0 = root.getBoundingClientRect().top;
+    const footTop = Math.min(H, ...foots.map(r => r.top - top0));
+    const set = () => root.style.setProperty('--foot-clear', `${(H - footTop + gm()).toFixed(1)}px`);
+    set();
+    // A block taller than the space shrinks its copy; the logo keeps its size.
+    for (let i = 0; i < 4 && big.offsetTop < 0.06 * H; i++) {
+      const k = +(text.style.getPropertyValue('--copy-k') || 1), base = H - footTop;
+      text.style.setProperty('--copy-k', Math.max(0.4, k * (base - 0.06 * H) / (base - big.offsetTop)).toFixed(3));
+      set();
+    }
+    root.style.setProperty('--origin', `${mid()[1].toFixed(1)}px`);
+  }
+  root.style.setProperty('--origin-x', `${mid()[0].toFixed(1)}px`);
+  rail();
+  if (al === 'left') {
+    // The column's edge is the emblem's edge: the badge hangs out by its pad.
+    const pad = big.classList.contains('intro-badge') ? (big.offsetWidth - (big.querySelector('.intro-emblem')?.clientWidth || big.offsetWidth)) / 2 : 0;
+    root.style.setProperty('--col-x', `${(big.offsetLeft + pad).toFixed(1)}px`);
+  }
+}
 
 // OG: the live menu tile, laid over the emblem at rest.
 // The menu draws some tiles by script, so only a live frame shows them whole.
@@ -338,7 +398,7 @@ async function run() {
     // The hold beat is the fallback, for a reveal that never reports open.
     if (ph === 'hold') flashSound(root, my);
     // A refit during the pop measures the blown-up box; this undoes it.
-    if (ph === 'flash' || ph === 'lines') MADE.fitIntro(root, TT());
+    if (ph === 'flash' || ph === 'lines') { MADE.fitIntro(root, TT()); measure(root); }
     // The emblem has landed once the lines open; the live tile can take its place.
     if (ph === 'lines' || ph === 'hold') requestAnimationFrame(placeOg);
     if (ph === 'wipe') { const og = /** @type {HTMLElement | null} */ (document.querySelector('.is-og')); if (og) og.hidden = true; }
@@ -370,7 +430,7 @@ async function run() {
     nameFlash: !!S.nameFlash, textFlash: !!S.textFlash, classic: !!S.classic, min: calm && (S.hold || S.static) ? 1e9 : undefined });
   if (my === gen) { strip('toy'); placeOg(); }
 }
-const liveFit = () => { const root = /** @type {HTMLElement | null} */ (document.querySelector('.is-stage .intro')); if (root) MADE.fitIntro(root, TT()); placeOg(); };
+const liveFit = () => { const root = /** @type {HTMLElement | null} */ (document.querySelector('.is-stage .intro')); if (root) { MADE.fitIntro(root, TT()); measure(root); } placeOg(); };
 function setFull(/** @type {boolean} */ on) {
   $('.is-stage')?.classList.toggle('full', on);
   document.body.classList.toggle('is-full', on);
@@ -385,6 +445,8 @@ export default {
     S = { variety: MADE.DEFAULT_VARIETY, layout: 'stack', group: 'Layout', tune: {}, ...d.keep.get('intro', {}) };
     S.tune ||= {};
     if (!MADE.VARIETIES[S.variety]) S.variety = MADE.DEFAULT_VARIETY;
+    // Bottom left is gone; Bottom centre takes its place.
+    if (S.align === 'bl') S.align = 'bc';
     const st = document.createElement('style');
     st.textContent = STYLE;
     document.head.append(st);
