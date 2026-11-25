@@ -331,10 +331,10 @@ export const STARS = {
     wide: 'none', long: 'none', root: 174.61,
   },
   // Gaia BH1: a sun-like star round a dormant black hole of 9.6 suns, every 186 days, 1.4 AU apart.
-  // The hole orbits 155 R out in Ophiuchus dust; the full view stands 130 times back.
+  // Framed after NOIRLab's view: G star prominent beside the orbiting dark hole (32 R out, full view 24x).
   gaiabh1: {
-    ...FLARE, spots: 0.8, day: 25, reach: 130,
-    bow: { kind: 8, heading: 0.42, orbit: 186, size: 155, col: [0, 0, 0] },
+    ...FLARE, spots: 0.8, day: 25, reach: 24,
+    bow: { kind: 8, heading: 0.42, orbit: 186, size: 32, col: [0, 0, 0] },
     row: 0, rsun: 0.99, expo: 1, hotW: 1, coolW: 1.15, loop: 0.9, prom: 0.9, dust: 0, rays: 0.9,
     hal: [1, 0.45, 0.14], streak: [1, 0.72, 0.36],
     disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12], tex: [170, 16, 0.15, 0.55],

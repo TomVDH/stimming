@@ -2049,6 +2049,26 @@ float v838Dust(vec3 w, out float streakOut, out float mottleOut) {
   mottleOut = clamp(nMed * 0.6 + (1.0 - wc.x) * 0.4, 0.0, 1.0);
   return clamp(billow * (0.45 + 0.85 * comb) * (0.45 + 0.9 * nFine) * (0.08 + 0.92 * cav) * env, 0.0, 1.0);
 }
+// Gaia BH1 Ophiuchus molecular dust: tilted galactic band of Worley billows and dark star rifts.
+float gaiaDust(vec3 w, out float wispOut, out float colOut) {
+  float r3 = length(w);
+  wispOut = 0.0; colOut = 0.5;
+  if (r3 > 1.38) return 0.0;
+  vec3 g = vec3(w.x * 0.84 + w.y * 0.54, -w.x * 0.54 + w.y * 0.84, w.z);
+  vec3 wq = g + 0.34 * (vec3(nbHn(g * 1.2 + 1.5), nbHn(g * 1.2 + 6.1), nbHn(g * 1.2 + 11.3)) - 0.5);
+  vec2 wc = nbWorley(wq * 2.9);
+  float nMed = nbHn(wq * 3.8 + 2.0);
+  float nFine = nbHn(wq * 8.5 + 8.5);
+  // Galactic plane dust band carved by clear dark rifts so Ophiuchus stars shine through.
+  float band = exp(-pow(wq.y / 0.62, 2.0));
+  float billow = smoothstep(0.72, 0.25, 0.7 * wc.x + 0.3 * nMed);
+  float rift = smoothstep(0.26, 0.58, nbHn(g * vec3(1.6, 2.8, 1.6) + vec3(3.4, -2.1, 1.9)));
+  float env = smoothstep(1.38, 0.66, r3);
+  // Bright lacy cirrus ridges stretch into glowing Einstein arcs behind the black hole.
+  wispOut = clamp(smoothstep(0.24, 0.05, wc.y + 0.16 * (nFine - 0.5)) * (0.35 + 0.65 * band) * env, 0.0, 1.0);
+  colOut = clamp(nMed * 0.65 + nFine * 0.35, 0.0, 1.0);
+  return clamp(billow * (0.22 + 0.78 * band) * (0.12 + 0.88 * rift) * (0.5 + 0.8 * nFine) * env, 0.0, 1.0);
+}
 // Crab Nebula (M1) filament density at w: thresholded Worley walls eroded by smooth noise.
 float crabFil(vec3 w, out float eOut, out vec3 rtOut) {
   vec3 rt = vec3(0.82 * w.x + 0.57 * w.y, -0.57 * w.x + 0.82 * w.y, w.z);
@@ -2102,17 +2122,12 @@ void main() {
     float fill = 0.16 * smoothstep(0.85, 0.2, sh) * (0.6 + 0.8 * m);
     o = vec4(dens / 2.8, sh / 2.0, fill / 0.3, 1.0);
   } else if (uWhich == 4) {
-    // Gaia BH1 in Ophiuchus: layered galactic dust cirrus tilted across the plane.
-    vec3 g = vec3(w.x * 0.85 + w.y * 0.52, -w.x * 0.52 + w.y * 0.85, w.z);
-    vec3 wq = g + 0.38 * (vec3(fbm(g * 2.2 + 1.5), fbm(g * 2.2 + 6.1), fbm(g * 2.2 + 11.3)) - 0.5);
-    float band = exp(-pow(wq.y / 0.68, 2.0));
-    float cl = fbm(wq * vec3(2.8, 4.6, 2.8) + 2.0);
-    float fil = pow(1.0 - abs(fbm(wq * 6.5 + 4.0) - 0.5) * 2.0, 4.0);
-    float fine = fbm(wq * 13.0 + 8.5);
-    float env = smoothstep(1.38, 0.72, length(w));
-    float dens = (0.45 * pow(smoothstep(0.32, 0.78, cl), 1.6) + 0.55 * fil * smoothstep(0.28, 0.72, cl)) * (0.28 + 0.72 * band) * env;
-    float wisp = fil * (0.4 + 0.9 * fine) * env;
-    o = vec4(clamp(dens * 1.4, 0.0, 1.0), clamp(wisp * 1.2, 0.0, 1.0), clamp(cl * 0.65 + fine * 0.35, 0.0, 1.0), 1.0);
+    // Gaia BH1 in Ophiuchus: Worley dust billows, lacy cirrus and one-step self-shade toward the star.
+    float wisp, colM;
+    float dens = gaiaDust(w, wisp, colM);
+    float w2, c2;
+    float sh = gaiaDust(w - normalize(w + 1e-4) * 0.09, w2, c2);
+    o = vec4(dens, sh, wisp, colM);
   } else if (uWhich == 0) {
     // The axis leans about 41 degrees from the line of sight.
     vec3 AX = normalize(vec3(-0.5, 0.42, 0.76));
@@ -2486,68 +2501,76 @@ vec3 ophStars(vec2 sky, float pw) {
   }
   return acc;
 }
-// Gaia BH1's dormant black hole, orbiting uBow.z R out in Ophiuchus; not to scale.
-// Marches baked 3D Ophiuchus dust (NBAKE); rays behind the hole bend round its shadow.
+// Gaia BH1's dormant black hole, orbiting uBow.z R out in Ophiuchus (after NOIRLab gaiabh1.webp).
+// 56-step front-to-back march over baked 192³ Worley dust with one-step self-shading and jq dithering;
+// rays behind the hole bend through its point lens into concentric star arcs and bright Einstein crescents.
 vec3 dormantHole(vec2 P) {
   vec2 q = P / (R * uBow.z);
   float pw = max(length(fwidth(q)), 1e-4);
-  float vis = smoothstep(3.0, 22.0, uView.w / R);
+  float vis = smoothstep(1.8, 9.0, uView.w / R);
   if (vis <= 0.0) return vec3(0.0);
-  // Tilted 3D orbit (about 52 degrees); uCamM turns world space into the view.
+  // Tilted 3D 186-day orbit (about 52 degrees); uCamM turns world space into the view.
   float ang = uBow.y;
   vec3 bhW = vec3(cos(ang), sin(ang) * 0.62, sin(ang) * 0.78);
   vec3 bhV = bhW * uCamM;
   vec2 dq = q - bhV.xy;
   float rr = max(length(dq), 1e-4);
-  float tE = 0.22, rSh = 0.4 * tE;
-  float defl = min(tE * tE / max(rr, rSh * 0.8), 3.0);
+  float tE = 0.28, rSh = 0.42 * tE;
+  float defl = min(tE * tE / max(rr, rSh * 0.8), 3.2);
   vec2 bend = (dq / rr) * defl;
-  float sh = smoothstep(rSh * 1.05, rSh * 0.92, rr);
-  // Front-to-back march through the baked 128³ Ophiuchus dust volume.
+  float sh = smoothstep(rSh * 1.04, rSh * 0.93, rr);
+  // 56-step front-to-back march through the baked 192³ Ophiuchus Worley dust volume.
   vec3 acc = vec3(0.0);
   float T = 1.0;
   float d2 = dot(q, q);
-  if (d2 < 2.4) {
-    const int N = 36;
-    float dt = 2.7 / float(N);
-    float dither = hash(gl_FragCoord.xy) - 0.5;
+  if (d2 < 2.2) {
+    float zMax = sqrt(max(2.2 - d2, 0.0));
+    const int N = 56;
+    float dt = 2.0 * zMax / float(N);
+    // Interleaved gradient noise breaks step bands cleanly, as in 3C 273.
+    float jq = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715)))) - 0.5;
     for (int i = 0; i < N; i++) {
-      float z = 1.35 - (float(i) + 0.5 + dither) * dt;
+      float z = zMax - (float(i) + 0.5 + jq) * dt;
       // Dust behind the black hole bends through its lens and hides behind its shadow.
       float behind = smoothstep(bhV.z + 0.08, bhV.z - 0.14, z);
       vec2 qRay = q - bend * behind;
       vec3 w = uCamM * vec3(qRay, z);
       if (any(greaterThan(abs(w), vec3(1.38)))) continue;
       vec4 nb = texture(uNeb, w / 2.8 + 0.5);
-      float dens = nb.r * 1.15;
+      float dens = nb.r, bSh = nb.g, wisp = nb.b, colM = nb.a;
+      // Faint wind and ambient dust focused round the dormant hole, never a glowing disc.
       float rBh = length(w - bhW);
-      // Faint wind and dust focused round the dormant hole, never a hot disc.
-      float halo = exp(-rBh / 0.24) * smoothstep(0.08, 0.15, rBh) * nb.g * 0.55;
+      float halo = exp(-rBh / 0.22) * smoothstep(0.09, 0.17, rBh) * wisp * 0.45;
       float tot = dens + halo;
       if (tot < 0.004) continue;
       float occ = 1.0 - sh * behind;
-      float rStar = max(length(w), 0.08);
-      // Warm light from the G star, over cool indigo and ochre Ophiuchus cirrus.
-      vec3 starC = vec3(1.0, 0.78, 0.48) * (0.34 / (0.12 + rStar * rStar * 2.4));
-      vec3 galC = mix(vec3(0.24, 0.34, 0.6), vec3(0.78, 0.5, 0.34), nb.b) * (0.28 + 0.75 * nb.g);
-      vec3 haloC = vec3(0.62, 0.74, 0.94) * halo * 1.35;
-      float powder = 0.6 + 0.4 * (1.0 - exp(-tot * 2.4));
-      acc += T * occ * ((starC + galC) * dens + haloC) * powder * dt * 1.1;
-      T *= exp(-tot * dt * 1.35);
-      if (T < 0.02) break;
+      float rStar = max(length(w), 0.06);
+      // One-step directional self-shading toward the G star (QBAKE style).
+      float selfSh = 0.08 + 1.45 * exp(-2.2 * bSh);
+      vec3 starC = vec3(1.0, 0.78, 0.46) * (0.48 / (0.1 + rStar * rStar * 2.6)) * selfSh;
+      vec3 galC = mix(vec3(0.22, 0.3, 0.54), vec3(0.84, 0.52, 0.28), colM) * (0.18 + 0.65 * wisp) * (0.35 + 0.65 * selfSh);
+      vec3 haloC = vec3(0.68, 0.8, 1.0) * halo * 1.1;
+      acc += T * occ * ((starC + galC) * dens + haloC) * dt * 1.15;
+      T *= exp(-(dens * 2.3 + halo * 0.8) * dt);
+      if (T < 0.015) break;
     }
   }
-  // Lensed Ophiuchus stars behind the dust; the shadow masks straight stars too.
+  // Dense Ophiuchus starfield bent into concentric curved arcs round the black hole.
   vec2 skyBent = (uCamM * vec3(q - bend, -1.0)).xy;
-  vec3 stars = ophStars(skyBent, pw) * (1.0 - sh) * T;
-  // Subtle Einstein ring and crisp photon ring, brightened slightly toward the star.
+  vec3 stars = (ophStars(skyBent, pw) + ophStars(skyBent * 2.1 + 7.3, pw * 2.1) * 0.45) * (1.0 - sh) * T;
+  // NOIRLab gaiabh1.webp signature: luminous double-crescent Einstein arcs of the bent Milky Way band.
+  vec2 dir = dq / rr;
+  float arcAz = pow(abs(dot(dir, normalize(vec2(-0.56, 0.83)))), 2.4);
+  vec3 ein = mix(vec3(0.62, 0.74, 0.96), vec3(0.95, 0.97, 1.0), arcAz);
+  ein *= (0.16 + 0.72 * arcAz) * exp(-pow((rr - tE) / (0.085 * tE), 2.0)) * (1.0 - sh);
+  // Secondary inner ringlet and crisp photon ring, warmed subtly toward the G star.
   vec2 toStar = normalize(-bhV.xy + 1e-4);
-  float side = 0.75 + 0.45 * max(dot(dq / rr, toStar), 0.0);
-  vec3 ein = vec3(0.55, 0.68, 1.0) * 0.18 * exp(-pow((rr - tE) / (0.13 * tE), 2.0)) * (1.0 - sh) * side;
-  vec3 phot = mix(vec3(0.8, 0.88, 1.0), vec3(1.0, 0.86, 0.68), 0.35 * max(dot(dq / rr, toStar), 0.0));
-  phot *= 0.65 * exp(-pow((rr - rSh * 1.03) / (0.045 * rSh), 2.0)) * side;
+  float side = 0.72 + 0.48 * max(dot(dir, toStar), 0.0);
+  vec3 ring2 = vec3(0.7, 0.8, 0.98) * 0.22 * exp(-pow((rr - 0.76 * tE) / (0.045 * tE), 2.0)) * (1.0 - sh);
+  vec3 phot = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.86, 0.66), 0.35 * max(dot(dir, toStar), 0.0));
+  phot *= 0.68 * exp(-pow((rr - rSh * 1.03) / (0.04 * rSh), 2.0)) * side;
   vec3 maskFar = -starfield(gl_FragCoord.xy) * uCam.w * sh;
-  return (acc + stars + ein + phot) * vis + maskFar;
+  return (acc + stars + ein + ring2 + phot) * vis + maskFar;
 }
 // The Einstein Cross (Q2237+030), after Hubble: a quasar 8 billion light years back,
 // lensed into four images round the bulge of a near barred spiral, Huchra's Lens.
