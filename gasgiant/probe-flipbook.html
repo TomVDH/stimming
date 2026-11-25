@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Twister flipbook probe</title>
+<style>
+/* Gas giant probe: the spike's backlit twister as flipbook cards, timed. */
+html, body { margin: 0; background: #050a0b; color: #cfe3df; font: 13px/1.4 system-ui, sans-serif; }
+canvas { display: block; width: 100vw; height: 100vh; }
+.note { position: fixed; left: 12px; top: 10px; opacity: 0.85; white-space: pre; text-shadow: 0 1px 2px #000; }
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="Fourteen twister cards in the upper void"></canvas>
+<div class="note" id="note">Baking...</div>
+<script>
+// A probe failure shows on the page.
+const failNote = e => { document.getElementById('note').textContent = 'Failed: ' + (e.reason || e.error || e.message || e); };
+addEventListener('error', failNote);
+addEventListener('unhandledrejection', failNote);
+</script>
+<script type="module">
+import { TRI_VS, program, linked } from '../shared/gl.js';
+import { twisterUniforms, TW_MAX, CARD_FX, CARD_FY, CARD_W, CARD_H, CARD_NF, CARD_NV, CARD_BAKE_FS, CARD_ENC_FS, CARD_GL, bakeCards } from './twisters.js';
+
+const QS = new URLSearchParams(location.search);
+/* ---------- The scene: a void backdrop, then the cards ---------- */
+// The void's haze: pale near the eye, the void's green far off, as in clouds.js.
+const HAZE_GL = /* glsl */`
+vec3 hazeC(float d) { return mix(vec3(0.5, 0.64, 0.58), vec3(0.24, 0.5, 0.38), smoothstep(8.0, 160.0, d)); }
+float hazeK(float d) { return 1.0 - exp(-d * 1.7 / 690.0); }
+// One flash: xyz in km, w its strength. The fall-off follows clouds.js.
+uniform vec4 uFl;
+const vec3 FLASH_C = vec3(0.64, 0.74, 1.0);
+float flashAt(vec3 p) { vec3 q = uFl.xyz - p; float d2 = dot(q, q); return uFl.w * (1.8 * exp(-d2 / 60.0) + 0.5 * exp(-sqrt(d2) / 14.0)); }`;
+// A painted void: a lumpy dark ceiling, a patchy teal floor, haze between.
+const SKY_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform float uAsp, uTan;
+${HAZE_GL}
+float h12(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float vn(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h12(i), h12(i + vec2(1, 0)), f.x), mix(h12(i + vec2(0, 1)), h12(i + vec2(1, 1)), f.x), f.y);
+}
+float fb(vec2 p) { return 0.5 * vn(p) + 0.25 * vn(p * 2.1 + 5.2) + 0.125 * vn(p * 4.3 + 1.7); }
+void main() {
+  vec3 rd = normalize(vec3((vUv.x * 2.0 - 1.0) * uTan * uAsp, (vUv.y * 2.0 - 1.0) * uTan, -1.0));
+  // The eye hangs at -20 km; the ceiling's base is near -4 km, the floor at -40 km.
+  float t = rd.y > 0.0 ? 16.0 / rd.y : 20.0 / -rd.y;
+  t = min(t, 1600.0);
+  vec2 xz = rd.xz * t;
+  vec3 c;
+  if (rd.y > 0.0) {
+    // Lumps hang from the ceiling; their crests catch a little floor light.
+    float l = fb(xz / 14.0);
+    c = mix(vec3(0.03, 0.08, 0.06), vec3(0.13, 0.25, 0.19), smoothstep(0.35, 0.75, l));
+  } else {
+    float l = fb(xz / 9.0);
+    c = mix(vec3(0.06, 0.27, 0.19), vec3(0.28, 0.62, 0.48), smoothstep(0.55, 0.8, l));
+  }
+  // A flash lights the ceiling and the floor round it.
+  c += FLASH_C * flashAt(vec3(0.0, -20.0, 0.0) + rd * t) * (rd.y > 0.0 ? 0.35 : 0.2);
+  c = mix(c, hazeC(t), hazeK(t));
+  o = vec4(c, 1.0);
+}`;
+// One instanced quad per twister, flat in the camera's plane (Tom, 2026-11-24).
+const CARD_VS = /* glsl */`#version 300 es
+precision highp float;
+layout(location = 0) in vec2 aQ;
+uniform vec4 uA[${TW_MAX}];
+uniform vec4 uB[${TW_MAX}];
+uniform mat4 uVP;
+uniform float uEyeY;
+uniform vec3 uRight;
+const float CD_FX = ${CARD_FX.toFixed(1)}, CD_FY = ${CARD_FY.toFixed(1)};
+out vec2 vT;
+flat out int vI;
+out float vD;
+out vec3 vW;
+void main() {
+  vec4 A = uA[gl_InstanceID], B = uB[gl_InstanceID];
+  float s = B.y / 24.0;
+  vec3 base = vec3(A.x, B.x, A.y);
+  vec3 p = base + uRight * (aQ.x - 0.5) * CD_FX * 2.0 * s * A.z + vec3(0.0, aQ.y * CD_FY * s, 0.0);
+  vT = aQ;
+  vI = gl_InstanceID;
+  vD = length(vec2(A.x, A.y));
+  vW = p;
+  gl_Position = uVP * vec4(p.x, p.y - uEyeY, p.z, 1.0);
+}`;
+const CARD_FS = /* glsl */`#version 300 es
+precision highp float;
+precision mediump sampler2DArray;
+in vec2 vT;
+flat in int vI;
+in float vD;
+in vec3 vW;
+out vec4 o;
+uniform vec4 uA[${TW_MAX}];
+uniform vec4 uB[${TW_MAX}];
+uniform float uT;
+${HAZE_GL}
+${CARD_GL}
+void main() {
+  vec4 A = uA[vI], B = uB[vI];
+  vec4 c = card(int(A.w + 0.5) % 4, vT, uT, B.w, B.z);
+  float a = c.a;
+  vec3 alb = mix(vec3(0.62, 0.78, 0.76), vec3(0.62, 0.56, 0.8), smoothstep(0.45, 1.0, vT.y * CD_FY / 24.0));
+  // A flash lights the card from inside; alpha stands in for thickness, so thin parts glow most.
+  vec3 rgb = c.rgb + alb * FLASH_C * flashAt(vW) * a * (1.0 - 0.55 * a);
+  // The haze in front tints a far card toward the void's colour.
+  o = vec4(mix(rgb / max(a, 1e-3), hazeC(vD), hazeK(vD)) * a, a);
+}`;
+const OUT_FS = /* glsl */`#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uSrc;
+void main() {
+  vec3 c = texture(uSrc, vUv).rgb;
+  c = c / (1.0 + c) * 1.15;
+  o = vec4(pow(max(c, 0.0), vec3(1.0 / 2.2)), 1.0);
+}`;
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false });
+gl.getExtension('EXT_color_buffer_float');
+const P = await linked(gl, { bake: program(gl, TRI_VS, CARD_BAKE_FS), enc: program(gl, TRI_VS, CARD_ENC_FS), sky: program(gl, TRI_VS, SKY_FS), card: program(gl, CARD_VS, CARD_FS), out: program(gl, TRI_VS, OUT_FS) });
+const vao = gl.createVertexArray();
+gl.bindVertexArray(vao);
+const qb = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, qb);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+/* The bake and the compression, as the toy runs them. */
+const note = document.getElementById('note');
+const px = new Uint8Array(4);
+// ?raw keeps the two-channel frames as they are, for a same-frame check.
+const book = await bakeCards(gl, P, { raw: QS.has('raw') });
+const glErr = gl.getError();
+
+/* The scene target: half float, as the toy's composite. */
+const dpr = Math.min(devicePixelRatio || 1, 2);
+const W = Math.round(innerWidth * dpr), H = Math.round(innerHeight * dpr);
+canvas.width = W; canvas.height = H;
+const tgt = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, tgt);
+gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, W, H);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+const sfb = gl.createFramebuffer();
+gl.bindFramebuffer(gl.FRAMEBUFFER, sfb);
+gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tgt, 0);
+
+// The eye at -20 km looks toward -z, as the toy's start view does.
+function viewProj() {
+  const fov = 62 * Math.PI / 180, asp = W / H, n = 0.5, fa = 3000, k = 1 / Math.tan(fov / 2);
+  // Column-major: x right, y up, the eye looks down -z.
+  return new Float32Array([k / asp, 0, 0, 0, 0, k, 0, 0, 0, 0, (fa + n) / (n - fa), -1, 0, 0, 2 * fa * n / (n - fa), 0]);
+}
+const VP = viewProj();
+const A = new Float32Array(TW_MAX * 4), B = new Float32Array(TW_MAX * 4), C = new Float32Array(TW_MAX * 4);
+// The cards draw far to near; the set already runs near to far.
+const order = [...Array(TW_MAX).keys()].reverse();
+const As = new Float32Array(TW_MAX * 4), Bs = new Float32Array(TW_MAX * 4);
+
+// A flash every 3 s inside one of the six nearest twisters, 18 km up.
+function flash(t) {
+  const k = Math.floor(t / 3), u = t - k * 3, i = (k * 7 + 3) % 6;
+  twisterUniforms(t, A, B, C);
+  const w = u < 0.04 ? u / 0.04 : Math.exp(-(u - 0.04) * 6) * (1 + 0.4 * Math.sin(u * 70));
+  return [A[i * 4], B[i * 4] + 18, A[i * 4 + 1], 2.5 * Math.max(0, w)];
+}
+function frame(t, cards) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sfb);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(P.sky.p);
+  gl.uniform1f(P.sky.u.uAsp, W / H);
+  gl.uniform1f(P.sky.u.uTan, Math.tan(31 * Math.PI / 180));
+  const fl = flash(t);
+  gl.uniform4fv(P.sky.u.uFl, fl);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  if (cards) {
+    twisterUniforms(t, A, B, C);
+    order.forEach((i, k) => { As.set(A.subarray(i * 4, i * 4 + 4), k * 4); Bs.set(B.subarray(i * 4, i * 4 + 4), k * 4); });
+    gl.useProgram(P.card.p);
+    gl.uniform4fv(P.card.u['uA[0]'] || P.card.u.uA, As);
+    gl.uniform4fv(P.card.u['uB[0]'] || P.card.u.uB, Bs);
+    gl.uniformMatrix4fv(P.card.u.uVP, false, VP);
+    gl.uniform1f(P.card.u.uEyeY, -20);
+    // The camera looks along -z, so its right is +x.
+    gl.uniform3f(P.card.u.uRight, 1, 0, 0);
+    gl.uniform1f(P.card.u.uT, t);
+    gl.uniform4fv(P.card.u.uFl, fl);
+    gl.uniform1i(P.card.u.uBook, 0);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, book.tex);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, TW_MAX);
+    gl.disable(gl.BLEND);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(P.out.p);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, tgt);
+  gl.uniform1i(P.out.u.uSrc, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+// Times n frames; each waits for the GPU, as __gg.bench does.
+function bench(n, cards) {
+  frame(0, cards);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const s = performance.now();
+  for (let i = 0; i < n; i++) { frame(i * 0.5, cards); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); }
+  return (performance.now() - s) / n;
+}
+const base = bench(120, false), withCards = bench(120, true);
+// bytes counts every mip level as stored.
+const res = { fmt: book.fmt, frameW: CARD_W, frameH: CARD_H, frames: CARD_NV * CARD_NF, mb: +(book.bytes / 1048576).toFixed(1), bakeMs: Math.round(book.bakeMs), encMs: Math.round(book.encMs), glErr, screen: `${W}x${H}`, baseMs: +base.toFixed(3), cardsMs: +withCards.toFixed(3), cardCostMs: +(withCards - base).toFixed(3) };
+window.__probe = res;
+note.textContent = `Flipbook: ${CARD_NV} varieties x ${CARD_NF} turn frames at ${CARD_W}x${CARD_H}, ${res.fmt}, ${res.mb} MB with mips.
+Bake ${res.bakeMs} ms, compression ${res.encMs} ms.
+Screen ${res.screen}: ${res.baseMs} ms bare, ${res.cardsMs} ms with 14 cards: the cards cost ${res.cardCostMs} ms.`;
+// The cards turn live for a minute, then the page sleeps.
+const st = performance.now();
+const loop = () => {
+  const s = (performance.now() - st) / 1000;
+  if (!document.hidden) frame(s, true);
+  if (s < 60) requestAnimationFrame(loop);
+};
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
