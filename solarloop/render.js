@@ -683,14 +683,21 @@ void main() {
     cool += neb * (0.16 + 1.0 * kn * kn);
     hot += neb * 0.15 * kn;
   }
-  // A giant ring system in front of the star: J1407b's, about 260 star widths across.
-  // Tilted, so an ellipse; dark bands and clear gaps; backlit dust glows near the star.
-  // It stands far off in space, so the star's turn and the drag leave it still.
+  // A giant ring system: J1407b's 37 rings with their gaps. Tilted, so an ellipse.
+  // uRing2.zw, when set, puts the rings round the star itself, scaled to that span in radii:
+  // the near half crosses the star's face and the star hides the far half (Tom, 2026-11-24).
+  // The drag turns them with the camera; the star's spin leaves them still.
   if (uRing.x > 0.0) {
     vec2 d = P / R - uRing.yz;
     float ca = cos(uRing2.x), sa = sin(uRing2.x);
     vec2 e = vec2(ca * d.x + sa * d.y, -sa * d.x + ca * d.y);
     float rho = length(vec2(e.x, e.y / uRing.w));
+    bool round = uRing2.w > 0.0;
+    float rhoR = rho;
+    // Map the scaled span onto the true one, so the bands and gaps keep their places.
+    if (round) rho = 43.0 + (rho - uRing2.z) / (uRing2.w - uRing2.z) * 86.0;
+    // Seen from a little above the plane, the half below the centre is the near half.
+    float behind = round && e.y > 0.0 && r < R ? 0.0 : 1.0;
     // At least 37 rings from 0.2 to 0.6 AU: about 43 to 129 star radii.
     float band = smoothstep(41.0, 46.0, rho) * smoothstep(131.0, 124.0, rho);
     // Fine ringlets inside broader rings; sharp edges, as Saturn's show.
@@ -698,16 +705,18 @@ void main() {
     float rings = 0.55 * smoothstep(0.35, 0.6, vn(vec3(rho * 0.7, 4.0, 1.0))) + 0.45 * fine;
     // Clear gaps; the widest near 0.4 AU, where a moon may sweep a lane.
     float gaps = (1.0 - exp(-pow((rho - 86.0) / 2.2, 2.0))) * (1.0 - 0.8 * exp(-pow((rho - 61.0) / 1.2, 2.0))) * (1.0 - 0.7 * exp(-pow((rho - 104.0) / 1.5, 2.0)));
-    float tau = uRing.x * band * gaps * mix(0.08, 1.8, rings * rings);
+    float tau = uRing.x * band * gaps * mix(0.08, 1.8, rings * rings) * behind;
     float T = exp(-tau);
     hot *= T; cool *= T;
+    // Round the star the rings catch its light, brightest close in: a bright system, not a shadow.
+    if (round) cool += uRing2.y * uDisk.x * uOff * (1.0 - T) * step(R, r) * (0.2 + 0.9 * exp(-(rhoR - uRing2.z) / 1.6));
     // Starlight scatters forward through the dust: strongest near the star's line.
     // Over the disk the rings only darken; off it they glow faintly.
     // Far out a long exposure lifts their sheen, so the whole system shows.
     float lit = (1.0 - T) * step(R, r) * (0.04 + 0.35 * exp(-(r - R) / (1.5 * R)) + 0.38 * uFar);
     cool += uRing2.y * uDisk.x * lit;
-    // The ringed body at the centre: a dim speck.
-    hot += 0.4 * uDisk.x * uOff * exp(-dot(d, d) / 0.3);
+    // The ringed body at the centre, when the rings are not the star's: a dim speck.
+    if (!round) hot += 0.4 * uDisk.x * uOff * exp(-dot(d, d) / 0.3);
   }
   hot *= shade;
   // Beta Lyrae's partner: its disc and stream are gas in the volume pass.

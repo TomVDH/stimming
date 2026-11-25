@@ -203,7 +203,9 @@ export const STARS = {
   // The rings, J1407b's, reach 0.6 AU: about 130 star radii from their centre.
   j1407: {
     ...FLARE, spots: 1.2, day: 3.2, ribbon: 1.8, sat: 1.1,
-    ring: { tau: 1, ratio: 0.32, angle: 0.5, glow: 0.7, cx: -40, cy: -28 },
+    // Rings round the star itself (Tom, 2026-11-24): a model, J1407b's rings set round their K star.
+    // inner, outer: the rings' span in star radii, scaled down so the whole system frames.
+    ring: { tau: 1, ratio: 0.3, angle: 0.22, glow: 1.4, cx: 0, cy: 0, inner: 1.5, outer: 6 }, reach: 2.4,
     row: 22, rsun: 1, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.35, dust: 0.1, rays: 0.8,
     hal: [1, 0.45, 0.15], streak: [1, 0.65, 0.35],
     disk: [1.8, 0.8, 0.1, 0.38], disk2: [50, 0.9, 0.55, 0.13], tex: [130, 13, 0.18, 0.62],
