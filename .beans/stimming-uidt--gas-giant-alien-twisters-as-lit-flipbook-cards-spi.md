@@ -14,6 +14,9 @@ Bake our own alien twister (not Tornado alley's funnel) offline at high quality;
 
 ## Tasks
 - [x] Bake page gasgiant/spike-twister.html: a grander alien twister, still in three lights (0.9 s at 1500 x 1000, in 100 tiles)
-- [ ] Tom approves the still
-- [ ] Bake the loop: opacity, thickness, normal, depth per frame
-- [ ] Cards in the upper void, lit live; frame time against the march
+- [x] Tom approves the still (taper, sweep, then three varieties: banded, wide, smooth)
+- [x] Decision (Tom, 2026-11-24): an unrolled wall per variety instead of a flipbook loop (2 MB each, no loop seam)
+- [x] Walls in the upper void, lit live with a rim; 0.9 ms a frame against 6.1 ms for the march
+- [x] Blend into the ceiling (wall-cloud sag) and the floor (dust heaps)
+- [x] Upper void 42 km tall, solid base, coloured tapered god rays near and far (Tom)
+- [ ] Tom's look at the void in the toy

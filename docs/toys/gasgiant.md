@@ -34,7 +34,9 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 - Everything outside is raymarched. The storm's billows swirl on angle and log radius, as Tornado alley's storm deck does.
 - The top deck (Tom, 2026-11-24): whole cover with no holes or breaks, in east-west bands with a few large swirls like Tornado alley's (Tom: "a couple of swirls that otherwise integrate into cloud bands"). A tile 4,096 km square, baked once at load, holds five whirls 300 to 840 km across; each drags the band lines round it and winds them into a calm core. One stands ahead of the start view. A step toward the sun lights each roll's sunward side. On the deck the sun leads; shade keeps little fill and takes a bruised violet in the folds, as under Tornado alley's storm base.
 - Grandeur over the tops (Tom, 2026-11-24): far bands fade into the limb's teal over 1,100 km, brightest toward the sun; the haze over the deck glows with a 40 km scale height, so a band of atmosphere stands over the curve and fades into space.
-- Twisters keep their simple form but take Tornado alley's funnel light (Tom, 2026-11-24): a lit flank that falls off into the body, cool slate shade that darkens with depth, a darker top under the ceiling.
+- Twisters take Tornado alley's funnel light (Tom, 2026-11-24): a lit flank that falls off into the body, cool slate shade that darkens with depth, a darker top under the ceiling.
+- The upper void's twisters are alien, tall and imposing (Tom, 2026-11-24), in three varieties: banded, wide, smooth. Each bakes once at load into an unrolled wall (angle across, height up). The march wraps the wall round a bent, swaying axis and turns it, so the collars spiral up; a girth wave climbs the column. The light stays live: normals from the wall, a rim toward the light, flashes. Six stand ahead of the eye, 38 to 240 km away, 42 km tall. The ceiling sags into a wall cloud round each top; a dust heap rises round each foot. They cost about 0.9 ms a frame on the RTX 3070. The other voids keep their noise twisters.
+- The upper void is 42 km tall, with a solid base (Tom, 2026-11-24). Narrow rifts let god rays in close by, wide breaks far off. The shafts are not the void's green: pearl under the ceiling, then rose-violet or ice blue by place; each tapers and fades as it falls.
 - At the first touch the capsule skims the tops to their horizon; thunderheads in one 90 km cell in fifteen punch up to 32 to 40 km, lumpy towers with domed tops and thin anvils frayed at the rim, pushed downwind; the haze lid's sheets pass as thin streaks combed by the wind. Inside the white deck, dense billows stand against brighter gaps (Tom, 2026-11-23).
 - Near the eye the white deck shows relief at Juno's scale: popcorn heads and folded ridges along the bands, with shaded valleys (Tom, 2026-11-23).
 - Three decks with a void under each of the upper two (Tom, 2026-11-23). Hourglass towers join each floor to its ceiling, far off in the haze.
@@ -44,9 +46,9 @@ Idea 367, group C: fall from orbit past the rings into the cloud bands. Bean `st
 |---|---|---|
 | 40 to 22 | Haze lid | Thin teal sheets over the tops |
 | 22 to 0 | Ammonia | White deck, popcorn heads and ridges |
-| 0 to -24 | Upper void | Storm ceiling, god rays, towers, a few twisters |
-| -24 to -38 | Brown | Deck |
-| -38 to -64 | Mushball fall | Void: slush hail falls in streaks |
+| 0 to -40 | Upper void | Solid storm ceiling, coloured god rays near and far, towers, six alien twisters |
+| -40 to -50 | Brown | Deck |
+| -50 to -64 | Mushball fall | Void: slush hail falls in streaks |
 | -64 to -92 | Water | Deck, lightning |
 | -92 to -140 | Shelves | Violet sheets 16 km apart, some whole, some lace |
 | -140 to -158 | Veil | Purple gauze |
@@ -107,6 +109,7 @@ Web Audio on the shared kit, muted by default. Wind through a low-pass that fall
 | `world.js` | Planet, decks, light table, ring profile, palette, shared GLSL |
 | `map.js` | Pass 1: bands, the storm, its wake |
 | `clouds.js` | Pass 3: the cloud march, voids and towers (noise kit from Volcano); `marchFS(zone)` cuts it into four zone programs. `SWIRL_FS` bakes the top deck's swirl tile |
+| `twisters.js` | The upper void's twisters: the wall bake (`WALL_FS`), their march (`TW_MARCH`), the ceiling sag and the foot dust (`TW_DECL`), and the set |
 | `sky.js` | Space, sun, rings, limb haze |
 | `post.js` | Pass 4: the composite. The final grade |
 | `cabin.js` | The capsule: wall, bezel, liner, panes; the window's two layers (near fog copied from Window seat, wet pane from `shared/wetglass.js`), cracks, the crush |

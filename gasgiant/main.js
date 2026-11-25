@@ -10,6 +10,7 @@ import { pruneGLSL } from '../shared/glsl-prune.js';
 import { R, SUN_AZ, SUN_EL, sunDir, ALT_TOP, ALT_DEEP, LAYERS, lightAt, lightTable, luma, LUT_N } from './world.js';
 import { MAP_FS } from './map.js';
 import { BAKE_FS, SWIRL_FS, marchFS, zoneFor } from './clouds.js';
+import { WALL_FS, WALL_W, WALL_H, WALL_N, TW_MAX, twisterUniforms } from './twisters.js';
 import { COMPOSITE_FS, FINAL_FS, BOKEH_FS } from './post.js';
 import { wetGlassMotion } from '../shared/wetglass.js';
 import { CABIN_FS } from './cabin.js';
@@ -155,7 +156,8 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const watch = loadWatch(ID, canvas);
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false, powerPreference: 'high-performance' });
-let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null;
+let P = null, vao = null, T = {}, bloom = null, vol = null, lut = null, swirl = null, wall = null;
+const twA = new Float32Array(TW_MAX * 4), twB = new Float32Array(TW_MAX * 4);
 let W = 1, H = 1, cssW = 1, cssH = 1;
 const D = detail({ maxDpr: 1.5, budget: 2.4e6, steps: 3, settle: 2, onChange: () => resize(true) });
 const flash = new Float32Array(16);
@@ -195,7 +197,7 @@ async function setup() {
   // Only the march zone the eye starts in links before the first frame.
   const zone = zoneFor(S.alt);
   const src = {
-    bake: BAKE_FS, swirl: SWIRL_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
+    bake: BAKE_FS, swirl: SWIRL_FS, wall: WALL_FS, map: MAP_FS, march: marchFS(zone), comp: COMPOSITE_FS, bok: BOKEH_FS, cabin: CABIN_FS, fin: FINAL_FS,
   };
   const set = {};
   for (const [k, fs] of Object.entries(src)) set[k] = program(gl, TRI_VS, pruneGLSL(fs));
@@ -212,6 +214,7 @@ async function setup() {
   watch.step('bake');
   bakeVolume(64);
   bakeSwirl(1024);
+  bakeWall();
   lut = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, lut);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, LUT_N, 1, 0, gl.RGBA, gl.FLOAT, lightTable());
@@ -252,6 +255,26 @@ function bakeSwirl(n) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
   gl.generateMipmap(gl.TEXTURE_2D);
+}
+
+// The twisters' unrolled walls: one layer per variety, angle across, height up.
+function bakeWall() {
+  wall = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
+  gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, WALL_W, WALL_H, WALL_N);
+  for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.REPEAT], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D_ARRAY, k, v);
+  const fb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.viewport(0, 0, WALL_W, WALL_H);
+  gl.useProgram(P.wall.p);
+  gl.bindVertexArray(vao);
+  for (let v = 0; v < WALL_N; v++) {
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, wall, 0, v);
+    gl.uniform1i(P.wall.u.uV, v);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb);
 }
 
 function resize(force = false) {
@@ -437,6 +460,16 @@ function render(dt) {
   gl.bindTexture(gl.TEXTURE_3D, vol);
   gl.uniform1i(u.uVol, 2);
   if (u.uSwirl) bind(gl, M, 'uSwirl', 4, swirl);
+  if (u.uWall) {
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D_ARRAY, wall);
+    gl.uniform1i(u.uWall, 5);
+    twisterUniforms(S.tC, twA, twB);
+    // ?qa: __gg.noTw = true hides them, to time the march without them.
+    if (globalThis.__gg?.noTw) twB.fill(0);
+    gl.uniform4fv(u.uTwA, twA);
+    gl.uniform4fv(u.uTwB, twB);
+  }
   gl.uniform3fv(u.uCam, cam);
   gl.uniform3fv(u.uFwd, b.fwd); gl.uniform3fv(u.uRight, b.right); gl.uniform3fv(u.uUp, b.up);
   gl.uniform1f(u.uT, S.tC);
