@@ -116,7 +116,9 @@ export const VOICES = {
   sgra: P({ ...song('phrygian'), ...ARP, ...ANALOG, det: 14, res: 5, fmot: 0.5, bright: 0.5, step: 16, dist: 0.85, rev: 14, mix: 1.8, width: 1.9, oct: [0.6, 0.8, 1.1], swR: 0.03, swD: 0.2, glowWave: 'sawtooth', fx: { dark: 0.5, echo: 0.45 }, gain: 1 }),
   // 3C 273: the first quasar, radio-loud and billions of light years away. A far transmission.
   qso: P({ ...song('sus'), ...ARP, ...ANALOG, wave: 'pulse', det: 10, res: 4, fmot: 0.45, bright: 1.3, step: 11, dist: 0.95, rev: 14, mix: 1.9, width: 1.9, oct: [1, 0.7, 0.8], swR: 0.04, swD: 0.15, glowWave: 'sine', fx: { radio: 0.35, sweep: 0.3, echo: 0.4 }, gain: 1 }),
-  neutron: P({ ...song('overtones'), ...ARP, wob: 1, blastWave: 'square', glowWave: 'sine', wave: 'fm', res: 8, fmot: 0.6, voice: 0.1, vowel: 1.4, metal: 0.7, bright: 1.2, step: 6, dist: 0.8, rev: 12, mix: 1.7, width: 1.7, oct: [1, 0.4, 0], swR: 0.03, swD: 0.06, fx: { machine: 0.6, screech: 0.35, radio: 0.4 }, gain: 1 }),
+  // The Vela pulsar, nearer the quasar (Tom, 2026-11-24: less uncomfortable): the quasar's detuned pulse pad,
+  // a trace of metal and machine for the neutron star, no screech, more body in the middle and low singers.
+  neutron: P({ ...song('overtones'), ...ARP, ...ANALOG, wob: 1, blastWave: 'square', glowWave: 'sine', wave: 'pulse', det: 10, res: 4, fmot: 0.45, metal: 0.25, bright: 1.2, step: 7, dist: 0.85, rev: 13, mix: 1.8, width: 1.8, oct: [1, 0.6, 0.5], swR: 0.04, swD: 0.1, fx: { radio: 0.3, sweep: 0.3, echo: 0.4, machine: 0.2 }, gain: 1 }),
 };
 // Normalization: each star's level against the Sun, measured offline.
 // K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render (2026-11-24).
@@ -141,7 +143,7 @@ export const NORM = {
   vycma: 0.27,
   wr124: 0.31,
   siriusb: 0.5,
-  neutron: 0.07,
+  neutron: 0.06,
   tzo: 0.12,
   cygx1: 0.26,
   sgra: 0.16,
