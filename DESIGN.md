@@ -36,7 +36,7 @@ colors:
   series-odd: "oklch(0.76 0.19 322)"
 typography:
   wordmark:
-    fontFamily: "B612, Gabarito, Avenir Next, Segoe UI, system-ui, sans-serif"
+    fontFamily: "Iosevka Term Slab, ui-monospace, monospace"
     fontSize: "clamp(48px, 9vw, 104px)"
     lineHeight: 1
     letterSpacing: "-0.02em"
@@ -166,7 +166,7 @@ Where the code and a ruling disagree, see "Drift and gaps" at the end.
 Stimming is a dark shelf of toys. The page itself stays quiet: near-black violet ground, white type, hairlines. The colour belongs to the toys, to their icons and to the eight letters of the wordmark.
 Tom's taste line governs every surface: "Daring, zany and original. Never skeuomorphic or fussy." Harmonograph and Music box were "way too involved". Bare-minimal is "too minimal". A menu concept must stay usable first.
 
-Two voices share the screen. Gabarito speaks for the page (titles, prose). Iosevka Term Slab in caps speaks for the machine (toy labels, every Bar v2 control, keycaps). B612 carries the Stimming wordmark and every heading: the Clock name, the menu headings and the toy-page headings.
+Two voices share the screen. Gabarito speaks for the page (titles, prose). Iosevka Term Slab in caps speaks for the machine (toy labels, every Bar v2 control, keycaps). Iosevka Term Slab also sets the Stimming wordmark (Tom, 2026-11-25). B612 carries every heading: the Clock name, the menu headings and the toy-page headings.
 One device ties the intro, the controls and the build link together: the flash box. It is a white box with dark content cut out of it. The intro lands the logo in it. A picked control inverts into it.
 
 A toy page puts play first. The stage fills the first screen. The controls sit in its four corners. Writing lives under the stage, and that zone is hidden today.
@@ -256,8 +256,9 @@ Tokens on `:root` in `shared/stim.css:13-24`. The Bar v2 tokens sit on `.stim2` 
 
 **Display Font:** Gabarito (with "Avenir Next", "Segoe UI", system-ui, sans-serif). Variable, 400 to 900. Self-hosted in `shared/fonts/`.
 **Body Font:** Gabarito (same stack, token `--sans`).
-**Label/Mono Font:** Iosevka Term Slab (with ui-monospace, monospace). Self-hosted in `shared/fonts/`, weights 500 and 700 (`shared/stim.css:307-308`). Token `--slab` on `.stim2`.
-**Wordmark and Heading Font:** B612 (with `--sans`). Self-hosted in `shared/fonts/`, weights 400 and 700. It sets the wordmark and every heading.
+**Label/Mono Font:** Iosevka Term Slab (with ui-monospace, monospace). Self-hosted in `shared/fonts/`, weights 400, 500, 700 and 800 (`shared/stim.css:307-308`). Token `--slab` on `.stim2`.
+**Wordmark Font:** Iosevka Term Slab (Tom, 2026-11-25), the label face, at the wordmark's per-letter weights.
+**Heading Font:** B612 (with `--sans`). Self-hosted in `shared/fonts/`, weights 400 and 700. It sets every heading.
 
 **Character:** A round, friendly sans for the page, set tight and heavy at size. A slab monospace in caps for anything that acts like a machine label.
 
@@ -483,8 +484,8 @@ Recorded as found. Nothing here is fixed.
 | 6 | Focus outlines are removed for every element with `!important`. The new rule is a `:focus-visible` ring in `--focus` (bean `stimming-knup`). | `shared/stim.css:40`; `index.html:37` |
 | 7 | `--focus` is defined twice. Its one shell use, the Series switch outline, loses to the rule in item 6. | `index.html:187` |
 | 8 | `--pick` and `--surface` are defined, and the shell uses neither. Only Fidget parts, lab pages and Viaduct read them. | `shared/stim.css:15`, `:20` |
-| 9 | B612 is now the wordmark and heading font. The trial notes in `clock.css`, `stim.css` and `tube.js` go with bean `stimming-im51`. | `shared/stim.css:1`, `:97` |
-| 10 | The wordmark asks for weights 400 to 900 per letter. B612 loads at 400 and 700 only, so the browser shows two weights. | `shared/stim.js:46-50` |
+| 9 | B612 is now the heading font; the wordmark moved to Iosevka Term Slab on 2026-11-25. The trial notes in `clock.css`, `stim.css` and `tube.js` go with bean `stimming-im51`. | `shared/stim.css:1`, `:97` |
+| 10 | The wordmark asks for weights 400 to 900 per letter. Iosevka Term Slab loads at 400, 500, 700 and 800, so 600 and 900 take the nearest. | `shared/stim.js:46-50` |
 | 11 | Iosevka has three `@font-face` blocks under two family names. `bar-v2.md` section 2 says they move into `stim.css`; the other two remain. The menu tagline asks first for a family that the menu does not declare. | `shared/stim.css:307-308`; `index.html:139-143`; `shared/intro.css:5-8` |
 | 12 | Literal colours stand in for tokens: `#fff` for the flash, `--intro-bg` repeats `--bg`, each page repeats `oklch(0.16 0.012 275)` in a `<style>` tag, `.fail` repeats `--muted`, and three backings are literals. | `shared/intro.css:11`; `shared/stim.css:83`, `:157`, `:170`, `:240`, `:416` |
 | 13 | Some menu icon gradients are hex, not OKLCH. | `index.html:212-217` |

@@ -160,6 +160,8 @@ float cells(vec3 p) {
 // Each pixel traces one ray backward, parallel to the others: a far observer.
 // RK4 on x'' = -1.5 h^2 x / r^5, the bend of light near a Schwarzschild hole.
 // The disc lies in y = 0 of the hole's frame, from the ISCO to ROUT.
+// The quasar bakes' domains: radius from r0 to r1, height within y, d layers.
+const QB = { r0: 23.4, r1: 39.8, y: 5.25, d: 32 }, QC = { r0: 8, r1: 28, y: 11, d: 48 };
 const HOLE = `
 const float BCRIT = ${BCRIT.toFixed(3)}, RIN = 3.0, ROUT = 20.0, REXIT = 40.0, SKYD = 40.0, TAU = 6.2831853;
 // The swirl's cycle in seconds: the gas shears for one cycle, then a fresh copy fades in.
@@ -281,51 +283,12 @@ float hn(vec3 p) {
   return texture(uNoise3, (i + f + 0.5) / 64.0).r;
 }
 float hn2(vec3 p) { return 0.65 * hn(p) + 0.35 * hn(p.zxy * 2.07 + 5.3); }
-// Worley F1: the distance to the nearest point, over all 27 neighbour cells.
-// A smaller search leaves straight seams.
-float wor(vec3 p) {
-  vec3 i = floor(p), f = p - i;
-  float d = 9.0;
-  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-    vec3 g = vec3(x, y, z);
-    vec3 o = vec3(h13(i + g), h13(i + g + 17.3), h13(i + g + 41.9));
-    d = min(d, dot(g + o - f, g + o - f));
-  }
-  return sqrt(d);
-}
-// The torus's dust: Worley billows, with clear gaps between them.
-// Texture noise erodes their edges; a second Worley scale costs too much.
-// fill: 0 at the band's edges, 1 in its middle, where the gaps close.
-float torusDust(vec3 q, float fill) {
-  float w = 0.75 * wor(q * 0.45) + 0.25 * hn(q * 0.9 + 5.1);
-  return smoothstep(0.6 + 0.3 * fill, 0.36 + 0.3 * fill, w);
-}
-// A band point in the dust's frame: the dust turns with the disc.
-// The radius stretches, so each billow draws out along the orbit.
-// Inner gas runs ahead, so the billows lean back as trailing chevrons.
-vec3 bandQ(float r, float phi, float y) {
-  // One turn in about 2.6 minutes (Tom, 2026-11-24: turn faster).
-  // 61 whole turns per 9600 s clock wrap, so the wrap shows no jump.
-  // Past the middle the swirl winds tighter and draws out longer, so the edge fans out.
-  float ro = max(r - 30.0, 0.0);
-  float pt = phi - uTime * (TAU * 61.0 / 9600.0) + 0.3 * (r - 30.0) + 0.01 * ro * ro;
-  float rs = 30.0 + 2.2 * (r - 30.0) + 0.05 * ro * ro;
-  return vec3(cos(pt) * rs, y, sin(pt) * rs);
-}
-// A cloud point in the broad-line layers' frame, as bandQ.
-// Inside the band the gas turns faster: one turn in about 73 s.
-// The layer above and the layer below take different billows.
-vec3 blrQ(float r, float phi, float y) {
-  float pt = phi - uTime * (TAU * 131.0 / 9600.0) + 0.2 * (r - 18.0);
-  float rs = 18.0 + 1.6 * (r - 18.0);
-  return vec3(cos(pt) * rs, y + sign(y) * 37.0, sin(pt) * rs);
-}
-// The broad-line clouds' density: Worley billows, eroded by texture noise.
-// env: the layer's shape; where it thins, the clouds break into masses.
-float blrDust(vec3 q, float env) {
-  float w = 0.7 * wor(q * 0.3) + 0.3 * hn(q * 0.8 + 2.7);
-  return smoothstep(0.56, 0.34, w + 0.55 * (1.0 - env)) * env;
-}
+// The quasar's bakes, made once at load: the band's and the clouds' dust and self-shade.
+// Each lies in its layer's own turning frame: angle, radius, height.
+uniform highp sampler3D uBandBake, uBlrBake;
+// The layers turn by rotating the lookup: whole turns per 9600 s clock wrap, so the wrap shows no jump.
+// The band turns once in about 2.6 minutes; the clouds, inside it, once in about 73 s.
+const float BAND_W = TAU * 61.0 / 9600.0, BLR_W = TAU * 131.0 / 9600.0;
 // The cloud layer's reach: radii CB0 to CB1, heights to CREACH times the layer's height.
 const float CB0 = 2.4, CB1 = 24.0, CREACH = 2.2;
 // The layer's height: thin inside, flaring outward, as a disc does.
@@ -426,30 +389,18 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
   if (uHoleQ.x > 0.0) {
     // The dusty torus: thick, clumpy, dark; its inner rim glows hot where the disc lights it.
     // A flat band, 12 wide and 3 tall (Tom, 2026-11-24: "much less tall").
-    float RT = 30.0, ar = 6.0, ay = 1.5;
-    if (r > RT - ar * 1.1 && r < 39.5 && abs(y) < ay * 3.5) {
-      // The shear is fixed, so it never winds up.
-      vec3 q = bandQ(r, phi, y);
-      // Worley holes run through the band; its inner and outer edges stay sharp.
-      // The top and bottom feather off as volume (Tom, 2026-11-24).
-      // Outward the band tapers to a third of its height and frays (Tom, 2026-11-24).
-      float taper = smoothstep(RT, 39.0, r);
-      float ayr = ay * (1.0 - 0.65 * taper);
-      float feather = exp(-0.5 * y * y / (ayr * ayr));
-      // The middle of the band is denser (Tom, 2026-11-24).
-      // Toward the end the dust breaks into separate streaks, as the blue layers fray.
-      float fill = exp(-pow((r - RT) / (ar * 0.5), 2.0)) * feather - 0.9 * taper;
-      float edge = smoothstep(RT - ar * 1.1, RT - ar * 0.85, r) * smoothstep(39.8, 36.0, r);
-      // Past the middle the dust splits into spiral fingers that fan out.
-      // They follow the shear in bandQ, so they trail as the chevrons do.
-      float fing = smoothstep(0.35, 0.85, 0.5 + 0.5 * sin(14.0 * atan(q.z, q.x) + 4.0 * hn(q * 0.3)));
-      float dd = torusDust(q, fill) * mix(1.0, fing, taper) * edge * feather * uHoleQ.y;
+    float RT = 30.0, ar = 6.0;
+    if (uHoleQ.y > 0.0 && r > ${QB.r0.toFixed(2)} && r < ${QB.r1.toFixed(2)} && abs(y) < ${QB.y.toFixed(2)}) {
+      // The bake holds the Worley holes, the feather, the denser middle and the fanned fingers.
+      vec2 t = texture(uBandBake, vec3((phi - uTime * BAND_W) / TAU, (r - ${QB.r0.toFixed(2)}) / ${(QB.r1 - QB.r0).toFixed(1)}, y / ${(2 * QB.y).toFixed(1)} + 0.5)).rg;
+      float dd = t.x * uHoleQ.y;
       if (dd > 1e-3) {
         // The disc's light falls across the band's face; its inner edge burns.
         // The fanned streaks keep enough light to show.
+        float taper = smoothstep(RT, 39.0, r);
         float lit = (0.25 + 0.3 * taper) * pow((RT - ar) / r, 2.0) + 0.75 * exp(-0.6 * max(r - (RT - ar), 0.0));
         // A billow shades its own far side: dust a step toward the hole blocks the light.
-        lit *= exp(-1.2 * smoothstep(0.55, 0.3, wor(bandQ(r - 0.9, phi, y) * 0.45)));
+        lit *= exp(-1.2 * t.y);
         // The billows block light; the holes between them let it through.
         ext += dd * 0.7;
         L.x += dd * (0.03 + lit) * 0.6;
@@ -457,28 +408,20 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
     }
     // Broad-line clouds: a cloud layer above the disc and one below (Tom, 2026-11-24).
     // Worley billows give it structure; its edges fray into separate masses.
-    if (r > 8.0 && r < 28.0 && abs(y) > 0.5 && abs(y) < 11.0) {
-      // The layer rises as the disc flares.
-      float hc = 2.5 + 0.15 * r;
-      float env = smoothstep(8.0, 12.0, r) * smoothstep(28.0, 22.0, r) * exp(-pow((abs(y) - hc) / 2.4, 2.0));
-      if (env > 0.02) {
-        vec3 q = blrQ(r, phi, y);
-        float cd = blrDust(q, env);
-        if (cd > 1e-3) {
-          // Cloud a step toward the hole shades this point: the near side catches the light.
-          vec3 p2 = p - p / R3 * 1.4;
-          float sh = blrDust(blrQ(length(p2.xz), atan(p2.z, p2.x), p2.y), env);
-          float lit = 0.12 + exp(-1.8 * sh);
-          float cl = cd * uHoleQ.z;
-          L.y += cl * lit * 0.22 * 14.0 / R3;
-          ext += cl * 0.45;
-        }
+    if (uHoleQ.z > 0.0 && r > ${QC.r0.toFixed(2)} && r < ${QC.r1.toFixed(2)} && abs(y) > 0.5 && abs(y) < ${QC.y.toFixed(2)}) {
+      vec2 t = texture(uBlrBake, vec3((phi - uTime * BLR_W) / TAU, (r - ${QC.r0.toFixed(2)}) / ${(QC.r1 - QC.r0).toFixed(1)}, y / ${(2 * QC.y).toFixed(1)} + 0.5)).rg;
+      float cl = t.x * uHoleQ.z;
+      if (cl > 1e-3) {
+        // Cloud a step toward the hole shades this point: the near side catches the light.
+        float lit = 0.12 + exp(-1.8 * t.y);
+        L.y += cl * lit * 0.22 * 14.0 / R3;
+        ext += cl * 0.45;
       }
     }
     // Some clumps ride among the layers (Tom, 2026-11-24: the dots back, some of them).
     // Cells 5 apart in shells, 7 along the orbit; each shell turns whole at its own Kepler rate.
     // A clump stays inside its cell, so no cell edge cuts it.
-    if (r > 10.5 && r < 25.5 && abs(y) < 10.0) {
+    if (uHoleQ.z > 0.0 && r > 10.5 && r < 25.5 && abs(y) < 10.0) {
       float k = floor((r - 10.5) / 5.0), rk = 13.0 + 5.0 * k;
       // Whole turns per 9600 s clock wrap, so the wrap shows no jump.
       float om = TAU / 9600.0 * floor(sqrt(0.5 / (rk * rk * rk)) * 0.5 * 9600.0 / TAU + 0.5);
@@ -507,7 +450,7 @@ vec2 holeVol(vec3 p, vec3 v, out float ext) {
     // Winds: streaks blown off the disc's faces, rising at 30 to 60 degrees and streaming out.
     // The noise reads the direction, so no seam shows at the back.
     float el = atan(abs(y), r);
-    if (r > 4.0 && R3 < 40.0 && el > 0.35 && el < 1.2) {
+    if (uHoleQ.w > 0.0 && r > 4.0 && R3 < 40.0 && el > 0.35 && el < 1.2) {
       vec3 dn = p / R3;
       float n = hn(vec3(dn.x * 5.0, dn.z * 5.0 + sign(y) * 7.0, log(R3) * 1.6 - uTime * 0.25));
       float w = smoothstep(0.5, 0.85, n) * smoothstep(0.35, 0.6, el) * smoothstep(1.2, 0.9, el);
@@ -1439,6 +1382,100 @@ void main() {
   o = vec4(hazeN(q, vec3(0.0), false), hazeN(q, vec3(0.0), true), coronaQ(q), 0.0);
 }`;
 
+// The quasar's bakes: the band's and the clouds' dust and self-shade in their turning frames.
+// Angle along x, radius along y, height along the layers; made once at load.
+const QB_W = 512, QB_H = 96;
+const QBAKE = `${HEAD}
+precision highp sampler3D;
+uniform sampler3D uNoise3;
+// 0 bakes the band, 1 the broad-line clouds.
+uniform int uWhich;
+// This layer's height place, 0 at the bottom, 1 at the top.
+uniform float uLayer;
+out vec4 o;
+const float TAU = 6.2831853;
+${NOISE}
+// Smooth texture noise, as the trace's hn.
+float hn(vec3 p) {
+  vec3 x = p * 2.0, i = floor(x), f = fract(x);
+  f = f * f * (3.0 - 2.0 * f);
+  return texture(uNoise3, (i + f + 0.5) / 64.0).r;
+}
+// Worley F1: the distance to the nearest point, over all 27 neighbour cells.
+// A smaller search leaves straight seams.
+float wor(vec3 p) {
+  vec3 i = floor(p), f = p - i;
+  float d = 9.0;
+  for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+    vec3 g = vec3(x, y, z);
+    vec3 o = vec3(h13(i + g), h13(i + g + 17.3), h13(i + g + 41.9));
+    d = min(d, dot(g + o - f, g + o - f));
+  }
+  return sqrt(d);
+}
+// The torus's dust: Worley billows, with clear gaps between them.
+// Texture noise erodes their edges; a second Worley scale costs too much.
+// fill: 0 at the band's edges, 1 in its middle, where the gaps close.
+float torusDust(vec3 q, float fill) {
+  float w = 0.75 * wor(q * 0.45) + 0.25 * hn(q * 0.9 + 5.1);
+  return smoothstep(0.6 + 0.3 * fill, 0.36 + 0.3 * fill, w);
+}
+// A band point in the dust's frame, before its turn: the trace turns the lookup.
+// The radius stretches, so each billow draws out along the orbit.
+// Inner gas runs ahead, so the billows lean back as trailing chevrons.
+vec3 bandQ(float r, float phi, float y) {
+  // Past the middle the swirl winds tighter and draws out longer, so the edge fans out.
+  float ro = max(r - 30.0, 0.0);
+  float pt = phi + 0.3 * (r - 30.0) + 0.01 * ro * ro;
+  float rs = 30.0 + 2.2 * (r - 30.0) + 0.05 * ro * ro;
+  return vec3(cos(pt) * rs, y, sin(pt) * rs);
+}
+// A cloud point in the broad-line layers' frame, as bandQ.
+// The layer above and the layer below take different billows.
+vec3 blrQ(float r, float phi, float y) {
+  float pt = phi + 0.2 * (r - 18.0);
+  float rs = 18.0 + 1.6 * (r - 18.0);
+  return vec3(cos(pt) * rs, y + sign(y) * 37.0, sin(pt) * rs);
+}
+// The broad-line clouds' density: Worley billows, eroded by texture noise.
+// env: the layer's shape; where it thins, the clouds break into masses.
+float blrDust(vec3 q, float env) {
+  float w = 0.7 * wor(q * 0.3) + 0.3 * hn(q * 0.8 + 2.7);
+  return smoothstep(0.56, 0.34, w + 0.55 * (1.0 - env)) * env;
+}
+void main() {
+  float a = gl_FragCoord.x / ${QB_W}.0 * TAU, fy = gl_FragCoord.y / ${QB_H}.0;
+  if (uWhich == 0) {
+    float r = ${QB.r0.toFixed(1)} + fy * ${(QB.r1 - QB.r0).toFixed(1)}, y = (uLayer - 0.5) * ${(2 * QB.y).toFixed(2)};
+    float RT = 30.0, ar = 6.0, ay = 1.5;
+    vec3 q = bandQ(r, a, y);
+    // Outward the band tapers to a third of its height and frays (Tom, 2026-11-24).
+    float taper = smoothstep(RT, 39.0, r);
+    float ayr = ay * (1.0 - 0.65 * taper);
+    // The top and bottom feather off as volume (Tom, 2026-11-24).
+    float feather = exp(-0.5 * y * y / (ayr * ayr));
+    // The middle of the band is denser; toward the end the dust breaks into separate streaks.
+    float fill = exp(-pow((r - RT) / (ar * 0.5), 2.0)) * feather - 0.9 * taper;
+    float edge = smoothstep(RT - ar * 1.1, RT - ar * 0.85, r) * smoothstep(39.8, 36.0, r);
+    // Past the middle the dust splits into spiral fingers that fan out and trail.
+    float fing = smoothstep(0.35, 0.85, 0.5 + 0.5 * sin(14.0 * atan(q.z, q.x) + 4.0 * hn(q * 0.3)));
+    float dd = torusDust(q, fill) * mix(1.0, fing, taper) * edge * feather;
+    // The shade: dust a step toward the hole.
+    float sh = smoothstep(0.55, 0.3, wor(bandQ(r - 0.9, a, y) * 0.45));
+    o = vec4(dd, sh, 0.0, 1.0);
+  } else {
+    float r = ${QC.r0.toFixed(1)} + fy * ${(QC.r1 - QC.r0).toFixed(1)}, y = (uLayer - 0.5) * ${(2 * QC.y).toFixed(2)};
+    // The layer rises as the disc flares.
+    float hc = 2.5 + 0.15 * r;
+    float env = smoothstep(8.0, 12.0, r) * smoothstep(28.0, 22.0, r) * exp(-pow((abs(y) - hc) / 2.4, 2.0));
+    float cd = blrDust(blrQ(r, a, y), env);
+    // The shade: cloud a step toward the hole, along the line to it.
+    float k = 1.0 - 1.4 / length(vec2(r, y));
+    float sh = blrDust(blrQ(r * k, a, y * k), env);
+    o = vec4(cd, sh, 0.0, 1.0);
+  }
+}`;
+
 // The holes' cloud bake: longitude, log radius and height in the disc's frame.
 const HB_W = 512, HB_H = 128, HB_D = 32;
 // The noise has five octaves; one bake at load serves every hole.
@@ -2205,6 +2242,7 @@ export async function makeRender(gl, opts = {}) {
     vol: program(gl, TRI_VS, VOL),
     bake: program(gl, TRI_VS, BAKE),
     hbake: program(gl, TRI_VS, HBAKE),
+    qbake: program(gl, TRI_VS, QBAKE),
     blur: program(gl, TRI_VS, BLUR),
     acc: program(gl, TRI_VS, ACC),
     final: program(gl, TRI_VS, FINAL),
@@ -2304,6 +2342,35 @@ export async function makeRender(gl, opts = {}) {
     gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
   }
 
+  // The quasar's bakes: the band and the clouds, each made once at load.
+  function qbakeTex(depth, which) {
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_3D, t);
+    gl.texStorage3D(gl.TEXTURE_3D, 1, gl.RG8, QB_W, QB_H, depth);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_WRAP_R, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    const b = P.qbake;
+    gl.useProgram(b.p);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_3D, noise);
+    gl.uniform1i(b.u.uNoise3, 0);
+    gl.uniform1i(b.u.uWhich, which);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bakeFb);
+    gl.viewport(0, 0, QB_W, QB_H);
+    gl.bindVertexArray(empty);
+    for (let k = 0; k < depth; k++) {
+      gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, t, 0, k);
+      gl.uniform1f(b.u.uLayer, (k + 0.5) / depth);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+    }
+    gl.framebufferTextureLayer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, null, 0, 0);
+    return t;
+  }
+  const bandB = qbakeTex(QB.d, 0), blrB = qbakeTex(QC.d, 1);
+
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
   // The haze history is empty until a first frame fills it.
   let histOk = false;
@@ -2387,6 +2454,12 @@ export async function makeRender(gl, opts = {}) {
     gl.activeTexture(gl.TEXTURE6);
     gl.bindTexture(gl.TEXTURE_3D, holeB);
     gl.uniform1i(s.u.uHoleBake, 6);
+    gl.activeTexture(gl.TEXTURE7);
+    gl.bindTexture(gl.TEXTURE_3D, bandB);
+    gl.uniform1i(s.u.uBandBake, 7);
+    gl.activeTexture(gl.TEXTURE8);
+    gl.bindTexture(gl.TEXTURE_3D, blrB);
+    gl.uniform1i(s.u.uBlrBake, 8);
     gl.uniform4fv(s.u.uWind, v.band.wind);
     gl.uniformMatrix3fv(s.u.uCamM, false, v.camM);
     gl.uniform1f(s.u.uCore, v.band.core);
