@@ -250,6 +250,12 @@ async function mountRound(host, id, r, my, pick) {
   });
   if (my !== gen || !frame.contentDocument) return;
   const doc = frame.contentDocument;
+  // A click in a gallery moves focus into its frame; the arrows still step toys.
+  doc.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: e.key, bubbles: true }));
+  });
   const grid = doc.createElement('div');
   grid.id = 'every';
   for (const card of cardsIn(doc, id, r)) {
