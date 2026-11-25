@@ -1521,6 +1521,28 @@ void main() {
   }
 }`;
 
+// The black holes' sky pass at a lower size comes back up through Catmull-Rom.
+// Nine bilinear taps keep the photon ring thin.
+const UP = `${HEAD}
+uniform sampler2D uSrc;
+in vec2 vUv;
+out vec4 o;
+void main() {
+  vec2 sz = vec2(textureSize(uSrc, 0));
+  vec2 p = vUv * sz - 0.5, f = fract(p), t = floor(p) + 0.5;
+  vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+  vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+  vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+  vec2 w3 = f * f * (-0.5 + 0.5 * f);
+  vec2 w12 = w1 + w2, o12 = w2 / w12;
+  vec2 a = (t - 1.0) / sz, b = (t + o12) / sz, c = (t + 2.0) / sz;
+  vec4 s = texture(uSrc, vec2(a.x, a.y)) * w0.x * w0.y + texture(uSrc, vec2(b.x, a.y)) * w12.x * w0.y + texture(uSrc, vec2(c.x, a.y)) * w3.x * w0.y
+    + texture(uSrc, vec2(a.x, b.y)) * w0.x * w12.y + texture(uSrc, b) * w12.x * w12.y + texture(uSrc, vec2(c.x, b.y)) * w3.x * w12.y
+    + texture(uSrc, vec2(a.x, c.y)) * w0.x * w3.y + texture(uSrc, vec2(b.x, c.y)) * w12.x * w3.y + texture(uSrc, vec2(c.x, c.y)) * w3.x * w3.y;
+  // Catmull-Rom can ring below zero at the shadow's edge.
+  o = max(s, 0.0);
+}`;
+
 // The holes' cloud bake: longitude, log radius and height in the disc's frame.
 const HB_W = 512, HB_H = 128, HB_D = 32;
 // The noise has five octaves; one bake at load serves every hole.
@@ -2327,6 +2349,7 @@ export async function makeRender(gl, opts = {}) {
     strand: program(gl, STRAND_VS, STRAND_FS),
     rays: program(gl, TRI_VS, RAYS),
     vol: program(gl, TRI_VS, VOL),
+    up: program(gl, TRI_VS, UP),
     bake: program(gl, TRI_VS, BAKE),
     hbake: program(gl, TRI_VS, HBAKE),
     qbake: program(gl, TRI_VS, QBAKE),
@@ -2459,6 +2482,8 @@ export async function makeRender(gl, opts = {}) {
   const bandB = qbakeTex(QB.d, 0), blrB = qbakeTex(QC.d, 1);
 
   let hdr = null, rays = null, volA = null, volB = null, volH = null, volO = null, W = 0, H = 0;
+  // Black hole detail: below 1 the holes' sky pass draws to holeT, made on first use.
+  let holeS = 1, holeT = null;
   // The haze history is empty until a first frame fills it.
   let histOk = false;
   // The post targets: the final picture and two history frames, made only while a post option is on.
@@ -2481,8 +2506,12 @@ export async function makeRender(gl, opts = {}) {
     return post;
   }
   // shift: the volume's size as a power of two below the frame; 1 is half size.
-  function resize(w, h, shift = 1) {
+  // hs: the holes' sky pass size against the frame; 1 draws straight to the frame.
+  function resize(w, h, shift = 1, hs = 1) {
     W = Math.max(2, w); H = Math.max(2, h);
+    holeS = hs;
+    free(gl, holeT);
+    holeT = null;
     gl.canvas.width = W; gl.canvas.height = H;
     freePost();
     free(gl, hdr); free(gl, rays); free(gl, volA); free(gl, volB); free(gl, volH); free(gl, volO);
@@ -2568,7 +2597,20 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform2fv(s.u.uHoleSky, v.holeSky);
     gl.uniform1f(s.u.uJet, v.jet);
     gl.uniform1i(s.u.uZero, 0);
-    tri(gl, hdr, empty);
+    // A hole below full detail draws small, then comes up sharp; a star never does.
+    if (v.hole[0] > 0 && holeS < 1) {
+      holeT ??= target(gl, Math.max(2, Math.round(W * holeS)), Math.max(2, Math.round(H * holeS)));
+      // The lensed stars keep their screen size: a pixel is wider here.
+      gl.uniform2f(s.u.uHoleSky, v.holeSky[0] / holeS, v.holeSky[1]);
+      tri(gl, holeT, empty);
+      gl.useProgram(P.up.p);
+      bind(gl, P.up, 'uSrc', 0, holeT);
+      tri(gl, hdr, empty);
+    } else {
+      // Off a hole, the small target goes, so it holds no memory.
+      if (holeT) { free(gl, holeT); holeT = null; }
+      tri(gl, hdr, empty);
+    }
 
     if (v.count > 0) {
       const p = P.strand;

@@ -613,6 +613,9 @@ const ui = initPage({ id: ID, bar: {
     // The volumes' size: a quarter, half or the full frame (Tom, 2026-11-24).
     { type: 'choice', id: 'volDetail', group: 'Picture', label: 'Volume detail', hint: 'The haze, corona and cloud volumes: a quarter, half or the full frame size.', value: 'std', persist: true,
       options: [{ value: 'low', label: 'Low' }, { value: 'std', label: 'Standard' }, { value: 'high', label: 'High' }], onPick: () => resize(true) },
+    // The black holes and the quasar draw at this share of the frame (Tom, 2026-11-24: start at 75).
+    { type: 'choice', id: 'holeRes', group: 'Picture', label: 'Black hole detail', hint: 'The black holes and the quasar: half, three quarters or the full frame size. Full draws straight to the frame.', value: '75', persist: true,
+      options: [{ value: '50', label: '50%' }, { value: '75', label: '75%' }, { value: '100', label: '100%' }], onPick: () => resize(true) },
     // Calm slows the drift and halves its frame rate (Tom, 2026-11-24).
     { type: 'choice', id: 'motion', group: 'Picture', label: 'Motion', hint: 'Calm slows the surface, loops and prominences, and draws the drift at 15 frames a second.', value: 'lively', persist: true,
       options: [{ value: 'lively', label: 'Lively' }, { value: 'calm', label: 'Calm' }], onPick: () => poke() },
@@ -801,11 +804,14 @@ function resize(force = false) {
   const c = ui.cover?.() || { top: 0, bottom: 0 };
   // Settings > Volume detail sets the volumes' size; a slow machine still steps it down one more.
   const shift = Math.min(3, ({ low: 2, std: 1, high: 0 }[gv('volDetail', 'std')] ?? 1) + (D.rung >= 1 ? 1 : 0));
-  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung, shift].map(v => Math.round(v * 100)).join();
+  // Black hole detail; a slow machine steps it down one more, to half at the least.
+  const HS = [0.5, 0.75, 1];
+  const hs = HS[Math.max(0, HS.indexOf(Number(gv('holeRes', '75')) / 100) - (D.rung >= 1 ? 1 : 0))] ?? 0.75;
+  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung, shift, hs].map(v => Math.round(v * 100)).join();
   if (!force && key === sizeKey) return;
   sizeKey = key;
   view.W = Math.round(cssW * dpr); view.H = Math.round(cssH * dpr);
-  ren.resize(view.W, view.H, shift);
+  ren.resize(view.W, view.H, shift, hs);
   fitView(cssW, cssH, c.top || 0, c.bottom || 0);
   draw();
 }
