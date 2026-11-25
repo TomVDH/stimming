@@ -1,10 +1,10 @@
-// Star catalog: the star tray, a size ladder that picks the star.
-// Every object stands on one ribbon, smallest to largest (Tom, 2026-11-24).
-// The ribbon scrolls and pages when it holds more than fit; it never crowds.
-// Each star is a swatch in its own colour, sized by its radius on a log scale.
-// The toy owns this sheet; it copies the Bar v3 sheet look.
+// Star catalog: the star tray, one ribbon through the groups of bodies (Tom, 2026-11-24).
+// It is a Bar v3 sheet: it mounts in the bar's layer and takes its look.
+// Each object shows its kind as a shaded mono icon (Tom, 2026-11-24), from glyphs.js.
+// Inside a group, the objects run smallest to largest.
 
 import { FACTS } from './facts.js';
+import { glyph } from './glyphs.js';
 
 // Star data: the class or stage, and the surface temperature (K).
 // A black hole has no surface temperature: t is null.
@@ -48,9 +48,6 @@ export const CHART = {
   powehi: { kind: 'hole', t: null, cls: 'supermassive black hole, the first imaged' },
 };
 
-// A swatch's size, 0 (the pulsar) to 1 (VY CMa), on a log scale of radius.
-const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 8));
-
 const fmtR = (rsun, value) => {
   if (value === 'neutron') return '24 km wide';
   // A black hole's width is its event horizon's.
@@ -73,8 +70,23 @@ const h = (tag, cls, html) => {
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 const fr = n => new Promise(r => setTimeout(r, n * 1000 / 30));
 
+// A body's size in the tray, 0 (the pulsar) to 1 (the quasi-star), on a log scale of radius.
+// The power spreads the large end, so a giant stands clearly over a dwarf (Tom, 2026-11-24).
+const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3)) ** 1.4;
+
+// The groups, by kind of body; an object in none of them joins "More".
+const GROUPS = [
+  ['Stars', ['proxima', 'epseri', 'sun', 'xxtri', 'procyon', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
+  ['Giants', ['arcturus', 'rigel', 'betelgeuse', 'tzo', 'vycma', 'wohg64', 'st218']],
+  ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
+  ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur']],
+  ['Dead stars', ['neutron', 'siriusb']],
+  ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi']],
+  ['Far and strange', ['quasi', 'earendel', 'mothra']],
+];
+
 /**
- * Builds the star chart sheet on the stage's frame.
+ * Builds the star tray on the stage's frame: one ribbon through every group.
  * @param {{ frame: HTMLElement, focusBack: HTMLElement, stars: { value: string, name: string, colour: string, rsun: number }[],
  *   get: () => string, onPick: (v: string) => void, cover: () => { top: number, bottom: number }, onOpen?: (on: boolean) => void }} o
  */
@@ -85,54 +97,103 @@ export function makeChart(o) {
   document.head.append(link);
 
   const glass = h('div', 'sl-glass');
-  const el = h('div', 'sl-chart');
+  const el = h('div', 'sg-sheet sl-tray');
   el.hidden = true;
   el.setAttribute('role', 'dialog');
-  el.setAttribute('aria-label', 'Star chart');
+  el.setAttribute('aria-label', 'Star');
+  // One line over the ribbon names the body in hand and its type; the card carries the facts.
+  const hd = h('div', 'sl-hd');
+  const info = h('div', 'sl-info');
+  info.setAttribute('aria-live', 'polite');
+  hd.append(info);
   const ribbon = h('div', 'sl-ribbon');
   const ladder = h('div', 'sl-ladder');
-  // Page arrows at the ends; each shows only when more lies that way.
+  // Page arrows at the ends; each shows only where more lies.
   const prev = h('button', 'sl-page sl-page--prev', '‹'), next = h('button', 'sl-page sl-page--next', '›');
-  for (const [b, dir, label] of [[prev, -1, 'Earlier stars'], [next, 1, 'Later stars']]) {
+  for (const [b, dir, label] of [[prev, -1, 'Earlier'], [next, 1, 'Later']]) {
     b.type = 'button';
     b.setAttribute('aria-label', label);
     b.tabIndex = -1;
-    b.addEventListener('click', () => ladder.scrollBy({ left: dir * ladder.clientWidth * 0.8, behavior: RM.matches ? 'auto' : 'smooth' }));
+    b.addEventListener('click', () => glide(ladder.scrollLeft + dir * ladder.clientWidth * 0.75));
   }
   ribbon.append(prev, ladder, next);
-  const info = h('div', 'sl-info');
-  info.setAttribute('aria-live', 'polite');
-  // The ladder runs smallest to largest; a tie keeps the pick order.
-  const order = [...o.stars].sort((x, y) => x.rsun - y.rsun);
-  const btns = order.map(s => {
-    const c = CHART[s.value];
-    const b = h('button', 'sl-star');
-    b.type = 'button';
-    b.dataset.value = s.value;
-    b.style.setProperty('--c', s.colour);
-    b.style.setProperty('--f', String(sizeOf(s.rsun)));
-    // The swatch draws the kind of body, so a black hole never reads as a star.
-    b.innerHTML = `<span class="sl-well"><i class="sl-sw" data-kind="${c.kind || 'star'}" aria-hidden="true"></i></span><span class="sl-name">${s.name}</span>`;
-    b.setAttribute('aria-label', [s.name, c.cls, fmtT(c.t), fmtR(s.rsun, s.value)].filter(Boolean).join(', '));
-    b.addEventListener('click', async () => {
-      o.onPick(s.value);
-      sync();
-      if (!RM.matches) await fr(2);
-      open(false);
-    });
-    b.addEventListener('pointerenter', () => tell(s));
-    b.addEventListener('focus', () => { tell(s); centre(b); });
-    b.addEventListener('pointerleave', () => tell());
-    ladder.append(b);
-    return { b, s, c };
+  el.append(hd, ribbon);
+
+  const byId = new Map(o.stars.map(s => [s.value, s]));
+  const placed = new Set(GROUPS.flatMap(g => g[1]));
+  const groups = [...GROUPS.map(([name, ids]) => [name, ids.filter(id => byId.has(id))]),
+    ['More', o.stars.filter(s => !placed.has(s.value)).map(s => s.value)]]
+    .filter(g => g[1].length);
+  /** @type {{ b: HTMLButtonElement, s: any, g: number }[]} */
+  const btns = [];
+  groups.forEach(([name, ids], gi) => {
+    // A group is a stretch of the ribbon, its name over its first body.
+    const seg = h('div', 'sl-seg');
+    seg.append(h('div', 'sl-seg-name', name));
+    const row = h('div', 'sl-seg-row');
+    for (const id of [...ids].sort((a, b) => byId.get(a).rsun - byId.get(b).rsun)) {
+      const s = byId.get(id), c = CHART[id] || {};
+      const b = h('button', 'sl-tile');
+      b.type = 'button';
+      b.dataset.value = id;
+      b.style.setProperty('--c', s.colour);
+      // Each body stands at its own size, smallest to largest (Tom, 2026-11-24).
+      b.style.setProperty('--f', sizeOf(s.rsun).toFixed(3));
+      // A non-breaking hyphen keeps a name such as Cygnus X-1 whole.
+      b.innerHTML = `<span class="sl-well">${glyph(id)}</span><span class="sl-name">${s.name.replace(/-/g, '\u2011')}</span>`;
+      b.setAttribute('aria-label', [s.name, c.cls, fmtT(c.t), fmtR(s.rsun, id)].filter(Boolean).join(', '));
+      b.addEventListener('click', async e => {
+        // A drag that ends on a body is not a pick.
+        if (dragged) { e.preventDefault(); return; }
+        o.onPick(id);
+        sync();
+        if (!RM.matches) await fr(2);
+        open(false);
+      });
+      b.addEventListener('pointerenter', () => tell(s));
+      b.addEventListener('focus', () => { tell(s); centre(b); });
+      b.addEventListener('pointerleave', () => tell());
+      row.append(b);
+      btns.push({ b, s, g: gi });
+    }
+    seg.append(row);
+    ladder.append(seg);
   });
-  el.append(ribbon, info);
   o.frame.append(glass, el);
 
-  // The focused star glides to the ribbon's middle.
-  function centre(b, smooth = !RM.matches) {
-    const left = b.offsetLeft + b.offsetWidth / 2 - ladder.clientWidth / 2;
-    ladder.scrollTo({ left, behavior: smooth ? 'smooth' : 'auto' });
+  // The heading line: the pointed, focused or current object, and its type.
+  function tell(s) {
+    const cur = s || byId.get(o.get());
+    if (cur) info.innerHTML = `<b>${cur.name}</b><span>${FACTS[cur.value]?.type ?? CHART[cur.value]?.cls ?? ''}</span>`;
+  }
+  function sync() {
+    for (const { b, s } of btns) b.setAttribute('aria-pressed', String(s.value === o.get()));
+    if (!el.contains(document.activeElement)) tell();
+  }
+
+  /* ---------- the ribbon's motion ---------- */
+  let anim = 0;
+  const stop = () => { cancelAnimationFrame(anim); anim = 0; };
+  // A glide eases to a scroll position; reduced motion jumps.
+  function glide(to) {
+    stop();
+    const max = ladder.scrollWidth - ladder.clientWidth;
+    to = Math.max(0, Math.min(max, to));
+    if (RM.matches) { ladder.scrollLeft = to; return; }
+    const from = ladder.scrollLeft, t0 = performance.now(), T = 260;
+    const step = now => {
+      const k = Math.min(1, (now - t0) / T), e = 1 - (1 - k) ** 3;
+      ladder.scrollLeft = from + (to - from) * e;
+      anim = k < 1 ? requestAnimationFrame(step) : 0;
+    };
+    anim = requestAnimationFrame(step);
+  }
+  // The body glides to the ribbon's middle.
+  function centre(b, smooth = true) {
+    // Measured on screen: the tile's offset parent is the sheet, not the ribbon.
+    const r = b.getBoundingClientRect(), l = ladder.getBoundingClientRect();
+    const to = ladder.scrollLeft + r.left + r.width / 2 - l.left - l.width / 2;
+    if (smooth) glide(to); else { stop(); ladder.scrollLeft = to; }
   }
   // The arrows and the edge fades show only where more lies.
   function edges() {
@@ -143,23 +204,59 @@ export function makeChart(o) {
     ribbon.classList.toggle('more-right', !atEnd);
   }
   ladder.addEventListener('scroll', edges, { passive: true });
-  // A vertical wheel or trackpad scrolls the ribbon sideways.
-  ladder.addEventListener('wheel', e => {
-    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-    e.preventDefault();
-    ladder.scrollLeft += e.deltaY;
-  }, { passive: false });
   new ResizeObserver(edges).observe(ladder);
+  // A wheel, either axis, scrolls the ribbon sideways at once.
+  ladder.addEventListener('wheel', e => {
+    e.preventDefault();
+    stop();
+    ladder.scrollLeft += Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  }, { passive: false });
+  // A mouse drag throws the ribbon; it coasts and slows. Touch scrolls natively.
+  let drag = null, dragged = false;
+  ladder.addEventListener('pointerdown', e => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    stop();
+    drag = { x: e.clientX, left: ladder.scrollLeft, id: e.pointerId, v: 0, t: e.timeStamp, lx: e.clientX };
+    dragged = false;
+  });
+  ladder.addEventListener('pointermove', e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dx = e.clientX - drag.x;
+    // A press becomes a drag after 8 px.
+    if (!dragged && Math.abs(dx) < 8) return;
+    if (!dragged) { dragged = true; ladder.setPointerCapture(e.pointerId); ladder.classList.add('is-dragging'); }
+    ladder.scrollLeft = drag.left - dx;
+    const dt = Math.max(1, e.timeStamp - drag.t);
+    drag.v = 0.8 * drag.v + 0.2 * (-(e.clientX - drag.lx) / dt);
+    drag.t = e.timeStamp; drag.lx = e.clientX;
+  });
+  const endDrag = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const v = drag.v;
+    drag = null;
+    ladder.classList.remove('is-dragging');
+    if (!dragged) return;
+    // The click that ends a drag clears after it fires.
+    setTimeout(() => { dragged = false; }, 0);
+    if (RM.matches || Math.abs(v) < 0.05) return;
+    // The throw coasts on, losing speed with a time constant of about 0.3 s.
+    let vel = v * 16, last = performance.now();
+    const coast = now => {
+      const dt = now - last; last = now;
+      ladder.scrollLeft += vel * dt / 16;
+      vel *= Math.exp(-dt / 300);
+      anim = Math.abs(vel) > 0.2 ? requestAnimationFrame(coast) : 0;
+    };
+    anim = requestAnimationFrame(coast);
+  };
+  ladder.addEventListener('pointerup', endDrag);
+  ladder.addEventListener('pointercancel', endDrag);
+  ladder.addEventListener('lostpointercapture', endDrag);
 
-  // The foot line names the object in hand and its type: pointed, focused, or the current one.
-  // The star card carries the rest of the facts (Tom, 2026-11-24).
-  function tell(s) {
-    const cur = s || o.stars.find(x => x.value === o.get());
-    info.innerHTML = `<b>${cur.name}</b><span>${FACTS[cur.value]?.type ?? CHART[cur.value].cls}</span>`;
-  }
-  function sync() {
-    for (const { b, s } of btns) b.setAttribute('aria-pressed', String(s.value === o.get()));
-    if (!el.contains(document.activeElement)) tell();
+  // The tray joins the bar's layer, so it takes the bar's ink.
+  function mount() {
+    const layer = o.frame.querySelector('.sg-ui');
+    if (layer && el.parentElement !== layer) layer.append(glass, el);
   }
 
   let closedAt = 0, run = 0;
@@ -167,21 +264,23 @@ export function makeChart(o) {
     if (on === !el.hidden) return;
     const me = ++run;
     if (on) {
-      const c = o.cover();
-      el.style.setProperty('--foot', `${c.bottom}px`);
-      el.style.setProperty('--head', `${c.top}px`);
+      mount();
       sync();
       el.hidden = false;
+      // The glass reaches only a band above the ribbon, so the star stays in view (Tom, 2026-11-24).
+      const top = el.getBoundingClientRect().top, foot = glass.parentElement.getBoundingClientRect().bottom;
+      glass.style.height = `${Math.round(foot - top + 70)}px`;
       glass.dataset.on = '';
       el.classList.remove('is-closing');
       el.classList.toggle('is-landing', !RM.matches);
+      // The ribbon opens with the object in hand at its middle.
       const cur = btns.find(x => x.s.value === o.get())?.b;
-      cur?.focus({ preventScroll: true });
-      if (cur) centre(cur, false);
+      if (cur) { centre(cur, false); cur.focus({ preventScroll: true }); }
       edges();
       o.onOpen?.(true);
       if (!RM.matches) { await fr(5); if (me === run) el.classList.remove('is-landing'); }
     } else {
+      stop();
       closedAt = performance.now();
       const inside = el.contains(document.activeElement);
       delete glass.dataset.on;
@@ -194,24 +293,33 @@ export function makeChart(o) {
   // A press outside closes the sheet; the press on its own button must not reopen it.
   addEventListener('pointerdown', e => { if (!el.hidden && !el.contains(e.target)) open(false); }, true);
 
-  // Left and right step along the ladder; Enter picks; Escape or S closes.
+  // Left and right step; up and down jump a group; Home and End go to the ends.
+  // A letter jumps to the next name that starts with it. Enter picks; Escape or S closes.
   // While the sheet is open, the toy's own keys wait.
   addEventListener('keydown', e => {
     if (el.hidden) return;
-    // With no star in focus, the step starts from the current star.
     const f = btns.findIndex(x => x.b === document.activeElement);
     const at = f >= 0 ? f : Math.max(0, btns.findIndex(x => x.s.value === o.get()));
-    const go = i => btns[(i + btns.length) % btns.length].b.focus();
-    const step = { ArrowLeft: -1, ArrowRight: 1, '[': -1, ']': 1, ArrowUp: 1, ArrowDown: -1 }[e.key];
+    // The key moves focus and glides the body to the middle; it does not wait on a focus event.
+    const to = x => { x.b.focus({ preventScroll: true }); tell(x.s); centre(x.b); };
+    const go = i => to(btns[Math.max(0, Math.min(btns.length - 1, i))]);
+    const step = { ArrowLeft: -1, ArrowRight: 1, '[': -1, ']': 1 }[e.key];
+    const g = btns[at].g, first = gi => btns.findIndex(x => x.g === gi);
     if (e.key === 'Escape' || e.key === 's' || e.key === 'S') { e.preventDefault(); open(false); }
     else if (step) { e.preventDefault(); go(at + step); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); go(at === first(g) ? first(Math.max(0, g - 1)) : first(g)); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); const i = btns.findIndex(x => x.g > g); if (i >= 0) go(i); }
     else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); go(e.key === 'Home' ? 0 : btns.length - 1); }
-    else if (e.key === 'Tab') {
-      // Tab stays inside the sheet.
+    else if (e.key === 'Tab') { e.preventDefault(); go(at + (e.shiftKey ? -1 : 1)); }
+    else if (/^[a-z0-9]$/i.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
       e.preventDefault();
-      go(at + (e.shiftKey ? -1 : 1));
+      const k = e.key.toLowerCase();
+      for (let n = 1; n <= btns.length; n++) {
+        const x = btns[(at + n) % btns.length];
+        if (x.s.name.toLowerCase().startsWith(k)) { to(x); break; }
+      }
     }
-    // Enter and Space still press the focused star.
+    // Enter and Space still press the focused body.
     e.stopPropagation();
   }, true);
 

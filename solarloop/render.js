@@ -2011,7 +2011,8 @@ void main() {
     c += mix(vec3(0.72, 0.84, 1.0), vec3(1.0, 0.8, 0.62), clamp(hs.a, 0.0, 1.0)) * hs.b;
   } else if (uCam.w > 0.0) c += starfield(gl_FragCoord.xy) * uCam.w * smoothstep(R, R * 1.04, r);
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
-  if (uBow.x > 0.0) c += runaway(P) * (uBow.w < 0.5 || uBow.w > 1.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
+  // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
+  if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 1.5 ? 0.9 : uBow.w < 0.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
   for (int k = 0; k < 2; k++) {

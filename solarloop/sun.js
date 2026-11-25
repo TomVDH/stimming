@@ -158,7 +158,7 @@ export const STARS = {
     ...FLARE, day: 5.5,
     row: 7, rsun: 1.71, expo: 1, hotW: 1, coolW: 1, loop: 0.45, prom: 0.5, dust: 0, rays: 1,
     hal: [0.75, 0.8, 1], streak: [0.7, 0.8, 1],
-    disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.4, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
+    disk: [1.4, 0.45, 0.1, 0.4], disk2: [70, 0.1, 0.3, 0.06], tex: [120, 10, 0.05, 0.55],
     wide: 'none', long: 'none', root: 293.66,
   },
   // Procyon: an F star, twice the sun's width, cream white.
@@ -360,10 +360,11 @@ export const STARS = {
   // Mothra: a yellow hypergiant, 271 suns, and a blue supergiant, 60 suns, 10.5 billion light years off.
   // An unseen lens of 10,000 to a million suns magnifies them; the orbit is unknown.
   // Far out the host galaxy shows as an arc. The partner holds still; its place is the toy's.
+  // The full view stands 80 times back: the pair is a pip on its arc (Tom, 2026-11-24).
   mothra: {
-    ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 2.2,
+    ...FLARE, day: 0, rain: 0.3, rope: 0, bubble: 0.15, reach: 80,
     pair: { at: [2.5, 0.35, 1.2], size: 0.22, neck: 0, cool: 1 },
-    bow: { kind: 2, heading: 0.5, size: 36, col: [1, 0.45, 0.6] },
+    bow: { kind: 2, heading: 0.5, size: 150, col: [1, 0.45, 0.6] },
     row: 28, rsun: 271, expo: 1, hotW: 1, coolW: 1, loop: 0.3, prom: 0, dust: 0.1, rays: 1,
     hal: [1, 0.8, 0.45], streak: [1, 0.85, 0.6],
     disk: [1.7, 0.7, 0.04, 0.3], disk2: [120, 0, 0.3, 0.06], tex: [20, 5, 0.06, 0.55],
@@ -372,9 +373,10 @@ export const STARS = {
   // Earendel: perhaps the most distant star, its light 12.9 billion years old.
   // If single, a B star of 13,000 to 16,000 K and 103 to 393 suns; 200 here.
   // A galaxy cluster magnifies it; far out its host galaxy shows as the Sunrise Arc.
+  // The full view stands 80 times back: the star is a pip on the Sunrise Arc (Tom, 2026-11-24).
   earendel: {
-    ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 1.5,
-    bow: { kind: 2, heading: 2.6, size: 45, col: [1, 0.38, 0.3] },
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.2, reach: 80,
+    bow: { kind: 2, heading: 2.6, size: 170, col: [1, 0.38, 0.3] },
     row: 2, rsun: 200, expo: 1, hotW: 1, coolW: 0.8, loop: 0.45, prom: 0.5, dust: 0, rays: 1.15,
     hal: [0.55, 0.7, 1], streak: [0.5, 0.75, 1],
     disk: [1.5, 0.55, 0.05, 0.42], disk2: [95, 0.3, 0.3, 0.08], tex: [50, 7, 0.1, 0.4],
@@ -385,7 +387,7 @@ export const STARS = {
   // It feeds slowly, so its disc burns less than the quasar's.
   powehi: {
     ...FLARE, rope: 0, ribbon: 0, rain: 0, bubble: 0, sat: 0,
-    hole: { tilt: 1.27, light: 0.75, heat: 0.7, stars: 1, vol: { dens: 1.1, light: 1 } }, reach: 3, jet: 0.6,
+    hole: { tilt: 1.27, light: 1.4, heat: 0.85, stars: 1, vol: { dens: 1.1, light: 1.3 } }, reach: 3, jet: 0.6,
     row: 29, rsun: 25800, expo: 1, hotW: 1, coolW: 1, loop: 0, prom: 0, dust: 0, rays: 0,
     hal: [1, 0.5, 0.18], streak: [1, 0.72, 0.4],
     disk: [0, 0, 0, 0], disk2: [60, 0, 0, 0], tex: [60, 5, 0, 0.35],

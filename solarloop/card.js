@@ -4,6 +4,7 @@
 // the type and the facts wipe on behind a white bar, a line at a time.
 // stamp: the name sits in a white box with a hard offset shadow.
 // caption: Frietkot's typed camcorder caption.
+// It stands in the view's open sky (Tom, 2026-11-24): setView names the view.
 
 const RM = matchMedia('(prefers-reduced-motion: reduce)');
 // The card holds this long after its last line, in ms.
@@ -29,7 +30,7 @@ export function makeCard(o) {
   link.href = new URL('card.css', import.meta.url).href;
   document.head.append(link);
 
-  let box = null;
+  let box = null, view = 'full';
   const timers = new Set();
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
   function stop() { for (const t of timers) clearTimeout(t); timers.clear(); }
@@ -147,6 +148,7 @@ export function makeCard(o) {
     show(c, style = 'intro', sun = null, hint = false) {
       clear();
       box = h('div', `sl-card sl-card--${style}`);
+      box.dataset.view = view;
       box.setAttribute('aria-hidden', 'true');
       o.stage.append(box);
       // The Sun's outline appears a beat after the card starts.
@@ -155,24 +157,26 @@ export function makeCard(o) {
         box.append(mark);
         if (!RM.matches) { mark.classList.add('is-shut'); later(() => mark.classList.remove('is-shut'), 300); }
       }
-      // The i key's hint shows a beat after the card, under it (Tom, 2026-11-24).
+      if (style === 'caption') {
+        if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
+        else caption(c);
+      } else {
+        const parts = build(c);
+        if (RM.matches) later(fade, HOLD);
+        else if (style === 'stamp') stamp(parts); else intro(parts);
+      }
+      // The i key's hint shows under the facts, a beat after the card (Tom, 2026-11-24).
       if (hint) {
         const tip = h('p', 'c-hint');
         tip.append(h('kbd', null, 'i'), ' again for the article');
         box.append(tip);
         if (!RM.matches) { tip.classList.add('is-shut'); later(() => tip.classList.remove('is-shut'), 900); }
       }
-      if (style === 'caption') {
-        if (RM.matches) { for (const [t, cls] of captionLines(c)) box.append(h('p', cls, t)); later(fade, HOLD); }
-        else caption(c);
-        return;
-      }
-      const parts = build(c);
-      if (RM.matches) { later(fade, HOLD); return; }
-      if (style === 'stamp') stamp(parts); else intro(parts);
     },
     fade,
     clear,
+    /** Names the view, so the card stands in its open sky: long, wide, full or far. */
+    setView(v) { view = v; if (box) box.dataset.view = v; },
     /** True while the card stands on the stage, before it fades. */
     isOpen: () => !!box && !box.classList.contains('out'),
   };

@@ -10,9 +10,11 @@ import { R, BCRIT, SPIN_UP, STARS, streamPath, NR, promPhase, bodySize, BODIES, 
 import { makeRender } from './render.js';
 import { makeSound } from './sound.js';
 import { makeChart } from './chart.js';
+import { glyph } from './glyphs.js';
 import { HOLD, CUE, RARE, EGGS, makeCarrington, carrington, CARR_END, makeDimming, dimming, DIM_END, SOUTH, makeVoice, stepVoice } from './eggs.js';
 import { makeRail } from './rail.js';
 import { makeClock } from './clock.js';
+import { makeSStars } from './sstars.js';
 import { makeCard, CARD_STYLES } from './card.js';
 import { makeArticle } from './article.js';
 import { cardLines } from './facts.js';
@@ -56,7 +58,16 @@ const savedRate = RATES.find(r => r[0] === store.get('rate'));
 // rate eases to its target on a log scale, so a switch never jolts the star.
 const turn = { pick: savedRate ? savedRate[0] : 'x10k', lr: 0, vr: 0 };
 turn.lr = Math.log10(RATES.find(r => r[0] === turn.pick)[2]);
-const rateLabel = () => `Turn · ${RATES.find(r => r[0] === turn.pick)[1]}`;
+// Activity in words (Tom, 2026-11-24): each step and the strength it sets, 0 to 100.
+const ACT_STEPS = [['quiet', 'Quiet', 25], ['active', 'Active', 60], ['stormy', 'Stormy', 95]];
+// The nearest step to a stored strength.
+const actStep = a => ACT_STEPS.reduce((b, x) => Math.abs(x[2] - a) < Math.abs(b[2] - a) ? x : b)[0];
+// Settings > Motion: Calm slows the drift and draws it at half the frame rate.
+const calmMotion = () => gv('motion', 'lively') === 'calm';
+// The turn button: a circular arrow, then the rate in words (Tom, 2026-11-24).
+const rateText = () => RATES.find(r => r[0] === turn.pick)[1];
+const TURN_ICON = '<svg class="sl-turn" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.8 3.8v3.4h-3.4"/></svg>';
+const rateLabel = () => `${TURN_ICON}<span>${rateText()}</span>`;
 const sun = makeSun();
 // The star on screen: it trails st.star through the switch dip.
 let shown = st.star;
@@ -169,6 +180,8 @@ const cam = {
   v: 0, va: 0, moving: false,
   // The opening's or a switch's glide in, or false; its card waits for rest.
   glide: false,
+  // True while a magnet's quick catch runs.
+  snap: false,
   // The nearest stop names the framing.
   get mode() { return VIEWS[Math.min(2, Math.round(this.z))]; },
 };
@@ -263,8 +276,9 @@ function toggleLens() {
 }
 // The wheel, a pinch and the - and = keys move the zoom by dz.
 // Magnet notches: a pause near a stop settles the zoom on it (Tom, 2026-11-24).
-// The full star's shows on the rail; the quarter's and the half's are hidden.
-const NOTCH = 2, NOTCH_REACH = 0.3, MAGNETS = [0, 1, NOTCH];
+// All three show on the rail: the full star's large, the quarter's and the half's small (Tom, 2026-11-24).
+const NOTCH = 2, NOTCH_REACH = 0.4, MAGNETS = [0, 1, NOTCH];
+// A magnet catches 0.16 s after the input pauses, and settles in half the time (Tom: snappier).
 // Sticky stops (Tom, 2026-11-24): the full star on the way in, the half view both ways.
 // A gesture that crosses one stops there; a later, separate gesture goes on.
 // Each entry: the stop, then the travel that it catches (-1 in, +1 out).
@@ -296,14 +310,15 @@ function zoomBy(dz) {
     // A magnet pulls ahead, so it never undoes an inward step.
     // The full star also pulls back a small overshoot on the way out.
     const m = MAGNETS.find(n => Math.abs(cam.to - n) < NOTCH_REACH && ((n - cam.to) * dz >= 0 || (n === NOTCH && dz > 0)));
-    if (m != null && cam.to !== m) springTo(m);
-  }, 300);
+    if (m != null && cam.to !== m) { springTo(m); cam.snap = true; }
+  }, 160);
 }
 // Every zoom input sets the target here; the followers carry the view.
 function springTo(z) {
   z = clamp(z, 0, Z_MAX);
-  // A glide-in ends at any new target.
+  // A glide-in ends at any new target, and so does a magnet's quick catch.
   cam.glide = false;
+  cam.snap = false;
   // A move away from the full star fades the star card.
   if (z !== NOTCH) card?.fade();
   // A new move starts: note where it began, and let its arrival play the card again.
@@ -332,7 +347,7 @@ const ZOOM_IN = 1.4;
 // Steps both followers; true while the zoom moves.
 // Steps the two followers toward the target.
 function stepFollow(dt) {
-  const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1);
+  const T = ZOOM_T * gv('zoomWeight', 2) * (cam.to < cam.z ? ZOOM_IN : 1) * (cam.snap ? 0.5 : 1);
   [cam.aim, cam.va] = follow(cam.aim, cam.to, cam.va, T, dt);
   [cam.z, cam.v] = follow(cam.z, cam.aim, cam.v, T, dt);
   cam.z = clamp(cam.z, 0, Z_MAX);
@@ -500,7 +515,17 @@ const PICKS = [
 ].map(([value, name, colour]) => ({ value, name, colour, rsun: STARS[value].rsun }));
 const DIGITS = '1234567890';
 // The bar's label: the star with its swatch.
-const starLabel = () => { const p = PICKS.find(x => x.value === st.star); return `<i class="sg-dot" style="background: ${p.colour}"></i>${p.name}`; };
+// The star button: the star's own tray icon in its colour, then its name (Tom, 2026-11-24: no square).
+const starLabel = () => {
+  const p = PICKS.find(x => x.value === st.star);
+  return glyph(p.value).replace('<svg class="sl-glyph"', `<svg class="sl-glyph sl-bar-glyph" style="color: color-mix(in oklch, ${p.colour}, white 25%)"`) + `<span>${p.name}</span>`;
+};
+// i shows the card in any view; again, while the card stands, the article; again, it shuts.
+function infoPress() {
+  if (article.isOpen()) article.close();
+  else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
+  else showCard(true);
+}
 const zoomText = z => z > 2.02 ? `full ${pullText(z)}` : VIEWS[Math.round(z)];
 function pickStar(v) {
   if (!STARS[v] || v === st.star) return;
@@ -521,8 +546,29 @@ function pickStar(v) {
 }
 const ui = initPage({ id: ID, bar: {
   // The bar holds only the star (Tom, 2026-11-24); Space and L stay as keys.
-  actions: [{ verb: 'star', label: starLabel(), onPress: () => chart?.toggle() }, { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() }],
-  settings: [{ type: 'slider', id: 'activity', label: 'Activity', min: 0, max: 100, step: 1, value: st.activity, onInput: v => { st.activity = v; store.set('activity', v); poke(); } }],
+  // The bar holds the star, the turn and the info card (Tom, 2026-11-24).
+  actions: [
+    { verb: 'star', label: starLabel(), onPress: () => chart?.toggle() },
+    { verb: 'turn', label: rateLabel(), key: 'T', onPress: () => cycleRate() },
+    { verb: 'info', label: 'Info', key: 'I', onPress: () => infoPress() },
+  ],
+  // Settings in three groups (Tom, 2026-11-24): the star, the picture, the sound.
+  settings: [
+    // Activity in words: each step sets the loops, spots and flares' strength.
+    { type: 'choice', id: 'activityStep', group: 'Star', label: 'Activity', value: actStep(st.activity),
+      options: ACT_STEPS.map(([value, label]) => ({ value, label })),
+      onPick: v => { st.activity = ACT_STEPS.find(a => a[0] === v)[2]; store.set('activity', st.activity); poke(); } },
+    // The volumes' size: a quarter, half or the full frame (Tom, 2026-11-24).
+    { type: 'choice', id: 'volDetail', group: 'Picture', label: 'Volume detail', hint: 'The haze, corona and cloud volumes: a quarter, half or the full frame size.', value: 'std', persist: true,
+      options: [{ value: 'low', label: 'Low' }, { value: 'std', label: 'Standard' }, { value: 'high', label: 'High' }], onPick: () => resize(true) },
+    // Calm slows the drift and halves its frame rate (Tom, 2026-11-24).
+    { type: 'choice', id: 'motion', group: 'Picture', label: 'Motion', hint: 'Calm slows the surface, loops and prominences, and draws the drift at 15 frames a second.', value: 'lively', persist: true,
+      options: [{ value: 'lively', label: 'Lively' }, { value: 'calm', label: 'Calm' }], onPick: () => poke() },
+    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Choir', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'slider', id: 'sndHumLvl', group: 'Sound', label: 'Choir level', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() },
+    { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
+    { type: 'slider', id: 'sndRumbleLvl', group: 'Sound', label: 'Rumble level', min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() },
+  ],
   quality: true,
   // Tuning for the people who build the toy; the Dev button always shows here.
   dev: [
@@ -535,9 +581,8 @@ const ui = initPage({ id: ID, bar: {
     { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
-    { type: 'toggle', id: 'sndHum', group: 'Sound', label: 'Hum (choir)', value: true, persist: true, onToggle: () => mixSound() },
-    { type: 'toggle', id: 'sndRumble', group: 'Sound', label: 'Space rumble', value: true, persist: true, onToggle: () => mixSound() },
-    ...[['sndHumLvl', 'Hum level'], ['sndRumbleLvl', 'Rumble level'], ['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
+    // The choir and rumble switches and levels live in Settings (Tom, 2026-11-24).
+    ...[['sndFxLvl', 'Interaction level']].map(([id, label]) => ({ type: 'slider', id, group: 'Sound', label, min: 0, max: 2, step: 0.05, value: 1, persist: true, onInput: () => mixSound() })),
     ...[['sndBlast', 'Tap: brass blast'], ['sndGlow', 'Tap: glow chord'], ['sndLift', 'Prominence lift'], ['sndDim', 'Egg: Great Dimming']].map(([id, label]) => ({ type: 'toggle', id, group: 'Sound', label, value: true, persist: true })),
   ],
   keys: [['click', 'flare'], ['drag', 'turn'], ['L', 'long, wide or full view']],
@@ -555,7 +600,7 @@ const ui = initPage({ id: ID, bar: {
 } });
 // The Bar v2 chips hold the labels; Bar v3 follows them.
 const chipLabel = words => [...document.querySelectorAll('.s2-chip .s2-label')].find(l => l.textContent.trim() === words) || null;
-const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), rate: chipLabel(rateLabel()) };
+const labels = { star: chipLabel(PICKS.find(x => x.value === st.star).name), rate: chipLabel(rateText()) };
 // The turn button steps through the speeds; the star eases to the new one.
 function cycleRate() {
   const i = RATES.findIndex(r => r[0] === turn.pick);
@@ -585,6 +630,7 @@ function showClock() { if (!calm) clock.show(st.turn, RATES.find(r => r[0] === t
 const rail = makeRail({
   frame: stage.closest('.stim-frame') || stage.parentElement,
   mid: NOTCH,
+  notches: [0, 1],
   max: Z_MAX,
   text: zoomText,
   cover: () => ui.cover?.() || { top: 58, bottom: 56 },
@@ -613,6 +659,8 @@ function arrive() {
     if (performance.now() < restAt + CARD_REST) return;
   }
   if (cam.from > NOTCH - 0.05 && cardStar === st.star) return;
+  // An open article holds the card back; the card would stand over it.
+  if (article.isOpen()) return;
   cam.arrived = true;
   showCard();
 }
@@ -645,11 +693,8 @@ addEventListener('keydown', e => {
   else if (e.key === ' ') flareNext();
   else if (e.key === 'l' || e.key === 'L') toggleLens();
   // i shows the card in any view; again, while the card stands, the article; again, it shuts.
-  else if (e.key === 'i' || e.key === 'I') {
-    if (article.isOpen()) article.close();
-    else if (card.isOpen()) { const p = PICKS.find(x => x.value === st.star); article.open(st.star, cardLines(st.star, p.name)); card.fade(); }
-    else showCard(true);
-  } else if (e.key === 'Escape' && article.isOpen()) article.close();
+  else if (e.key === 'i' || e.key === 'I') infoPress();
+  else if (e.key === 'Escape' && article.isOpen()) article.close();
   else if (step) {
     const at = PICKS.findIndex(x => x.value === st.star);
     pickStar(PICKS[(at + step + PICKS.length) % PICKS.length].value);
@@ -664,6 +709,8 @@ const snd = makeSound(kit, id => ui?.setting?.(id)?.value);
 const canvas = document.createElement('canvas');
 canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
+// The S stars round Sagittarius A*: a 2D layer just above the GL canvas.
+const sst = makeSStars(canvas);
 const D = detail({ maxDpr: 2, budget: 2.6e6, steps: 2, settle: 2, onChange: () => resize(true) });
 
 let sizeKey = '';
@@ -673,11 +720,13 @@ function resize(force = false) {
   cssW = Math.max(1, r.width); cssH = Math.max(1, r.height);
   const dpr = D.dpr(cssW, cssH);
   const c = ui.cover?.() || { top: 0, bottom: 0 };
-  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung].map(v => Math.round(v * 100)).join();
+  // Settings > Volume detail sets the volumes' size; a slow machine still steps it down one more.
+  const shift = Math.min(3, ({ low: 2, std: 1, high: 0 }[gv('volDetail', 'std')] ?? 1) + (D.rung >= 1 ? 1 : 0));
+  const key = [cssW, cssH, dpr, c.top || 0, c.bottom || 0, D.rung, shift].map(v => Math.round(v * 100)).join();
   if (!force && key === sizeKey) return;
   sizeKey = key;
   view.W = Math.round(cssW * dpr); view.H = Math.round(cssH * dpr);
-  ren.resize(view.W, view.H, D.rung >= 1 ? 2 : 1);
+  ren.resize(view.W, view.H, shift);
   fitView(cssW, cssH, c.top || 0, c.bottom || 0);
   draw();
 }
@@ -1103,9 +1152,15 @@ function makeFrame() {
   f.shimmer = calm || hole ? 0 : 2.2 * view.W / cssW;
   return f;
 }
+// The view the card and the article last stood in.
+let infoView = '';
 function draw() {
   if (!ren) return;
   ren.frame(makeFrame());
+  // The card and the article stand in the open sky of the view in hand.
+  const iv = cam.z > NOTCH + 0.3 ? 'far' : cam.mode;
+  if (iv !== infoView) { infoView = iv; card.setView(iv); article.setView(iv); }
+  sst.draw({ on: shown === 'sgra', light: dipLight(), view, w: cssW, h: cssH, dpr: view.H / Math.max(1, cssH), R, cam: camView, rot: M, tilt: STARS[shown].hole?.tilt ?? 0, far: farAt(cam.z) });
 }
 
 // The fluid's step and draw for this frame: the box stands under the prominence, radial up.
@@ -1142,7 +1197,7 @@ function frame(now) {
   try {
     const idleFor = (t0 - lastInput) / 1000;
     drifting = calm ? 0 : idleFor > 60 ? Math.max(0, 1 - (idleFor - 60) / 2) : 1;
-    st.time += dt * drifting;
+    st.time += dt * drifting * (calmMotion() ? 0.4 : 1);
     const turning = stepTurn(dt);
     clock.tick(st.turn, 10 ** turn.lr);
     st.spin += dt * (egg?.kind === 'voice' ? egg.rate : drifting);
@@ -1152,6 +1207,8 @@ function frame(now) {
     const adapting = stepEye(dt);
     stepFlares(sun, dt * flarePace(STARS[shown]) * (calm ? 0.8 : 1));
     stepProms(sun, dt * (calm ? 0.8 : 1));
+    // The S stars run on their own clock; each visit starts it again.
+    if (shown === 'sgra') sst.step(dt * drifting); else sst.reset();
     if (FLUID) {
       // A new framing may show another prominence: the fluid moves to it.
       if (!fluidRun || fluidRun.mode !== cam.mode) { const p = promInView(); if (p) startFluid(p); }
@@ -1191,7 +1248,7 @@ function frame(now) {
     again = lively || drifting > 0;
   } finally {
     // A thrown error still leaves the loop able to wake.
-    if (again) schedule(lively ? 0 : t0 + 33 - performance.now()); else rest();
+    if (again) schedule(lively ? 0 : t0 + (calmMotion() ? 66 : 33) - performance.now()); else rest();
   }
 }
 function rest() {
