@@ -1198,10 +1198,12 @@ vec3 bendP(vec3 p) {
 }
 uniform vec4 uView;
 uniform vec2 uRes;
-out float vV, vS, vI, vDrain, vPh, vKind, vHgt;
+out float vV, vS, vI, vDrain, vPh, vKind, vHgt, vU;
 out vec3 vP;
 const float R = ${R.toFixed(1)};
 const int N = ${NS};
+float hv(float i) { i = fract(i * 0.1031); i *= i + 33.33; return fract(i * (i + i)); }
+float nv(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hv(i), hv(i + 1.0), f); }
 vec3 curve(float s) {
   vec3 A = aA.xyz, B = aB.xyz;
   float om = acos(clamp(dot(A, B), -1.0, 1.0));
@@ -1214,7 +1216,7 @@ vec3 curve(float s) {
   if (aD.x > 0.0) {
     vec3 tng = normalize(B - A + vec3(1e-6));
     // An erupting rope swells into a bulb: its upper legs bow outward.
-    if (aD.w == 2.0 || aD.w == 4.0) p -= tng * sin(6.2832 * s) * 0.3 * max(aA.w - 30.0, 0.0);
+    if (aD.w == 2.0 || aD.w == 4.0 || aD.w == 6.0) p -= tng * sin(6.2832 * s) * 0.3 * max(aA.w - 30.0, 0.0);
     vec3 ax2 = normalize(cross(up, tng));
     float a = aD.y * 6.2832 * s + aD.z;
     p += aD.x * sqrt(sin(3.14159 * s)) * (cos(a) * up + sin(a) * ax2);
@@ -1236,10 +1238,16 @@ void main() {
   vec2 nr = vec2(-tn.y, tn.x);
   float ppm = uRes.y / (2.0 * uView.w);
   float wpx = aC.x * ppm;
+  // A plasma tube: its along coordinate counts in tube widths.
+  float om = acos(clamp(dot(aA.xyz, aB.xyz), -1.0, 1.0));
+  vU = s * (om * R + 1.6 * aA.w) / max(aC.x, 0.5);
+  // A tube swells and pinches along its length, and thins at its feet.
+  if (aD.w >= 5.0) wpx *= (0.6 + 0.75 * nv(vU * 0.35 + aC.z * 5.3)) * mix(0.55, 1.0, smoothstep(0.0, 0.18, min(s, 1.0 - s)));
   float wq = max(wpx, 1.5);
   // A thread seen along its length looks brighter: a longer path.
   vec3 t3 = normalize(p1 - p0 + vec3(1e-6));
-  float los = 1.0 / max(length(t3.xy), 0.3);
+  // Ribbons lie in the dense chromosphere, so they get no path boost.
+  float los = aD.w == 1.0 || aD.w == 7.0 ? 1.0 : 1.0 / max(length(t3.xy), 0.3);
   vI = aC.y * (wpx / wq) * los;
   vV = side;
   vS = s;
@@ -1254,21 +1262,42 @@ void main() {
 
 const STRAND_FS = `${HEAD}
 uniform float uTime, uRain, uGain;
-in float vV, vS, vI, vDrain, vPh, vKind, vHgt;
+in float vV, vS, vI, vDrain, vPh, vKind, vHgt, vU;
 in vec3 vP;
 out vec4 o;
 const float R = ${R.toFixed(1)};
 // A fract hash: sin of large numbers loses precision on some mobile GPUs.
 float hh(float i) { i = fract(i * 0.1031); i *= i + 33.33; return fract(i * (i + i)); }
 float n1(float x) { float i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(hh(i), hh(i + 1.0), f); }
+float n2(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hh(i.x + 57.0 * i.y), b = hh(i.x + 1.0 + 57.0 * i.y);
+  float c = hh(i.x + 57.0 * (i.y + 1.0)), d = hh(i.x + 1.0 + 57.0 * (i.y + 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+// A plasma tube's light across and along it: braided threads, knots, a ragged edge.
+float tube(float v, float u, float sd) {
+  // The tube wanders sideways, and its edge frays.
+  float x = v * 1.6 + 0.45 * (n1(u * 0.5 + sd * 3.1) - 0.5);
+  x *= 1.0 + 0.35 * (n2(vec2(x * 2.0, u * 0.9 + sd)) - 0.5);
+  float body = exp(-2.2 * x * x);
+  // Two thread layers wind opposite ways, so the threads cross and merge.
+  float a = n2(vec2(x * 2.6 + u * 0.32, u * 0.22 + sd * 7.0));
+  float b = n2(vec2(x * 3.4 - u * 0.27, u * 0.3 + sd * 11.0));
+  float th = a * b * 2.4;
+  // Knots: bright blobs that ride along the tube.
+  float kn = n1(u * 0.45 - uTime * 0.12 + sd * 13.0);
+  return body * (0.3 + th * th) * (0.45 + 1.1 * kn * kn);
+}
 void main() {
-  float prof = exp(-5.12 * vV * vV);
+  float prof = vKind >= 5.0 ? tube(vV, vU, vPh) : exp(-5.12 * vV * vV);
   // The sun hides what stands behind it.
   float r = length(vP.xy);
   float zs = sqrt(max(R * R - r * r, 0.0));
   float vis = max(smoothstep(R - 0.8, R + 0.8, r), smoothstep(-1.5, 0.8, vP.z - zs));
   // The cool chromosphere dims the feet, except on the ribbons.
-  float feet = vKind == 1.0 ? 1.0 : mix(0.35, 1.0, smoothstep(0.0, 6.0, vHgt));
+  float feet = vKind == 1.0 || vKind == 7.0 ? 1.0 : mix(0.35, 1.0, smoothstep(0.0, 6.0, vHgt));
   float foot = min(vS, 1.0 - vS);
   // Upflows: faint ripples that climb from the feet.
   float rip = 1.0 + 0.22 * sin(6.2832 * (foot * 7.0 - uTime * 0.32 + vPh)) * (1.0 - smoothstep(0.08, 0.4, foot));
@@ -1292,12 +1321,12 @@ void main() {
     I *= 0.25 + 1.3 * kr * kr;
   }
   // Prominences: knots of cool plasma slide down toward the feet.
-  if (vKind >= 3.0) {
+  if (vKind >= 3.0 && vKind < 5.0) {
     float fl = foot * 40.0 + uTime * 0.6 + vPh * 13.0;
     float kn = n1(fl) * 0.7 + n1(fl * 2.7 + 5.0) * 0.5;
     I *= 0.35 + 1.1 * kn * kn;
   }
-  float cf = vKind >= 3.0 ? 1.0 : vKind == 2.0 ? 0.8 : vKind == 1.0 ? 0.5 : 0.0;
+  float cf = vKind == 5.0 ? 0.0 : vKind == 2.0 || vKind == 6.0 ? 0.8 : vKind == 1.0 || vKind == 7.0 ? 0.5 : vKind >= 3.0 ? 1.0 : 0.0;
   float L = I * prof * vis * feet * uGain;
   o = vec4(L * (1.0 - cf), L * cf, 0.0, 1.0);
 }`;

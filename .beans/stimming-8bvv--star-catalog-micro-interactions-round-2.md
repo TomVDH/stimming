@@ -15,5 +15,5 @@ Tom, 2026-11-24: refine the micro-interactions. Round 1 is stimming-hdwz.
 - [x] Quick flare taps run through the choir's chord (Tom, 2026-11-24); the choir picks the style (Tom: the arpeggio sounds strange on Luhman's minor choir): bright songs arpeggiate, minor songs build an open triad
 - [ ] Tom's ear on the tap runs
 - [x] Quick taps never cancel earlier flares; up to eight run at once, a ninth tap waits (Tom, 2026-11-24)
-- [ ] Tap flares as plasma (Tom: the flare and the ?fluid probe both look weird): fibre bundles for the rope (36) and each arcade loop (9), knots on the rope, a larger tap site whose arcade and rope face the eye, staggered rain; WIP, waiting on Tom's eye
+- [ ] Tap flares as plasma (Tom: the flare and the ?fluid probe both look weird): each arcade loop, the rope and the ribbons are soft plasma tubes with braided threads, knots and a frayed edge (2026-11-25, after SDO 171 and IRIS reference); the two long limb lines were ray streaks from end-on ribbons, now gone; waiting on Tom's eye
 - [ ] Doc: Play and Frame loop sections true

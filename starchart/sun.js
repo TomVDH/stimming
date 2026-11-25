@@ -610,8 +610,8 @@ export const flareCurve = {
   born: j => 0.45 + 0.62 * j + 0.012 * j * j,
 };
 export const ARCADE = 22;
-// Fibres per erupting rope, and per arcade loop.
-const ROPE_FIBRES = 36, LOOP_FIBRES = 9;
+// Plasma tubes that braid into the erupting rope.
+const ROPE_TUBES = 3;
 // The rope lies across the neutral line at a slant, so its arch shows side on.
 const ROPE_TURN = 0.85;
 
@@ -675,7 +675,7 @@ export function strands(sun, time, { star, activity, spin = time }, out) {
   }
   for (const p of sun.proms) n = promStrands(p, B, time, out, n);
   if (B.field) n = fieldStrands(spin, B, out, n);
-  for (const fl of sun.flares) n = flareStrands(fl, B, out, n, sun.flares.length);
+  for (const fl of sun.flares) n = flareStrands(fl, B, out, n);
   return n;
 }
 
@@ -748,9 +748,7 @@ export function stepProms(sun, dt) {
 // The point a prominence shows to a tap: part way up its body.
 export const promApex = p => scale(p.c, R + p.h * 0.6);
 
-// crowd: the flares that run now; with many, each takes fewer fibres, so all fit.
-function flareStrands(fl, B, out, n, crowd = 1) {
-  const thin = crowd > 3 ? 0.5 : 1;
+function flareStrands(fl, B, out, n) {
   const { rg, t } = fl;
   const C = flareCurve;
   const sep = C.sep(t, rg);
@@ -761,11 +759,13 @@ function flareStrands(fl, B, out, n, crowd = 1) {
   const rib = C.ribbon(t) * B.ribbon * fl.k * (1 + 2.5 * face);
   if (rib > 0.001) {
     for (const s of [-1, 1]) {
-      // Five strands per ribbon: a bright core and a frayed edge.
-      for (let k = 0; k < 5; k++) {
-        const wob = (hash(fl.seed, k, s + 5) - 0.5) * (3 + k);
-        const A = foot(rg, s * (sep + wob), -len / 2 + k * 3), Bf = foot(rg, s * (sep - wob), len / 2 - k * 4);
-        n = put(out, n, A, 0.9, Bf, 0, 1.1 + k * 0.45, rib * (k === 0 ? 1.3 : 0.65 - 0.08 * k), k, 0, 0, 0, 0, 1);
+      // Each ribbon bows sideways on the surface, so the pair never runs straight.
+      const bow = 6 + 10 * hash(fl.seed, s + 3, 17);
+      // Two knotted strips per ribbon: a bright core and a ragged outer edge.
+      for (let k = 0; k < 2; k++) {
+        const wob = (hash(fl.seed, k, s + 5) - 0.5) * (4 + 4 * k);
+        const A = foot(rg, s * (sep + 3 * k + wob), -len / 2 + k * 6), Bf = foot(rg, s * (sep + 3 * k - wob), len / 2 - k * 8);
+        n = put(out, n, A, 0.9, Bf, 0, 3.5 + 2.5 * k, rib * (k === 0 ? 1.4 : 0.6), hash(fl.seed, k, s + 9) * 7, 0, bow, 0, s * 1.5708, 7);
       }
     }
   }
@@ -773,20 +773,19 @@ function flareStrands(fl, B, out, n, crowd = 1) {
   const h0 = rg.span[1] * 0.42;
   const hr = C.ropeH(t, h0);
   // It fades as it climbs, before its legs stretch into long straight lines.
-  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(150, 420, hr)) * fl.k;
+  const ropeI = B.rope * (0.5 + 1.6 * Math.exp(-t / 1.5)) * sstep(0, 0.15, t) * (1 - sstep(100, 260, hr)) * fl.k;
   if (ropeI > 0.002) {
-    // The rope is a bundle of fibres: a twisted tube that swells and frays as it lifts.
+    // The rope is a few plasma tubes that braid round one axis and part as it lifts.
     const lift = hr - h0;
-    const tube = 8 + 0.12 * lift, fray = sstep(30, 220, lift);
-    for (let k = 0; k < ROPE_FIBRES * thin; k++) {
+    const tube = 7 + 0.1 * lift, fray = sstep(20, 160, lift);
+    const turn = rg.ropeTurn ?? ROPE_TURN;
+    for (let k = 0; k < ROPE_TUBES; k++) {
       const q = m => hash(fl.seed * 17 + k, m, 91);
-      // Fibres fill the tube's cross-section evenly.
-      const rr = tube * Math.sqrt(q(1)) * (1 + 0.8 * fray * q(2));
-      const turn = rg.ropeTurn ?? ROPE_TURN;
-      const A = footT(rg, turn, (q(3) - 0.5) * 6, -rg.len * (0.55 + 0.1 * q(4)));
-      const Bf = footT(rg, turn, (q(5) - 0.5) * 6, rg.len * (0.55 + 0.1 * q(6)));
-      const I = ropeI * 0.04 / thin * (0.4 + 1.2 * q(7)) * (1 - 0.6 * fray * q(8));
-      n = put(out, n, A, hr * (0.96 + 0.08 * q(9)), Bf, (q(10) - 0.5) * 0.12, 2.2 + 2.6 * q(11) + 0.004 * lift, I, k, 0, rr, 0.9 + 0.3 * q(12), q(13) * 6.2832 + t * 0.4, 2);
+      const A = footT(rg, turn, (q(3) - 0.5) * 8, -rg.len * (0.5 + 0.1 * q(4)));
+      const Bf = footT(rg, turn, (q(5) - 0.5) * 8, rg.len * (0.5 + 0.1 * q(6)));
+      const I = ropeI * 0.3 * (0.7 + 0.6 * q(7)) * (1 - 0.4 * fray);
+      const twR = tube * (0.4 + 0.5 * fray);
+      n = put(out, n, A, hr * (0.94 + 0.12 * q(9)), Bf, (q(10) - 0.5) * 0.2, tube * (0.5 + 0.2 * q(11)), I, q(12) * 7 + k, 0, twR, 1.1 + 0.5 * q(13), k * 2.094 + q(14) + t * 0.35, 6);
     }
   }
   // The arcade: loops snap in over the ribbons, each born hot, then cooling.
@@ -802,17 +801,12 @@ function flareStrands(fl, B, out, n, crowd = 1) {
     const I = (resp(lt) + 1.2 * Math.exp(-tau / 0.45)) * em * 0.6 * fl.k * (1 + 1.5 * face);
     if (I < 0.003) continue;
     const off = (q(2) - 0.5) * len;
-    // An arcade loop is a tube of fibres, so the row reads as a glowing comb.
-    const tube = 1.5 + 0.05 * a;
-    for (let k = 0; k < Math.ceil(LOOP_FIBRES * thin); k++) {
-      // Each fibre takes its own hash slots, 100 apart by k.
-      const r = m => hash(fl.seed * 31 + j, 100 * k + m, 78);
-      const ang = r(1) * 6.2832, rad = tube * Math.sqrt(r(2));
-      const de = Math.cos(ang) * rad, df = Math.sin(ang) * rad;
-      const A = foot(rg, a + de + (r(3) - 0.5) * 2, off + df + 2);
-      const Bf = foot(rg, -a - de + (r(4) - 0.5) * 2, off + df - 2);
-      n = put(out, n, A, (a * 1.2 + 3) * (1 + 0.05 * (r(5) - 0.5)), Bf, (q(11) - 0.5) * 0.2 + (r(6) - 0.5) * 0.08, 1.4 + 1.6 * r(7), I * 0.16 / thin * (0.4 + 1.2 * r(8)), q(14) * 7 + r(9), clamp((tau - 12 - 8 * r(10)) / 13));
-    }
+    // An arcade loop is one plasma tube; each has its own width, lean and shear.
+    const tube = (3.5 + 0.12 * a) * (0.6 + 0.8 * q(15));
+    // Early loops lie sheared along the neutral line; later ones stand square to it.
+    const sh = (q(16) - 0.5) * 36 * Math.exp(-j / 7);
+    const A = foot(rg, a, off + sh), Bf = foot(rg, -a, off - sh);
+    n = put(out, n, A, (a * 1.2 + 3) * (0.9 + 0.2 * q(5)), Bf, (q(11) - 0.5) * 0.5, tube, I * 0.5 * (0.6 + 0.8 * q(8)), q(14) * 7, clamp((tau - 12 - 8 * q(10)) / 13), 0, 0, 0, 5);
   }
   return n;
 }
