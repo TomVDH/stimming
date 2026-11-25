@@ -482,6 +482,8 @@ uniform vec4 uShell;
 uniform vec4 uPair;
 // Giant starspots: weight, the caps' edge latitude, the big spot's latitude and longitude.
 uniform vec4 uStarspot;
+// A dark disc in front, edge on: light, its centre in R, its half width and half thickness in R.
+uniform vec4 uDiscE;
 // A binary partner in its disc: centre in R and depth, on; disc radius, thickness, jet, light.
 // uBinN: the disc's axis in the view frame.
 uniform vec4 uBin, uBinD, uBinN;
@@ -930,6 +932,24 @@ void main() {
     // The hidden star shows only as a soft glow through the gas: no hard disc of its own.
     float dd = length(dq);
     cool += vis * uDisk.x * uOff * 0.5 * exp(-dd * dd / 0.3);
+  }
+  // Epsilon Aurigae: a vast dusty disc round a hidden B star crosses the supergiant.
+  // It is edge on and blocks about 70 percent of the light: the toy holds it mid-eclipse.
+  if (uDiscE.x > 0.0) {
+    // The disc hangs in space: a drag turns it with the camera.
+    vec2 e = (uCamM * vec3(P, 0.0)).xy / R - vec2(uDiscE.y, -0.08);
+    e = vec2(0.9988 * e.x + 0.05 * e.y, -0.05 * e.x + 0.9988 * e.y);
+    // The disc flares: it thickens toward its rim.
+    float th = uDiscE.w * (0.65 + 0.35 * smoothstep(0.2, 1.0, abs(e.x) / uDiscE.z));
+    float edge = length(vec2(e.x / uDiscE.z, e.y / th));
+    float inD = smoothstep(1.0, 0.92, edge);
+    float block = 0.7 * inD * (0.8 + 0.4 * fbm(vec3(e * 4.0, 4.0)));
+    hot *= 1.0 - block;
+    cool *= 1.0 - block;
+    // Starlight scatters forward through the dust and lights the rim.
+    cool += uDiscE.x * uDisk.x * 0.1 * exp(-pow((edge - 0.97) / 0.05, 2.0));
+    // The hidden B star glows faintly at the disc's heart.
+    cool += uDiscE.x * uDisk.x * 0.2 * exp(-dot(e, e) / 0.015);
   }
   // VFTS 352: a twin O star in contact; the two envelopes merge in a neck.
   // A smooth union of the two disks draws the peanut; side on it shows, end on it hides.
@@ -1772,6 +1792,7 @@ export async function makeRender(gl, opts = {}) {
     gl.uniform4fv(s.u.uSpin, v.spin);
     gl.uniform4fv(s.u.uGrav, v.band.grav);
     gl.uniform4fv(s.u.uStarspot, v.band.starspot);
+    gl.uniform4fv(s.u.uDiscE, v.band.discE);
     gl.uniform4fv(s.u.uCloud, v.band.clouds);
     gl.uniform4fv(s.u.uYso, v.yso);
     gl.uniform4fv(s.u.uLump, v.lump);

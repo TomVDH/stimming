@@ -55,9 +55,10 @@ const sphere = (psi, beta) => [Math.sin(psi) * Math.cos(beta), Math.cos(psi) * M
 // core: a buried neutron star shown in cutaway through the disk.
 // ring: a giant ring system in front: its opacity, axis ratio, tilt, glow, centre in R.
 // starspot: giant spots: weight, the caps' edge latitude, the big spot's latitude and longitude.
+// discE: a dark disc in front, edge on: light, centre, half width, half thickness, in R.
 // bow: a runaway's bow shock (kind 0) or wake (kind 1): the heading in radians, the size in R, the colour.
 // bin: a binary partner in a thick disc: separation, disc radius and thickness in R; mass ratio; the orbit's tilt toward the eye; jet, light and heat.
-const FLARE = { starspot: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
+const FLARE = { starspot: [0, 0, 0, 0], discE: [0, 0, 0, 0], ns: null, hole: null, reach: 1, jet: 0, wind: [0, 0, 0, 0], core: 0, ring: null, bin: null, bow: null, day: 0, spots: 0, rope: 1, ribbon: 1.6, rain: 0.9, sat: 1, bubble: 0.22, field: 0, beam: 0, lensing: 0, oblate: 0, grav: [0, 1, 0, 0], clouds: [0, 0, 0, 0], yso: [0, 1, 0, 0], lump: [0, 0, 0, 0] };
 export const STARS = {
   // The Vela pulsar: a neutron star 24 km across, a city's width, spinning.
   // Field lines, two beam cones, bent light, and a wind nebula round it.
@@ -345,6 +346,16 @@ export const STARS = {
     hal: [1, 0.4, 0.14], streak: [1, 0.6, 0.32],
     disk: [1.85, 1, 0.02, 0.32], disk2: [100, 0.6, 0.4, 0.1], tex: [40, 7, 0.08, 0.7],
     wide: 'none', long: 'none', root: 196,
+  },
+  // Epsilon Aurigae: an F supergiant, about 143 to 358 suns wide; 200 here.
+  // Every 27 years a disc 3.8 AU wide and 0.475 AU thick crosses it for about two years.
+  // At this size the disc spans 2 R each way and stands 0.26 R thick each way.
+  epsaur: {
+    ...FLARE, day: 0, rain: 0.3, bubble: 0.15, discE: [1, 0.45, 2.04, 0.26], reach: 1.8,
+    row: 11, rsun: 200, expo: 1, hotW: 1, coolW: 1, loop: 0.35, prom: 0.4, dust: 0.1, rays: 1,
+    hal: [1, 0.85, 0.6], streak: [1, 0.9, 0.7],
+    disk: [1.6, 0.6, 0.05, 0.35], disk2: [110, 0.3, 0.3, 0.06], tex: [30, 6, 0.06, 0.5],
+    wide: 'none', long: 'none', root: 138.59,
   },
 };
 /* ---------- a binary's stream, traced through gravity ---------- */

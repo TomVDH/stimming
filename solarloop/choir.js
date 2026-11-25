@@ -220,6 +220,10 @@ TAPNORM.vfts352 = TAPNORM.zetaoph;
 VOICES.xxtri = VOICES.arcturus;
 NORM.xxtri = NORM.arcturus;
 TAPNORM.xxtri = TAPNORM.arcturus;
+// Epsilon Aurigae sings Procyon's choir.
+VOICES.epsaur = VOICES.procyon;
+NORM.epsaur = NORM.procyon;
+TAPNORM.epsaur = TAPNORM.procyon;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 
