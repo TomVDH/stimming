@@ -9,23 +9,23 @@ Keep it current: a new body, a pick or a "no" changes this file in the same comm
 
 | State | Count |
 |---|---|
-| Built, in the tray | 46 |
+| Built, in the tray | 48 |
 | Picked by Tom, not built | 1 |
 | Asked for by Tom, not built | 0 |
-| Offered, no answer | 16 |
+| Offered, no answer | 14 |
 | Offered, not picked | 10 |
 | Parked | 4 |
 
-## Built (46)
+## Built (48)
 
 All in the tray now. A bean marked open waits for Tom's live look.
 
 | Group | Bodies |
 |---|---|
 | Stars | Sun, Proxima, Epsilon Eridani, Procyon, Przybylski's star (`xwce`), Sirius, Vega, Regulus, Zeta Ophiuchi, Fomalhaut, Arcturus |
-| Giants | Polaris (`br7d`), Rigel, Mira (`gico`), Betelgeuse, R Leporis (`7rv1`), VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
+| Giants | Polaris (`br7d`), Hubble V1 (`81qy`), Rigel, Mira (`gico`), Betelgeuse, R Leporis (`7rv1`), VY CMa, Stephenson 2-18 (`lf91`), WOH G64 (`ufke`), XX Trianguli (`usfc`), Quasi-star (`52ct`) |
 | Newborn and failed | T Tauri, Luhman 16, WISE 0855 |
-| Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Eta Carinae (`je5g`), Thorne–Żytkow object (`ye4c`) |
+| Pairs and winds | Beta Lyrae (`t76h`), VFTS 352 (`4xq2`), Epsilon Aurigae (`ruz6`), WR 140 (`npoh`), WR 124 (`gzrx`), Eta Carinae (`je5g`), Gaia BH1 (`xz78`), Thorne–Żytkow object (`ye4c`) |
 | Runaways | S5-HVS1 (`q5aa`) |
 | Dead stars | Sirius B, Pulsar (Vela), SGR 1806-20 (`j8qg`), the Crab Nebula (`404a`), the Ring Nebula (`wcfv`) |
 | Black holes | Cygnus X-1 and Sagittarius A* (`mhpz`), Pōwehi (`rg9y`), Gargantua (`9q7x`) |
@@ -63,7 +63,6 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 | V838 Monocerotis | A merger flare and its light echo |
 | WR 104 | A dust pinwheel, the alternative to WR 140 |
 | OJ 287 | A binary black hole (offered three times) |
-| Gaia BH1 | A dormant black hole beside a sun-like star |
 | V404 Cygni | A black hole binary with a wobbling disc and outbursts |
 | GW150914 | The first black hole merger heard by LIGO |
 | Swift J1644+57 | A black hole tears a star apart; its jet points at Earth |
@@ -72,7 +71,6 @@ Tom picked these from an object list on 2026-11-24. He chose the open objects on
 | iPTF14hls | A supernova that would not stay dead |
 | SN 2006gy | A pair-instability candidate, one of the brightest |
 | AT2018cow | "The Cow", a fast blue transient |
-| Hubble V1 | The Andromeda Cepheid that set the distance to galaxies |
 | Tabby's star | Dims by up to 22 percent at random |
 | R136a1 | The heaviest known star (named, then left out of the offer) |
 

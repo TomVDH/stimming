@@ -25,6 +25,8 @@ export const CHART = {
   ttauri: { kind: 'proto', t: 4000, cls: 'K0 protostar' },
   arcturus: { t: 4290, cls: 'K1.5 III red giant' },
   rigel: { t: 12100, cls: 'B8 Ia supergiant' },
+  hubblev1: { kind: 'cepheid', t: 5700, cls: 'Cepheid variable in the Andromeda Galaxy' },
+  gaiabh1: { kind: 'dormant', t: 5850, cls: 'G dwarf round a dormant black hole' },
   etacar: { kind: 'bipolar', t: 9400, cls: 'luminous blue variable in the Homunculus Nebula' },
   betelgeuse: { t: 3600, cls: 'M1 Ia supergiant' },
   rlep: { kind: 'giant', t: 2290, cls: 'C7,6e carbon star, Hind\'s Crimson Star' },
@@ -91,9 +93,9 @@ const sizeOf = rsun => Math.min(1, Math.max(0, (Math.log10(rsun) + 4.8) / 9.3)) 
 // The groups, by kind of body; an object in none of them joins "More".
 const GROUPS = [
   ['Stars', ['proxima', 'epseri', 'sun', 'xxtri', 'procyon', 'przyb', 'sirius', 'fomalhaut', 's5hvs1', 'vega', 'regulus', 'zetaoph']],
-  ['Giants', ['arcturus', 'polaris', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
+  ['Giants', ['arcturus', 'polaris', 'hubblev1', 'rigel', 'mira', 'betelgeuse', 'rlep', 'tzo', 'vycma', 'wohg64', 'st218']],
   ['Newborn and failed', ['wise', 'luhman', 'ttauri']],
-  ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur', 'etacar']],
+  ['Pairs and winds', ['betalyr', 'vfts352', 'wr124', 'wr140', 'epsaur', 'etacar', 'gaiabh1']],
   ['Dead stars', ['magnetar', 'neutron', 'crab', 'siriusb', 'ring']],
   ['Black holes', ['cygx1', 'sgra', 'qso', 'powehi', 'gargantua']],
   ['Far and strange', ['quasi', 'earendel', 'mothra', 'uhz1', 'momz14']],

@@ -320,6 +320,26 @@ export const STARS = {
     disk: [1.8, 0.6, 0.1, 0.38], disk2: [60, 0.7, 0.4, 0.1], tex: [150, 14, 0.12, 0.55],
     wide: 'none', long: 'none', root: 220,
   },
+  // Hubble V1: the Cepheid in the Andromeda Galaxy that set the distance to the galaxies (Hubble, 1923).
+  // It beats every 31.4 days; its light swings about a magnitude, so 45 percent each way here.
+  hubblev1: {
+    ...FLARE, day: 0, rain: 0.4, bubble: 0.2,
+    beat: { days: 31.4, swell: 0.08, light: 0.45 },
+    row: 11, rsun: 150, expo: 1, hotW: 1, coolW: 1.05, loop: 0.5, prom: 0.6, dust: 0.08, rays: 1,
+    hal: [1, 0.62, 0.3], streak: [1, 0.78, 0.5],
+    disk: [1.7, 0.6, 0.08, 0.36], disk2: [90, 0.5, 0.35, 0.08], tex: [40, 8, 0.1, 0.5],
+    wide: 'none', long: 'none', root: 174.61,
+  },
+  // Gaia BH1: a sun-like star round a dormant black hole of 9.6 suns, every 186 days, 1.4 AU apart.
+  // The hole stands 300 R off; pulled back, it bends the stars behind it. The full view stands 260 times back.
+  gaiabh1: {
+    ...FLARE, spots: 0.8, day: 25, reach: 260,
+    bow: { kind: 8, heading: 0.6, size: 300, col: [0, 0, 0] },
+    row: 0, rsun: 0.99, expo: 1, hotW: 1, coolW: 1.15, loop: 0.9, prom: 0.9, dust: 0, rays: 0.9,
+    hal: [1, 0.45, 0.14], streak: [1, 0.72, 0.36],
+    disk: [2.1, 0.7, 0.12, 0.35], disk2: [55, 0.9, 0.5, 0.12], tex: [170, 16, 0.15, 0.55],
+    wide: 'none', long: 'none', root: 246.94,
+  },
   // Mira: a pulsing red giant, about 330 to 400 suns wide, beating every 332 days.
   // It ploughs through the gas at 130 km/s: a bow shock ahead, a tail 13 light years long.
   // The tail is the toy's, not to scale; its blue is GALEX's ultraviolet light.

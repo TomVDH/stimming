@@ -237,6 +237,8 @@ TAPNORM.etacar = TAPNORM.rigel;
 for (const id of ['uhz1', 'momz14']) { VOICES[id] = VOICES.rigel; NORM[id] = NORM.rigel; TAPNORM[id] = TAPNORM.rigel; }
 // Polaris sings Procyon's choir.
 VOICES.polaris = VOICES.procyon;
+VOICES.hubblev1 = VOICES.procyon;
+VOICES.gaiabh1 = VOICES.sun;
 VOICES.przyb = VOICES.procyon;
 NORM.przyb = NORM.procyon;
 TAPNORM.przyb = TAPNORM.procyon;
@@ -307,12 +309,16 @@ Object.assign(VOICES, {
   magnetar: from('neutron', { bright: 0.8, metal: 0.4, step: 10, swR: 0.03 }),
   // Polaris: the North Star, beating every four days. Procyon's pad, lower, on a quicker swell.
   polaris: from('procyon', { swR: 0.1, swD: 0.3 }),
+  // Hubble V1: Polaris's swell, deeper and farther.
+  hubblev1: from('procyon', { swR: 0.12, swD: 0.34, dist: 0.9, rev: 13 }),
+  // Gaia BH1: the Sun's choir, darker, with a hole beside it.
+  gaiabh1: from('sun', { bright: 0.8, det: 12, rev: 12 }),
   // Przybylski's star: Procyon's pad, brighter and odder.
   przyb: from('procyon', { bright: 1.25, det: 14 }),
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
 });
 // Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['etacar', 'rigel'], ['uhz1', 'wr124'], ['momz14', 'wr124'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
+for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['etacar', 'rigel'], ['uhz1', 'wr124'], ['momz14', 'wr124'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['hubblev1', 'procyon'], ['gaiabh1', 'sun'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
   NORM[id] ??= NORM[rel];
   TAPNORM[id] ??= TAPNORM[rel];
   GLOWNORM[id] ??= GLOWNORM[rel];

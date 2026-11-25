@@ -2233,6 +2233,25 @@ vec3 etaNeb(vec2 pR) {
   float oe = exp(-pow((d - 1.3) / 0.22, 2.0)) * 0.16 * pow(fbm(vec3(q * 11.0, 2.0)), 3.0);
   return acc + vec3(1.0, 0.3, 0.2) * oe;
 }
+// Gaia BH1's dormant black hole, uBow.z R off along the heading; not to scale: its shadow is 60 km wide.
+// No gas falls in, so it shows only by bending the stars behind it: a point lens, b = t - tE² / t.
+vec3 dormantHole(vec2 P) {
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 pr = P / R, dq = pr - uBow.z * ax;
+  float rr = max(length(dq), 1e-4), tE = 0.06 * uBow.z;
+  if (rr > 8.0 * tE) return vec3(0.0);
+  float rpp = max(fwidth(pr.x), 1e-5);
+  vec2 fc = gl_FragCoord.xy;
+  vec2 src = fc - (tE * tE / rr) * (dq / rr) / rpp;
+  // The shadow hides what lies behind it; the bent stars take the place of the straight ones.
+  float sh = smoothstep(0.42 * tE, 0.36 * tE, rr);
+  vec3 c = (starfield(src) * (1.0 - sh) - starfield(fc)) * uCam.w;
+  // The Einstein ring: the galaxy's faint diffuse light, gathered round the hole.
+  c += vec3(0.6, 0.7, 1.0) * 0.16 * exp(-pow((rr - tE) / (0.14 * tE), 2.0)) * (1.0 - sh);
+  // The photon ring: a thin line of starlight bent round the shadow's edge.
+  c += vec3(0.85, 0.9, 1.0) * 0.5 * exp(-pow((rr - 0.43 * tE) / (0.025 * tE), 2.0));
+  return c;
+}
 // The Ring Nebula (M57), its outer edge uBow.z R out; not to scale: the true ring is about 1 light year wide.
 // A prolate barrel, its axis 30 degrees off the line of sight, dense round its waist.
 // Each ray marches through it in the camera's frame, so a drag turns the barrel.
@@ -2330,6 +2349,8 @@ vec3 runaway(vec2 P) {
     float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
     return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
   }
+  // Gaia BH1: a dormant black hole beside the star, seen only by its lensing.
+  if (uBow.w > 7.5) return dormantHole(P);
   // Eta Carinae's Homunculus: two dusty lobes, marched in 3D.
   if (uBow.w > 5.5) return etaNeb(P / R);
   // The Ring Nebula: a barrel of glowing gas round a white dwarf, marched in 3D.
