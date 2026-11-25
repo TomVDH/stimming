@@ -1,10 +1,11 @@
 ---
 # stimming-npew
 title: 'Star catalog: the quasar needs some love'
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-25T04:04:41Z
-updated_at: 2026-11-25T04:04:41Z
+updated_at: 2026-11-25T04:57:38Z
 parent: stimming-e35i
 ---
 
@@ -17,4 +18,4 @@ Tom, 2026-11-24: "the quasar needs some love". Improve 3C 273 only, one change a
 - [x] Blue clouds: Worley cloud layers above and below, broken into masses, some clumps back (Tom: good)
 - [x] Band: outer end fans out into trailing spiral fingers (Tom: good)
 - [x] Doc lines in docs/toys/solarloop.md fixed (band, clouds, jet)
-- [ ] Tom says the quasar looks right
+- [x] Tom says the quasar looks right (2026-11-24)
