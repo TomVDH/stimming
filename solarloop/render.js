@@ -1897,11 +1897,11 @@ float pip(vec2 d, float pw, float len) {
 }
 // A strong lens round a far star (Tom, 2026-11-24): the light is traced, not drawn.
 // q: the view in R, turned so the lens lies along +x; Pv: the same point unturned, for the spikes.
-// The lens is a singular isothermal sphere uBow.z radii off, its Einstein radius just inside the star:
+// The lens is a singular isothermal sphere uBow.z radii off, its Einstein radius 0.86 of that:
 // so the star sits by the critical curve, hugely magnified, and shows twice.
 // Each pixel looks back through the lens to the source plane: b = t - tE t/|t|.
 vec3 lensScene(vec2 q, vec2 Pv) {
-  float D = uBow.z, tE = 0.93 * D;
+  float D = uBow.z, tE = 0.86 * D;
   vec2 t = q - vec2(D, 0.0);
   float tl = max(length(t), 1e-3);
   vec2 b = t - tE * t / tl;
