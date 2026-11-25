@@ -83,7 +83,7 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 ## Wordmark
 
 - The letters flash the footer's hues left to right: `mark-1` to `mark-8` in `DESIGN.md`. The menu title and `MARK` in `shared/stim.js` hold the same eight values.
-- The wordmark and every heading are B612.
+- The wordmark is Iosevka Term Slab (Tom, 2026-11-25); every heading is B612.
 
 ## Loading
 
