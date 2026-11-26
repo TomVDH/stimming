@@ -76,7 +76,7 @@ export class BillInspector {
     }
     const first = BILLS[0];
     const tex = textures.get(first.id)!;
-    const mat = createBillMaterial(first, tex.front, tex.back, shared, HERO_H * first.aspect, HERO_H, true);
+    const mat = createBillMaterial(first, tex.front, tex.back, tex.maskFront, tex.maskBack, shared, HERO_H * first.aspect, HERO_H, true);
     this.uniforms = mat.uniforms as BillUniforms;
     this.mesh = new THREE.Mesh(this.geometries.get(first.id)!, mat);
     this.mesh.visible = false;
@@ -101,7 +101,7 @@ export class BillInspector {
     const tex = this.textures.get(def.id)!;
     const w = HERO_H * def.aspect;
     this.mesh.geometry = this.geometries.get(def.id)!;
-    applyBillUniforms(this.uniforms, def, tex.front, tex.back, w, HERO_H);
+    applyBillUniforms(this.uniforms, def, tex.front, tex.back, tex.maskFront, tex.maskBack, w, HERO_H);
   }
 
   open(def: BillDef, fromPos?: THREE.Vector3, fromQuat?: THREE.Quaternion, fromWear?: BillWear) {
@@ -137,15 +137,14 @@ export class BillInspector {
       this.twist = 0.08;
     }
 
-    // Inherit crumpled paper state so worn bills physically unfurl flat in your hands.
+    // Inherit crumpled paper state so worn bills visibly arrive folded, then spring open flat.
     if (fromWear) {
       this.crinkle = fromWear.crinkle;
-      this.targetCrinkle = fromWear.crinkle * 0.16;
+      this.targetCrinkle = fromWear.crinkle * 0.14;
       this.centerFold = fromWear.centerFold;
       this.cornerCurl = fromWear.cornerCurl;
       this.crinkleSeed = fromWear.seed;
-      // Brief pause lets the viewer see the folded note arrive before it snaps open.
-      this.unfurlDelay = (fromWear.crinkle > 0.25 || Math.abs(fromWear.centerFold) > 0.1) ? 0.16 : 0;
+      this.unfurlDelay = (fromWear.crinkle > 0.25 || Math.abs(fromWear.centerFold) > 0.12) ? 0.26 : 0;
     } else {
       this.crinkle = 0.06;
       this.targetCrinkle = 0.04;
@@ -218,10 +217,8 @@ export class BillInspector {
   flip() {
     if (!this.active) return;
     const turns = Math.round(this.targetRotY / Math.PI);
-    const nextTurns = turns + 1;
-    this.targetRotY = nextTurns * Math.PI;
-    const onBack = Math.abs(nextTurns % 2) === 1;
-    this.targetRotZ = (onBack && this.def.backVertical) ? Math.PI * 0.5 : 0;
+    this.targetRotY = (turns + 1) * Math.PI;
+    this.targetRotZ = 0;
     this.targetRotX = -0.04;
     this.velY = 0;
     this.velX = 0;
@@ -263,12 +260,6 @@ export class BillInspector {
     this.bendYv -= ny * 1.9;
     this.twistV += (nx * 1.9 - ny * 1.5);
     this.flutter = Math.min(0.065, this.flutter + Math.hypot(nx, ny) * 0.15);
-
-    if (this.def.backVertical) {
-      const a = Math.abs(((this.targetRotY % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
-      const onBack = a < Math.PI * 0.48;
-      this.targetRotZ = onBack ? Math.PI * 0.5 : 0;
-    }
   }
 
   endDrag() {

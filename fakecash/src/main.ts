@@ -18,6 +18,7 @@ import { CashField, type BillBody, type BillTextures, type SimOpts } from './phy
 import { BillInspector } from './inspect.ts';
 import { StudioStage } from './stage.ts';
 import { InspectBackdrop } from './post.ts';
+import { BillShadowMap } from './shadows.ts';
 import { createCashSound } from './sound.ts';
 
 mark('libs');
@@ -43,11 +44,11 @@ function savedNum(k: string, fallback: number, min: number, max: number): number
 
 /* ---------- state ---------- */
 const opts: SimOpts = {
-  rainRate: savedNum('rain', 0.38, 0, 1),
-  wind: 0.12,
+  rainRate: savedNum('rain2', 0.24, 0, 1),
+  wind: 0.10,
   flutter: 1.0,
   filter: 'mix',
-  maxBills: 56,
+  maxBills: 28,
   reduced: reduced(),
 };
 
@@ -60,9 +61,10 @@ let field: CashField | null = null;
 let inspector: BillInspector | null = null;
 let studio: StudioStage | null = null;
 let backdrop: InspectBackdrop | null = null;
+let shadows: BillShadowMap | null = null;
 let inspectMix = 0;
 let bgBlur = 1.0;
-let bgDarken = 0.68;
+let bgDarken = 0.70;
 const sharedLook = createSharedLook();
 
 /* ---------- sound ---------- */
@@ -208,40 +210,40 @@ const ui = initPage({
       value: opts.rainRate,
       onInput: v => {
         opts.rainRate = v;
-        store.set('rain', v);
+        store.set('rain2', v);
         wake();
       },
     },
     settings: [
-      { type: 'slider', id: 'wind', group: 'Air', label: 'Wind', min: -1, max: 1, step: 0.02, value: 0.12, persist: true, onInput: v => { opts.wind = v; wake(); } },
+      { type: 'slider', id: 'wind', group: 'Air', label: 'Wind', min: -1, max: 1, step: 0.02, value: 0.10, persist: true, onInput: v => { opts.wind = v; wake(); } },
       { type: 'slider', id: 'flutter', group: 'Air', label: 'Flutter', min: 0.2, max: 1.6, step: 0.05, value: 1.0, persist: true, onInput: v => { opts.flutter = v; wake(); } },
       { type: 'button', id: 'clear', group: 'Stage', label: 'Bills', text: 'Clear', onClick: () => { if (inspector?.isOpen) closeInspect(); field?.clear(); wake(); } },
     ],
     dev: [
-      { type: 'slider', id: 'exposure', group: 'Light', label: 'Exposure', min: 0.65, max: 1.75, step: 0.02, value: 1.14, persist: true, onInput: v => { sharedLook.uExposure.value = v; wake(); } },
+      { type: 'slider', id: 'exposure2', group: 'Light', label: 'Exposure', min: 0.60, max: 1.50, step: 0.02, value: 0.94, persist: true, onInput: v => { sharedLook.uExposure.value = v; wake(); } },
       { type: 'slider', id: 'bgblur', group: 'Light', label: 'Inspect blur', min: 0, max: 2.0, step: 0.05, value: 1.0, persist: true, onInput: v => { bgBlur = v; wake(); } },
-      { type: 'slider', id: 'bgdark', group: 'Light', label: 'Inspect dim', min: 0.25, max: 0.95, step: 0.02, value: 0.68, persist: true, onInput: v => { bgDarken = v; wake(); } },
-      { type: 'slider', id: 'relief', group: 'Paper', label: 'Intaglio', min: 0, max: 1.8, step: 0.05, value: 0.92, persist: true, onInput: v => { sharedLook.uRelief.value = v; wake(); } },
-      { type: 'slider', id: 'grain', group: 'Paper', label: 'Cotton grain', min: 0, max: 2.0, step: 0.05, value: 0.92, persist: true, onInput: v => { sharedLook.uGrain.value = v; wake(); } },
-      { type: 'slider', id: 'foil', group: 'Paper', label: 'Foil glint', min: 0, max: 2.0, step: 0.05, value: 1.18, persist: true, onInput: v => { sharedLook.uFoil.value = v; wake(); } },
-      { type: 'slider', id: 'trans', group: 'Paper', label: 'Subsurface', min: 0, max: 2.4, step: 0.05, value: 1.55, persist: true, onInput: v => { sharedLook.uTrans.value = v; wake(); } },
-      { type: 'slider', id: 'count', group: 'Sim', label: 'Max bills', min: 16, max: 76, step: 2, value: 56, persist: true, onInput: v => { opts.maxBills = v; wake(); } },
+      { type: 'slider', id: 'bgdark2', group: 'Light', label: 'Inspect dim', min: 0.25, max: 0.95, step: 0.02, value: 0.58, persist: true, onInput: v => { bgDarken = v; wake(); } },
+      { type: 'slider', id: 'relief2', group: 'Paper', label: 'Intaglio', min: 0, max: 1.6, step: 0.05, value: 0.82, persist: true, onInput: v => { sharedLook.uRelief.value = v; wake(); } },
+      { type: 'slider', id: 'grain2', group: 'Paper', label: 'Cotton grain', min: 0, max: 2.0, step: 0.05, value: 0.85, persist: true, onInput: v => { sharedLook.uGrain.value = v; wake(); } },
+      { type: 'slider', id: 'foil2', group: 'Paper', label: 'Foil glint', min: 0, max: 2.0, step: 0.05, value: 1.05, persist: true, onInput: v => { sharedLook.uFoil.value = v; wake(); } },
+      { type: 'slider', id: 'trans2', group: 'Paper', label: 'Subsurface', min: 0, max: 1.8, step: 0.05, value: 0.65, persist: true, onInput: v => { sharedLook.uTrans.value = v; wake(); } },
+      { type: 'slider', id: 'count2', group: 'Sim', label: 'Max bills', min: 10, max: 64, step: 2, value: 28, persist: true, onInput: v => { opts.maxBills = v; wake(); } },
     ],
     quality: true,
     reset: () => {
-      opts.rainRate = 0.38;
-      opts.wind = 0.12;
+      opts.rainRate = 0.24;
+      opts.wind = 0.10;
       opts.flutter = 1.0;
       opts.filter = 'mix';
-      ui.slider?.set(0.38, false);
-      store.set('rain', 0.38);
-      ui.setting('wind')?.set(0.12, true);
+      ui.slider?.set(0.24, false);
+      store.set('rain2', 0.24);
+      ui.setting('wind')?.set(0.10, true);
       ui.setting('flutter')?.set(1.0, true);
       ui.choice?.set('mix', false);
       if (inspector?.isOpen) closeInspect();
-      field?.clear();
+      field?.clearImmediate();
       field?.seedInitial(opts);
-      sfx.burst(6);
+      sfx.burst(5);
       wake();
     },
     keys: [
@@ -272,16 +274,16 @@ flipChip = chips.find(b => b.querySelector('.s2-label')?.textContent === 'Flip')
 if (flipChip) flipChip.hidden = true;
 
 // Restore persisted settings before first render.
-opts.wind = ui.setting('wind')?.value ?? 0.12;
+opts.wind = ui.setting('wind')?.value ?? 0.10;
 opts.flutter = ui.setting('flutter')?.value ?? 1.0;
-sharedLook.uExposure.value = ui.setting('exposure')?.value ?? 1.14;
+sharedLook.uExposure.value = ui.setting('exposure2')?.value ?? 0.94;
 bgBlur = ui.setting('bgblur')?.value ?? 1.0;
-bgDarken = ui.setting('bgdark')?.value ?? 0.68;
-sharedLook.uRelief.value = ui.setting('relief')?.value ?? 0.92;
-sharedLook.uGrain.value = ui.setting('grain')?.value ?? 0.92;
-sharedLook.uFoil.value = ui.setting('foil')?.value ?? 1.18;
-sharedLook.uTrans.value = ui.setting('trans')?.value ?? 1.55;
-opts.maxBills = ui.setting('count')?.value ?? 56;
+bgDarken = ui.setting('bgdark2')?.value ?? 0.58;
+sharedLook.uRelief.value = ui.setting('relief2')?.value ?? 0.82;
+sharedLook.uGrain.value = ui.setting('grain2')?.value ?? 0.85;
+sharedLook.uFoil.value = ui.setting('foil2')?.value ?? 1.05;
+sharedLook.uTrans.value = ui.setting('trans2')?.value ?? 0.65;
+opts.maxBills = ui.setting('count2')?.value ?? 28;
 
 mark('build');
 playIntro({ ready: pageReady(14000) });
@@ -398,13 +400,21 @@ async function boot() {
   try {
     await Promise.all(
       BILLS.map(async def => {
-        const [front, back] = await Promise.all([loadTex(def.frontUrl), loadTex(def.backUrl)]);
-        loadedTextures.set(def.id, { front, back });
+        const [front, back, maskFront, maskBack] = await Promise.all([
+          loadTex(def.frontUrl),
+          loadTex(def.backUrl),
+          loadTex(def.maskFrontUrl),
+          loadTex(def.maskBackUrl),
+        ]);
+        loadedTextures.set(def.id, { front, back, maskFront, maskBack });
         stepNote();
       }),
     );
 
     studio = new StudioStage();
+    shadows = new BillShadowMap();
+    sharedLook.uShadowMap.value = shadows.depthTexture;
+    sharedLook.uShadowMatrix.value.copy(shadows.matrix);
     field = new CashField(loadedTextures, sharedLook);
     inspector = new BillInspector(loadedTextures, sharedLook);
     backdrop = new InspectBackdrop();
@@ -749,6 +759,9 @@ function step(dt: number, ease: number) {
 
 function renderOnce() {
   if (contextLost) return;
+  if (shadows && field) {
+    shadows.render(renderer, field.group, field.bodies);
+  }
   if (backdrop && inspector) {
     backdrop.render(renderer, scene, camera, inspector.mesh, inspectMix, bgBlur, bgDarken);
   } else {
@@ -832,12 +845,15 @@ addEventListener('pagehide', () => {
   sfx.cancel();
   ro.disconnect();
   studio?.dispose();
+  shadows?.dispose();
   backdrop?.dispose();
   field?.dispose();
   inspector?.dispose();
   for (const t of loadedTextures.values()) {
     t.front.dispose();
     t.back.dispose();
+    t.maskFront.dispose();
+    t.maskBack.dispose();
   }
   renderer.dispose();
 });
