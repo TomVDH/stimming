@@ -11,7 +11,28 @@ const FONT = (/** @type {string} */ f) => new URL(`../shared/fonts/${f}`, import
 // In the column: the name group on the card's middle line, the foot row on the bottom margin.
 const STYLE = `
 @font-face { font-family: "SC Slab"; font-weight: 800; src: url(${FONT('IosevkaTermSlab-ExtraBold.woff2')}) format("woff2"); }
+@font-face { font-family: "SC Slab"; font-weight: 700; src: url(${FONT('IosevkaTermSlab-Bold.woff2')}) format("woff2"); }
+@font-face { font-family: "SC Slab"; font-weight: 500; src: url(${FONT('IosevkaTermSlab-Medium.woff2')}) format("woff2"); }
 .sc { --m: 72px; position: relative; width: 1200px; height: 630px; overflow: hidden; background: #0e0e10; color: #f3f1ec; font-family: "SC Slab", monospace; }
+.sc--main {
+  background: oklch(0.16 0.012 275);
+  display: grid; place-content: center; justify-items: center; text-align: center;
+  gap: 24px; padding-bottom: 58px; box-sizing: border-box;
+}
+.sc-foot-cv {
+  position: absolute; left: 0; right: 0; bottom: 0; width: 1200px; height: 340px;
+  display: block; pointer-events: none; z-index: 0;
+}
+.sc-main-wm {
+  position: relative; z-index: 1; display: flex; align-items: baseline; gap: 0.01em;
+  font: 700 148px/0.92 "SC Slab", "Iosevka Term Slab", monospace; letter-spacing: -0.025em;
+}
+.sc-main-wm .l { display: inline-block; color: var(--c); font-weight: var(--w); transform-origin: 50% 70%; }
+.sc-main-sub {
+  position: relative; z-index: 1; margin: 0; max-width: 28ch; text-wrap: balance;
+  font: 400 30px/1.34 B612, sans-serif; letter-spacing: 0.005em;
+  color: oklch(0.80 0.016 275);
+}
 /* The still fills the left side to the card's edges; its right edge is a dithered arc. */
 /* A light blur softens it; a sparse dither runs through the whole picture. */
 .sc-still { position: absolute; left: 0; top: 0; width: 620px; height: 630px; object-fit: cover; opacity: 0.72; filter: blur(2.5px);
@@ -154,5 +175,100 @@ export async function drawCard(host, id, t) {
     ic.style.setProperty('--mx', `${-box.x * k}px`);
     ic.style.setProperty('--my', `${-box.y * k}px`);
   }
+  return card;
+}
+
+// Draws the crisp OKLab rainbow footer gradient onto a 2D canvas (matching Signal Dial's dark subtle footer cloud).
+function paintFooterCloud(canvas) {
+  const W = canvas.width, H = canvas.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const img = ctx.createImageData(W, H);
+  const data = img.data;
+  const clamp = (v, a = 0, b = 1) => (v < a ? a : v > b ? b : v);
+  const sstep = (a, b, x) => { const t = clamp((x - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const hash = (x, y) => {
+    let h = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+    return h - Math.floor(h);
+  };
+  const vnoise = (x, y) => {
+    const ix = Math.floor(x), iy = Math.floor(y);
+    const fx = x - ix, fy = y - iy;
+    const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+    const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+    return a + (b - a) * ux + (c - a) * uy + (a - b - c + d) * ux * uy;
+  };
+  const fbm = (x, y) => {
+    let v = 0, amp = 0.5;
+    for (let i = 0; i < 4; i++) {
+      v += amp * vnoise(x, y);
+      const nx = x * 1.62 - y * 1.18 + 2.3;
+      const ny = x * 1.18 + y * 1.62 + 1.1;
+      x = nx; y = ny; amp *= 0.5;
+    }
+    return v;
+  };
+  const oklabToSrgb = (L, a, b) => {
+    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+    const l = l_ * l_ * l_, m = m_ * m_ * m_, s = s_ * s_ * s_;
+    const lin = [
+      4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s,
+    ];
+    return lin.map(v => {
+      v = clamp(v);
+      return Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * (v ** (1 / 2.4)) - 0.055));
+    });
+  };
+  const bg = oklabToSrgb(0.16, 0.012 * Math.cos(275 * Math.PI / 180), 0.012 * Math.sin(275 * Math.PI / 180));
+  for (let py = 0; py < H; py++) {
+    const yUp = 1 - py / H; // 0 at bottom edge, 1 at top of strip
+    for (let px = 0; px < W; px++) {
+      const ux = px / W;
+      const sx = (ux - 0.5) * 3.1;
+      const sy = yUp * 1.45;
+      const wx = fbm(sx + 1.1, sy + 0.6) - 0.5;
+      const wy = fbm(sx + 3.4, sy + 2.7) - 0.5;
+      const n = fbm(sx + wx * 1.2, sy + wy * 1.2);
+      const arch = 0.08 * Math.cos((ux - 0.5) * Math.PI * 1.45);
+      const lift = 1 - sstep(0.0, 0.94, yUp - arch + (n - 0.5) * 0.22);
+      const wisp = sstep(0.24, 0.86, n);
+      const edge = sstep(0.0, 0.12, ux) * sstep(0.0, 0.12, 1 - ux);
+      const mask = clamp((lift ** 1.45) * (0.48 + 0.52 * wisp) * (0.65 + 0.35 * edge));
+      const ang = ux * 6.28318 * 1.05 + n * 2.1 + 0.85;
+      const L = 0.25 + 0.14 * wisp + 0.06 * lift;
+      const C = (0.08 + 0.055 * wisp) * mask;
+      const col = oklabToSrgb(L, C * Math.cos(ang), C * Math.sin(ang));
+      const a = clamp(mask * 0.72);
+      const idx = (py * W + px) * 4;
+      data[idx] = Math.round(bg[0] + (col[0] - bg[0]) * a);
+      data[idx + 1] = Math.round(bg[1] + (col[1] - bg[1]) * a);
+      data[idx + 2] = Math.round(bg[2] + (col[2] - bg[2]) * a);
+      data[idx + 3] = Math.round(255 * clamp(lift * 1.25));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/**
+ * Draws the main site SEO share card (1200 x 630): Stimming wordmark, shareholder-value tagline, and the OKLab footer gradient.
+ * @param {HTMLElement} host
+ * @returns {Promise<HTMLElement>}
+ */
+export async function drawMainCard(host) {
+  install();
+  await Promise.all(['700 148px "SC Slab"', '500 148px "SC Slab"', '800 148px "SC Slab"', '400 30px B612'].map(f => document.fonts.load(f)));
+  const wm = await wordmark();
+  host.innerHTML = `<div class="sc sc--main" data-id="main">
+    <canvas class="sc-foot-cv" width="1200" height="340" aria-hidden="true"></canvas>
+    <div class="sc-main-wm">${wm}</div>
+    <p class="sc-main-sub">delightful and effective ways to deny shareholder value</p>
+  </div>`;
+  const card = /** @type {HTMLElement} */ (host.firstElementChild);
+  const cv = /** @type {HTMLCanvasElement} */ (card.querySelector('.sc-foot-cv'));
+  paintFooterCloud(cv);
   return card;
 }
