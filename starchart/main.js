@@ -254,16 +254,15 @@ function fitView(w, h, top = 0, bottom = 0) {
   // The limb stands upright about a third of the way in from the left.
   const xb = (narrow ? 0.3 : 0.34) * w;
   fit.wide = { cx: R + hw - xb * 2 * hw / w, cy: -(bottom - top) * hh / h, hw };
-  // The long lens: the old quarter cut, mirrored onto the west side (Tom, 2026-11-24).
-  // The star fills the frame; its limb arcs from the foot's middle to the right side's middle.
-  // A fifth wider than before, so the cut reads as a curve (Tom, 2026-11-25: too tight).
-  const hwL = narrow ? 180 : asp < 1.2 ? 250 : 335;
+  // The long lens: the quarter cut, mirrored onto the west side (Tom, 2026-11-24).
+  // Pulled back so the pole and curved limb arc sit clearly in frame (Tom, 2026-11-26).
+  const hwL = narrow ? 225 : asp < 1.2 ? 315 : 420;
   const hhL = hwL / asp;
   // On a tall phone the corner cut is too steep; a fixed angle keeps the arc low.
   const psi = Math.PI - (narrow ? 0.6 : Math.atan2(hhL, hwL));
   const nx = Math.sin(psi), ny = Math.cos(psi);
-  // The limb stands a quarter of the frame in from its edge, along psi.
-  const d = 0.5 * (hwL * Math.abs(nx) + hhL * Math.abs(ny));
+  // Shifts the limb inward along psi so the pole and arc stay visible.
+  const d = 0.32 * (hwL * Math.abs(nx) + hhL * Math.abs(ny));
   fit.long = { cx: (R - d) * nx, cy: (R - d) * ny - (bottom - top) * hhL / h, hw: hwL };
   // A black hole's long lens: the shadow's west edge at the equator, where the disc crosses it.
   // The edge stands two fifths in from the left, as on the wide view.

@@ -124,7 +124,8 @@ export const VOICES = {
   neutron: P({ ...song('overtones'), ...ARP, ...ANALOG, key: 11, aDrift: 19, swellAmt: 0.75, wob: 1, blastWave: 'square', glowWave: 'sine', wave: 'pulse', det: 10, res: 4, fmot: 0.45, metal: 0.25, bright: 1.2, step: 7, dist: 0.85, rev: 13, mix: 1.8, width: 1.8, oct: [1, 0.6, 0.5], swR: 0.04, swD: 0.1, fx: { radio: 0.3, sweep: 0.3, echo: 0.4, machine: 0.2 }, gain: 1 }),
 };
 // Normalization: each star's level against the Sun, measured offline.
-// K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render (2026-11-24).
+// K-weighted as in ITU-R BS.1770, at 44.1 kHz, swell off, a fixed seed, 6 to 22 s of a 22 s render.
+// All 51 bodies carry measured values (2026-11-24 and 2026-11-26).
 // The lab's Normalize every star measures them again and writes this table out.
 export const NORM = {
   sun: 1,
@@ -152,9 +153,35 @@ export const NORM = {
   sgra: 0.16,
   qso: 0.08,
   s5hvs1: 0.2,
+  st218: 0.22,
+  wohg64: 0.27,
+  quasi: 0.13,
+  wr140: 0.27,
+  vfts352: 0.38,
+  xxtri: 0.72,
+  epsaur: 0.62,
+  mothra: 0.2,
+  earendel: 0.19,
+  etacar: 0.32,
+  v838: 0.18,
+  uhz1: 0.18,
+  momz14: 0.17,
+  eincross: 0.07,
+  polaris: 0.87,
+  hubblev1: 0.57,
+  gaiabh1: 0.69,
+  przyb: 0.98,
+  rlep: 0.26,
+  ring: 0.35,
+  crab: 0.044,
+  magnetar: 0.05,
+  mira: 0.45,
+  powehi: 0.16,
+  gargantua: 0.16,
+  j1407: 0.39,
 };
 // Tap normalization: each star's blast and glow against the Sun's, measured the same way.
-// K-weighted, blast and glow on the star's key and first chord, 0.1 to 14 s (2026-11-24).
+// K-weighted, blast and glow on the star's key and first chord, 0.1 to 14 s.
 export const TAPNORM = {
   sun: 1,
   zetaoph: 1.08,
@@ -181,9 +208,35 @@ export const TAPNORM = {
   cygx1: 0.99,
   sgra: 1.41,
   qso: 1.2,
+  st218: 1.34,
+  wohg64: 1.34,
+  quasi: 1.34,
+  wr140: 1.07,
+  vfts352: 1.06,
+  xxtri: 1.24,
+  epsaur: 1.24,
+  mothra: 1.05,
+  earendel: 1.07,
+  etacar: 1.24,
+  v838: 1.24,
+  uhz1: 1.07,
+  momz14: 1.07,
+  eincross: 1.2,
+  polaris: 1.08,
+  hubblev1: 1.08,
+  gaiabh1: 1.0,
+  przyb: 1.08,
+  rlep: 1.34,
+  ring: 0.99,
+  crab: 1.11,
+  magnetar: 1.11,
+  mira: 1.24,
+  powehi: 1.41,
+  gargantua: 1.41,
+  j1407: 1.0,
 };
 // Glow trim: the glow lifts each star's mix by 1.5 dB at most.
-// K-weighted, glow alone in the star's choir and room, 2 s windows (2026-11-24).
+// K-weighted, glow alone in the star's choir and room, 2 s windows.
 // A star under 1.5 dB keeps 1: the trim never makes a glow louder.
 export const GLOWNORM = {
   zetaoph: 0.84,
@@ -195,88 +248,16 @@ export const GLOWNORM = {
   betalyr: 0.82,
   fomalhaut: 0.68,
   cygx1: 0.67,
+  mothra: 0.84,
+  etacar: 0.88,
+  uhz1: 0.62,
+  momz14: 0.46,
+  hubblev1: 0.58,
+  ring: 0.4,
 };
-// Stephenson 2-18 sings VY CMa's choir; its root in sound.js sits lower.
-VOICES.st218 = VOICES.vycma;
-NORM.st218 = NORM.vycma;
-TAPNORM.st218 = TAPNORM.vycma;
-// WOH G64 sings Betelgeuse's choir.
-VOICES.wohg64 = VOICES.betelgeuse;
-NORM.wohg64 = NORM.betelgeuse;
-TAPNORM.wohg64 = TAPNORM.betelgeuse;
-// The quasi-star sings the Thorne-Zytkow object's choir, lower.
-VOICES.quasi = VOICES.tzo;
-NORM.quasi = NORM.tzo;
-TAPNORM.quasi = TAPNORM.tzo;
-// WR 140 sings WR 124's choir.
-VOICES.wr140 = VOICES.wr124;
-NORM.wr140 = NORM.wr124;
-TAPNORM.wr140 = TAPNORM.wr124;
-// VFTS 352 sings Zeta Ophiuchi's choir.
-VOICES.vfts352 = VOICES.zetaoph;
-NORM.vfts352 = NORM.zetaoph;
-TAPNORM.vfts352 = TAPNORM.zetaoph;
-// XX Trianguli sings Arcturus's choir.
-VOICES.xxtri = VOICES.arcturus;
-NORM.xxtri = NORM.arcturus;
-TAPNORM.xxtri = TAPNORM.arcturus;
-// Epsilon Aurigae sings Procyon's choir.
-VOICES.epsaur = VOICES.procyon;
-NORM.epsaur = NORM.procyon;
-TAPNORM.epsaur = TAPNORM.procyon;
-// Mothra sings Beta Lyrae's choir; Earendel sings Rigel's.
-VOICES.mothra = VOICES.betalyr;
-NORM.mothra = NORM.betalyr;
-TAPNORM.mothra = TAPNORM.betalyr;
-VOICES.earendel = VOICES.rigel;
-NORM.earendel = NORM.rigel;
-TAPNORM.earendel = TAPNORM.rigel;
-VOICES.etacar = VOICES.rigel;
-VOICES.v838 = VOICES.betelgeuse;
-NORM.v838 = NORM.betelgeuse;
-TAPNORM.v838 = TAPNORM.betelgeuse;
-NORM.etacar = NORM.rigel;
-TAPNORM.etacar = TAPNORM.rigel;
-for (const id of ['uhz1', 'momz14', 'eincross']) { VOICES[id] = VOICES.rigel; NORM[id] = NORM.rigel; TAPNORM[id] = TAPNORM.rigel; }
-// Polaris sings Procyon's choir.
-VOICES.polaris = VOICES.procyon;
-VOICES.hubblev1 = VOICES.procyon;
-VOICES.gaiabh1 = VOICES.sun;
-VOICES.przyb = VOICES.procyon;
-NORM.przyb = NORM.procyon;
-TAPNORM.przyb = TAPNORM.procyon;
-NORM.polaris = NORM.procyon;
-TAPNORM.polaris = TAPNORM.procyon;
-// R Leporis sings VY CMa's choir.
-VOICES.rlep = VOICES.vycma;
-NORM.rlep = NORM.vycma;
-TAPNORM.rlep = TAPNORM.vycma;
-// The Ring Nebula sings Sirius B's choir.
-VOICES.ring = VOICES.siriusb;
-NORM.ring = NORM.siriusb;
-TAPNORM.ring = TAPNORM.siriusb;
-// The Crab sings the pulsar's choir.
-VOICES.crab = VOICES.neutron;
-NORM.crab = NORM.neutron;
-TAPNORM.crab = TAPNORM.neutron;
-// SGR 1806-20 sings the pulsar's choir.
-VOICES.magnetar = VOICES.neutron;
-NORM.magnetar = NORM.neutron;
-TAPNORM.magnetar = TAPNORM.neutron;
-// Mira sings Betelgeuse's choir.
-VOICES.mira = VOICES.betelgeuse;
-NORM.mira = NORM.betelgeuse;
-TAPNORM.mira = TAPNORM.betelgeuse;
-// Powehi sings Sagittarius A*'s choir, lower.
-VOICES.powehi = VOICES.sgra;
-VOICES.gargantua = VOICES.sgra;
-// J1407b shares Fomalhaut's warm ringed choir, slightly deeper and wider.
-VOICES.j1407 = VOICES.fomalhaut;
-NORM.j1407 = NORM.fomalhaut;
-TAPNORM.j1407 = TAPNORM.fomalhaut;
 // A preset from a relative's: its sound, with changes; fx lists only the effects to turn on.
 const from = (id, o = {}) => ({ ...VOICES[id], ...o, oct: o.oct || VOICES[id].oct, fx: o.fx ? fxOn(o.fx) : VOICES[id].fx });
-// The bodies of 2026-11-24 evening (Tom: "the choir tool to have the latest bodies").
+// Presets for the newer bodies, each shaped from a relative.
 Object.assign(VOICES, {
   // Stephenson 2-18: the largest known star, thick dust. VY CMa's pad, deeper, farther and wider.
   st218: from('vycma', { step: 16, dist: 0.8, rev: 13, mix: 1.6, width: 1.95, bright: 0.5, swR: 0.05 }),
@@ -294,11 +275,11 @@ Object.assign(VOICES, {
   epsaur: from('rigel', { ...song('sus'), bright: 1, swR: 0.04, swD: 0.38 }),
   // Mothra: a lensed pair of stars, very far away. S5-HVS1's glassy voice, faint and distant.
   mothra: from('s5hvs1', { dist: 0.95, rev: 14, mix: 1.8, width: 1.9, bright: 1.1 }),
-  // Earendel: the farthest single star seen, on a lensed arc. An airy, far choir.
-  // Eta Carinae: Rigel's pad, low, wide and stormy.
   // V838 Monocerotis: Betelgeuse's pad, far and wide, a long tail of echoes.
   v838: from('betelgeuse', { dist: 0.95, rev: 18, mix: 2.1, width: 2, bright: 0.95, fx: { echo: 0.7 } }),
+  // Eta Carinae: Rigel's pad, low, wide and stormy.
   etacar: from('rigel', { dist: 0.9, rev: 14, mix: 1.7, width: 1.8, bright: 1.15, det: 14 }),
+  // Earendel: the farthest single star seen, on a lensed arc. An airy, far choir.
   earendel: from('wr124', { voice: 0.4, dist: 1, rev: 15, mix: 1.9, bright: 1.35 }),
   // UHZ1 and MoM-z14: far galaxies. Earendel's airy choir, lower, farther and darker.
   uhz1: from('wr124', { voice: 0.3, dist: 1, rev: 16, mix: 2, bright: 0.9 }),
@@ -310,12 +291,11 @@ Object.assign(VOICES, {
   gargantua: from('sgra', { step: 16, rev: 16, bright: 0.5, det: 12 }),
   // Mira: a red giant that swells and fades on a slow beat. Betelgeuse's pad, a deeper, slower swell.
   mira: from('betelgeuse', { swR: 0.05, swD: 0.38 }),
-  // R Leporis: a crimson carbon star in its soot. VY CMa's pad, darker, on a slow swell.
-  // SGR 1806-20: a magnetar, its field wound tight. The pulsar's choir, lower and darker, slower.
-  // The Crab Nebula: the pulsar of 1054 in its glowing cage. The pulsar's choir, wider and farther.
   // The Ring Nebula: a white dwarf in its glowing shell. Sirius B's choir, wider and farther.
   ring: from('siriusb', { dist: 0.9, rev: 14, mix: 1.8, width: 1.8 }),
+  // The Crab Nebula: the pulsar of 1054 in its glowing cage. The pulsar's choir, wider and farther.
   crab: from('neutron', { dist: 0.95, rev: 14, mix: 1.9, width: 1.9 }),
+  // SGR 1806-20: a magnetar, its field wound tight. The pulsar's choir, lower and darker, slower.
   magnetar: from('neutron', { bright: 0.8, metal: 0.4, step: 10, swR: 0.03 }),
   // Polaris: the North Star, beating every four days. Procyon's pad, lower, on a quicker swell.
   polaris: from('procyon', { swR: 0.1, swD: 0.3 }),
@@ -325,18 +305,11 @@ Object.assign(VOICES, {
   gaiabh1: from('sun', { bright: 0.8, det: 12, rev: 12 }),
   // Przybylski's star: Procyon's pad, brighter and odder.
   przyb: from('procyon', { bright: 1.25, det: 14 }),
+  // R Leporis: a crimson carbon star in its soot. VY CMa's pad, darker, on a slow swell.
   rlep: from('vycma', { bright: 0.5, swR: 0.04, swD: 0.36 }),
+  // J1407b: shares Fomalhaut's warm ringed choir.
+  j1407: from('fomalhaut'),
 });
-// Until the lab measures them, each new body takes its relative's levels.
-for (const [id, rel] of [['st218', 'vycma'], ['wohg64', 'vycma'], ['quasi', 'tzo'], ['wr140', 'wr124'], ['vfts352', 'betalyr'], ['xxtri', 'arcturus'], ['epsaur', 'rigel'], ['mothra', 's5hvs1'], ['earendel', 'wr124'], ['etacar', 'rigel'], ['v838', 'betelgeuse'], ['uhz1', 'wr124'], ['momz14', 'wr124'], ['eincross', 'qso'], ['powehi', 'sgra'], ['gargantua', 'sgra'], ['mira', 'betelgeuse'], ['rlep', 'vycma'], ['polaris', 'procyon'], ['hubblev1', 'procyon'], ['gaiabh1', 'sun'], ['przyb', 'procyon'], ['magnetar', 'neutron'], ['crab', 'neutron'], ['ring', 'siriusb']]) {
-  NORM[id] ??= NORM[rel];
-  TAPNORM[id] ??= TAPNORM[rel];
-  GLOWNORM[id] ??= GLOWNORM[rel];
-}
-NORM.powehi = NORM.sgra;
-TAPNORM.powehi = TAPNORM.sgra;
-NORM.gargantua = NORM.sgra;
-TAPNORM.gargantua = TAPNORM.sgra;
 for (const id in VOICES) VOICES[id] = { ...VOICES[id], norm: NORM[id] ?? 1, tapNorm: TAPNORM[id] ?? 1, glowNorm: GLOWNORM[id] ?? 1 };
 export const preset = band => VOICES[band] || SUN;
 

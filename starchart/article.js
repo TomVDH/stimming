@@ -95,13 +95,14 @@ export function makeArticle(o) {
   link.href = new URL('article.css', import.meta.url).href;
   document.head.append(link);
 
-  let box = null, shown = null, view = 'full';
+  let box = null, shown = null, view = 'full', ro = null;
   // A press before the text has loaded waits for it; a new press or close drops it.
   let waiting = 0;
   const timers = new Set();
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); };
   function close() {
     waiting = 0;
+    ro?.disconnect(); ro = null;
     if (!box) return;
     for (const t of timers) clearTimeout(t);
     timers.clear();
@@ -211,6 +212,15 @@ export function makeArticle(o) {
     box.append(shut);
     lines.push(shut);
     o.stage.append(box);
+    // Clear the edge fades whenever the column rests at an end.
+    const syncFade = () => {
+      body.classList.toggle('is-top', body.scrollTop <= 2);
+      body.classList.toggle('is-end', body.scrollTop + body.clientHeight >= body.scrollHeight - 2);
+    };
+    body.addEventListener('scroll', syncFade, { passive: true });
+    ro = new ResizeObserver(syncFade);
+    ro.observe(body);
+    syncFade();
     shown = id;
     if (RM.matches) return;
     // The name flashes in a white box, then each line wipes on behind a white bar, as the card's do.
