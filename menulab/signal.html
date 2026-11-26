@@ -16,13 +16,13 @@ iframe.ready { opacity: 1; }
 <body>
 <script type="module">
 // Menu lab: Signal Intro main-menu workbench.
-// Kept (4): Dial, Strip, Rail, Console.
-// New max-fidelity directions (5): Magnify, Orbit, Folio, Prism, Reel.
-// Parked (5, under Parked toggle): Oblique, Arc, Drift, Type, Corner.
+// Active shortlist (3): Dial, Rail, Folio.
+// Parked (11, under Parked toggle): Strip, Console, Magnify, Orbit, Prism, Reel, Oblique, Arc, Drift, Type, Corner.
 // Generous fuzzy masked WebGL2 CRT, sub-pixel aligned Intro flash-box-to-colour icons,
 // zero-jump locked single-line title & info rows, large-icon All 73 gallery, exact Bar v3 / Gate words.
 import { TRI_VS, program, linked, tri, target, free, bind, onContextLoss } from '../shared/gl.js';
 import { injectSprite, flagsHTML, techHTML, glyph, inkOf } from '../shared/access.js';
+import { shotIcon } from '../shared/series/shots.js';
 
 const SIZE = 12;
 const MARK = [
@@ -36,9 +36,12 @@ const MARK = [
   ['g', 'oklch(0.74 0.2 28)', 600, 3, -3],
 ];
 
-const KEPT = [['dial', 'Dial'], ['strip', 'Strip'], ['rail', 'Rail'], ['console', 'Console']];
-const FRESH = [['magnify', 'Magnify'], ['orbit', 'Orbit'], ['folio', 'Folio'], ['prism', 'Prism'], ['reel', 'Reel']];
-const PARKED = [['oblique', 'Oblique'], ['arc', 'Arc'], ['drift', 'Drift'], ['type', 'Type'], ['corner', 'Corner']];
+const KEPT = [['dial', 'Dial'], ['rail', 'Rail'], ['folio', 'Folio']];
+const FRESH = [];
+const PARKED = [
+  ['strip', 'Strip'], ['console', 'Console'], ['magnify', 'Magnify'], ['orbit', 'Orbit'], ['prism', 'Prism'], ['reel', 'Reel'],
+  ['oblique', 'Oblique'], ['arc', 'Arc'], ['drift', 'Drift'], ['type', 'Type'], ['corner', 'Corner'],
+];
 const ALL_MODES = [...KEPT, ...FRESH, ...PARKED];
 const SINGLE_ICON_MODES = new Set(['console', 'folio', 'type']);
 
@@ -48,18 +51,19 @@ const DRIFT_POS = [
   [13, 73], [10, 47],
 ];
 
-function meshColours(accent = '') {
-  const cs = accent.match(/oklch\([^)]*\)|#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/gi) || ['oklch(0.7 0.1 280)'];
-  if (cs.length > 1) return cs.slice(0, 2);
-  const m = cs[0].match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-  return m ? [cs[0], `oklch(${Math.max(0.35, +m[1] - 0.08).toFixed(2)} ${m[2]} ${(+m[3] + 40) % 360})`] : [cs[0], cs[0]];
+function parseToyLCH(accent = '') {
+  const found = [...accent.matchAll(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/gi)].map(m => [+m[1], +m[2], +m[3]]);
+  const a = found[0] || [0.72, 0.16, 285];
+  const b = found[1] || [Math.max(0.42, a[0] - 0.10), Math.max(0.08, a[1] * 0.94), (a[2] + 42) % 360];
+  const c = found[2] || [Math.min(0.86, a[0] + 0.05), Math.max(0.08, a[1] * 0.88), (a[2] - 34 + 360) % 360];
+  return [a, b, c];
 }
 
-/* ---------- Generous, fuzzy, masked premultiplied-alpha WebGL2 CRT ---------- */
-const LEVEL = 0.30;
+/* ---------- Crisp, unblurred, circularly masked premultiplied-alpha WebGL2 CRT ---------- */
+const LEVEL = 0.36;
 const POWER = 0.46;
 const CHANGE = 0.38;
-const GLOW = [0.10, 0.075, 0.055];
+const GLOW = [0.09, 0.07, 0.05];
 
 const CRT_FS = `#version 300 es
 precision highp float;
@@ -79,21 +83,16 @@ float vn(vec2 x, float f) {
 }
 vec2 spotUv(vec2 localP, vec2 img, float zoom) {
   float ia = img.x / max(1.0, img.y);
-  vec2 p = localP * 0.54;
+  vec2 p = localP * 0.58;
   if (ia > 1.0) p.x /= ia;
   else p.y *= ia;
   return clamp(p * zoom + 0.5, 0.002, 0.998);
 }
-vec3 pic(sampler2D t, vec2 localP, vec2 img, vec2 ca, float soft, float zoom) {
+vec3 pic(sampler2D t, vec2 localP, vec2 img, vec2 ca, float zoom) {
   vec2 s = spotUv(localP, img, zoom);
-  vec3 c = vec3(textureLod(t, s + ca, soft).r, textureLod(t, s, soft).g, textureLod(t, s - ca, soft).b);
-  c = pow(max(c, 0.0), vec3(2.45));
-  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.72), 0.0);
-}
-vec3 halo(sampler2D t, vec2 localP, vec2 img, float zoom) {
-  vec2 s = spotUv(localP, img, zoom);
-  vec3 c = pow(textureLod(t, s, 4.2).rgb, vec3(2.2)) * 0.6 + pow(textureLod(t, s, 6.0).rgb, vec3(2.2)) * 0.4;
-  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.55), 0.0);
+  vec3 c = vec3(textureLod(t, s + ca, 0.0).r, textureLod(t, s, 0.0).g, textureLod(t, s - ca, 0.0).b);
+  c = pow(max(c, 0.0), vec3(2.35));
+  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.62), 0.0);
 }
 
 void main() {
@@ -101,61 +100,58 @@ void main() {
   vec2 dPx = (uvTop - uSpot) * uRes;
   vec2 p = dPx / max(1.0, uSpotRad);
   float r = length(p);
-  if (r > 1.42) { o = vec4(0.0); return; }
+  if (r > 1.38) { o = vec4(0.0); return; }
 
-  vec2 pc = p * (1.0 + 0.095 * r * r);
+  vec2 pc = p * (1.0 + 0.085 * r * r);
   float g = uMix, k = uKick;
 
   float rowPx = max(3.0, floor(3.0 * uPx + 0.5));
   float row = floor(gl_FragCoord.y / rowPx);
-  float slip = (hash(vec2(row, floor(uTime * 24.0))) - 0.5) * 0.0018;
+  float slip = (hash(vec2(row, floor(uTime * 24.0))) - 0.5) * 0.0014;
   float away = (pc.y * 0.5 + 0.5) - fract(uTime * 0.085) * 1.3 + 0.15;
   float band = exp(-away * away / 0.0018);
-  slip += band * (0.0075 + 0.003 * sin(uTime * 37.0 + row * 1.9));
-  slip += k * 0.032 * (hash(vec2(floor(row / 3.0), floor(uTime * 30.0) + 5.0)) - 0.5);
+  slip += band * (0.006 + 0.0025 * sin(uTime * 37.0 + row * 1.9));
+  slip += k * 0.026 * (hash(vec2(floor(row / 3.0), floor(uTime * 30.0) + 5.0)) - 0.5);
   pc.x += slip;
 
   vec2 open = vec2(max(0.004, smoothstep(0.0, 0.35, uPower)), max(0.004, smoothstep(0.24, 0.85, uPower)));
   vec2 pr = pc / open;
-  float lit = 1.0 - smoothstep(1.08, 1.58, length(pr));
+  float lit = 1.0 - smoothstep(1.08, 1.52, length(pr));
 
-  vec2 ca = pr * (0.0024 + 0.0075 * k);
-  float soft = 1.15 + 2.1 * r * r + 1.4 * k;
-  float zoomB = 1.0 - 0.055 * (1.0 - g);
+  vec2 ca = pr * (0.0014 + 0.0045 * k);
+  float zoomB = 1.0 - 0.05 * (1.0 - g);
 
-  vec3 light = mix(pic(uA, pr, uImgA, ca, soft, 1.0) * uHasA, pic(uB, pr, uImgB, ca, soft, zoomB) * uHasB, g);
-  vec3 glow = mix(halo(uA, pr, uImgA, 1.0) * uHasA, halo(uB, pr, uImgB, zoomB) * uHasB, g);
+  vec3 light = mix(pic(uA, pr, uImgA, ca, 1.0) * uHasA, pic(uB, pr, uImgB, ca, zoomB) * uHasB, g);
   light *= uLevel * uDim;
-  glow *= uLevel * uDim;
 
   float m = floor(mod(gl_FragCoord.x / max(1.0, floor(uPx + 0.5)), 3.0));
   vec3 stripe = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.82 + 0.28;
-  vec3 grille = mix(vec3(1.0), stripe / 0.553, 0.40);
+  vec3 grille = mix(vec3(1.0), stripe / 0.553, 0.36);
   float lum = clamp(dot(light, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
   float sy = fract(gl_FragCoord.y / rowPx) - 0.5;
-  float sw = mix(0.25, 0.54, sqrt(lum));
-  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.52, 0.72);
+  float sw = mix(0.26, 0.54, sqrt(lum));
+  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.48, 0.68);
 
   for (int i = 0; i < 5; i++) {
     vec2 at = vec2(hash(vec2(float(i), 3.0)), hash(vec2(float(i), 7.0))) * 1.2 - 0.6;
-    float brad = 0.01 + 0.014 * hash(vec2(float(i), 9.0));
-    light *= 1.0 - 0.5 * smoothstep(brad, brad * 0.35, length(p - at));
+    float brad = 0.009 + 0.012 * hash(vec2(float(i), 9.0));
+    light *= 1.0 - 0.45 * smoothstep(brad, brad * 0.35, length(p - at));
   }
 
   vec3 c = vec3(0.007, 0.0075, 0.01) * grille;
-  float roll = exp(-pow((fract(pc.y * 0.5 + 0.5 + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.05;
-  c += (light + glow * 0.50) * (1.0 + roll + band * 0.24) * lit;
+  float roll = exp(-pow((fract(pc.y * 0.5 + 0.5 + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.045;
+  c += light * (1.0 + roll + band * 0.22) * lit;
 
   float field = floor(uTime * 24.0);
   vec2 gp = mat2(0.89, 0.45, -0.45, 0.89) * gl_FragCoord.xy / uPx;
   float n = mix(rnd(gl_FragCoord.xy, field), vn(gp / 1.6, field + 7.0), 0.4) - 0.5;
   float lump = vn(p * 2.4 + vec2(uTime * 0.05, -uTime * 0.03), 3.0);
-  float heavy = (0.62 + 0.68 * lump) * (1.0 + 0.42 * r * r);
-  c *= 1.0 + n * 0.48 * heavy * lit;
-  c += n * (0.01 * heavy + 0.17 * k) * lit;
-  c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.45 * lit;
+  float heavy = (0.58 + 0.62 * lump) * (1.0 + 0.35 * r * r);
+  c *= 1.0 + n * 0.40 * heavy * lit;
+  c += n * (0.008 * heavy + 0.14 * k) * lit;
+  c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.42 * lit;
 
-  c *= (1.0 - 0.36 * smoothstep(0.12, 0.88, r * r)) * (1.0 + 0.011 * sin(uTime * 113.0)) * (1.0 + 0.26 * k);
+  c *= (1.0 - 0.30 * smoothstep(0.18, 0.92, r * r)) * (1.0 + 0.01 * sin(uTime * 113.0)) * (1.0 + 0.22 * k);
   c = pow(max(c, 0.0), vec3(1.0 / 2.2));
   o = vec4(c, 1.0);
 }`;
@@ -186,15 +182,265 @@ void main() {
   vec2 scaled = vec2(px.x / max(0.5, uEllipX), px.y);
   float r = length(scaled) / max(1.0, uSpotRad);
 
-  float a = pow(1.0 - smoothstep(0.32, 1.0, r), 1.25);
+  float a = pow(1.0 - smoothstep(0.24, 1.0, r), 1.38);
 
   if (uUseAim > 0.5) {
     float off = atan(px.x, -px.y) - uAim;
     off = abs(atan(sin(off), cos(off)));
-    a *= 1.0 - 0.84 * (1.0 - smoothstep(0.08, 0.52, off)) * smoothstep(0.30, 0.85, r);
+    a *= 1.0 - 0.68 * (1.0 - smoothstep(0.08, 0.52, off)) * smoothstep(0.28, 0.86, r);
   }
-  o = vec4(tube * a, a * 0.88);
+  o = vec4(tube * a, a * 0.92);
 }`;
+
+/* ---------- Bottom rainbow OKLab cloud shader — convex cradle hugging the Dial circle ---------- */
+const FOOT_MESH_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform vec2 uRes, uPtr;
+uniform vec3 uDial;
+uniform vec4 uBox;
+uniform float uTime, uStir;
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 x) {
+  vec2 i = floor(x), u = fract(x);
+  u = u * u * (3.0 - 2.0 * u);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 x) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vn(x); x = x * 2.03 + 11.7; a *= 0.5; }
+  return s / 0.9375;
+}
+vec3 lab2lin(vec3 c) {
+  vec3 q = vec3(c.x + 0.3963377774 * c.y + 0.2158037573 * c.z, c.x - 0.1055613458 * c.y - 0.0638541728 * c.z, c.x - 0.0894841775 * c.y - 1.2914855480 * c.z);
+  q = q * q * q;
+  return vec3(4.0767416621 * q.x - 3.3077115913 * q.y + 0.2309699292 * q.z, -1.2684380046 * q.x + 2.6097574011 * q.y - 0.3413193965 * q.z, -0.0041960863 * q.x - 0.7034186147 * q.y + 1.7076147010 * q.z);
+}
+vec3 lch(float l, float c, float h) { return vec3(l, c * cos(radians(h)), c * sin(radians(h))); }
+vec3 hues(float x) {
+  vec3 lab = mix(lch(0.62, 0.23, 328.0), lch(0.56, 0.19, 292.0), smoothstep(0.0, 0.22, x));
+  lab = mix(lab, lch(0.78, 0.14, 205.0), smoothstep(0.2, 0.46, x));
+  lab = mix(lab, lch(0.8, 0.16, 150.0), smoothstep(0.44, 0.6, x) * 0.6);
+  lab = mix(lab, lch(0.84, 0.16, 84.0), smoothstep(0.58, 0.82, x));
+  lab = mix(lab, lch(0.7, 0.2, 28.0), smoothstep(0.82, 1.05, x));
+  return pow(max(lab2lin(lab), 0.0), vec3(1.0 / 2.2));
+}
+void main() {
+  float wide = uRes.x / max(1.0, uRes.y);
+  vec2 p = vec2(vUv.x * wide, vUv.y), at = vec2(uPtr.x * wide, uPtr.y);
+  float t = uTime * 0.05;
+  vec2 w = p * 0.9 + 0.55 * vec2(fbm(p * 0.8 + vec2(t, -t * 0.6)), fbm(p * 0.8 + vec2(-t * 0.7, t) + 4.7));
+  float near = exp(-dot(p - at, p - at) * 2.2) * uStir;
+  w += (p - at) * near * 0.6;
+  float f = fbm(w * 1.3 + t), g = fbm(w * 0.7 - t * 0.8 + 9.1);
+  vec3 col = hues(vUv.x + (f - 0.5) * 0.7);
+
+  // Convex curve wrapping the circular Dial perimeter: dips cleanly under 6 o'clock and rises smoothly along the flanks.
+  vec2 scr = vec2(uBox.x + vUv.x * uBox.z, uBox.y + (1.0 - vUv.y) * uBox.w);
+  float dDial = uDial.z > 1.0 ? length(scr - uDial.xy) / uDial.z : 2.0;
+  float cradle = smoothstep(0.82, 1.26, dDial);
+  float sideLift = pow(abs(vUv.x - 0.5) * 2.0, 1.65) * 0.34;
+  float rise = smoothstep(0.0, 1.0, (1.0 - vUv.y) + sideLift + (g - 0.5) * 0.44 - 0.16);
+  float a = pow(rise, 2.35) * cradle * (0.48 + 0.52 * f) * (0.44 + 0.34 * near);
+  a *= mix(0.42, 1.0, smoothstep(0.0, 0.18, vUv.y));
+  col *= 0.72;
+  o = vec4(col * a, a);
+}`;
+
+async function makeFooterMesh(doc, host, getDial) {
+  const canvas = Object.assign(doc.createElement('canvas'), { className: 'sm-foot-mesh' });
+  canvas.setAttribute('aria-hidden', 'true');
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) return false;
+  host.prepend(canvas);
+
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const tick = () => new Promise(r => setTimeout(r, 16));
+  const TAIL = 2.6, FRAME = 1000 / 30 - 2;
+  let P, vao;
+  async function build() {
+    P = (await linked(gl, { mesh: program(gl, TRI_VS, FOOT_MESH_FS) }, { limit: 500, wait: tick })).mesh;
+    vao = gl.createVertexArray();
+  }
+  await build();
+
+  const ptr = { x: 0.5, y: 0.2 }, want = { x: 0.5, y: 0.2 };
+  let time = Math.random() * 40, stir = 0, until = 0, raf = 0, last = 0, gone = false;
+  function draw() {
+    if (gone || !P) return;
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    const w = Math.max(2, Math.round(canvas.clientWidth * dpr)), h = Math.max(2, Math.round(canvas.clientHeight * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    const cr = canvas.getBoundingClientRect();
+    const d = getDial ? getDial() : [0, 0, 0];
+    gl.useProgram(P.p);
+    gl.uniform2f(P.u.uRes, w, h);
+    gl.uniform2f(P.u.uPtr, ptr.x, ptr.y);
+    gl.uniform3f(P.u.uDial, d[0], d[1], d[2]);
+    gl.uniform4f(P.u.uBox, cr.left, cr.top, cr.width || 1, cr.height || 1);
+    gl.uniform1f(P.u.uTime, time);
+    gl.uniform1f(P.u.uStir, stir);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    tri(gl, null, vao);
+  }
+  function frame(now) {
+    if (doc.hidden) { raf = 0; return; }
+    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
+    raf = 0;
+    const dt = Math.min((now - last) / 1000, 0.1), awake = now < until;
+    last = now;
+    stir += ((awake ? 1 : 0) - stir) * (1 - Math.exp(-dt * 2.2));
+    time += dt * (0.25 + 0.75 * stir);
+    ptr.x += (want.x - ptr.x) * (1 - Math.exp(-dt * 4));
+    ptr.y += (want.y - ptr.y) * (1 - Math.exp(-dt * 4));
+    draw();
+    if (awake || stir > 0.01) raf = requestAnimationFrame(frame);
+  }
+  const wake = () => {
+    until = performance.now() + TAIL * 1000;
+    if (!raf && !gone && !doc.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  };
+  if (still.matches) draw();
+  else {
+    doc.addEventListener('pointermove', e => {
+      const r = canvas.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      want.x = (e.clientX - r.left) / r.width;
+      want.y = 1 - (e.clientY - r.top) / r.height;
+      wake();
+    }, { passive: true });
+    wake();
+  }
+  new ResizeObserver(draw).observe(canvas);
+  onContextLoss(canvas, {
+    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
+    async restored() { await build(); gone = false; draw(); },
+  });
+  host.setAttribute('data-foot-mesh', '');
+  return { draw };
+}
+
+/* ---------- Top-left OKLCH mesh gradient shader — smoothly morphs across toy accents ---------- */
+const TOP_MESH_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform vec2 uRes;
+uniform vec3 uC1, uC2, uC3;
+uniform float uTime;
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 x) {
+  vec2 i = floor(x), u = fract(x);
+  u = u * u * (3.0 - 2.0 * u);
+  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+float fbm(vec2 x) {
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 4; i++) { s += a * vn(x); x = x * 2.02 + 7.3; a *= 0.5; }
+  return s / 0.9375;
+}
+vec3 lab2lin(vec3 c) {
+  vec3 q = vec3(c.x + 0.3963377774 * c.y + 0.2158037573 * c.z, c.x - 0.1055613458 * c.y - 0.0638541728 * c.z, c.x - 0.0894841775 * c.y - 1.2914855480 * c.z);
+  q = q * q * q;
+  return vec3(4.0767416621 * q.x - 3.3077115913 * q.y + 0.2309699292 * q.z, -1.2684380046 * q.x + 2.6097574011 * q.y - 0.3413193965 * q.z, -0.0041960863 * q.x - 0.7034186147 * q.y + 1.7076147010 * q.z);
+}
+vec3 lch(vec3 c) { return vec3(c.x, c.y * cos(radians(c.z)), c.y * sin(radians(c.z))); }
+void main() {
+  vec2 uvTop = vec2(vUv.x, 1.0 - vUv.y);
+  float wide = uRes.x / max(1.0, uRes.y);
+  vec2 p = vec2(uvTop.x * wide, uvTop.y);
+  float t = uTime * 0.09;
+  vec2 w = p * 1.05 + 0.48 * vec2(fbm(p * 0.95 + vec2(t, -t * 0.5)), fbm(p * 0.95 + vec2(-t * 0.6, t) + 5.2));
+  float f1 = fbm(w * 1.15 + t * 0.6);
+  float f2 = fbm(w * 0.85 - t * 0.5 + 11.4);
+  vec3 lab = mix(lch(uC1), lch(uC2), smoothstep(0.18, 0.82, f1));
+  lab = mix(lab, lch(uC3), smoothstep(0.32, 0.88, f2) * 0.68);
+  lab.x *= 0.84;
+  vec3 col = pow(max(lab2lin(lab), 0.0), vec3(1.0 / 2.2));
+  float dist = length(vec2(uvTop.x * 1.12, uvTop.y * 1.2));
+  float mask = pow(1.0 - smoothstep(0.04, 1.0, dist + (f2 - 0.5) * 0.24), 2.15);
+  float a = mask * (0.10 + 0.055 * f1);
+  o = vec4(col * a, a);
+}`;
+
+async function makeTopMesh(doc, host) {
+  const canvas = Object.assign(doc.createElement('canvas'), { className: 'sm-top-mesh' });
+  canvas.setAttribute('aria-hidden', 'true');
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) return null;
+  host.prepend(canvas);
+
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const tick = () => new Promise(r => setTimeout(r, 16));
+  const SCALE = 0.38, FRAME = 1000 / 30 - 2;
+  let P, vao;
+  async function build() {
+    P = (await linked(gl, { mesh: program(gl, TRI_VS, TOP_MESH_FS) }, { limit: 500, wait: tick })).mesh;
+    vao = gl.createVertexArray();
+  }
+  await build();
+
+  const cur = [[0.72, 0.16, 285], [0.62, 0.15, 325], [0.76, 0.14, 245]];
+  const tgt = [[0.72, 0.16, 285], [0.62, 0.15, 325], [0.76, 0.14, 245]];
+  let time = Math.random() * 20, raf = 0, last = 0, until = 0, gone = false;
+
+  const hDiff = (to, from) => ((to - from + 540) % 360) - 180;
+  function draw() {
+    if (gone || !P) return;
+    const w = Math.max(2, Math.round(canvas.clientWidth * SCALE)), h = Math.max(2, Math.round(canvas.clientHeight * SCALE));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    gl.useProgram(P.p);
+    gl.uniform2f(P.u.uRes, w, h);
+    gl.uniform3f(P.u.uC1, cur[0][0], cur[0][1], cur[0][2]);
+    gl.uniform3f(P.u.uC2, cur[1][0], cur[1][1], cur[1][2]);
+    gl.uniform3f(P.u.uC3, cur[2][0], cur[2][1], cur[2][2]);
+    gl.uniform1f(P.u.uTime, time);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    tri(gl, null, vao);
+  }
+  function frame(now) {
+    if (doc.hidden) { raf = 0; return; }
+    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
+    raf = 0;
+    const dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    const k = 1 - Math.exp(-dt * 2.1);
+    let err = 0;
+    for (let i = 0; i < 3; i++) {
+      const dl = tgt[i][0] - cur[i][0];
+      const dc = tgt[i][1] - cur[i][1];
+      const dh = hDiff(tgt[i][2], cur[i][2]);
+      cur[i][0] += dl * k;
+      cur[i][1] += dc * k;
+      cur[i][2] = (cur[i][2] + dh * k + 360) % 360;
+      err += Math.abs(dl) + Math.abs(dc) + Math.abs(dh) / 180;
+    }
+    const drifting = now < until;
+    if (drifting || err > 0.004) time += dt * 0.65;
+    draw();
+    if (!still.matches && (drifting || err > 0.004)) raf = requestAnimationFrame(frame);
+  }
+  function setColours(lchs, snap = false) {
+    for (let i = 0; i < 3; i++) {
+      tgt[i] = [...lchs[i]];
+      if (snap || still.matches) cur[i] = [...lchs[i]];
+    }
+    if (snap || still.matches) { draw(); return; }
+    until = performance.now() + 2400;
+    if (!raf && !gone && !doc.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+  new ResizeObserver(draw).observe(canvas);
+  onContextLoss(canvas, {
+    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
+    async restored() { await build(); gone = false; draw(); },
+  });
+  host.setAttribute('data-top-mesh', '');
+  draw();
+  return { setColours, draw };
+}
 
 async function makeCRT(doc, host) {
   const canvas = Object.assign(doc.createElement('canvas'), { className: 'sm-crt' });
@@ -397,7 +643,6 @@ async function makeCRT(doc, host) {
 
 /* ---------- Styles: 3-row Grid shell, zero-jump locked rows, sub-pixel flash alignment, large-icon All 73 ---------- */
 const CSS = `
-@property --box-split { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
 html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 100%; overflow: hidden !important; background: oklch(0.16 0.012 275) !important; }
 .wrap, body > header, body > main, body > section, body > footer, .credit, .series-toggle { display: none !important; }
 .sm-bin { position: fixed !important; left: -9999px !important; top: 0 !important; width: 128px; height: 128px; visibility: hidden; pointer-events: none; overflow: hidden; }
@@ -425,20 +670,44 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
 @media (pointer: coarse) { .sm-app { --h: 46px; } }
 .sm-app * { scrollbar-width: thin; scrollbar-color: oklch(0.42 0.015 275) transparent; }
 
-.sm-crt { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; pointer-events: none; }
+.sm-crt { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 1; pointer-events: none; }
 
+/* Top-left toy-colour OKLCH WebGL2 mesh gradient (CSS fallback hides once shader is live). */
 .sm-mesh {
-  position: fixed; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: screen; opacity: 0.13;
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; mix-blend-mode: screen; opacity: 0.09;
   background:
-    radial-gradient(38% 44% at 86% 86%, var(--c1), transparent 72%),
-    radial-gradient(34% 38% at 64% 96%, var(--c2), transparent 72%);
-  filter: blur(40px);
+    radial-gradient(42% 46% at 8% 8%, var(--c1), transparent 72%),
+    radial-gradient(36% 40% at 24% 4%, var(--c2), transparent 72%);
+  filter: blur(48px);
+  transition: opacity 0.8s ease;
 }
+.sm-app[data-top-mesh] .sm-mesh { opacity: 0; }
+.sm-top-mesh {
+  position: fixed; left: 0; top: 0; width: min(68vw, 820px); height: min(58vh, 540px); z-index: 0;
+  display: block; pointer-events: none; opacity: 0; transition: opacity 0.9s ease;
+}
+.sm-app[data-top-mesh] .sm-top-mesh { opacity: 1; }
+
+/* Bottom rainbow OKLab cloud shader — convex cradle hugging the Dial circle. */
+.sm-foot-glow {
+  position: fixed; left: 0; right: 0; bottom: 0; height: min(46vh, 420px); z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(60% 85% at 15% 118%, oklch(0.6 0.22 320 / 0.42), transparent 72%),
+    radial-gradient(65% 90% at 50% 122%, oklch(0.74 0.14 200 / 0.34), transparent 72%),
+    radial-gradient(60% 85% at 85% 118%, oklch(0.82 0.15 80 / 0.30), transparent 72%);
+  transition: opacity 1.2s ease;
+}
+.sm-app[data-foot-mesh] .sm-foot-glow { opacity: 0; }
+.sm-foot-mesh {
+  position: fixed; left: 0; right: 0; bottom: 0; width: 100%; height: min(46vh, 420px); z-index: 0;
+  display: block; pointer-events: none; opacity: 0; transition: opacity 1.2s ease;
+}
+.sm-app[data-foot-mesh] .sm-foot-mesh { opacity: 1; }
 
 /* ---------- Exact Gate / Bar v3 word buttons ---------- */
 .bar {
   display: flex; flex-wrap: wrap; align-items: center; gap: 0 1px;
-  font: 800 14px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase;
+  font: 800 clamp(12px, min(1.05vw, 1.6vh), 14px)/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase;
 }
 .bar .sl { color: var(--muted); padding: 0 7px; font-weight: 500; }
 .bar .sl.sm-div { color: oklch(0.95 0.008 275 / 0.25); padding: 0 10px; }
@@ -465,42 +734,75 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
 .w.is-muted:is(:hover, [aria-expanded="true"], [aria-pressed="true"]) { color: var(--bg); }
 
 /* ---------- Row 1: Top bar ---------- */
-.sm-top-wrap { position: relative; z-index: 8; padding: clamp(10px, 1.8vh, 20px) var(--pad) 0; display: grid; gap: 2px; }
-.sm-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.sm-wordmark {
-  display: inline-flex; align-items: baseline; gap: 0.01em; text-decoration: none;
-  font-family: var(--slab); font-size: clamp(23px, 2.5vw, 32px); line-height: 1; letter-spacing: -0.02em;
-  color: var(--fg); flex: none;
+.sm-top-wrap { position: relative; z-index: 8; padding: clamp(18px, 3.2vh, 36px) var(--pad) 0; display: grid; gap: 2px; }
+.sm-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.sm-brand { display: grid; justify-items: start; gap: clamp(5px, 0.8vh, 8px); margin-top: clamp(10px, 1.8vh, 22px); flex: none; }
+.sm-brand .title {
+  margin: 0; font-family: var(--slab); font-size: clamp(38px, min(4.8vw, 6vh), 60px);
+  line-height: 0.96; letter-spacing: -0.02em; color: var(--fg); cursor: pointer;
 }
-.sm-wordmark span {
-  display: inline-block; color: var(--fg); font-weight: var(--w);
-  transform: translateY(var(--y)) rotate(var(--r));
-  transition: color 0.14s steps(3, end), transform 0.16s steps(4, end);
+.sm-brand .title .l { display: inline-block; color: color-mix(in oklch, var(--c) calc(var(--p, 0) * 100%), var(--fg)); font-weight: var(--w); }
+.sm-tagline {
+  margin: 0; max-width: 24ch; text-wrap: balance;
+  font: 500 clamp(13.5px, min(1.45vw, 1.85vh), 18.5px)/1.3 var(--b612);
+  letter-spacing: 0.005em;
+  color: transparent;
+  background: linear-gradient(100deg, oklch(0.72 0.018 275) 42%, oklch(0.86 0.13 330) 47%, oklch(0.88 0.12 200) 50%, oklch(0.90 0.13 110) 53%, oklch(0.72 0.018 275) 58%) 100% 0 / 340% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  animation: sm-tag-sheen 24s ease-in-out 4s infinite;
 }
-.sm-wordmark:hover span {
-  color: var(--c); transform: translateY(calc(var(--y) - 3px)) rotate(0deg);
-  transition-delay: calc(var(--i) * 28ms);
+@keyframes sm-tag-sheen {
+  0%, 84% { background-position: 100% 0; }
+  98%, 100% { background-position: 0% 0; }
 }
-.sm-modes { margin-right: -11px; justify-content: flex-end; font-size: 13px; }
-.sm-modes .w { padding: 0 9px; height: 40px; }
-.sm-modes .sl { padding: 0 4px; }
-.sm-parked-row { justify-content: flex-end; margin-right: -9px; font-size: 12px; }
+.sm-top-actions { margin-right: -11px; justify-content: flex-end; font-size: clamp(12px, min(1vw, 1.55vh), 13.5px); }
+.sm-top-actions .w { padding: 0 11px; height: 42px; }
+.sm-top-actions .sl { padding: 0 5px; }
+.sm-reroll-wrap {
+  display: inline-flex; align-items: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.8s ease;
+}
+.sm-reroll-wrap[data-on] { opacity: 1; pointer-events: auto; }
+.sm-kbd {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px;
+  font: 700 clamp(9px, 0.78vw, 10.5px)/1 var(--slab); letter-spacing: 0.04em; text-transform: uppercase;
+  border: 1px solid currentColor; border-radius: 3px; opacity: 0.72;
+}
+.w:is(:hover, [aria-pressed="true"], [aria-expanded="true"]) .sm-kbd { opacity: 0.92; }
+@media (hover: none), (pointer: coarse) { .sm-kbd { display: none; } }
+
+.sm-lab-nav { grid-column: 2; justify-self: end; display: grid; justify-items: end; gap: 2px; }
+.sm-modes { margin-right: -9px; justify-content: flex-end; font-size: 11.5px; opacity: 0.72; transition: opacity 0.16s ease; }
+.sm-modes:is(:hover, :focus-within) { opacity: 1; }
+.sm-modes .w { padding: 0 8px; height: 34px; color: var(--muted); }
+.sm-modes .w:is(:hover, [aria-pressed="true"], [aria-expanded="true"]) { color: var(--bg); }
+.sm-modes .sl { padding: 0 3px; }
+.sm-parked-row { flex-wrap: wrap; justify-content: flex-end; row-gap: 0; margin-right: -9px; font-size: 11px; }
 .sm-parked-row[hidden] { display: none; }
-.sm-parked-row .w { height: 34px; padding: 0 9px; color: var(--muted); }
+.sm-parked-row .w { height: 30px; padding: 0 8px; color: var(--muted); }
 .sm-parked-row .w:is(:hover, [aria-pressed="true"]) { color: var(--bg); }
-.sm-parked-row .sl { padding: 0 4px; }
+.sm-parked-row .sl { padding: 0 3px; }
 
 /* ---------- Row 2: Main Stage ---------- */
 .sm-stage { position: relative; z-index: 4; min-height: 0; min-width: 0; container-type: size; }
 
+/* On Dial, top corners and bottom lab nav float over empty corner space so the dial gets full screen height! */
+.sm-app[data-m="dial"] .sm-stage { grid-row: 1 / -1; grid-column: 1; }
+.sm-app[data-m="dial"] .sm-top-wrap { grid-row: 1; grid-column: 1; align-self: start; pointer-events: none; }
+.sm-app[data-m="dial"] .sm-brand,
+.sm-app[data-m="dial"] .sm-top-actions { pointer-events: auto; }
+.sm-app[data-m="dial"] .sm-foot { grid-row: 3; grid-column: 1; align-self: end; pointer-events: none; }
+.sm-app[data-m="dial"] .sm-foot > * { pointer-events: auto; }
+
 /* ---------- Row 3: Footer ---------- */
 .sm-foot {
   position: relative; z-index: 6;
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
-  padding: 0 var(--pad) clamp(10px, 1.8vh, 20px);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 16px;
+  padding: 0 var(--pad) clamp(12px, 2.2vh, 24px);
 }
 .sm-tech { color: var(--muted); font-size: clamp(11px, 1.25vw, 13px); justify-self: start; min-height: 24px; display: flex; align-items: center; }
-.sm-tech .tags { display: inline-flex; gap: 4px; }
+.sm-tech .tags { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
 .sm-tech .tag {
   display: inline-flex; align-items: center; height: 1.8em; padding: 0 0.5em;
   border: 1px solid currentColor; border-radius: 3px;
@@ -508,10 +810,81 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
 }
 .sm-tech .tag.now { background: var(--muted); border-color: var(--muted); color: var(--bg); }
 .sm-tech .tag.off { opacity: 0.55; text-decoration: line-through; }
-.sm-foot-gate { justify-self: center; }
-.sm-app:not([data-m="dial"]) .sm-foot-gate { display: none; }
+.sm-app[data-m="dial"] .sm-foot .sm-tech { display: none; }
+.sm-dial-tech { display: none; }
 
-/* ---------- Live Full-Colour Icon Cell + Sub-Pixel Aligned Intro Flash-to-Colour ---------- */
+/* Bottom-left restyled Signal meta bar (Made with the help of AI / Attributions) */
+.sm-foot-meta {
+  display: none; grid-column: 1; justify-self: start; align-items: center; margin-left: -10px;
+  font-size: clamp(9.5px, min(0.85vw, 1.35vh), 11.5px); letter-spacing: 0.1em;
+  text-shadow: 0 1px 10px oklch(0.10 0.015 275 / 0.85);
+}
+.sm-app[data-m="dial"] .sm-foot-meta { display: flex; }
+.sm-ai-note {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 0 10px; font: 700 clamp(9.5px, min(0.82vw, 1.3vh), 11px)/1 var(--slab); letter-spacing: 0.1em; text-transform: uppercase;
+  color: oklch(0.95 0.008 275 / 0.62);
+}
+.sm-cl {
+  flex: none; width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.sm-foot-meta .sl { padding: 0 3px; color: oklch(0.95 0.008 275 / 0.3); }
+.sm-foot-meta .sm-attr { height: 34px; padding: 0 10px; font-size: clamp(9.5px, min(0.82vw, 1.3vh), 11px); letter-spacing: 0.1em; color: oklch(0.95 0.008 275 / 0.84); }
+.sm-foot-meta .sm-attr:hover { color: var(--bg); text-shadow: none; }
+
+/* Bottom-right larger outlined onnøzelaer chip (outlined except the solid faces) */
+.sm-sig {
+  display: none; grid-column: 2; justify-self: end; align-items: center; gap: 12px; cursor: default;
+}
+.sm-app[data-m="dial"] .sm-sig { display: inline-flex; }
+.sm-sig:focus-visible { outline: none; }
+.sm-sig .onno { display: inline-flex; line-height: 0; }
+.sm-sig .onno svg { height: clamp(36px, 4.4svh, 48px); width: auto; display: block; transition: translate 0.45s cubic-bezier(0.16, 1, 0.3, 1); }
+.sm-sig .onno path { transition: fill 0.35s ease, stroke 0.35s ease; }
+.sm-sig .onno .cm-capsule { fill: none; stroke: oklch(0.80 0.014 275 / 0.78); stroke-width: 16px; }
+.sm-sig .onno .cm-band { fill: none; stroke: oklch(0.80 0.014 275 / 0.72); stroke-width: 10px; }
+.sm-sig .onno .cm-grey { fill: none; stroke: oklch(0.80 0.014 275 / 0.72); stroke-width: 10px; }
+.sm-sig .onno .cm-fig { fill: oklch(0.92 0.008 275) !important; stroke: none; }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno svg { translate: 0 -2px; }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-capsule { fill: none; stroke: #fff; }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-band { stroke: none; }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-band:nth-of-type(2) { fill: oklch(0.66 0.22 25); }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-band:nth-of-type(3) { fill: oklch(0.86 0.17 90); }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-band:nth-of-type(4) { fill: oklch(0.74 0.15 220); }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-fig { fill: #fff !important; }
+.sm-sig:is(:hover, :focus-visible, :focus) .onno .cm-grey { fill: #fff; stroke: none; }
+.sm-sig-label {
+  order: -1; display: grid; justify-items: stretch; gap: 1px; pointer-events: none;
+  color: var(--fg); text-shadow: none;
+}
+.sm-sig-pre, .sm-sig-post {
+  font: 500 clamp(7.5px, 0.68vw, 9px)/1.15 var(--slab); letter-spacing: 0.08em;
+  color: oklch(0.95 0.008 275 / 0.6);
+  opacity: 0; translate: 0 3px; filter: blur(3px);
+  transition: opacity 0.28s ease, translate 0.38s cubic-bezier(0.16, 1, 0.3, 1), filter 0.28s ease;
+}
+.sm-sig-pre { justify-self: start; transition-delay: 80ms; }
+.sm-sig-post { justify-self: end; transition-delay: 0ms; }
+.sm-sig-main {
+  display: flex; font: 700 clamp(12px, 1.08vw, 15px)/1.1 var(--slab); letter-spacing: 0.04em; color: var(--fg);
+}
+.sm-sig-main span {
+  display: inline-block; opacity: 0; translate: 0 5px; filter: blur(4px);
+  transition: opacity 0.3s ease, translate 0.42s cubic-bezier(0.16, 1, 0.3, 1), filter 0.32s ease;
+  transition-delay: calc((9 - var(--i)) * 14ms);
+}
+.sm-sig:is(:hover, :focus-visible, :focus) .sm-sig-pre {
+  opacity: 1; translate: 0 0; filter: none; transition-delay: 0ms;
+}
+.sm-sig:is(:hover, :focus-visible, :focus) .sm-sig-main span {
+  opacity: 1; translate: 0 0; filter: none; transition-delay: calc(30ms + var(--i) * 24ms);
+}
+.sm-sig:is(:hover, :focus-visible, :focus) .sm-sig-post {
+  opacity: 1; translate: 0 0; filter: none; transition-delay: 210ms;
+}
+
+/* ---------- Live Full-Colour Icon Cell + True Signal Entry (NO shutter/wipe) ---------- */
 /* Both .sm-live > a.toy .obj svg AND .sm-flash-frame occupy the EXACT same 82% x 82% square at 50% 50%.
    Inside .sm-flash-frame, <i> applies the exact fitIcon() viewBox transform (--ew, --ex, --ey) so the
    luminance mask matches the live full-colour SVG icon to 0.0 px! */
@@ -525,7 +898,7 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
 }
 .sm-cell .sm-live > a.toy .obj { width: 100%; height: 100%; display: grid; place-items: center; }
 .sm-cell .sm-live > a.toy .obj::after { display: none !important; }
-.sm-cell .sm-live > a.toy .obj svg { width: 82% !important; height: 82% !important; overflow: visible; }
+.sm-cell .sm-live > a.toy .obj svg { width: 82% !important; height: 82% !important; overflow: visible; filter: none !important; }
 .sm-cell .sm-live > a.toy .name { display: none !important; }
 
 .sm-cell .sm-flash {
@@ -533,8 +906,7 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
   display: grid; place-items: center; opacity: 0;
 }
 .sm-cell .sm-flash::before {
-  content: ""; position: absolute; inset: -4%;
-  background: linear-gradient(90deg, #fff calc(50% - var(--box-split)), transparent 0 calc(50% + var(--box-split)), #fff 0);
+  content: ""; position: absolute; inset: -6%; background: #fff; opacity: 0;
 }
 .sm-cell .sm-flash-frame {
   position: relative; z-index: 1; width: 82%; height: 82%; overflow: visible; opacity: 0;
@@ -553,25 +925,37 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
   font: 800 24px/1 var(--slab); font-style: normal; color: var(--bg);
 }
 
-/* Note: flash settles to exact scale(1) BEFORE handing off to .sm-live at 56% -> zero size jump! */
-.sm-cell.is-intro .sm-live { animation: sm-live-in 0.46s steps(1, end) var(--stagger, 0ms) both; }
-.sm-cell.is-intro .sm-flash { animation: sm-flash-in 0.46s steps(1, end) var(--stagger, 0ms) both; }
-.sm-cell.is-intro .sm-flash::before { animation: sm-flash-part 0.46s steps(1, end) var(--stagger, 0ms) both; }
-.sm-cell.is-intro .sm-flash-frame { animation: sm-flash-em 0.46s steps(1, end) var(--stagger, 0ms) both; }
-@keyframes sm-live-in { 0%, 54% { opacity: 0; } 56%, 100% { opacity: 1; } }
+/* Signal design variant (matches VARIETIES.signal): oversized white flash-box pop with dark cutout ->
+   snap to size & hold -> hard cut off box as emblem takes toy accent ink -> hard cut to live full colour! */
+.sm-cell.is-intro .sm-live { animation: sm-live-in 0.54s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash { animation: sm-flash-in 0.54s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash::before { animation: sm-flash-box 0.54s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash-frame { animation: sm-flash-em 0.54s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash-frame i { animation: sm-flash-ink 0.54s steps(1, end) var(--stagger, 0ms) both; }
+@keyframes sm-live-in {
+  0%, 77% { opacity: 0; }
+  78%, 100% { opacity: 1; }
+}
 @keyframes sm-flash-in {
-  0% { opacity: 0; transform: scale(1.12); }
-  10% { opacity: 1; transform: scale(1.12); }
-  22%, 92% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1); }
+  0% { opacity: 0; transform: scale(1.42); }
+  6% { opacity: 1; transform: scale(1.42); }
+  14%, 77% { opacity: 1; transform: scale(1); }
+  78%, 100% { opacity: 0; transform: scale(1); }
 }
-@keyframes sm-flash-part {
-  0%, 54% { --box-split: 0%; }
-  68% { --box-split: 17%; }
-  82% { --box-split: 35%; }
-  100% { --box-split: 50%; }
+@keyframes sm-flash-box {
+  0%, 5% { opacity: 0; }
+  6%, 47% { opacity: 1; }
+  48%, 100% { opacity: 0; }
 }
-@keyframes sm-flash-em { 0%, 8% { opacity: 0; } 10%, 54% { opacity: 1; } 56%, 100% { opacity: 0; } }
+@keyframes sm-flash-em {
+  0%, 5% { opacity: 0; }
+  6%, 77% { opacity: 1; }
+  78%, 100% { opacity: 0; }
+}
+@keyframes sm-flash-ink {
+  0%, 47% { background: var(--bg); color: var(--bg); }
+  48%, 100% { background: var(--slot-ink, #fff); color: var(--slot-ink, #fff); }
+}
 
 /* ---------- Zero-Jump Locked Signal Intro Copy Block ---------- */
 /* Every row reserves exact fixed height so tabbing/stepping across all 73 toys produces 0 px shift! */
@@ -672,44 +1056,126 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
 .sm-dial-wrap, .sm-track-wrap, .sm-hero-slot, .sm-console-spacer, .sm-single-icon, .sm-list, .sm-folio-list, .sm-marquee { display: none; }
 
 /* ============================================================================
-   KEPT 1: DIAL (Zero-jump locked centre rows + generous fuzzy CRT filling dial)
+   KEPT 1: DIAL (Larger radius, crisp smaller unblurred CRT, tech + Gate Play inside circle)
    ============================================================================ */
 .sm-app[data-m="dial"] .sm-stage { display: grid; place-items: center; }
 .sm-app[data-m="dial"] .sm-dial-wrap {
-  display: block; position: relative; width: min(94cqh, 90cqw, 720px); aspect-ratio: 1; container-type: inline-size;
+  display: block; position: relative; width: min(84svh, 86vw, 790px); aspect-ratio: 1; container-type: inline-size;
 }
 .sm-dial-wrap::before {
-  content: ""; position: absolute; inset: 22%; border-radius: 50%;
-  border: 1px solid oklch(0.36 0.016 275 / 0.55); pointer-events: none;
+  content: ""; position: absolute; inset: 19.5%; border-radius: 50%;
+  border: 1px solid oklch(0.42 0.016 275 / 0.72); pointer-events: none;
+  opacity: 0;
 }
 .sm-dial-wrap::after {
-  content: ""; position: absolute; inset: 24%; border-radius: 50%; pointer-events: none;
-  background: repeating-conic-gradient(from -0.5deg, oklch(0.56 0.016 275 / 0.65) 0 1deg, transparent 0 6deg);
+  content: ""; position: absolute; inset: 21%; border-radius: 50%; pointer-events: none;
+  background: repeating-conic-gradient(from -0.5deg, oklch(0.62 0.016 275 / 0.78) 0 1deg, transparent 0 6deg);
   -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
   mask: radial-gradient(closest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  opacity: 0;
+}
+.sm-dial-wrap.is-ring-in::before { animation: sm-ring-life 2.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.sm-dial-wrap.is-ring-in::after { animation: sm-ticks-life 2.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+@keyframes sm-ring-life {
+  0% { opacity: 0; transform: scale(0.92); }
+  14% { opacity: 0.9; transform: scale(1); }
+  44% { opacity: 0.72; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.015); }
+}
+@keyframes sm-ticks-life {
+  0% { opacity: 0; transform: scale(0.92) rotate(-10deg); }
+  16% { opacity: 0.85; transform: scale(1) rotate(0deg); }
+  44% { opacity: 0.68; transform: scale(1) rotate(0deg); }
+  100% { opacity: 0; transform: scale(1.015) rotate(2deg); }
 }
 .sm-hand {
-  position: absolute; left: 50%; top: 50%; width: 2px; height: 26%; border-radius: 2px;
+  position: absolute; left: 50%; top: 50%; width: 2px; height: 29%; border-radius: 2px;
   background: linear-gradient(to bottom, var(--fg) 0 26%, transparent 26%); pointer-events: none; z-index: 1;
 }
 .sm-dial-mid {
-  position: absolute; inset: 26%; z-index: 2; pointer-events: none;
+  position: absolute; inset: 22.5%; z-index: 2; pointer-events: none; border-radius: 50%;
   display: grid; align-content: center; justify-items: center;
 }
-.sm-dial-mid .sm-copy {
-  --title-base: clamp(18px, 5cqw, 34px);
-  grid-template-rows: calc(var(--title-base) * 1.18) 46px 34px;
-  row-gap: 1.4cqw;
+/* Expanded, lighter feathered frosted blur cushion inside the Dial: lets blur carry readability without a dark blotch. */
+.sm-dial-frost {
+  position: absolute; inset: -10%; z-index: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, oklch(0.13 0.012 275 / 0.34) 0%, oklch(0.14 0.012 275 / 0.22) 56%, oklch(0.15 0.012 275 / 0.06) 84%, transparent 100%);
+  -webkit-backdrop-filter: blur(22px) brightness(0.84); backdrop-filter: blur(22px) brightness(0.84);
+  -webkit-mask-image: radial-gradient(closest-side, #000 50%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 50%, transparent 100%);
 }
-.sm-dial-mid .sm-motto { font-size: clamp(11px, 2cqw, 14px); max-width: 30ch; }
-.sm-dial-mid .sm-motto:not(:empty)::before { content: ""; display: block; width: 22px; height: 1px; margin: 0 auto 1.4cqw; background: oklch(0.95 0.008 275 / 0.34); }
-.sm-dial-mid .sm-acc { font-size: clamp(9.5px, 1.55cqw, 11.5px); gap: 5px; }
-.sm-dial-mid .sm-acc .g { width: 18px; height: 12px; }
-.sm-dial-mid .sm-gate { display: none; }
+.sm-dial-mid .sm-copy {
+  position: relative; z-index: 1;
+  width: 82%; max-width: 348px;
+  --title-base: clamp(23px, 4.6cqw, 35px);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0; text-align: center;
+}
+.sm-dial-mid .sm-dial-tech {
+  height: auto; display: flex; align-items: center; justify-content: center; min-height: 0;
+  margin-bottom: clamp(4px, 0.85cqw, 7px);
+  font: 700 clamp(8px, 1.08cqw, 9.5px)/1 var(--slab); color: oklch(0.92 0.01 275);
+  opacity: 0.42; transition: opacity 0.2s ease;
+}
+.sm-dial-mid .sm-dial-tech .tags { gap: 3px; }
+.sm-dial-mid .sm-dial-tech .tag {
+  height: 1.65em; padding: 0 0.45em; border-radius: 2.5px; letter-spacing: 0.1em;
+  background: transparent; border-color: oklch(0.95 0.008 275 / 0.55);
+}
+.sm-dial-mid .sm-dial-tech .tag.now {
+  background: oklch(0.92 0.008 275 / 0.85); border-color: transparent; color: var(--bg);
+}
+.sm-dial-mid .sm-title-box {
+  height: auto; width: 100%; align-items: center; justify-content: center;
+}
+.sm-dial-mid .sm-title {
+  line-height: 1.02;
+  white-space: normal; text-wrap: balance; overflow-wrap: normal;
+  text-shadow: none;
+}
+.sm-dial-mid .sm-motto {
+  height: auto; display: block; margin-top: clamp(6px, 1.15cqw, 10px);
+  font: 400 clamp(12px, 1.9cqw, 14.5px)/1.34 var(--b612); letter-spacing: 0.01em; max-width: 28ch;
+  color: oklch(0.95 0.008 275 / 0.86);
+  text-shadow: none;
+}
+.sm-dial-mid .sm-motto:empty { display: none; }
+.sm-dial-mid .sm-acc {
+  height: auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: clamp(5px, 0.9cqw, 8px); margin-top: clamp(11px, 1.9cqw, 16px);
+  font: 800 clamp(9.5px, 1.42cqw, 11px)/1 var(--slab); letter-spacing: 0.08em;
+  text-shadow: none;
+}
+.sm-dial-mid .sm-acc:empty { display: none; }
+.sm-dial-mid .sm-acc-flags { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 5px 12px; }
+.sm-dial-mid .sm-acc .acc-i { gap: 0.55em; }
+.sm-dial-mid .sm-acc .acc-snd { opacity: 0.65; }
+.sm-dial-mid .sm-acc .g { width: 1.55em; height: 1.04em; filter: none; }
+.sm-dial-mid .sm-gate {
+  height: auto; display: flex; align-items: center; justify-content: center;
+  margin-top: clamp(12px, 2cqw, 17px); pointer-events: auto;
+  font: 800 clamp(11.5px, 1.75cqw, 14px)/1 var(--slab); letter-spacing: 0.12em;
+}
+/* Pure Bar v3 / Signal word button: bare word + accent hairline underline that opens into the crisp #fff Signal bar on hover */
+.sm-dial-mid .sm-gate .w {
+  height: clamp(32px, 4.8cqw, 38px); padding: 0 clamp(14px, 2.4cqw, 20px);
+  color: #fff; text-shadow: none;
+  box-shadow: inset 0 -2px 0 color-mix(in oklch, var(--acc-ink, #fff) 85%, transparent);
+  transition: transform 140ms var(--ease), color 100ms steps(2, end), box-shadow 120ms steps(3, end);
+}
+.sm-dial-mid .sm-gate .w::before {
+  inset: 4px 0; clip-path: inset(0 50%); background: #fff;
+  transition: clip-path 0.1s steps(3, end);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sm-dial-mid .sm-gate .w:hover { color: var(--bg); box-shadow: none; }
+  .sm-dial-mid .sm-gate .w:hover::before { clip-path: inset(0 0); }
+}
+.sm-dial-mid .sm-gate .w:focus-visible { box-shadow: inset 0 -3px 0 var(--focus); }
 .sm-app[data-m="dial"] .sm-deck { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
 .sm-app[data-m="dial"] .sm-cell {
-  position: absolute; width: 17.5%; height: 17.5%; pointer-events: auto;
-  left: calc(50% + var(--dx) * 41% - 8.75%); top: calc(50% + var(--dy) * 41% - 8.75%);
+  position: absolute; width: 15%; height: 15%; pointer-events: auto;
+  left: calc(50% + var(--dx) * 42.5% - 7.5%); top: calc(50% + var(--dy) * 42.5% - 7.5%);
   transition: scale 0.36s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
 .sm-app[data-m="dial"] .sm-cell:is(:hover, .is-act) { scale: 1.18; z-index: 5; }
@@ -935,77 +1401,283 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
 .sm-app[data-m="corner"] .sm-hero-slot { display: grid; position: absolute; left: clamp(130px, 16vw, 220px); top: 44%; translate: 0 -50%; width: min(540px, 56vw); }
 .sm-app[data-m="corner"] .sm-gate { margin-left: -11px; }
 
-/* ---------- Redesigned All 73 Gallery Sheet: Large Icons + Clean Dark Blurred Glass ---------- */
+/* ---------- Full-Viewport All Toys Page (viewport switch, not a translucent overlay) ---------- */
+.sm-app[data-sheet-open] > .sm-top-wrap,
+.sm-app[data-sheet-open] > .sm-stage,
+.sm-app[data-sheet-open] > .sm-foot,
+.sm-app[data-sheet-open] > .sm-crt,
+.sm-app[data-sheet-open] > .sm-mesh,
+.sm-app[data-sheet-open] > .sm-top-mesh,
+.sm-app[data-sheet-open] > .sm-foot-glow,
+.sm-app[data-sheet-open] > .sm-foot-mesh {
+  opacity: 0 !important; pointer-events: none !important; visibility: hidden;
+  transition: opacity 0.14s ease, visibility 0s linear 0.14s;
+}
 .sm-glass {
   position: fixed; inset: 0; z-index: 9; opacity: 0; pointer-events: none;
-  background: oklch(0.11 0.012 275 / 0.88);
-  -webkit-backdrop-filter: blur(36px) brightness(0.32); backdrop-filter: blur(36px) brightness(0.32);
+  background: var(--bg);
   transition: opacity 0.12s steps(3, end);
 }
 .sm-glass[data-on] { opacity: 1; pointer-events: auto; }
 .sm-sheet {
-  position: fixed; left: var(--pad); right: var(--pad); top: clamp(56px, 8vh, 88px); bottom: clamp(20px, 3.5vh, 40px);
-  z-index: 10; max-width: 1180px; margin-inline: auto;
-  display: flex; flex-direction: column; gap: 18px; overflow: hidden;
+  position: fixed; inset: 0; z-index: 10; background: var(--bg);
+  display: block; overflow: hidden;
 }
 .sm-sheet[hidden] { display: none; }
-.sm-sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.sm-sheet-hd { margin-left: -8px; font-size: 12.5px; }
-.sm-sheet-hd .w { padding: 0 8px; height: 38px; }
-.sm-sheet-hd .sl { padding: 0 3px; }
-.sm-sheet-close { flex: none; margin-right: -11px; }
+/* Floating dark blurred transparent-gradient top header: scrolling icons glide cleanly underneath with no hard bar seam */
+.sm-sheet-top {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 4;
+  padding: clamp(20px, 3.2vh, 34px) var(--pad) clamp(26px, 4.2vh, 44px);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.sm-sheet-top::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  background: linear-gradient(to bottom, oklch(0.14 0.012 275 / 0.96) 0%, oklch(0.14 0.012 275 / 0.8) 54%, oklch(0.14 0.012 275 / 0) 100%);
+  -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 58%, transparent 100%);
+}
+.sm-sheet-top-in {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  width: 100%; max-width: 1460px; pointer-events: auto;
+}
+.sm-sheet-hd { margin-left: -14px; font-size: clamp(11.5px, 1vw, 13.5px); gap: 0 2px; }
+.sm-sheet-hd .w { padding: 0 14px; height: 36px; }
+.sm-sheet-hd .w::before { inset: 3px 0; }
+.sm-sheet-hd .sl { padding: 0 6px; }
+.sm-series-soon {
+  display: inline-flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px 0 9px;
+  border: 1px dashed oklch(0.95 0.008 275 / 0.22); border-radius: 3px;
+  background: oklch(0.95 0.008 275 / 0.035);
+  color: oklch(0.95 0.008 275 / 0.68); cursor: default; pointer-events: none; user-select: none;
+}
+.sm-hex-stack { display: inline-flex; align-items: center; }
+.sm-hex-chip {
+  display: block; width: 24px; height: 24px; flex: none;
+  filter: drop-shadow(-2px 0 0 var(--bg)) saturate(0.76) brightness(0.92); opacity: 0.92;
+}
+.sm-hex-chip + .sm-hex-chip { margin-left: -6px; }
+.sm-hex-chip svg { display: block; width: 100%; height: 100%; }
+.sm-sheet-close { flex: none; margin-right: -8px; }
+.sm-close-x { width: 38px; height: 38px; padding: 0; }
+.sm-close-x::before { inset: 3px; }
+.sm-close-x svg {
+  width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.85;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* Lab rubric wave dividers with Hex-ring series icons */
+.sm-rubric {
+  --c: var(--muted);
+  --wave: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='8' viewBox='0 0 24 8'%3E%3Cpath d='M0 4Q6 -1 12 4T24 4' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E");
+  grid-column: 1 / -1; margin: 18px 0 4px;
+  display: flex; align-items: center; justify-content: center; gap: 14px;
+  font: 800 clamp(16px, 2vw, 21px)/1 var(--b612); letter-spacing: -0.01em; color: var(--c); white-space: nowrap;
+}
+.sm-rubric:first-child { margin-top: 2px; }
+.sm-rubric::before, .sm-rubric::after {
+  content: ""; flex: 1; min-width: 12px; height: 8px;
+  background: color-mix(in oklch, var(--c) 62%, transparent);
+  -webkit-mask: var(--wave) 0 0 / 24px 8px repeat-x; mask: var(--wave) 0 0 / 24px 8px repeat-x;
+}
+.sm-rubric .at { display: inline-flex; align-items: center; gap: 11px; }
+.sm-rubric svg { display: block; width: clamp(42px, 5vw, 54px); height: clamp(42px, 5vw, 54px); flex: none; }
 .sm-sheet-grid {
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 22px 14px;
-  overflow-y: auto; overscroll-behavior: contain; padding: 8px 4px 36px; align-content: start;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+  position: absolute; inset: 0; width: 100%; max-width: calc(1460px + 2 * var(--pad)); margin-inline: auto;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr));
+  gap: clamp(28px, 3.8vh, 46px) clamp(20px, 2.4vw, 38px);
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: clamp(92px, 12vh, 124px) var(--pad) 56px; align-content: start;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent);
 }
 .sm-card {
-  appearance: none; position: relative; isolation: isolate;
-  display: grid; justify-items: center; align-content: start; gap: 10px;
-  padding: 6px 4px; border: 0; background: none; cursor: pointer; text-align: center;
-  color: oklch(0.95 0.008 275 / 0.82);
+  position: relative; isolation: isolate;
+  display: grid; justify-items: center; align-content: start; gap: 14px;
+  padding: 6px 4px; cursor: pointer; text-align: center;
+  color: oklch(0.95 0.008 275 / 0.86);
   transition: transform 140ms var(--ease);
 }
-.sm-card:active { transform: scale(0.95); }
+.sm-card:active { transform: scale(0.96); }
 .sm-card-ic {
-  position: relative; width: 76px; height: 76px; display: grid; place-items: center; isolation: isolate;
+  position: relative; width: clamp(122px, 11vw, 154px); height: clamp(122px, 11vw, 154px);
+  display: grid; place-items: center;
+  transition: scale 0.34s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
-.sm-card-ic::before {
-  content: ""; position: absolute; inset: -4px; z-index: -1; background: #fff;
+.sm-card-ic > a.toy {
+  display: grid !important; place-items: center; width: 100%; height: 100%;
+  margin: 0 !important; padding: 0 !important; gap: 0 !important; text-decoration: none;
+  opacity: 1 !important; filter: none !important; transition: none !important;
+}
+.sm-card-ic > a.toy .obj { width: 100%; height: 100%; display: grid; place-items: center; }
+.sm-card-ic > a.toy .obj::after { display: none !important; }
+.sm-card-ic > a.toy .obj svg { width: 86% !important; height: 86% !important; overflow: visible; filter: none !important; }
+.sm-card-ic > a.toy .name { display: none !important; }
+.sm-card-name {
+  position: relative; isolation: isolate; display: inline-block; max-width: 100%; padding: 4px 9px;
+  font: 700 clamp(11px, 0.95vw, 13px)/1.22 var(--slab); letter-spacing: 0.06em; text-transform: uppercase;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sm-card-name::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; background: #fff;
   clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end);
 }
-.sm-card-ic i {
-  display: block; width: 78%; height: 78%; background: var(--slot-ink, #fff);
-  mask: var(--em) center / contain no-repeat; -webkit-mask: var(--em) center / contain no-repeat;
-  mask-mode: luminance; -webkit-mask-mode: luminance;
-  transition: background 0.08s steps(2, end);
-}
-.sm-card-ic i.sm-no-em {
-  mask: none; -webkit-mask: none; background: none; display: grid; place-items: center;
-  font: 800 28px/1 var(--slab); font-style: normal; color: var(--slot-ink, #fff);
-}
-.sm-card span {
-  font: 700 11.5px/1.2 var(--slab); letter-spacing: 0.05em; text-transform: uppercase;
-  max-width: 100%; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-}
 @media (hover: hover) and (pointer: fine) {
-  .sm-card:hover { color: #fff; }
-  .sm-card:hover .sm-card-ic::before { clip-path: inset(0 0); }
-  .sm-card:hover .sm-card-ic i { background: var(--bg); }
-  .sm-card:hover .sm-card-ic i.sm-no-em { background: none; color: var(--bg); }
+  .sm-card:hover .sm-card-ic { scale: 1.1; }
+  .sm-card:hover .sm-card-name { color: var(--bg); }
+  .sm-card:hover .sm-card-name::before { clip-path: inset(0 0); }
 }
-.sm-card.is-act { color: #fff; }
-.sm-card.is-act .sm-card-ic::before { clip-path: inset(0 0); }
-.sm-card.is-act .sm-card-ic i { background: var(--bg); }
-.sm-card.is-act .sm-card-ic i.sm-no-em { background: none; color: var(--bg); }
-.sm-card:focus-visible .sm-card-ic { box-shadow: inset 0 -3px 0 var(--focus); }
+.sm-card.is-act .sm-card-name { color: var(--bg); }
+.sm-card.is-act .sm-card-name::before { clip-path: inset(0 0); }
+.sm-card:focus-within .sm-card-name { box-shadow: inset 0 -3px 0 var(--focus); }
+.sm-card-stage { opacity: 0.52; font-weight: 500; margin-left: 0.45em; }
+.sm-card:hover .sm-card-stage, .sm-card.is-act .sm-card-stage { opacity: 0.72; }
+
+/* Signal / Intro-style Lab password gate: bare monochrome Bar v3 elements, 30fps white flash-cuts & intro REVEAL.glitch band-slips over crusty CRT grain */
+.sm-sheet-grid.is-gate {
+  position: absolute; inset: 0; max-width: none;
+  display: grid; grid-template-columns: 1fr; align-content: center; justify-items: center;
+  padding: clamp(72px, 9vh, 100px) var(--pad) 8vh; overflow: hidden;
+  -webkit-mask-image: none; mask-image: none;
+}
+/* Crusty monochrome CRT grain + fine phosphor scanlines behind the Lab gate only */
+.sm-sheet-grid.is-gate::before {
+  content: ""; position: absolute; inset: -16%; z-index: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.88' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncR type='linear' slope='2.2' intercept='-0.55'/%3E%3CfeFuncG type='linear' slope='2.2' intercept='-0.55'/%3E%3CfeFuncB type='linear' slope='2.2' intercept='-0.55'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+  opacity: 0.24; mix-blend-mode: screen;
+  animation: sm-crt-grain 0.26s steps(4, end) infinite;
+}
+.sm-sheet-grid.is-gate::after {
+  content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    repeating-linear-gradient(to bottom, oklch(0 0 0 / 0.34) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse 68% 62% at 50% 50%, transparent 25%, oklch(0.06 0.01 275 / 0.82) 100%);
+}
+@keyframes sm-crt-grain {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(-24px, 18px); }
+  50% { transform: translate(19px, -22px); }
+  75% { transform: translate(-14px, -16px); }
+  100% { transform: translate(22px, 14px); }
+}
+.sm-lab-gate {
+  position: relative; z-index: 1;
+  display: grid; justify-items: center; gap: 16px; text-align: center;
+  width: min(400px, 100%);
+}
+.sm-lab-eyebrow {
+  display: inline-flex; align-items: center; gap: 8px; padding: 3px 8px;
+  font: 800 clamp(10px, 0.9vw, 11.5px)/1 var(--slab); letter-spacing: 0.16em; text-transform: uppercase;
+  color: oklch(0.95 0.008 275 / 0.68);
+  animation: sm-sig-cut-eye 3.4s steps(1, end) infinite;
+}
+.sm-lab-eyebrow svg {
+  width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.sm-lab-title {
+  position: relative; margin: 0; padding: 0.08em 0.22em 0.14em;
+  font: 800 clamp(26px, 3.8vw, 40px)/1.04 var(--slab); letter-spacing: -0.03em; word-spacing: -0.22em;
+  text-transform: uppercase; color: #fff;
+  animation: sm-sig-band-slip 2.9s steps(1, end) infinite;
+}
+/* Signal white flash box beat (matches shared/intro.js REVEAL.cut & .intro-text .is-wipe) */
+.sm-lab-title::after {
+  content: attr(data-t); position: absolute; inset: 0; padding: inherit;
+  background: #fff; color: var(--bg); pointer-events: none; opacity: 0;
+  animation: sm-sig-flash-title 3.7s steps(1, end) infinite;
+}
+.sm-lab-form {
+  display: flex; align-items: stretch; gap: 10px; width: 100%; margin-top: 8px;
+  font: 800 clamp(11.5px, 1vw, 13.5px)/1 var(--slab); letter-spacing: 0.1em; text-transform: uppercase;
+  animation: sm-sig-slip-form 4.1s steps(1, end) infinite;
+}
+.sm-lab-in {
+  flex: 1 1 auto; min-width: 0; height: 42px; padding: 0 12px;
+  border: 0; border-bottom: 1.5px solid oklch(0.95 0.008 275 / 0.42); border-radius: 0;
+  background: transparent;
+  color: #fff; font: 700 clamp(12.5px, 1.05vw, 14.5px)/1 var(--slab); letter-spacing: 0.14em;
+  -webkit-user-select: text !important; user-select: text !important;
+  transition: border-color 0.1s steps(3, end);
+}
+.sm-lab-in::placeholder {
+  color: oklch(0.95 0.008 275 / 0.4); text-transform: uppercase; letter-spacing: 0.14em; font-size: clamp(10px, 0.88vw, 11.5px);
+}
+.sm-lab-in:focus { outline: none; border-bottom-color: #fff; }
+.sm-lab-go {
+  flex: none; height: 42px; padding: 0 16px;
+  font: 800 clamp(11.5px, 1vw, 13.5px)/1 var(--slab); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg);
+}
+.sm-lab-go::before { inset: 4px 0; }
+.sm-lab-go::after {
+  content: "ENTER"; position: absolute; inset: 4px 0; display: grid; place-items: center;
+  background: #fff; color: var(--bg); pointer-events: none; opacity: 0;
+  animation: sm-sig-flash-btn 4.7s steps(1, end) infinite;
+}
+.sm-lab-go:is(:hover, :focus-visible) { color: var(--bg); }
+.sm-lab-go:is(:hover, :focus-visible)::after { animation: none; opacity: 0; }
+.sm-lab-err {
+  margin: 0; min-height: 18px; padding: 2px 8px;
+  font: 800 clamp(10px, 0.88vw, 11.5px)/1.4 var(--slab); letter-spacing: 0.14em; text-transform: uppercase;
+  color: #fff;
+}
+.sm-lab-err:not(:empty) { background: #fff; color: var(--bg); }
+.sm-lab-gate.is-err { animation: sm-shake 0.2s steps(4, end); }
+/* Authentic Stimming Signal 30fps monochrome flashes & intro REVEAL.glitch band slips */
+@keyframes sm-sig-cut-eye {
+  0%, 84%, 100% { background: transparent; color: oklch(0.95 0.008 275 / 0.68); transform: none; }
+  85%, 87% { background: #fff; color: var(--bg); transform: translateX(-2px); }
+  88% { background: transparent; color: #fff; transform: translateX(2px); }
+  90% { background: transparent; color: oklch(0.95 0.008 275 / 0.68); transform: none; }
+}
+@keyframes sm-sig-band-slip {
+  0%, 74%, 100% { clip-path: none; transform: none; }
+  75% { clip-path: inset(0 0 62% 0); transform: translateX(-0.18em); }
+  77% { clip-path: inset(34% 0 24% 0); transform: translateX(0.14em); }
+  79% { clip-path: inset(66% 0 0 0); transform: translateX(-0.08em); }
+  81% { clip-path: none; transform: translateX(0.04em); }
+  83% { clip-path: none; transform: none; }
+}
+@keyframes sm-sig-flash-title {
+  0%, 58%, 100% { opacity: 0; clip-path: inset(0 50% 0 50%); }
+  59%, 61% { opacity: 1; clip-path: inset(0 0 0 0); }
+  62% { opacity: 1; clip-path: inset(0 28% 0 28%); }
+  63% { opacity: 0; clip-path: inset(0 50% 0 50%); }
+  92% { opacity: 1; clip-path: inset(0 0 0 0); }
+  94% { opacity: 0; clip-path: inset(0 50% 0 50%); }
+}
+@keyframes sm-sig-slip-form {
+  0%, 88%, 100% { transform: none; }
+  89% { transform: translateX(2px); }
+  91% { transform: translateX(-2px); }
+  93% { transform: none; }
+}
+@keyframes sm-sig-flash-btn {
+  0%, 78%, 100% { opacity: 0; }
+  79%, 81% { opacity: 1; }
+  82% { opacity: 0; }
+}
+@keyframes sm-shake {
+  0% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  50% { transform: translateX(7px); }
+  75% { transform: translateX(-4px); }
+  100% { transform: translateX(0); }
+}
 
 /* ---------- Narrow / Portrait ---------- */
 @media (max-width: 860px) {
+  .sm-top-wrap { padding-top: 14px; }
+  .sm-brand { margin-top: 4px; }
   .sm-top { flex-wrap: wrap; gap: 6px; }
-  .sm-modes { font-size: 11px; justify-content: flex-start; margin-left: -9px; }
-  .sm-modes .w { padding: 0 7px; height: 34px; }
+  .sm-app[data-m="dial"] .sm-stage { grid-row: 2; }
+  .sm-app[data-m="dial"] .sm-top-wrap { pointer-events: auto; }
+  .sm-app[data-m="dial"] .sm-foot { pointer-events: auto; }
+  .sm-app[data-m="dial"] .sm-dial-wrap { width: min(92cqh, 94vw, 620px); }
+  .sm-modes { font-size: 11px; justify-content: flex-start; margin-right: 0; }
+  .sm-modes .w { padding: 0 7px; height: 32px; }
   .sm-modes .sl { padding: 0 2px; }
   .sm-app[data-m="rail"] .sm-deck { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
   .sm-app:is([data-m="console"], [data-m="folio"], [data-m="prism"], [data-m="reel"], [data-m="type"]) .sm-stage {
@@ -1018,22 +1690,27 @@ html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 1
   .sm-app[data-m="prism"] .sm-cell[data-row="1"] { --row-shift: 0px; }
   .sm-app[data-m="reel"] .sm-deck { min-height: 150px; }
   .sm-single-icon { width: 82px !important; margin-bottom: 10px !important; }
-  .sm-foot { grid-template-columns: auto 1fr; }
-  .sm-foot-gate { justify-self: end; }
+  .sm-foot { grid-template-columns: 1fr auto; gap: 8px; }
+  .sm-sig .onno svg { height: 30px; }
+  .sm-sig-label { display: none; }
   .sm-strip-nav[data-step="-1"] { left: 0; }
   .sm-strip-nav[data-step="1"] { right: 0; }
-  .sm-sheet-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px 10px; }
-  .sm-card-ic { width: 62px; height: 62px; }
+  .sm-sheet-grid { grid-template-columns: repeat(auto-fill, minmax(128px, 1fr)); gap: 22px 14px; }
+  .sm-card-ic { width: 100px; height: 100px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sm-cell.is-intro .sm-live, .sm-cell.is-intro .sm-flash, .sm-cell.is-intro .sm-flash::before, .sm-cell.is-intro .sm-flash-frame,
-  .sm-title.is-unfurl, .sm-acc .acc-snd.is-flash::before { animation: none !important; }
-  .sm-cell, .sm-cell .sm-live, .w, .w::before, .sm-ch, .sm-ch::before, .sm-card, .sm-card-ic::before, .sm-mword::before, .sm-glass, .sm-wordmark span { transition: none !important; }
+  .sm-cell.is-intro .sm-live, .sm-cell.is-intro .sm-flash, .sm-cell.is-intro .sm-flash::before, .sm-cell.is-intro .sm-flash-frame, .sm-cell.is-intro .sm-flash-frame i,
+  .sm-dial-wrap.is-ring-in::before, .sm-dial-wrap.is-ring-in::after,
+  .sm-sheet-grid.is-gate::before, .sm-lab-gate, .sm-lab-eyebrow, .sm-lab-title, .sm-lab-title::after, .sm-lab-form, .sm-lab-go::after,
+  .sm-title.is-unfurl, .sm-acc .acc-snd.is-flash::before { animation: none !important; clip-path: none !important; }
+  .sm-lab-title::after, .sm-lab-go::after { display: none !important; }
+  .sm-tagline { animation: none !important; background: none !important; color: oklch(0.72 0.018 275) !important; }
+  .sm-cell, .sm-cell .sm-live, .w, .w::before, .sm-ch, .sm-ch::before, .sm-card, .sm-card-ic, .sm-card-name::before, .sm-mword::before, .sm-glass, .sm-wordmark span, .sm-reroll-wrap, .sm-sig-pre, .sm-sig-post, .sm-sig-main span, .sm-sig .onno svg, .sm-sig .onno path { transition: none !important; }
 }
 `;
 
 /* ---------- Boot live menu iframe & mount Signal Menu ---------- */
-const frame = Object.assign(document.createElement('iframe'), { src: '../index.html?all', title: 'Signal Menu' });
+const frame = Object.assign(document.createElement('iframe'), { src: '../index.html?raw', title: 'Signal Menu' });
 document.body.append(frame);
 await new Promise(r => frame.addEventListener('load', r, { once: true }));
 const d = frame.contentDocument;
@@ -1052,23 +1729,322 @@ d.documentElement.classList.remove('js-reveal');
 const bin = Object.assign(d.createElement('div'), { className: 'sm-bin' });
 d.body.append(bin);
 const liveTiles = new Map();
+const labTiles = new Map();
 const tileViewBox = new Map();
+const LAB = [];
 
-// Harvest live tiles and capture each SVG's exact fitIcon() viewBox so luminosity mask aligns to 0.0 px!
+// Strip harsh unblurred solid-offset drop shadows and feDropShadow filters from harvested menu icons (e.g. foil, sonar, vortex, launch, dijkstra, window).
+function stripHarshShadows(svg) {
+  if (!svg) return;
+  const dropIds = new Set();
+  svg.querySelectorAll('filter').forEach(flt => {
+    if (flt.querySelector('feDropShadow') && flt.id) dropIds.add(flt.id);
+  });
+  if (dropIds.size) {
+    svg.querySelectorAll('[filter]').forEach(el => {
+      const ref = el.getAttribute('filter') || '';
+      for (const id of dropIds) if (ref.includes(`#${id}`)) el.removeAttribute('filter');
+    });
+  }
+  [...svg.children].forEach(el => {
+    const tag = el.tagName.toLowerCase();
+    const fill = (el.getAttribute('fill') || '').trim();
+    if (el.hasAttribute('filter')) return;
+    if ((tag === 'path' || tag === 'rect' || tag === 'circle') && (fill === 'oklch(0.07 0.01 260)' || fill === 'oklch(0.07 0.01 265)')) {
+      el.remove();
+    } else if (tag === 'ellipse' && /^oklch\(0\.0[45]\s/.test(fill)) {
+      el.remove();
+    }
+  });
+}
+
+const customEmblems = new Map();
+
+// Upgrade Harmonograph into a flat, top-down dark-glass circular platen (Shaded object language: glossy body + shared lit + rim),
+// luminous top-down decaying harmonograph weave, and white-hot pen & rim bobs with live pointer steering.
+function upgradeHarmonoIcon(a) {
+  const svg = a?.querySelector('.obj svg');
+  if (!svg) return;
+  const f = n => +n.toFixed(2);
+  const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+  const lg = (id, stops, attrs = 'x1="0" y1="0" x2="0" y2="1"') =>
+    `<linearGradient id="${id}" ${attrs}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color:${c};stop-opacity:${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, attrs = 'cx="0.5" cy="0.5" r="0.5"') =>
+    `<radialGradient id="${id}" ${attrs}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color:${c};stop-opacity:${op}"/>`).join('')}</radialGradient>`;
+
+  const u = 'hmt-';
+  const R = 50, FIG_R = 40;
+  const INK = 'oklch(0.72 0.21 302)', HOT = 'oklch(0.97 0.03 300)', PINK = 'oklch(0.75 0.21 335)';
+  const T_END = 6 * Math.PI, NPTS = 260, DAMP = 0.026, TURN = 0.175, REST_PH = 0.65;
+  const swing = (ph, t) => { const e = Math.exp(-DAMP * t); return [e * Math.sin(t + ph), e * Math.sin(t)]; };
+  const figure = (ph, rot, upTo = 1) => {
+    const pts = [], n = Math.max(2, Math.round(NPTS * upTo));
+    for (let i = 0; i < n; i++) {
+      const t = (i / (NPTS - 1)) * T_END, [x, y] = swing(ph, t), ang = rot + TURN * t;
+      pts.push([64 + (x * Math.cos(ang) - y * Math.sin(ang)) * FIG_R, 64 + (x * Math.sin(ang) + y * Math.cos(ang)) * FIG_R]);
+    }
+    return pts;
+  };
+  const line = pts => 'M' + pts.map(p => `${f(p[0])} ${f(p[1])}`).join('L');
+  const spark = (cls, r) => `<circle class="${cls}-h" r="${f(r * 2.8)}" fill="url(#${u}pen)" filter="url(#${u}gb)"/><circle class="${cls}" r="${r}" fill="${HOT}"/>`;
+
+  svg.innerHTML = `<defs>
+      ${lg(`${u}rim`, [[0, '#fff', 0.62], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"')}
+      ${rg(`${u}lit`, [[0, '#fff', 0.36], [1, '#fff', 0]], 'cx="0.32" cy="0.26" r="0.7"')}
+      <filter id="${u}gb" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="2.2"/></filter>
+      ${rg(`${u}disc`, [[0, 'oklch(0.28 0.055 286)'], [0.58, 'oklch(0.18 0.034 283)'], [1, 'oklch(0.12 0.022 282)']], 'cx="0.38" cy="0.32" r="0.78"')}
+      ${lg(`${u}lip`, [[0, 'oklch(0.38 0.095 298)'], [0.5, 'oklch(0.54 0.14 302)'], [1, 'oklch(0.24 0.065 290)']], 'x1="0" y1="0" x2="1" y2="0"')}
+      ${lg(`${u}ink`, [[0, PINK], [0.48, INK], [1, 'oklch(0.68 0.19 284)']], 'x1="0" y1="0" x2="1" y2="1"')}
+      ${rg(`${u}pen`, [[0, HOT, 1], [0.35, INK, 0.75], [1, INK, 0]])}
+      ${rg(`${u}pool`, [[0, INK, 0.38], [0.62, INK, 0.1], [1, INK, 0]])}
+      <clipPath id="${u}sc"><circle cx="64" cy="64" r="46.5"/></clipPath>
+    </defs>
+    <circle cx="64" cy="64" r="59" fill="url(#${u}pool)"/>
+    <circle cx="64" cy="67" r="${R}" fill="url(#${u}lip)"/>
+    <circle cx="64" cy="64" r="${R}" fill="url(#${u}disc)"/>
+    <circle cx="64" cy="64" r="${R}" fill="url(#${u}lit)"/>
+    <circle cx="64" cy="64" r="${R}" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>
+    <circle cx="64" cy="64" r="45.5" fill="none" stroke="oklch(0.62 0.14 300 / 0.24)" stroke-width="1"/>
+    <g clip-path="url(#${u}sc)">
+      <path class="hm-ghost" fill="none" stroke="${INK}" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" opacity="0"/>
+      <path class="hm-glow" fill="none" stroke="${INK}" stroke-width="7.2" stroke-linejoin="round" stroke-linecap="round" opacity="0.54" filter="url(#${u}gb)"/>
+      <path class="hm-ink" fill="none" stroke="url(#${u}ink)" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+      <path class="hm-hot" fill="none" stroke="${HOT}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+    </g>
+    ${spark('hm-bl', 3.4)}${spark('hm-br', 3.4)}${spark('hm-pen', 3.3)}`;
+
+  // Frame to [12, 12, 104, 107] so long side fills 110 of 128 like every other menu icon.
+  const box = [12, 12, 104, 107], side = Math.max(box[2], box[3]), size = (side * 128) / 110;
+  const cx = box[0] + box[2] / 2, cy = box[1] + box[3] / 2;
+  svg.setAttribute('viewBox', `${f(cx - size / 2)} ${f(cy - size / 2)} ${f(size)} ${f(size)}`);
+  svg.style.overflow = 'visible';
+
+  const restPts = figure(REST_PH, 0, 1);
+  const endPt = restPts[restPts.length - 1];
+  const [rsx, rsy] = swing(REST_PH, T_END);
+  // Multi-tone luminance mask for the Signal intro flash & toy intro: mid-grey platen, bright white ring, weave, pen & rim bobs.
+  const emb = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"><circle cx="64" cy="64" r="${R}" fill="#4a4a4a"/><circle cx="64" cy="64" r="${R}" fill="none" stroke="#fff" stroke-width="2.8"/><path d="${line(restPts)}" fill="none" stroke="#fff" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${f(64 - R + 1)}" cy="${f(64 + rsx * 16)}" r="4.2" fill="#fff"/><circle cx="${f(64 + R - 1)}" cy="${f(64 + rsy * 16)}" r="4.2" fill="#fff"/><circle cx="${f(endPt[0])}" cy="${f(endPt[1])}" r="4.8" fill="#fff"/></svg>`;
+  customEmblems.set('harmono', `data:image/svg+xml,${encodeURIComponent(emb)}`);
+
+  const ghost = svg.querySelector('.hm-ghost'), glow = svg.querySelector('.hm-glow');
+  const ink = svg.querySelector('.hm-ink'), hot = svg.querySelector('.hm-hot');
+  const dots = ['hm-pen', 'hm-bl', 'hm-br'].map(c => [svg.querySelector(`.${c}`), svg.querySelector(`.${c}-h`)]);
+  const st = { ph: REST_PH, phTo: REST_PH, rot: 0, rotTo: 0, prog: 1, hold: 0, gh: 0, live: false, t: 0, pulse: 0 };
+  const put = ([c, h], p, o) => {
+    c.setAttribute('cx', f(p[0])); c.setAttribute('cy', f(p[1]));
+    h.setAttribute('cx', f(p[0])); h.setAttribute('cy', f(p[1]));
+    h.setAttribute('opacity', f(o));
+  };
+  const draw = () => {
+    const pts = figure(st.ph, st.rot, st.prog);
+    const dStr = line(pts);
+    glow.setAttribute('d', dStr);
+    ink.setAttribute('d', dStr);
+    hot.setAttribute('d', line(pts.slice(Math.max(0, pts.length - 28))));
+    hot.setAttribute('opacity', f(st.live && st.prog < 1 ? 0.95 : 0));
+    ghost.setAttribute('opacity', f(st.gh));
+    put(dots[0], pts[pts.length - 1], 0.55 + 0.45 * st.pulse);
+    const [sx, sy] = swing(st.ph, ((st.prog * NPTS - 1) / (NPTS - 1)) * T_END);
+    put(dots[1], [64 - R + 1, 64 + sx * 16], 0.5 + 0.4 * st.pulse);
+    put(dots[2], [64 + R - 1, 64 + sy * 16], 0.5 + 0.4 * st.pulse);
+  };
+  draw();
+
+  if (!gsap) return;
+  let running = false;
+  const tick = () => {
+    const time = gsap.ticker.time;
+    const dt = Math.min(0.1, time - (st.t || time));
+    st.t = time;
+    st.ph += (st.phTo - st.ph) * Math.min(1, dt * 3.2);
+    st.gh = Math.max(0, st.gh - dt * 0.34);
+    if (st.live) {
+      st.rot += dt * 0.32;
+      if (st.prog < 1) st.prog = Math.min(1, st.prog + dt * 0.32);
+      else if ((st.hold += dt) > 0.9) { ghost.setAttribute('d', ink.getAttribute('d')); st.gh = 0.62; st.prog = 0.24; st.hold = 0; }
+      st.pulse = st.prog < 1 ? 1 : 0.45;
+    } else {
+      st.prog = Math.min(1, st.prog + dt * 0.95);
+      st.rot += (st.rotTo - st.rot) * Math.min(1, dt * 2.6);
+      st.pulse = Math.max(0, st.pulse - dt * 2);
+    }
+    draw();
+    if (!st.live && st.prog >= 1 && st.gh <= 0 && st.pulse <= 0 && Math.abs(st.rot - st.rotTo) + Math.abs(st.ph - st.phTo) < 0.003) {
+      st.rot = st.rotTo; st.ph = st.phTo; draw();
+      running = false; gsap.ticker.remove(tick);
+    }
+  };
+  const start = () => { if (!running) { running = true; st.t = gsap.ticker.time; gsap.ticker.add(tick); } };
+  const localPt = e => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return r.width ? [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height] : null;
+  };
+  const onMove = p => { if (p) st.phTo = REST_PH + clamp((p[0] - 64) / 48, -1, 1) * 0.72; };
+  const onEnter = e => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!st.live) { ghost.setAttribute('d', ink.getAttribute('d')); st.gh = 0.62; st.prog = 0.28; st.hold = 0; }
+    st.live = true; start();
+    if (e && e.clientX != null) onMove(localPt(e));
+  };
+  const onLeave = () => {
+    st.live = false; st.phTo = REST_PH;
+    st.rotTo = Math.round(st.rot / (2 * Math.PI)) * 2 * Math.PI;
+    start();
+  };
+  a.addEventListener('pointerenter', onEnter);
+  a.addEventListener('pointermove', e => { if (st.live) onMove(localPt(e)); });
+  a.addEventListener('pointerleave', onLeave);
+  a.addEventListener('focusin', () => onEnter(null));
+  a.addEventListener('focusout', onLeave);
+}
+
+// Rework Marbling into a bold top-down glossy rounded-square Ebru bath tile (no awkward tilted tray/comb):
+// authentic Turkish combed nonpareil plumes in Navy, Vermilion, Ochre, Teal & Cream under the shared glossy lit/rim sheen,
+// with live pointer-dragged fluid combing and zero idle work at rest.
+function upgradeMarbleIcon(a) {
+  const svg = a?.querySelector('.obj svg');
+  if (!svg) return;
+  const f = n => +n.toFixed(1);
+  const clamp = (v, lo = 0, hi = 1) => Math.min(hi, Math.max(lo, v));
+  const lg = (id, stops, attrs = 'x1="0" y1="0" x2="0" y2="1"') =>
+    `<linearGradient id="${id}" ${attrs}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color:${c};stop-opacity:${op}"/>`).join('')}</linearGradient>`;
+  const rg = (id, stops, attrs = 'cx="0.5" cy="0.5" r="0.5"') =>
+    `<radialGradient id="${id}" ${attrs}>${stops.map(([o, c, op = 1]) => `<stop offset="${o}" style="stop-color:${c};stop-opacity:${op}"/>`).join('')}</radialGradient>`;
+
+  const u = 'mbt-';
+  const NAVY = 'oklch(0.36 0.14 265)', RED = 'oklch(0.58 0.2 26)', OCHRE = 'oklch(0.81 0.155 78)', TEAL = 'oklch(0.56 0.12 198)', CREAM = 'oklch(0.95 0.028 88)';
+  const BANDS = [NAVY, CREAM, RED, OCHRE, CREAM, TEAL, NAVY, CREAM, RED, OCHRE];
+  const XS = [];
+  for (let x = 6; x <= 122; x += 2.5) XS.push(x);
+  const COMB_X = [24, 44, 64, 84, 104];
+
+  const bandY = (i, x, px, py, liveAmp, t) => {
+    const base = 14 + i * 10.6;
+    let y = base + 3.4 * Math.sin(x * 0.085 + i * 1.15);
+    // Classic alternating Ebru chevron/nonpareil comb plumes
+    for (let c = 0; c < COMB_X.length; c++) {
+      const dir = c % 2 === 0 ? 1 : -1;
+      const cx = COMB_X[c] + liveAmp * 2.2 * Math.sin(t * 2.2 + c * 0.9);
+      const dx = (x - cx) / 7.8;
+      y += dir * 13.5 * Math.exp(-dx * dx);
+    }
+    // Live pointer stylus pull through the floating ink
+    if (liveAmp > 0.001) {
+      const dpx = (x - px) / 14;
+      const dpy = (base - py) / 28;
+      const pull = Math.exp(-dpx * dpx - dpy * dpy * 0.45);
+      y += liveAmp * pull * (py - 64) * 0.52;
+      y += liveAmp * 11 * Math.exp(-dpx * dpx) * Math.sin(t * 3.4 + i * 0.45) * 0.28;
+    }
+    return y;
+  };
+  const buildPaths = (px, py, amp, t) => BANDS.map((_, i) => {
+    if (i === 0) return 'M8 8H120V120H8Z';
+    const pts = XS.map(x => `${f(x)} ${f(bandY(i, x, px, py, amp, t))}`).join('L');
+    return `M8 122L${pts}L120 122Z`;
+  });
+
+  svg.innerHTML = `<defs>
+      ${lg(`${u}rim`, [[0, '#fff', 0.65], [0.5, '#fff', 0]], 'x1="0" y1="0" x2="1" y2="1"')}
+      ${rg(`${u}lit`, [[0, '#fff', 0.38], [0.65, '#fff', 0.04], [1, '#fff', 0]], 'cx="0.3" cy="0.24" r="0.72"')}
+      ${lg(`${u}bath`, [[0, 'oklch(0.97 0.024 90)'], [1, 'oklch(0.89 0.04 82)']], 'x1="0" y1="0" x2="1" y2="1"')}
+      <clipPath id="${u}clip"><rect x="12" y="12" width="104" height="104" rx="20"/></clipPath>
+    </defs>
+    <rect x="11" y="11" width="106" height="106" rx="21" fill="oklch(0.32 0.09 264)"/>
+    <g clip-path="url(#${u}clip)">
+      <rect x="12" y="12" width="104" height="104" fill="url(#${u}bath)"/>
+      ${BANDS.map(c => `<path class="mb-b" fill="${c}"/>`).join('')}
+      <rect x="12" y="12" width="104" height="104" fill="url(#${u}lit)"/>
+    </g>
+    <rect x="11.5" y="11.5" width="105" height="105" rx="20.5" fill="none" stroke="url(#${u}rim)" stroke-width="2"/>`;
+
+  svg.setAttribute('viewBox', '3 3 122 122');
+  svg.style.overflow = 'visible';
+
+  const els = [...svg.querySelectorAll('.mb-b')];
+  const restPaths = buildPaths(64, 64, 0, 0);
+  restPaths.forEach((p, i) => els[i].setAttribute('d', p));
+
+  const lumBand = ['#525252', '#fff', '#9a9a9a', '#d8d8d8', '#fff', '#787878', '#383838', '#fff', '#9a9a9a', '#dcdcdc'];
+  const emb = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128"><defs><clipPath id="me"><rect x="12" y="12" width="104" height="104" rx="20"/></clipPath></defs><g clip-path="url(#me)">${restPaths.map((p, i) => `<path d="${p}" fill="${lumBand[i]}"/>`).join('')}</g><rect x="11.5" y="11.5" width="105" height="105" rx="20.5" fill="none" stroke="#fff" stroke-width="2.8"/></svg>`;
+  customEmblems.set('marble', `data:image/svg+xml,${encodeURIComponent(emb)}`);
+
+  if (!gsap) return;
+  const st = { px: 64, py: 64, pxTo: 64, pyTo: 64, amp: 0, ampTo: 0, live: false, t: 0 };
+  let running = false;
+  const tick = () => {
+    st.t = gsap.ticker.time;
+    st.px += (st.pxTo - st.px) * 0.14;
+    st.py += (st.pyTo - st.py) * 0.14;
+    st.amp += (st.ampTo - st.amp) * 0.1;
+    const paths = buildPaths(st.px, st.py, st.amp, st.t);
+    paths.forEach((p, i) => els[i].setAttribute('d', p));
+    if (!st.live && st.amp < 0.005) {
+      st.amp = 0; restPaths.forEach((p, i) => els[i].setAttribute('d', p));
+      running = false; gsap.ticker.remove(tick);
+    }
+  };
+  const start = () => { if (!running) { running = true; gsap.ticker.add(tick); } };
+  const localPt = e => {
+    const r = svg.getBoundingClientRect(), v = svg.viewBox.baseVal;
+    return r.width ? [v.x + ((e.clientX - r.left) / r.width) * v.width, v.y + ((e.clientY - r.top) / r.height) * v.height] : null;
+  };
+  const onMove = p => { if (p) { st.pxTo = clamp(p[0], 16, 112); st.pyTo = clamp(p[1], 16, 112); } };
+  const onEnter = e => {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    st.live = true; st.ampTo = 1; start();
+    if (e && e.clientX != null) onMove(localPt(e));
+    else { st.pxTo = 76; st.pyTo = 48; }
+  };
+  const onLeave = () => { st.live = false; st.ampTo = 0; st.pxTo = 64; st.pyTo = 64; start(); };
+  a.addEventListener('pointerenter', onEnter);
+  a.addEventListener('pointermove', e => { if (st.live) onMove(localPt(e)); });
+  a.addEventListener('pointerleave', onLeave);
+  a.addEventListener('focusin', () => onEnter(null));
+  a.addEventListener('focusout', onLeave);
+}
+
+// Harvest main-shelf live tiles and capture each SVG's exact fitIcon() viewBox so luminosity mask aligns to 0.0 px!
 d.querySelectorAll('main .shelf .toy').forEach(a => {
+  if (a.closest('section.lab')) return;
   if (!toysData[a.id] || toysData[a.id].number == null) return;
   a.setAttribute('target', '_top');
   a.classList.add('is-in');
+  if (a.id === 'harmono') upgradeHarmonoIcon(a);
+  if (a.id === 'marble') upgradeMarbleIcon(a);
   const svg = a.querySelector('.obj svg');
   const vb = svg?.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
   if (vb && vb.length === 4 && vb[2] > 0) tileViewBox.set(a.id, vb);
+  stripHarshShadows(svg);
   liveTiles.set(a.id, a);
   bin.append(a);
 });
 
+// Harvest Lab shelf live tiles for the password-gated Lab segment in All Toys.
+d.querySelectorAll('section.lab .shelf .toy').forEach(a => {
+  const id = a.id;
+  if (!id || liveTiles.has(id) || labTiles.has(id)) return;
+  const t = toysData[id] || {};
+  const labelNode = a.querySelector('.name');
+  const rawName = labelNode ? [...labelNode.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim() : id;
+  const stage = labelNode?.querySelector('.alpha') ? 'Alpha' : labelNode?.querySelector('.beta') ? 'Beta' : '';
+  a.setAttribute('target', '_top');
+  a.classList.add('is-in');
+  stripHarshShadows(a.querySelector('.obj svg'));
+  labTiles.set(id, a);
+  LAB.push({ id, ...t, name: t.name || rawName, stage, href: a.getAttribute('href') || `${id}/index.html`, isLab: true });
+  bin.append(a);
+});
+const labById = Object.fromEntries(LAB.map(t => [t.id, t]));
+
 const ALL = Object.entries(toysData)
   .filter(([id, t]) => t.number != null && liveTiles.has(id))
-  .map(([id, t]) => ({ id, ...t, emblemUrl: t.emblem ? rootUrl(t.emblem) : '', ink: inkOf(t.accent || '') }))
+  .map(([id, t]) => ({
+    id,
+    ...t,
+    emblemUrl: customEmblems.get(id) || (t.emblem ? rootUrl(t.emblem) : ''),
+    ink: inkOf(t.accent || ''),
+  }))
   .sort((a, b) => a.number - b.number);
 const byId = Object.fromEntries(ALL.map(t => [t.id, t]));
 
@@ -1081,38 +2057,37 @@ let mode = ALL_MODES.some(([m]) => m === urlParams.get('m')) ? urlParams.get('m'
 let parkedOpen = PARKED.some(([m]) => m === mode);
 app.dataset.m = mode;
 
-const gateHTML = `
-  <a class="w" data-open target="_top">Play</a>
-  <span class="sl">/</span>
-  <button type="button" class="w" data-act="reroll">Re-roll</button>
-  <span class="sl">/</span>
-  <button type="button" class="w" data-sheet="all" aria-expanded="false">All ${ALL.length}</button>
-`;
+const gateHTML = `<a class="w" data-open target="_top">Play</a>`;
 const btns = list => list.map(([m, label], i) => `${i ? '<span class="sl">/</span>' : ''}<button type="button" class="w" data-m="${m}" aria-pressed="${m === mode}">${label}</button>`).join('');
+const liveTitleEl = d.getElementById('title');
+const onnoEl = d.querySelector('.credit .onno');
+const onnoName = [...'onnøzelaer'].map((ch, i) => `<span style="--i:${i}">${ch}</span>`).join('');
 
 app.innerHTML = `
   <div class="sm-mesh" aria-hidden="true"></div>
+  <div class="sm-foot-glow" aria-hidden="true"></div>
 
   <header class="sm-top-wrap">
     <div class="sm-top">
-      <a class="sm-wordmark" href="${rootUrl('index.html?all')}" target="_top" aria-label="Stimming">${MARK.map(([ch, c, w, r, y], i) => `<span style="--c:${c};--w:${w};--r:${r}deg;--y:${y}px;--i:${i}">${ch}</span>`).join('')}</a>
-      <nav class="bar sm-modes" aria-label="Layout">
-        ${btns(KEPT)}
-        <span class="sl sm-div">|</span>
-        ${btns(FRESH)}
-        <span class="sl sm-div">|</span>
-        <button type="button" class="w is-muted" data-parked-toggle aria-expanded="${parkedOpen}">Parked</button>
+      <div class="sm-brand" id="sm-brand">
+        <p class="sm-tagline">delightful and effective ways to deny shareholder value</p>
+      </div>
+      <nav class="bar sm-top-actions" aria-label="Menu actions">
+        <span class="sm-reroll-wrap" id="sm-reroll-wrap">
+          <button type="button" class="w" data-act="reroll" title="Re-roll (R)">Re-roll<kbd class="sm-kbd">R</kbd></button>
+          <span class="sl">/</span>
+        </span>
+        <button type="button" class="w" data-sheet="all" aria-expanded="false">All Toys</button>
       </nav>
     </div>
-    <nav class="bar sm-parked-row" id="sm-parked-row" ${parkedOpen ? '' : 'hidden'} aria-label="Parked layouts">
-      ${btns(PARKED)}
-    </nav>
   </header>
 
   <main class="sm-stage" id="sm-stage">
     <div class="sm-dial-wrap" id="sm-dial-wrap">
       <i class="sm-hand" id="sm-hand" aria-hidden="true"></i>
-      <div class="sm-dial-mid" id="sm-dial-mid"></div>
+      <div class="sm-dial-mid" id="sm-dial-mid">
+        <div class="sm-dial-frost" aria-hidden="true"></div>
+      </div>
     </div>
 
     <div class="sm-track-wrap" id="sm-track-wrap">
@@ -1135,14 +2110,32 @@ app.innerHTML = `
 
   <footer class="sm-foot">
     <div class="sm-tech" id="sm-tech"></div>
-    <div class="bar sm-foot-gate">${gateHTML}</div>
+    <div class="bar sm-foot-meta">
+      <span class="sm-ai-note" aria-label="Copyleft 2026, GPL-3.0"><svg class="sm-cl" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.3"/><path d="M6.4 5.7a3.1 3.1 0 1 1 0 4.6"/></svg>2026 · GPL-3.0</span>
+      <span class="sl">/</span>
+      <span class="sm-ai-note">Made with the help of AI</span>
+      <span class="sl">/</span>
+      <a class="w sm-attr" href="${rootUrl('credits/')}" target="_top">Attributions</a>
+    </div>
+    <span class="sm-sig" id="sm-sig" tabindex="0" aria-label="yet another onnøzelaer concoction">
+      <span class="sm-sig-mark" id="sm-sig-mark"></span>
+      <span class="sm-sig-label" aria-hidden="true">
+        <span class="sm-sig-pre">yet another...</span>
+        <span class="sm-sig-main">${onnoName}</span>
+        <span class="sm-sig-post">concoction.</span>
+      </span>
+    </span>
   </footer>
 
   <div class="sm-glass" id="sm-glass"></div>
   <section class="sm-sheet" id="sm-sheet" hidden aria-label="All toys">
     <div class="sm-sheet-top">
-      <div class="bar sm-sheet-hd" id="sm-sheet-hd"></div>
-      <div class="bar sm-sheet-close"><button type="button" class="w" data-close>Close</button></div>
+      <div class="sm-sheet-top-in">
+        <div class="bar sm-sheet-hd" id="sm-sheet-hd"></div>
+        <div class="bar sm-sheet-close">
+          <button type="button" class="w sm-close-x" data-close aria-label="Close"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.2 3.2L12.8 12.8M12.8 3.2L3.2 12.8"/></svg></button>
+        </div>
+      </div>
     </div>
     <div class="sm-sheet-grid" id="sm-sheet-grid"></div>
   </section>
@@ -1151,6 +2144,7 @@ d.body.append(app);
 
 const copyBlock = Object.assign(d.createElement('div'), { className: 'sm-copy' });
 copyBlock.innerHTML = `
+  <div class="sm-tech sm-dial-tech" id="sm-dial-tech"></div>
   <div class="sm-title-box"><h1 class="sm-title" id="sm-title"></h1></div>
   <p class="sm-motto" id="sm-motto"></p>
   <div class="sm-acc" id="sm-acc"></div>
@@ -1168,29 +2162,42 @@ const deckEl = d.getElementById('sm-deck');
 const listEl = d.getElementById('sm-list');
 const folioListEl = d.getElementById('sm-folio-list');
 const marqueeEl = d.getElementById('sm-marquee');
-const parkedRow = d.getElementById('sm-parked-row');
+const rerollWrap = d.getElementById('sm-reroll-wrap');
 const techEl = d.getElementById('sm-tech');
+const dialTechEl = copyBlock.querySelector('#sm-dial-tech');
 const glassEl = d.getElementById('sm-glass');
 const sheetEl = d.getElementById('sm-sheet');
 const sheetHd = d.getElementById('sm-sheet-hd');
 const sheetGrid = d.getElementById('sm-sheet-grid');
 
 if (gsap) gsap.set(handNeedle, { xPercent: -50, yPercent: -100, transformOrigin: '50% 100%' });
+if (liveTitleEl) d.getElementById('sm-brand')?.prepend(liveTitleEl);
+if (onnoEl) d.getElementById('sm-sig-mark')?.append(onnoEl);
 
+const getDialGeom = () => {
+  if (mode !== 'dial') return [0, 0, 0];
+  const r = dialWrap.getBoundingClientRect();
+  return r.width ? [r.left + r.width / 2, r.top + r.height / 2, r.width * 0.5] : [0, 0, 0];
+};
 const crt = await makeCRT(d, app);
+const topMesh = await makeTopMesh(d, app).catch(() => null);
+const footMesh = await makeFooterMesh(d, app, getDialGeom).catch(() => null);
 const still = matchMedia('(prefers-reduced-motion: reduce)');
 const shuffle = a => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 
 let queue = [], hand = [], active = null, sheetOpen = false, seriesFilter = 'all', dwellTimer = 0;
+let labUnlocked = false;
+try { labUnlocked = sessionStorage.getItem('stimming.lab.ok') === '1'; } catch {}
+const LAB_PASS = 'celestible';
 const prevDiffs = new Map();
 
-const emHTML = t => t.emblemUrl ? `<i style="--em:url(${t.emblemUrl})"></i>` : `<i class="sm-no-em">${t.name[0]}</i>`;
+const emHTML = t => t.emblemUrl ? `<i style="--em:url('${t.emblemUrl}')"></i>` : `<i class="sm-no-em">${t.name[0]}</i>`;
 
 // Exact viewBox alignment for luminosity mask inside .sm-flash-frame so emblem & live SVG overlap to 0.0 px!
 function alignedFlashHTML(t) {
   if (!t.emblemUrl) return `<div class="sm-flash-frame"><i class="sm-no-em">${t.name[0]}</i></div>`;
   const vb = tileViewBox.get(t.id);
-  let style = `--em:url(${t.emblemUrl})`;
+  let style = `--em:url('${t.emblemUrl}')`;
   if (vb) {
     const [vx, vy, vw] = vb;
     const ew = (128 / vw) * 100;
@@ -1215,6 +2222,7 @@ function makeCell(toy, idx = 0) {
   const lx = idx < 6 ? '6.5vw' : `${(18 + ((idx - 6) / 5) * 72).toFixed(2)}vw`;
   const ly = idx < 6 ? `${(12 + (idx / 5) * 66).toFixed(2)}%` : '90%';
 
+  cell.style.setProperty('--slot-ink', toy.ink || '#fff');
   cell.style.setProperty('--p', p.toFixed(4));
   cell.style.setProperty('--dx', Math.sin(dialRad).toFixed(4));
   cell.style.setProperty('--dy', (-Math.cos(dialRad)).toFixed(4));
@@ -1250,6 +2258,13 @@ function parkAllTiles() {
   prevDiffs.clear();
 }
 
+function pulseDialRing() {
+  if (still.matches || mode !== 'dial') return;
+  dialWrap.classList.remove('is-ring-in');
+  void dialWrap.offsetWidth;
+  dialWrap.classList.add('is-ring-in');
+}
+
 function flashCells(cells, staggerMs = 44) {
   if (still.matches) return;
   cells.forEach((cell, i) => {
@@ -1276,6 +2291,17 @@ function fitTitle() {
   titleEl.style.removeProperty('--title-fit');
   const maxW = titleBoxEl.clientWidth;
   if (!maxW) return;
+  if (mode === 'dial') {
+    // Keep one consistent title size across toys (balanced 1-2 lines); only scale down if an unbroken word or 3rd line overflows.
+    let basePx = parseFloat(d.defaultView.getComputedStyle(titleEl).fontSize) || 32;
+    const maxH = basePx * 2.35;
+    let guard = 0;
+    while ((titleEl.scrollWidth > maxW + 1 || titleEl.scrollHeight > maxH) && basePx > 16 && guard++ < 14) {
+      basePx = Math.max(16, basePx - 1.5);
+      titleEl.style.setProperty('--title-fit', `${basePx}px`);
+    }
+    return;
+  }
   const sw = titleEl.scrollWidth;
   if (sw > maxW) {
     const basePx = parseFloat(d.defaultView.getComputedStyle(titleEl).fontSize) || 40;
@@ -1295,7 +2321,7 @@ function updateCRTSpot(snap = false) {
     const r = dialWrap.getBoundingClientRect();
     x = r.width ? (r.left + r.width / 2) / w : 0.5;
     y = r.width ? (r.top + r.height / 2) / h : 0.5;
-    rad = (r.width || minD * 0.72) * 0.72;
+    rad = (r.width || minD * 0.72) * 0.60;
     ellip = 1.0;
     aimOn = 1;
   } else if (mode === 'strip') {
@@ -1528,14 +2554,16 @@ function mountHand() {
   marqueeEl.innerHTML = hand.map(t => `<button type="button" class="sm-mword" data-id="${t.id}">${t.name}</button>`).join('');
 
   if (cells.length) {
-    if (mode === 'strip' || mode === 'reel') flashCells(stripVisibleCells(0), 42);
-    else flashCells(cells, 42);
+    if (mode === 'strip' || mode === 'reel') flashCells(stripVisibleCells(0), 48);
+    else flashCells(cells, 52);
+    pulseDialRing();
   }
 }
 
-function deal() {
+function deal(pinId = null) {
   clearTimeout(dwellTimer);
   const next = [];
+  if (pinId && byId[pinId]) next.push(byId[pinId]);
   while (next.length < SIZE) {
     if (!queue.length) {
       let seen = [];
@@ -1573,10 +2601,11 @@ function select(toy, { immediate = false, fromPointer = false } = {}) {
   const prevId = active?.id;
   active = toy;
 
-  const [c1, c2] = meshColours(toy.accent);
+  const lchs = parseToyLCH(toy.accent);
   app.style.setProperty('--acc-ink', toy.ink || '#fff');
-  app.style.setProperty('--c1', c1);
-  app.style.setProperty('--c2', c2);
+  app.style.setProperty('--c1', `oklch(${lchs[0][0]} ${lchs[0][1]} ${lchs[0][2]})`);
+  app.style.setProperty('--c2', `oklch(${lchs[1][0]} ${lchs[1][1]} ${lchs[1][2]})`);
+  topMesh?.setColours(lchs, immediate);
 
   const idx = hand.findIndex(t => t.id === toy.id);
   if (changed) {
@@ -1605,7 +2634,9 @@ function select(toy, { immediate = false, fromPointer = false } = {}) {
     accEl.innerHTML = (fl ? `<div class="sm-acc-flags">${fl}</div>` : '')
       + (toy.sound ? `<span class="acc-i acc-snd${immediate ? '' : ' is-flash'}">${glyph('sound')}<b>Best with sound</b></span>` : '');
 
-    techEl.innerHTML = techHTML(toy.tech);
+    const th = techHTML(toy.tech);
+    techEl.innerHTML = th;
+    dialTechEl.innerHTML = th;
     app.querySelectorAll('[data-open]').forEach(a => { a.href = rootUrl(`${toy.id}/index.html`); });
 
     const stillUrl = rootUrl(`shared/stills/${toy.id}.webp`);
@@ -1629,25 +2660,155 @@ function select(toy, { immediate = false, fromPointer = false } = {}) {
   updateCRTSpot(immediate);
 }
 
+function clearSheetTiles() {
+  sheetGrid.querySelectorAll('a.toy').forEach(a => {
+    a.dispatchEvent(new d.defaultView.FocusEvent('focusout', { bubbles: true }));
+    a.dispatchEvent(new d.defaultView.PointerEvent('pointerleave', { bubbles: false }));
+    bin.append(a);
+  });
+  sheetGrid.innerHTML = '';
+}
+
+function restoreStageTiles() {
+  clearSheetTiles();
+  if (SINGLE_ICON_MODES.has(mode)) {
+    const live = singleIconHost.querySelector('.sm-live');
+    const tile = active && liveTiles.get(active.id);
+    if (live && tile) live.append(tile);
+  } else {
+    deckEl.querySelectorAll('.sm-cell').forEach(cell => {
+      const live = cell.querySelector('.sm-live');
+      const tile = liveTiles.get(cell.dataset.id);
+      if (live && tile) live.append(tile);
+    });
+  }
+}
+
 function toggleSheet(force) {
-  sheetOpen = typeof force === 'boolean' ? force : !sheetOpen;
+  const next = typeof force === 'boolean' ? force : !sheetOpen;
+  if (next === sheetOpen) return;
+  sheetOpen = next;
+  app.toggleAttribute('data-sheet-open', sheetOpen);
   app.querySelectorAll('[data-sheet="all"]').forEach(b => b.setAttribute('aria-expanded', String(sheetOpen)));
   glassEl.toggleAttribute('data-on', sheetOpen);
   sheetEl.hidden = !sheetOpen;
-  crt?.setDim(sheetOpen ? 0.3 : 1);
+  crt?.setDim(sheetOpen ? 0 : 1);
   if (sheetOpen) renderSheet();
+  else restoreStageTiles();
+}
+
+const HEX_PREVIEW_KEYS = ['eastvan', 'goo', 'science', 'maths', 'dark'];
+let hexStackHTML = '';
+function getHexStackHTML() {
+  if (hexStackHTML) return hexStackHTML;
+  hexStackHTML = HEX_PREVIEW_KEYS
+    .filter(k => seriesData[k]?.icon)
+    .map(k => `<span class="sm-hex-chip">${shotIcon(k, seriesData[k].icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: seriesData[k].color })}</span>`)
+    .join('');
+  return hexStackHTML;
+}
+
+function makeSheetCard(t, tiles) {
+  const card = d.createElement('div');
+  card.className = `sm-card${active && active.id === t.id ? ' is-act' : ''}`;
+  card.dataset.id = t.id;
+  if (t.isLab) card.dataset.lab = '1';
+  const ic = d.createElement('div');
+  ic.className = 'sm-card-ic';
+  const tile = tiles.get(t.id);
+  if (tile) ic.append(tile);
+  const label = d.createElement('span');
+  label.className = 'sm-card-name';
+  label.innerHTML = t.stage ? `${t.name}<span class="sm-card-stage">(${t.stage})</span>` : t.name;
+  card.append(ic, label);
+  return card;
+}
+
+function makeRubricHeader(name, iconHTML = '', color = '') {
+  const hd = d.createElement('h2');
+  hd.className = 'sm-rubric';
+  if (color) hd.style.setProperty('--c', color);
+  hd.innerHTML = `<span class="at">${iconHTML}<span></span></span>`;
+  hd.querySelector('.at > span').textContent = name;
+  return hd;
 }
 
 function renderSheet() {
-  const serKeys = Object.keys(seriesData).filter(k => ALL.some(t => t.series === k));
-  const chips = [['all', `All ${ALL.length}`], ...serKeys.map(k => [k, seriesData[k].name])];
-  sheetHd.innerHTML = chips.map(([k, label], i) => `${i ? '<span class="sl">/</span>' : ''}<button type="button" class="w" data-ser="${k}" aria-pressed="${k === seriesFilter}">${label}</button>`).join('');
-  const list = seriesFilter === 'all' ? ALL : ALL.filter(t => t.series === seriesFilter);
-  sheetGrid.innerHTML = list.map(t => `
-    <button type="button" class="sm-card${active && active.id === t.id ? ' is-act' : ''}" data-id="${t.id}" style="--slot-ink:${t.ink}">
-      <span class="sm-card-ic">${emHTML(t)}</span>
-      <span>${t.name}</span>
-    </button>`).join('');
+  clearSheetTiles();
+  sheetHd.innerHTML = `<button type="button" class="w" data-ser="all" aria-pressed="${seriesFilter === 'all'}">All ${ALL.length}</button>`
+    + `<span class="sl">/</span>`
+    + `<span class="sm-series-soon" aria-disabled="true"><span class="sm-hex-stack" aria-hidden="true">${getHexStackHTML()}</span><span>Series coming soon</span></span>`
+    + `<span class="sl sm-div">|</span>`
+    + `<button type="button" class="w" data-ser="lab" aria-pressed="${seriesFilter === 'lab'}">Lab${labUnlocked ? ` ${LAB.length}` : ''}</button>`;
+
+  if (seriesFilter === 'lab' && !labUnlocked) {
+    sheetGrid.classList.add('is-gate');
+    sheetGrid.innerHTML = `
+      <div class="sm-lab-gate" id="sm-lab-gate">
+        <span class="sm-lab-eyebrow"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3" y="7.5" width="10" height="6.8" rx="1.2"/><path d="M5.2 7.5V5.2a2.8 2.8 0 0 1 5.6 0v2.3"/></svg>Lab access</span>
+        <h2 class="sm-lab-title" data-t="Password required">Password required</h2>
+        <form class="sm-lab-form" id="sm-lab-form" autocomplete="off">
+          <input type="password" class="sm-lab-in" id="sm-lab-in" placeholder="Password" autocomplete="new-password" data-1p-ignore="true" data-lpignore="true" spellcheck="false" aria-label="Lab password">
+          <button type="submit" class="w sm-lab-go">Enter</button>
+        </form>
+        <p class="sm-lab-err" id="sm-lab-err" aria-live="polite"></p>
+      </div>
+    `;
+    const form = sheetGrid.querySelector('#sm-lab-form');
+    const inp = sheetGrid.querySelector('#sm-lab-in');
+    const err = sheetGrid.querySelector('#sm-lab-err');
+    const gateBox = sheetGrid.querySelector('#sm-lab-gate');
+    form.addEventListener('submit', e => {
+      e.preventDefault();
+      if (inp.value.trim().toLowerCase() === LAB_PASS) {
+        labUnlocked = true;
+        try { sessionStorage.setItem('stimming.lab.ok', '1'); } catch {}
+        renderSheet();
+      } else {
+        err.textContent = 'Access denied // signal rejected';
+        gateBox.classList.remove('is-err');
+        void gateBox.offsetWidth;
+        gateBox.classList.add('is-err');
+        inp.select();
+        inp.focus();
+      }
+    });
+    requestAnimationFrame(() => inp.focus());
+    return;
+  }
+
+  sheetGrid.classList.remove('is-gate');
+  const frag = d.createDocumentFragment();
+  if (seriesFilter === 'lab') {
+    const slate = LAB.filter(t => t.slate);
+    const bench = LAB.filter(t => t.bench && !t.slate);
+    const body = LAB.filter(t => !t.slate && !t.bench);
+    if (slate.length) {
+      frag.append(makeRubricHeader('Slate'));
+      slate.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+    }
+    const grouped = new Map(Object.keys(seriesData).map(k => [k, []]));
+    const rest = [];
+    body.forEach(t => (grouped.get(t.series) || rest).push(t));
+    for (const [k, items] of grouped) {
+      if (!items.length) continue;
+      const s = seriesData[k];
+      const iconHTML = s.icon ? shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color }) : '';
+      frag.append(makeRubricHeader(s.name, iconHTML, s.color));
+      items.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+    }
+    if (rest.length) {
+      frag.append(makeRubricHeader('Other'));
+      rest.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+    }
+    if (bench.length) {
+      frag.append(makeRubricHeader('Bench'));
+      bench.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+    }
+  } else {
+    ALL.forEach(t => frag.append(makeSheetCard(t, liveTiles)));
+  }
+  sheetGrid.append(frag);
 }
 
 function setMode(m) {
@@ -1679,6 +2840,7 @@ function setMode(m) {
     else if (m === 'orbit') { spinOrbitTo(curIdx, true); flashCells(cells, 30); }
     else { flashCells(cells, 34); }
     pointHand(curIdx, true);
+    pulseDialRing();
   }
 
   requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
@@ -1695,19 +2857,6 @@ function step(dir) {
 }
 
 /* ---------- Events ---------- */
-app.querySelector('.sm-top-wrap').addEventListener('click', e => {
-  const pt = e.target.closest('[data-parked-toggle]');
-  if (pt) {
-    parkedOpen = !parkedOpen;
-    pt.setAttribute('aria-expanded', String(parkedOpen));
-    parkedRow.hidden = !parkedOpen;
-    requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
-    return;
-  }
-  const b = e.target.closest('[data-m]');
-  if (b) setMode(b.dataset.m);
-});
-
 deckEl.addEventListener('pointerover', e => {
   if (e.pointerType === 'touch' || mode === 'strip' || mode === 'orbit' || mode === 'reel') return;
   const c = e.target.closest('.sm-cell');
@@ -1785,7 +2934,19 @@ const bindWordList = (el, sel) => {
 bindWordList(listEl, '.sm-ch');
 bindWordList(folioListEl, '.sm-ch');
 bindWordList(marqueeEl, '.sm-mword');
-bindWordList(sheetGrid, '.sm-card');
+
+sheetGrid.addEventListener('pointerover', e => {
+  if (e.pointerType === 'touch') return;
+  const c = e.target.closest('.sm-card');
+  if (c && !c.dataset.lab && byId[c.dataset.id]) select(byId[c.dataset.id], { fromPointer: true });
+});
+sheetGrid.addEventListener('click', e => {
+  const c = e.target.closest('.sm-card');
+  if (!c) return;
+  if (e.target.closest('a.toy')) return;
+  const toy = c.dataset.lab ? labById[c.dataset.id] : byId[c.dataset.id];
+  if (toy) window.top.location.href = rootUrl(toy.href || `${toy.id}/index.html`);
+});
 
 sheetHd.addEventListener('click', e => {
   const s = e.target.closest('[data-ser]');
@@ -1795,7 +2956,7 @@ sheetEl.querySelector('[data-close]').addEventListener('click', () => toggleShee
 glassEl.addEventListener('click', () => toggleSheet(false));
 
 app.addEventListener('click', e => {
-  if (e.target.closest('[data-act="reroll"]')) { deal(); return; }
+  if (e.target.closest('[data-act="reroll"]')) { if (sheetOpen) toggleSheet(false); deal(); return; }
   if (e.target.closest('[data-sheet="all"]')) { toggleSheet(); }
 });
 
@@ -1804,6 +2965,8 @@ new ResizeObserver(() => {
   if (mode === 'reel') updateReel(Math.max(0, hand.findIndex(t => t.id === active?.id)));
   fitTitle();
   updateCRTSpot(true);
+  footMesh?.draw?.();
+  topMesh?.draw?.();
 }).observe(app);
 
 let wheelAt = 0;
@@ -1816,14 +2979,15 @@ app.addEventListener('wheel', e => {
   step((e.deltaY || e.deltaX) > 0 ? 1 : -1);
 }, { passive: true });
 
-const PRIMARY = [...KEPT, ...FRESH];
 const onKey = e => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.target && e.target.closest('input, textarea, select')) {
+    if (e.key === 'Escape') { e.target.blur(); toggleSheet(false); }
+    return;
+  }
   const k = e.key.toLowerCase();
   if (k === 'escape') { toggleSheet(false); return; }
-  const n = Number(k);
-  if (n >= 1 && n <= PRIMARY.length) { setMode(PRIMARY[n - 1][0]); return; }
-  if (k === 'r') { deal(); return; }
+  if (k === 'r') { if (sheetOpen) toggleSheet(false); deal(); return; }
   if (k === 'a') { toggleSheet(); return; }
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); step(1); return; }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); step(-1); return; }
@@ -1833,7 +2997,9 @@ d.addEventListener('keydown', onKey);
 window.addEventListener('keydown', onKey);
 
 placeContainers(mode);
-deal();
+deal(urlParams.get('toy'));
+// Re-roll + R keycap appears in the top-right after the same 5-second delay as Clock (immediate on narrow screens).
+setTimeout(() => rerollWrap.setAttribute('data-on', ''), matchMedia('(max-width: 860px)').matches ? 0 : 5000);
 requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
 frame.classList.add('ready');
 </script>

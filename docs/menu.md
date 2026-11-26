@@ -10,14 +10,20 @@ Terms follow `GLOSSARY.md`. Prose: ASD-STE100, double density.
 
   | Address | `data-view` | Shows |
   |---|---|---|
-  | `./` | `clock` | The Clock: twelve main-shelf toys on a dial. The default. |
-  | `./?all` | `all` | The whole main shelf. Only this view shows the Series switch, the Lab link and a Clock link. Its footer also has a Credits link. |
-  | `./?lab` | `lab` | The Lab. `lab/` redirects here. |
+  | `./` | `dial` | Signal Dial: twelve main-shelf toys on a dial over an unblurred WebGL2 CRT, with top-left fidget wordmark + OKLCH mesh, top-right Re-roll `[R]` / All Toys, and bottom Copyleft / AI / Attributions + stacked `onnøzelaer` chip over the convex OKLab rainbow cloud. The default. |
+  | `./?all` | `all` | Opens directly into the full-viewport All Toys page (floating dark blurred transparent-gradient header, `All`, horizontal `Series coming soon`, `Lab`, and `×` close). |
+  | `./?lab` | `lab` | Opens directly into the Lab password gate (`celestible`, bare monochrome Signal flashes over crusty CRT grain). `lab/` redirects here. |
+  | `./?raw` | `raw` | Leaves the fallback HTML shelf for local workbenches (`menulab/`). |
 
 - `toys.json` is the list of toys. The menu shows English names only.
-- No JS, a failed load, an error or a script that stalls for 8 s leaves the whole shelf.
+- No JS, a failed load, an error or a script that stalls for 8 s leaves the fallback shelf.
 
-## Clock
+## Signal Dial (live, v1.0)
+
+Files: `shared/menu/dial.css`, `shared/menu/dial.js`. Legacy Clock files (`shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `shared/menu/mesh.js`) are parked and no longer linked from `index.html`.
+When nothing is selected (after load, on Re-roll, after the pointer leaves the dial, or after 15 s of inactivity), the readout and picture smoothly fade to black while gentle CRT grain stays softly alive in the center of the dial.
+
+### Legacy Clock notes (parked)
 
 Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `shared/menu/mesh.js`. `index.html` links only the first two.
 

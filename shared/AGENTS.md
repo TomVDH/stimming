@@ -24,7 +24,7 @@ Code every toy uses. A change here reaches every page.
 | `intro.js`, `intro.css` | The intro. Signal ships (`DEFAULT_VARIETY`); Punch, in Signal's look, plays one time in ten (`RARE`); `?intro=<variety>` forces one. It shows the toy's access flags and Best with sound (`access.js`), tech tags in the bottom-left corner, and places the block with `placeBlock()`. It is also the preloader: the load line, and the load note above it (`loadNote`, fed by `buildSteps(n, notes)`). |
 | `access.js` | Access glyphs, flags and tech tags, from each toy's `access` and `tech` in `toys.json`. The intro and the workbenches use it. |
 | `loadwatch.js` | Load watch for heavy toys: a visible, stored load step. A load that died shows on the next open. Opt-in per toy. |
-| `menu/` | The Clock. Rules: `docs/menu.md`. |
+| `menu/` | Signal Dial (`dial.js`, `dial.css`), the live main menu. Legacy Clock files (`clock.js`, `clock.css`, `tube.js`, `mesh.js`) are parked. Rules: `docs/menu.md`. |
 | `series/shots.js` | Series shots and `shotIcon()`. |
 | `fonts/` | Gabarito, B612, Iosevka Term Slab. A page off the shell links `fonts/fonts.css`. |
 | `stills/`, `loops/` | Tube pictures. Rules: `docs/menu.md`. |
