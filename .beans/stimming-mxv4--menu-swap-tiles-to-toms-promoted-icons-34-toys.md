@@ -18,3 +18,5 @@ Promoted card per toy (card@gallery icons/spike-<round>.html): morpher a@3, pop 
 2026-11-25: nine tiles were already the promoted design, live, with their motion (drone, foil, motorway, plasma, putty, sonar, subway, vortex, washer); their image is gone again. 25 left to port: the image stands in for the card until its motion is ported.
 
 2026-11-25: Morpher ported live (sample): the goo card with its mint drop, a scoped marching-squares tracer, the resting path in the markup for no-JS. 24 left as images.
+
+2026-11-25: Remaining 24 promoted gallery cards ported live in index.html (postcard uncovered; pop, domino, pins, prism, ferro, magnet, glass, chladni, bubbles, eyes, shadyos, chamber, ink, windmap a3, dijkstra, trainride, meshball, lichtenberg, crossing, observatory, nvg, carwash, fruit) plus the 3 earlier menu tiles restored (kaleido menu2, neon menu1, cauldron menu4). Zero img.pr stand-ins left in index.html; static SVGs kept in shared/tiles/ for phone/still uses. Ready for Tom's live check in the browser.
