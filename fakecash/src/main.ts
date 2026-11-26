@@ -260,7 +260,7 @@ const ui = initPage({
       ['space', 'Hold or tap to shower bills'],
       ['I', 'Inspect or release a bill'],
       ['F', 'Flip front and back while inspecting'],
-      ['← →', 'Step through the seven designs'],
+      ['← →', 'Step through the eight designs'],
       ['R', 'Rotate the inspected bill 90 degrees'],
       ['C', 'Clear the stage'],
     ],

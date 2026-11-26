@@ -1,7 +1,7 @@
 // Banknote catalog: dimensions, substrates, traced security masks, windows, and watermarks.
 // UV origin sits at bottom-left (0,0) to top-right (1,1).
 
-export type BillId = 'celeste' | 'emma' | 'demas' | 'elmo' | 'lucas' | 'mark' | 'tom';
+export type BillId = 'celeste' | 'emma' | 'demas' | 'elmo' | 'lucas' | 'mark' | 'peter' | 'tom';
 
 export type RectZone = readonly [u0: number, v0: number, u1: number, v1: number];
 export type EllipseZone = readonly [cx: number, cy: number, rx: number, ry: number];
@@ -170,6 +170,28 @@ export const BILLS: readonly BillDef[] = [
     foilHue: 2.15,
     foilGain: 1.08,
     relief: 0.50,
+  },
+  {
+    id: 'peter',
+    label: 'Peter',
+    title: '$50 CAD',
+    currency: '50 Peter Pesos',
+    aspect: 1500 / 762,
+    frontUrl: './bills/peter-front.webp',
+    backUrl: './bills/peter-back.webp',
+    maskFrontUrl: './bills/peter-front-mask.webp',
+    maskBackUrl: './bills/peter-back-mask.webp',
+    polymer: true,
+    glyph: 'C$',
+    glyphColor: 'oklch(0.68 0.21 22)',
+    tint: [1.0, 0.94, 0.94],
+    windowsFront: [NO_WIN, NO_WIN],
+    windowsBack: [NO_WIN, NO_WIN],
+    watermarkFront: [0.64, 0.0, 0.85, 1.0],
+    watermarkBack: [0.15, 0.0, 0.36, 1.0],
+    foilHue: 0.25,
+    foilGain: 1.0,
+    relief: 0.55,
   },
   {
     id: 'tom',
