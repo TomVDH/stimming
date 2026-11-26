@@ -1492,13 +1492,15 @@ function fluidFrame(r) {
 }
 
 /* ---------- frame loop ---------- */
-// Lively while a flare runs or a drag turns the sun; drifting at 30 fps; asleep after 60 s.
+// Vsync-paced on requestAnimationFrame while awake; Calm mode paces to 15 fps on rAF; asleep after 60 s.
 function frame(now) {
   raf = 0;
   if (!visible || !gl || !started) return;
-  // A Dev frame cap: frames land on an even grid, so 24 and 30 look steady.
-  // An early frame does nothing but wait for the next screen refresh.
-  const period = 1000 / (Number(gv('fpsCap', '0')) || Infinity);
+  // A Dev frame cap or Calm idle drift: pace cleanly on rAF without setTimeout timer jitter.
+  const devCap = Number(gv('fpsCap', '0')) || 0;
+  const calmCap = !busy && calmMotion() ? 15 : 0;
+  const cap = devCap && calmCap ? Math.min(devCap, calmCap) : devCap || calmCap;
+  const period = cap ? 1000 / cap : Infinity;
   if (period < Infinity) {
     if (now < pace - 3) { raf = requestAnimationFrame(frame); return; }
     pace = now - pace > period ? now + period : pace + period;
@@ -1563,8 +1565,8 @@ function frame(now) {
     if (voice) snd.spin?.(egg.rate / SPIN_PERIOD, shown); else if (spinning) snd.spin?.(0, shown);
     spinning = voice;
     draw();
-    // Only back-to-back lively frames count: drift runs at 30 fps by design, and so does a Dev cap.
-    if (!pinned && busy && !period) {
+    // Watch all unthrottled frames (both active moves and steady full-star drift) so slow GPUs step down reliably.
+    if (!pinned && period === Infinity) {
       D.frame(dt);
       if (!eased && D.rung > 0) {
         fastT = D.frameTime < 1 / 55 ? fastT + dt : 0;
@@ -1580,7 +1582,7 @@ function frame(now) {
   } finally {
     // A thrown error still leaves the loop able to wake.
     // An idle loop just stops; the sound keeps its own clock.
-    if (again) schedule(lively ? 0 : t0 + (calmMotion() ? 66 : 33) - performance.now());
+    if (again) schedule(0);
   }
 }
 // The next frame time on the Dev cap's grid.

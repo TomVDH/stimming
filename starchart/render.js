@@ -156,10 +156,11 @@ float cells(vec3 p) {
   for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
     vec3 g = vec3(x, y, z);
     vec3 o = vec3(h13(i + g), h13(i + g + 17.3), h13(i + g + 41.9));
-    float d = length(g + o - f);
+    vec3 r = g + o - f;
+    float d = dot(r, r);
     if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
   }
-  return d2 - d1;
+  return sqrt(d2) - sqrt(d1);
 }
 `;
 
@@ -2294,9 +2295,22 @@ void main() {
   }
 }`;
 
+/* ---------- static lens dirt, baked once at load (512x512 RG8) ---------- */
+const DIRT_N = 512;
+const DIRT = `${HEAD}
+in vec2 vUv;
+out vec4 o;
+${NOISE}
+void main() {
+  float lo = smoothstep(0.5, 0.8, fbm(vec3(vUv * vec2(2.0, 1.0) * 3.0, 11.0))) * 0.7;
+  float hi = smoothstep(0.78, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
+  o = vec4(lo, hi, 0.0, 1.0);
+}`;
+
 /* ---------- final: heat bend, grade, volume, bodies, lens, film ---------- */
 const FINAL = `${HEAD}
-uniform sampler2D uHdr, uBloom, uRays, uLut, uVol;
+/*BOW_DEFINE*/
+uniform sampler2D uHdr, uBloom, uRays, uLut, uVol, uDirt;
 // A nebula's baked dust, or the noise when no nebula shows.
 uniform highp sampler3D uNeb;
 uniform vec4 uSat[${MAX_FLARES}];
@@ -2937,39 +2951,46 @@ vec3 miraTail(vec2 q) {
 // A runaway star's bow shock or wake, not to scale: the true arc stands millions of radii out.
 // The bow shock takes Wilkin's shape: r(t) = R0 sqrt(3 (1 - t cot t)) / sin t, t from the apex.
 vec3 runaway(vec2 P) {
+#if BOW_KIND == 0
   vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
   vec2 q = vec2(dot(P, ax), ax.x * P.y - ax.y * P.x) / R;
   float d = length(q);
-  if (uBow.w < 0.5) {
-    float t = acos(clamp(q.x / max(d, 1e-4), -1.0, 1.0));
-    float t2 = max(t, 0.02);
-    float rb = uBow.z * sqrt(max(3.0 * (1.0 - t2 / tan(t2)), 0.0)) / sin(t2);
-    float w = uBow.z * (0.05 + 0.08 * t);
-    float shell = exp(-pow((d - rb) / w, 2.0));
-    // Brightest at the apex; the wings fade as they sweep back. Filaments ripple it.
-    float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
-    return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
-  }
-  // Gaia BH1: a dormant black hole beside the star, seen only by its lensing.
-  if (uBow.w > 7.5) return dormantHole(P);
-  // V838 Monocerotis: the light echo of its flash, lighting the dust shells round it.
-  if (uBow.w > 6.5) return v838Echo(P / R);
-  // Eta Carinae's Homunculus: two dusty lobes, marched in 3D.
-  if (uBow.w > 5.5) return etaNeb(P / R);
-  // The Ring Nebula: a barrel of glowing gas round a white dwarf, marched in 3D.
-  if (uBow.w > 4.5) return ringNeb(P / R);
-  // The Crab Nebula: the pulsar's wind nebula in its cage of filaments.
-  if (uBow.w > 3.5) return crabNeb(P / R);
-  // Mira: a bow shock ahead and a long turbulent tail behind, as GALEX saw it in 2007.
-  if (uBow.w > 2.5) return miraTail(q);
-  // A lensed far star (Tom, 2026-11-24: far more cosmic): a foreground galaxy cluster bends a deep field.
-  if (uBow.w > 1.5) return uBow.x > 4.5 ? einCross(P / R) : lensScene(q, P / R);
-  // A wake: a long faint trail behind, widening, its knots streaming away.
+  float t = acos(clamp(q.x / max(d, 1e-4), -1.0, 1.0));
+  float t2 = max(t, 0.02);
+  float rb = uBow.z * sqrt(max(3.0 * (1.0 - t2 / tan(t2)), 0.0)) / sin(t2);
+  float w = uBow.z * (0.05 + 0.08 * t);
+  float shell = exp(-pow((d - rb) / w, 2.0));
+  float fil = 0.55 + 0.9 * fbm(vec3(q * 6.0 / uBow.z, 2.0));
+  return uBowC * shell * exp(-t * 0.8) * fil * smoothstep(2.5, 1.3, t);
+#elif BOW_KIND == 1
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 q = vec2(dot(P, ax), ax.x * P.y - ax.y * P.x) / R;
   float back = -q.x;
   float w = 0.35 + 0.035 * back;
   float tail = exp(-pow(q.y / w, 2.0)) * smoothstep(0.8, 2.5, back) * exp(-back / uBow.z);
   float kn = 0.5 + 0.9 * fbm(vec3(back * 0.15 - uTime * 0.5, q.y * 0.5, 4.0));
   return uBowC * tail * kn;
+#elif BOW_KIND == 2
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 q = vec2(dot(P, ax), ax.x * P.y - ax.y * P.x) / R;
+  return uBow.x > 4.5 ? einCross(P / R) : lensScene(q, P / R);
+#elif BOW_KIND == 3
+  vec2 ax = vec2(cos(uBow.y), sin(uBow.y));
+  vec2 q = vec2(dot(P, ax), ax.x * P.y - ax.y * P.x) / R;
+  return miraTail(q);
+#elif BOW_KIND == 4
+  return crabNeb(P / R);
+#elif BOW_KIND == 5
+  return ringNeb(P / R);
+#elif BOW_KIND == 6
+  return etaNeb(P / R);
+#elif BOW_KIND == 7
+  return v838Echo(P / R);
+#elif BOW_KIND == 8
+  return dormantHole(P);
+#else
+  return vec3(0.0);
+#endif
 }
 // A magnetar's giant flare (SGR 1806-20, 2004): a hard flash, a fireball shell
 // thrown out through the field, and a tail that pulses with the spin.
@@ -3074,32 +3095,37 @@ vec3 probe(vec3 c, vec2 fc) {
 }
 void main() {
   // Gate weave: the frame drifts a fraction of a pixel, as film does in a gate.
-  vec2 weave = (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes;
+  vec2 weave = uFilm.y > 0.0 ? (vec2(vn(vec3(uFrame * 0.37, 1.0, 0.0)), vn(vec3(uFrame * 0.37, 5.0, 0.0))) - 0.5) * uFilm.y / uRes : vec2(0.0);
   vec2 uv = vUv + weave;
   vec2 P = uView.xy + (uv * 2.0 - 1.0) * uView.zw;
   float r = length(P);
   // Massive-scale, slow, two-layer thermal distortion over the limb and corona (Tom, 2026-11-24).
   // Both layers ride the star and drift slowly outward along the radius; far out they fade.
-  float hr = r - R;
-  vec2 rad = P / max(r, 1.0);
-  // Layer 1: huge slow convective swells (~115 CSS px) rolling across the limb and deep corona.
-  float hzL = (0.75 * exp(-abs(hr) / 75.0) + 0.65 * exp(-max(hr, 0.0) / 340.0)) * smoothstep(-160.0, 20.0, hr);
-  float levL = log2(115.0 * uDpr * 2.0 * uView.z / uRes.x);
-  float kL = floor(levL), fL = fract(levL);
-  vec2 pL0 = P / exp2(kL) - rad * uTime * 0.06, pL1 = P / exp2(kL + 1.0) - rad * uTime * 0.04 + 3.1;
-  vec2 wL0 = vec2(vn(vec3(pL0, uTime * 0.055)), vn(vec3(pL0 + 7.7, uTime * 0.055))) - 0.5;
-  vec2 wL1 = vec2(vn(vec3(pL1, uTime * 0.055)), vn(vec3(pL1 + 7.7, uTime * 0.055))) - 0.5;
-  vec2 swell = (wL0 * (1.0 - fL) + wL1 * fL) / sqrt((1.0 - fL) * (1.0 - fL) + fL * fL);
-  // Layer 2: mid-scale slow eddies (~42 CSS px) hugging the blazing limb and inner loops.
-  float hzM = exp(-abs(hr) / 36.0) + 0.35 * exp(-max(hr, 0.0) / 150.0);
-  float levM = log2(42.0 * uDpr * 2.0 * uView.z / uRes.x);
-  float kM = floor(levM), fM = fract(levM);
-  vec2 pM0 = P / exp2(kM) - rad * uTime * 0.14 + 11.3, pM1 = P / exp2(kM + 1.0) - rad * uTime * 0.09 + 14.4;
-  vec2 wM0 = vec2(vn(vec3(pM0, uTime * 0.11)), vn(vec3(pM0 + 5.3, uTime * 0.11))) - 0.5;
-  vec2 wM1 = vec2(vn(vec3(pM1, uTime * 0.11)), vn(vec3(pM1 + 5.3, uTime * 0.11))) - 0.5;
-  vec2 ripple = (wM0 * (1.0 - fM) + wM1 * fM) / sqrt((1.0 - fM) * (1.0 - fM) + fM * fM);
-  vec2 wob = swell * hzL * 1.65 + ripple * hzM * 0.85;
-  uv += wob * uMix.w * uFx3.z * (1.0 - uCam.w) / uRes;
+  float shimK = uMix.w * uFx3.z * (1.0 - uCam.w);
+  if (shimK > 1e-4) {
+    float hr = r - R;
+    float hzL = (0.75 * exp(-abs(hr) / 75.0) + 0.65 * exp(-max(hr, 0.0) / 340.0)) * smoothstep(-160.0, 20.0, hr);
+    float hzM = exp(-abs(hr) / 36.0) + 0.35 * exp(-max(hr, 0.0) / 150.0);
+    if (hzL + hzM > 0.004) {
+      vec2 rad = P / max(r, 1.0);
+      // Layer 1: huge slow convective swells (~115 CSS px) rolling across the limb and deep corona.
+      float levL = log2(115.0 * uDpr * 2.0 * uView.z / uRes.x);
+      float kL = floor(levL), fL = fract(levL);
+      vec2 pL0 = P / exp2(kL) - rad * uTime * 0.06, pL1 = P / exp2(kL + 1.0) - rad * uTime * 0.04 + 3.1;
+      vec2 wL0 = vec2(vn(vec3(pL0, uTime * 0.055)), vn(vec3(pL0 + 7.7, uTime * 0.055))) - 0.5;
+      vec2 wL1 = vec2(vn(vec3(pL1, uTime * 0.055)), vn(vec3(pL1 + 7.7, uTime * 0.055))) - 0.5;
+      vec2 swell = (wL0 * (1.0 - fL) + wL1 * fL) / sqrt((1.0 - fL) * (1.0 - fL) + fL * fL);
+      // Layer 2: mid-scale slow eddies (~42 CSS px) hugging the blazing limb and inner loops.
+      float levM = log2(42.0 * uDpr * 2.0 * uView.z / uRes.x);
+      float kM = floor(levM), fM = fract(levM);
+      vec2 pM0 = P / exp2(kM) - rad * uTime * 0.14 + 11.3, pM1 = P / exp2(kM + 1.0) - rad * uTime * 0.09 + 14.4;
+      vec2 wM0 = vec2(vn(vec3(pM0, uTime * 0.11)), vn(vec3(pM0 + 5.3, uTime * 0.11))) - 0.5;
+      vec2 wM1 = vec2(vn(vec3(pM1, uTime * 0.11)), vn(vec3(pM1 + 5.3, uTime * 0.11))) - 0.5;
+      vec2 ripple = (wM0 * (1.0 - fM) + wM1 * fM) / sqrt((1.0 - fM) * (1.0 - fM) + fM * fM);
+      vec2 wob = swell * hzL * 1.65 + ripple * hzM * 0.85;
+      uv += wob * shimK / uRes;
+    }
+  }
   // The lens splits colour toward the frame's edge.
   vec2 ca = (uv - 0.5) * (0.0025 + 0.0015 * uLens) * uFx1.z;
   float kx = kern(gl_FragCoord.xy);
@@ -3124,7 +3150,9 @@ void main() {
   // A runaway's bow shock grows in as the view pulls back; a wake shows from the full star.
   // A lensed arc shows at every zoom: the far star is a pip on it (Tom, 2026-11-24).
   // A lensed far star's scene comes in as the star shrinks to a pip, and draws over it with no seam.
+#if BOW_KIND >= 0
   if (uBow.x > 0.0) c += runaway(P) * (uBow.w > 3.5 ? smoothstep(R, R * 1.5, r) : uBow.w > 1.5 && uBow.w < 2.5 ? 0.9 * smoothstep(24.0 * uSc, 5.0 * uSc, rp) : (uBow.w < 0.5 || uBow.w > 2.5 ? smoothstep(0.0, 0.35, uCam.w) * 0.8 : 0.25 + 0.35 * uCam.w) * smoothstep(R, R * 1.1, r));
+#endif
   if (uQuake.x + uQuake.z + uQuake.w > 0.0) c += quake(P, r);
   // The lens: each saturated core throws the anamorphic flare.
   vec3 fl = vec3(0.0);
@@ -3166,9 +3194,9 @@ void main() {
   c = probe(c, fc);
   float sl = starLight(P);
   vec3 hc = grade(vec2(0.5 + 1.6 * sl + bll * 0.6, 0.1 + 0.3 * sl));
-  // Lens dirt: smudges on the glass that catch the star's light, strongest near it.
-  float dirt = smoothstep(0.5, 0.8, fbm(vec3(vUv * vec2(uRes.x / uRes.y, 1.0) * 3.0, 11.0))) * 0.7
-             + smoothstep(0.78, 0.95, fbm(vec3(vUv * 18.0, 13.0)));
+  // Lens dirt: baked once into uDirt so no pixel runs 3D fbm per frame.
+  float dirt = texture(uDirt, vec2(vUv.x * min(uRes.x / uRes.y, 2.0) * 0.5, vUv.y)).r
+             + texture(uDirt, vUv).g;
   // Over the disk the smudges stay faint: they sat in the same place on every star.
   dirt *= 0.25 + 0.75 * smoothstep(R * 1.0, R * 1.15, r);
   c += hc * dirt * (1.0 - exp(-(bll * 0.6 + sl * 0.8))) * 0.35 * uFilm.z * uFx2.y;
@@ -3234,6 +3262,28 @@ export async function makeRender(gl, opts = {}) {
     return was && skyReady(was) ? was.q : null;
   }
   const first = skyStart(starOn(STARS[opts.star] || STARS.sun));
+  // FINAL specialized by bow.kind: plain stars drop all 64-step 3D nebula marchers so D3D11 keeps high occupancy.
+  const finals = new Map();
+  const finalKindOf = B => B?.bow ? Math.round(B.bow.kind ?? 0) : -1;
+  function finalStart(kind) {
+    if (!finals.has(kind)) finals.set(kind, { q: program(gl, TRI_VS, FINAL.replace('/*BOW_DEFINE*/', `#define BOW_KIND ${kind}`)), ready: false });
+    return finals.get(kind);
+  }
+  function finalReady(e) {
+    if (e.ready) return true;
+    if (par && !gl.getProgramParameter(e.q.p, par.COMPLETION_STATUS_KHR)) return false;
+    if (!gl.getProgramParameter(e.q.p, gl.LINK_STATUS)) throw new Error(gl.getShaderInfoLog(e.q.f) || gl.getProgramInfoLog(e.q.p) || 'final link failed');
+    uniforms(gl, e.q);
+    return (e.ready = true);
+  }
+  const baseFinal = finalStart(-1);
+  const firstFinal = finalStart(finalKindOf(STARS[opts.star] || STARS.sun));
+  function finalFor(v) {
+    const kind = v.bow[0] > 0 ? Math.round(v.bow[3]) : -1;
+    const e = finalStart(kind);
+    if (finalReady(e)) return e.q;
+    return finalReady(baseFinal) ? baseFinal.q : null;
+  }
   const P = await linked(gl, {
     strand: program(gl, STRAND_VS, STRAND_FS),
     tde: program(gl, TDE_VS, TDE_FS),
@@ -3244,13 +3294,17 @@ export async function makeRender(gl, opts = {}) {
     hbake: program(gl, TRI_VS, HBAKE),
     qbake: program(gl, TRI_VS, QBAKE),
     nbake: program(gl, TRI_VS, NBAKE),
+    dirt: program(gl, TRI_VS, DIRT),
     blur: program(gl, TRI_VS, BLUR),
     acc: program(gl, TRI_VS, ACC),
-    final: program(gl, TRI_VS, FINAL),
     ...(opts.fluid ? fluidPrograms(gl) : {}),
   });
   step();
   const empty = gl.createVertexArray();
+  const dirtT = target(gl, DIRT_N, DIRT_N, { format: gl.RG8 });
+  gl.useProgram(P.dirt.p);
+  tri(gl, dirtT, empty);
+  gl.deleteProgram(P.dirt.p);
   const bloom = bloomChain(gl, { max: 5 });
   const fluid = opts.fluid ? makeFluid(gl, P, empty) : null;
   // The strand data: four vec4 per instance.
@@ -3428,38 +3482,8 @@ export async function makeRender(gl, opts = {}) {
     if (p.next >= NB_N) { nebT[nk] = p.t; delete nebProg[nk]; return p.t; }
     return null;
   }
-  // Compiles SKY versions and pre-bakes 192³ nebulae and Epsilon Aurigae in idle slices.
-  let warming = Promise.resolve();
-  function warm(ids, busy = () => false) {
-    for (const id of ids) {
-      const B = STARS[id];
-      if (!B) continue;
-      warming = warming.then(async () => {
-        if (par) {
-          while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
-          await idle(2000);
-          const e = skyStart(bandOn.get(B) || starOn(B));
-          while (!gl.isContextLost() && !skyReady(e)) await new Promise(r => setTimeout(r, 120));
-        }
-        if (B.discE?.[0] > 0 && !epsB) {
-          while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
-          await idle(1500);
-          if (!gl.isContextLost() && !epsB) { epsB = qbakeTex(QB.d, 2); await settled(gl); }
-        }
-        const nk = B.bow?.kind;
-        if (nk && NEB_KIND[nk] !== undefined && !nebT[nk]) {
-          while (!gl.isContextLost() && !nebT[nk]) {
-            while (!gl.isContextLost() && busy()) await new Promise(r => setTimeout(r, 500));
-            if (gl.isContextLost() || nebT[nk]) break;
-            nebStep(nk, 16);
-            await nextFrame();
-          }
-          if (!gl.isContextLost()) await settled(gl);
-        }
-      });
-    }
-    return warming;
-  }
+  // Lazy on-demand compilation/baking only: eager background warming saturated Windows D3D11 FXC and 3D Worley bakes.
+  function warm() { return Promise.resolve(); }
   let holeS = 1, holeT = null;
   // The haze history is empty until a first frame fills it.
   let histOk = false;
@@ -3698,16 +3722,20 @@ export async function makeRender(gl, opts = {}) {
     histOk = true;
     } else { clearTo(volH, 0, 0, 0, 1); histOk = false; }
 
-    const f = P.final;
+    const f = finalFor(v);
+    if (!f) return false;
     gl.useProgram(f.p);
     bind(gl, f, 'uHdr', 0, hdr);
     bind(gl, f, 'uBloom', 1, bt);
     bind(gl, f, 'uRays', 2, rays);
     bind(gl, f, 'uLut', 3, lutT);
     bind(gl, f, 'uVol', 4, volH);
-    gl.activeTexture(gl.TEXTURE5);
-    gl.bindTexture(gl.TEXTURE_3D, nebT[nk] || noise);
-    gl.uniform1i(f.u.uNeb, 5);
+    if (f.u.uNeb) {
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_3D, nebT[nk] || noise);
+      gl.uniform1i(f.u.uNeb, 5);
+    }
+    bind(gl, f, 'uDirt', 6, dirtT);
     const B = v.band;
     gl.uniform4fv(f.u.uSat, v.sat);
     gl.uniform4fv(f.u.uView, v.view);
@@ -3768,8 +3796,8 @@ export async function makeRender(gl, opts = {}) {
     pp.i = 1 - pp.i;
     pp.fresh = false;
   }
-  // The first star's version links before the first frame, so the intro never lifts on black.
-  while (!gl.isContextLost() && !skyReady(first)) await nextFrame();
+  // The first star's sky and final versions link before the first frame, so the intro never lifts on black.
+  while (!gl.isContextLost() && (!skyReady(first) || !finalReady(firstFinal) || !finalReady(baseFinal))) await nextFrame();
   step();
-  return { resize, frame, data, warm, ready: () => skyReady(first) };
+  return { resize, frame, data, warm, ready: () => skyReady(first) && finalReady(firstFinal) };
 }

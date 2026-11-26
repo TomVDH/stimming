@@ -300,7 +300,8 @@ Only with `?fluid` in the address. Fire's 3D fluid (`starchart/fluid.js`, a trim
 ## Frame loop
 
 - Lively while a flare, an eruption or an egg runs, a press is held, the zoom moves, a drag turns the star, a target's hover or press light eases or a star switch dips.
-- Drifting at 30 fps: the loops' life cycle.
+- Drifting on vsync (`requestAnimationFrame`, 15 fps in Calm mode): the loops' life cycle.
+- Both the disk pass (`SKY`) and the final pass (`FINAL`) compile specialized per-star variants on demand so unused star features and 3D nebula marchers are stripped; static lens dirt bakes once into a 512x512 texture at load. Background pre-warming is off so idle playback never stalls D3D11/Windows GPUs.
 - Asleep 60 s after the last input: the drift eases to a stop over 2 s and the loop stops. A target turning under a still mouse is not input, so it never holds the toy awake. The sound does not stop with the loop: it keeps its own idle clock (see Sound).
 - A star switch clears every flare and eruption at the dark point: the new star starts calm.
 - Hidden tab: the loop and both clocks stop.
