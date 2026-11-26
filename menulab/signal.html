@@ -1,0 +1,1841 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Menu lab: Signal</title>
+<meta name="color-scheme" content="dark">
+<link rel="icon" href="data:,">
+<style>
+html, body { margin: 0; height: 100%; overflow: hidden; background: oklch(0.16 0.012 275); }
+iframe { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; opacity: 0; transition: opacity 0.14s steps(4, end); }
+iframe.ready { opacity: 1; }
+</style>
+</head>
+<body>
+<script type="module">
+// Menu lab: Signal Intro main-menu workbench.
+// Kept (4): Dial, Strip, Rail, Console.
+// New max-fidelity directions (5): Magnify, Orbit, Folio, Prism, Reel.
+// Parked (5, under Parked toggle): Oblique, Arc, Drift, Type, Corner.
+// Generous fuzzy masked WebGL2 CRT, sub-pixel aligned Intro flash-box-to-colour icons,
+// zero-jump locked single-line title & info rows, large-icon All 73 gallery, exact Bar v3 / Gate words.
+import { TRI_VS, program, linked, tri, target, free, bind, onContextLoss } from '../shared/gl.js';
+import { injectSprite, flagsHTML, techHTML, glyph, inkOf } from '../shared/access.js';
+
+const SIZE = 12;
+const MARK = [
+  ['S', 'oklch(0.72 0.22 328)', 800, -8, 2],
+  ['t', 'oklch(0.68 0.2 300)', 500, 6, -4],
+  ['i', 'oklch(0.74 0.16 250)', 900, -3, 3],
+  ['m', 'oklch(0.82 0.13 205)', 600, 4, -2],
+  ['m', 'oklch(0.84 0.16 150)', 700, -5, 4],
+  ['i', 'oklch(0.88 0.16 110)', 400, 7, -5],
+  ['n', 'oklch(0.86 0.16 84)', 800, -4, 1],
+  ['g', 'oklch(0.74 0.2 28)', 600, 3, -3],
+];
+
+const KEPT = [['dial', 'Dial'], ['strip', 'Strip'], ['rail', 'Rail'], ['console', 'Console']];
+const FRESH = [['magnify', 'Magnify'], ['orbit', 'Orbit'], ['folio', 'Folio'], ['prism', 'Prism'], ['reel', 'Reel']];
+const PARKED = [['oblique', 'Oblique'], ['arc', 'Arc'], ['drift', 'Drift'], ['type', 'Type'], ['corner', 'Corner']];
+const ALL_MODES = [...KEPT, ...FRESH, ...PARKED];
+const SINGLE_ICON_MODES = new Set(['console', 'folio', 'type']);
+
+const DRIFT_POS = [
+  [12, 20], [28, 15], [48, 13], [70, 15], [88, 21],
+  [90, 46], [87, 74], [72, 85], [52, 86], [29, 85],
+  [13, 73], [10, 47],
+];
+
+function meshColours(accent = '') {
+  const cs = accent.match(/oklch\([^)]*\)|#[0-9a-f]{3,8}\b|rgba?\([^)]*\)/gi) || ['oklch(0.7 0.1 280)'];
+  if (cs.length > 1) return cs.slice(0, 2);
+  const m = cs[0].match(/oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
+  return m ? [cs[0], `oklch(${Math.max(0.35, +m[1] - 0.08).toFixed(2)} ${m[2]} ${(+m[3] + 40) % 360})`] : [cs[0], cs[0]];
+}
+
+/* ---------- Generous, fuzzy, masked premultiplied-alpha WebGL2 CRT ---------- */
+const LEVEL = 0.30;
+const POWER = 0.46;
+const CHANGE = 0.38;
+const GLOW = [0.10, 0.075, 0.055];
+
+const CRT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uA, uB;
+uniform vec2 uRes, uImgA, uImgB, uSpot;
+uniform float uPx, uMix, uKick, uPower, uTime, uHasA, uHasB, uLevel, uDim, uSpotRad;
+
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+uint pcg(uint v) { uint t = v * 747796405u + 2891336453u; uint w = ((t >> ((t >> 28u) + 4u)) ^ t) * 277803737u; return (w >> 22u) ^ w; }
+float rnd(vec2 p, float f) { uvec2 u = uvec2(ivec2(p)); return float(pcg(u.x + pcg(u.y + pcg(uint(f))))) / 4294967295.0; }
+float vn(vec2 x, float f) {
+  vec2 i = floor(x), u = fract(x);
+  u = u * u * (3.0 - 2.0 * u);
+  return mix(mix(rnd(i, f), rnd(i + vec2(1.0, 0.0), f), u.x), mix(rnd(i + vec2(0.0, 1.0), f), rnd(i + vec2(1.0, 1.0), f), u.x), u.y);
+}
+vec2 spotUv(vec2 localP, vec2 img, float zoom) {
+  float ia = img.x / max(1.0, img.y);
+  vec2 p = localP * 0.54;
+  if (ia > 1.0) p.x /= ia;
+  else p.y *= ia;
+  return clamp(p * zoom + 0.5, 0.002, 0.998);
+}
+vec3 pic(sampler2D t, vec2 localP, vec2 img, vec2 ca, float soft, float zoom) {
+  vec2 s = spotUv(localP, img, zoom);
+  vec3 c = vec3(textureLod(t, s + ca, soft).r, textureLod(t, s, soft).g, textureLod(t, s - ca, soft).b);
+  c = pow(max(c, 0.0), vec3(2.45));
+  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.72), 0.0);
+}
+vec3 halo(sampler2D t, vec2 localP, vec2 img, float zoom) {
+  vec2 s = spotUv(localP, img, zoom);
+  vec3 c = pow(textureLod(t, s, 4.2).rgb, vec3(2.2)) * 0.6 + pow(textureLod(t, s, 6.0).rgb, vec3(2.2)) * 0.4;
+  return max(mix(vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))), c, 1.55), 0.0);
+}
+
+void main() {
+  vec2 uvTop = vec2(vUv.x, 1.0 - vUv.y);
+  vec2 dPx = (uvTop - uSpot) * uRes;
+  vec2 p = dPx / max(1.0, uSpotRad);
+  float r = length(p);
+  if (r > 1.42) { o = vec4(0.0); return; }
+
+  vec2 pc = p * (1.0 + 0.095 * r * r);
+  float g = uMix, k = uKick;
+
+  float rowPx = max(3.0, floor(3.0 * uPx + 0.5));
+  float row = floor(gl_FragCoord.y / rowPx);
+  float slip = (hash(vec2(row, floor(uTime * 24.0))) - 0.5) * 0.0018;
+  float away = (pc.y * 0.5 + 0.5) - fract(uTime * 0.085) * 1.3 + 0.15;
+  float band = exp(-away * away / 0.0018);
+  slip += band * (0.0075 + 0.003 * sin(uTime * 37.0 + row * 1.9));
+  slip += k * 0.032 * (hash(vec2(floor(row / 3.0), floor(uTime * 30.0) + 5.0)) - 0.5);
+  pc.x += slip;
+
+  vec2 open = vec2(max(0.004, smoothstep(0.0, 0.35, uPower)), max(0.004, smoothstep(0.24, 0.85, uPower)));
+  vec2 pr = pc / open;
+  float lit = 1.0 - smoothstep(1.08, 1.58, length(pr));
+
+  vec2 ca = pr * (0.0024 + 0.0075 * k);
+  float soft = 1.15 + 2.1 * r * r + 1.4 * k;
+  float zoomB = 1.0 - 0.055 * (1.0 - g);
+
+  vec3 light = mix(pic(uA, pr, uImgA, ca, soft, 1.0) * uHasA, pic(uB, pr, uImgB, ca, soft, zoomB) * uHasB, g);
+  vec3 glow = mix(halo(uA, pr, uImgA, 1.0) * uHasA, halo(uB, pr, uImgB, zoomB) * uHasB, g);
+  light *= uLevel * uDim;
+  glow *= uLevel * uDim;
+
+  float m = floor(mod(gl_FragCoord.x / max(1.0, floor(uPx + 0.5)), 3.0));
+  vec3 stripe = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.82 + 0.28;
+  vec3 grille = mix(vec3(1.0), stripe / 0.553, 0.40);
+  float lum = clamp(dot(light, vec3(0.3, 0.6, 0.1)), 0.0, 1.0);
+  float sy = fract(gl_FragCoord.y / rowPx) - 0.5;
+  float sw = mix(0.25, 0.54, sqrt(lum));
+  light *= grille * mix(1.0, exp(-sy * sy / (sw * sw)) * 1.52, 0.72);
+
+  for (int i = 0; i < 5; i++) {
+    vec2 at = vec2(hash(vec2(float(i), 3.0)), hash(vec2(float(i), 7.0))) * 1.2 - 0.6;
+    float brad = 0.01 + 0.014 * hash(vec2(float(i), 9.0));
+    light *= 1.0 - 0.5 * smoothstep(brad, brad * 0.35, length(p - at));
+  }
+
+  vec3 c = vec3(0.007, 0.0075, 0.01) * grille;
+  float roll = exp(-pow((fract(pc.y * 0.5 + 0.5 + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.05;
+  c += (light + glow * 0.50) * (1.0 + roll + band * 0.24) * lit;
+
+  float field = floor(uTime * 24.0);
+  vec2 gp = mat2(0.89, 0.45, -0.45, 0.89) * gl_FragCoord.xy / uPx;
+  float n = mix(rnd(gl_FragCoord.xy, field), vn(gp / 1.6, field + 7.0), 0.4) - 0.5;
+  float lump = vn(p * 2.4 + vec2(uTime * 0.05, -uTime * 0.03), 3.0);
+  float heavy = (0.62 + 0.68 * lump) * (1.0 + 0.42 * r * r);
+  c *= 1.0 + n * 0.48 * heavy * lit;
+  c += n * (0.01 * heavy + 0.17 * k) * lit;
+  c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.45 * lit;
+
+  c *= (1.0 - 0.36 * smoothstep(0.12, 0.88, r * r)) * (1.0 + 0.011 * sin(uTime * 113.0)) * (1.0 + 0.26 * k);
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  o = vec4(c, 1.0);
+}`;
+
+const AFTER_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uNow, uWas;
+uniform vec3 uKeep;
+void main() {
+  vec4 now = texture(uNow, vUv), was = texture(uWas, vUv);
+  o = vec4(max(now.rgb, was.rgb * uKeep), 1.0);
+}`;
+
+const COMP_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform sampler2D uTex;
+uniform vec2 uRes, uSpot;
+uniform float uSpotRad, uAim, uUseAim, uEllipX;
+
+void main() {
+  vec3 tube = texture(uTex, vUv).rgb;
+  vec2 uvTop = vec2(vUv.x, 1.0 - vUv.y);
+  vec2 px = (uvTop - uSpot) * uRes;
+  vec2 scaled = vec2(px.x / max(0.5, uEllipX), px.y);
+  float r = length(scaled) / max(1.0, uSpotRad);
+
+  float a = pow(1.0 - smoothstep(0.32, 1.0, r), 1.25);
+
+  if (uUseAim > 0.5) {
+    float off = atan(px.x, -px.y) - uAim;
+    off = abs(atan(sin(off), cos(off)));
+    a *= 1.0 - 0.84 * (1.0 - smoothstep(0.08, 0.52, off)) * smoothstep(0.30, 0.85, r);
+  }
+  o = vec4(tube * a, a * 0.88);
+}`;
+
+async function makeCRT(doc, host) {
+  const canvas = Object.assign(doc.createElement('canvas'), { className: 'sm-crt' });
+  canvas.setAttribute('aria-hidden', 'true');
+  const gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) return null;
+  host.append(canvas);
+
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const tick = () => new Promise(r => setTimeout(r, 16));
+  let P, A, C, vao, pics, has = [0, 0], imgSz = [[512, 512], [512, 512]], glow = [];
+  let src = '', vid = null, raf = 0, last = 0, drawn = 0, moved = 0, time = 0, mix = 0, power = 0, powerTo = 0, dim = 1, dimTo = 1;
+  let spotX = 0.5, spotY = 0.5, spotToX = 0.5, spotToY = 0.5, spotRad = 460, spotRadTo = 460, ellipX = 1, ellipTo = 1;
+  let aimNow = 0, aimTo = 0, useAim = 0, fresh = true, gone = false;
+  const FRAME = 1000 / 30 - 2;
+  const ease = t => 1 - Math.pow(1 - t, 4);
+
+  async function build() {
+    const progs = await linked(gl, { crt: program(gl, TRI_VS, CRT_FS), after: program(gl, TRI_VS, AFTER_FS), comp: program(gl, TRI_VS, COMP_FS) }, { limit: 600, wait: tick });
+    P = progs.crt; A = progs.after; C = progs.comp; glow = [];
+    vao = gl.createVertexArray();
+    const blank = () => {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 255]));
+      return t;
+    };
+    pics = [blank(), blank()];
+    has = [0, 0];
+  }
+  await build();
+
+  const drop = () => { if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); vid = null; } };
+  const settle = () => { pics.reverse(); imgSz.reverse(); has = [1, 0]; mix = 0; };
+
+  function draw() {
+    if (gone || !P) return;
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    const cw = host.clientWidth || 1, ch = host.clientHeight || 1;
+    const w = Math.max(2, Math.round(cw * dpr));
+    const h = Math.max(2, Math.round(ch * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    if (!glow.length || glow[0].w !== w || glow[0].h !== h) {
+      glow.forEach(t => free(gl, t));
+      glow = [0, 1, 2].map(() => target(gl, w, h, { format: gl.RGBA8 }));
+      fresh = true;
+    }
+    const kick = has[1] ? Math.pow(Math.max(0, 1 - mix / 0.36), 2) : 0;
+
+    gl.useProgram(P.p);
+    [[pics[0], P.u.uA], [pics[1], P.u.uB]].forEach(([t, u], i) => {
+      gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(u, i);
+    });
+    gl.uniform1f(P.u.uPx, dpr);
+    gl.uniform2f(P.u.uRes, w, h);
+    gl.uniform2f(P.u.uImgA, imgSz[0][0], imgSz[0][1]);
+    gl.uniform2f(P.u.uImgB, imgSz[1][0], imgSz[1][1]);
+    gl.uniform2f(P.u.uSpot, spotX, spotY);
+    gl.uniform1f(P.u.uSpotRad, spotRad * dpr);
+    gl.uniform1f(P.u.uPower, 1 - Math.pow(1 - power, 3));
+    gl.uniform1f(P.u.uMix, ease(mix));
+    gl.uniform1f(P.u.uKick, kick);
+    gl.uniform1f(P.u.uTime, time);
+    gl.uniform1f(P.u.uHasA, has[0]);
+    gl.uniform1f(P.u.uHasB, has[1]);
+    gl.uniform1f(P.u.uLevel, LEVEL);
+    gl.uniform1f(P.u.uDim, dim);
+    const now = performance.now(), gap = Math.min((now - drawn) / 1000, 0.1);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, glow[0].fb);
+    tri(gl, glow[0], vao);
+
+    const off = fresh || still.matches;
+    gl.useProgram(A.p);
+    bind(gl, A, 'uNow', 0, glow[0]);
+    bind(gl, A, 'uWas', 1, glow[1]);
+    gl.uniform3f(A.u.uKeep, ...GLOW.map(t => (off ? 0 : Math.exp(-gap / t))));
+    tri(gl, glow[2], vao);
+
+    gl.useProgram(C.p);
+    bind(gl, C, 'uTex', 0, glow[2]);
+    gl.uniform2f(C.u.uRes, w, h);
+    gl.uniform2f(C.u.uSpot, spotX, spotY);
+    gl.uniform1f(C.u.uSpotRad, spotRad * dpr);
+    gl.uniform1f(C.u.uAim, aimNow);
+    gl.uniform1f(C.u.uUseAim, useAim);
+    gl.uniform1f(C.u.uEllipX, ellipX);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.viewport(0, 0, w, h);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.bindVertexArray(vao);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+    [glow[1], glow[2]] = [glow[2], glow[1]];
+    fresh = false;
+    drawn = now;
+  }
+
+  const wake = () => { if (!raf && !gone && !doc.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); } };
+  function frame(now) {
+    if (doc.hidden) { raf = 0; return; }
+    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
+    raf = 0;
+    const dt = Math.min((now - last) / 1000, 0.1), rolling = has[1] === 1;
+    last = now;
+    if (rolling) mix = Math.min(1, mix + dt / CHANGE);
+    const opening = power !== powerTo;
+    if (opening) power = Math.min(powerTo, power + dt / POWER);
+    const dimming = Math.abs(dimTo - dim) > 0.004;
+    if (dimming) dim += (dimTo - dim) * Math.min(1, dt * 10); else dim = dimTo;
+
+    const k = Math.min(1, dt * 11);
+    const movingSpot = Math.abs(spotToX - spotX) + Math.abs(spotToY - spotY) > 0.0015 || Math.abs(spotRadTo - spotRad) > 0.5 || Math.abs(ellipTo - ellipX) > 0.004;
+    if (movingSpot && !still.matches) {
+      spotX += (spotToX - spotX) * k;
+      spotY += (spotToY - spotY) * k;
+      spotRad += (spotRadTo - spotRad) * k;
+      ellipX += (ellipTo - ellipX) * k;
+    } else { spotX = spotToX; spotY = spotToY; spotRad = spotRadTo; ellipX = ellipTo; }
+
+    const dAim = Math.atan2(Math.sin(aimTo - aimNow), Math.cos(aimTo - aimNow));
+    const aiming = Math.abs(dAim) > 0.004;
+    if (aiming) aimNow += dAim * Math.min(1, dt * 12); else aimNow = aimTo;
+
+    if (!still.matches) time += dt;
+    const playing = vid !== null && vid.readyState >= 2 && !vid.paused;
+    if (playing) {
+      const slot = has[1] ? 1 : 0;
+      imgSz[slot] = [vid.videoWidth || 512, vid.videoHeight || 512];
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, pics[slot]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid);
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
+    if (rolling || opening || dimming || movingSpot || aiming || playing) moved = now;
+    const fading = !still.matches && now - moved < 350;
+    if (rolling || opening || dimming || movingSpot || aiming || playing || fading || now - drawn > 48) draw();
+    if (rolling && mix >= 1) settle();
+    if (!still.matches || rolling || opening || dimming || movingSpot || aiming) raf = requestAnimationFrame(frame);
+  }
+
+  function show(url, loopUrl) {
+    if (url === src) return;
+    src = url;
+    drop();
+    const im = new Image();
+    im.onload = () => {
+      if (url !== src || gone) return;
+      if (has[1] && ease(mix) > 0.5) settle();
+      imgSz[1] = [im.naturalWidth || 512, im.naturalHeight || 512];
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, pics[1]);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
+      gl.generateMipmap(gl.TEXTURE_2D);
+      if (!has[0] && !has[1]) { power = still.matches ? 1 : 0; powerTo = 1; }
+      has[1] = 1; mix = 0;
+      if (still.matches) { mix = 1; draw(); settle(); return; }
+      wake();
+      if (loopUrl) {
+        const v = doc.createElement('video');
+        v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
+        v.addEventListener('loadeddata', () => {
+          if (url !== src || gone) return;
+          vid = v;
+          v.play().catch(() => {});
+          wake();
+        }, { once: true });
+        v.src = loopUrl;
+      }
+    };
+    im.src = url;
+  }
+
+  function setSpot(x, y, rad, { ellip = 1, aimOn = 0, snap = false } = {}) {
+    spotToX = x; spotToY = y; spotRadTo = rad; ellipTo = ellip; useAim = aimOn;
+    if (snap || still.matches) { spotX = x; spotY = y; spotRad = rad; ellipX = ellip; fresh = true; draw(); }
+    wake();
+  }
+  function aim(deg, snap = false) {
+    aimTo = deg * Math.PI / 180;
+    if (snap || still.matches) aimNow = aimTo;
+    wake();
+  }
+  function setDim(v) { dimTo = v; wake(); }
+  new ResizeObserver(() => draw()).observe(host);
+  doc.addEventListener('visibilitychange', () => {
+    if (doc.hidden) { if (vid) vid.pause(); cancelAnimationFrame(raf); raf = 0; }
+    else { if (vid) vid.play().catch(() => {}); wake(); }
+  });
+  onContextLoss(canvas, {
+    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; drop(); },
+    async restored() { await build(); gone = false; const a = src; src = ''; if (a) show(a, null); },
+  });
+  return { show, setDim, setSpot, aim };
+}
+
+/* ---------- Styles: 3-row Grid shell, zero-jump locked rows, sub-pixel flash alignment, large-icon All 73 ---------- */
+const CSS = `
+@property --box-split { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
+html, body { margin: 0 !important; padding: 0 !important; width: 100%; height: 100%; overflow: hidden !important; background: oklch(0.16 0.012 275) !important; }
+.wrap, body > header, body > main, body > section, body > footer, .credit, .series-toggle { display: none !important; }
+.sm-bin { position: fixed !important; left: -9999px !important; top: 0 !important; width: 128px; height: 128px; visibility: hidden; pointer-events: none; overflow: hidden; }
+
+.sm-app, .sm-app *, .sm-app *::before, .sm-app *::after { box-sizing: border-box; }
+.sm-app {
+  position: fixed; inset: 0; z-index: 20; overflow: hidden;
+  display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+  --bg: oklch(0.16 0.012 275);
+  --fg: oklch(0.95 0.008 275);
+  --muted: oklch(0.64 0.02 275);
+  --focus: oklch(0.84 0.13 205);
+  --acc-ink: #fff;
+  --c1: oklch(0.7 0.12 280);
+  --c2: oklch(0.62 0.12 320);
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  --slab: "Iosevka Term Slab", ui-monospace, monospace;
+  --b612: "B612", system-ui, sans-serif;
+  --pad: clamp(18px, 3vw, 44px);
+  --h: 44px;
+  color: var(--fg); font-family: var(--b612);
+  -webkit-user-select: none; user-select: none;
+  scrollbar-width: thin; scrollbar-color: oklch(0.45 0.015 275) transparent;
+}
+@media (pointer: coarse) { .sm-app { --h: 46px; } }
+.sm-app * { scrollbar-width: thin; scrollbar-color: oklch(0.42 0.015 275) transparent; }
+
+.sm-crt { position: fixed; inset: 0; width: 100%; height: 100%; display: block; z-index: 0; pointer-events: none; }
+
+.sm-mesh {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none; mix-blend-mode: screen; opacity: 0.13;
+  background:
+    radial-gradient(38% 44% at 86% 86%, var(--c1), transparent 72%),
+    radial-gradient(34% 38% at 64% 96%, var(--c2), transparent 72%);
+  filter: blur(40px);
+}
+
+/* ---------- Exact Gate / Bar v3 word buttons ---------- */
+.bar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 1px;
+  font: 800 14px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase;
+}
+.bar .sl { color: var(--muted); padding: 0 7px; font-weight: 500; }
+.bar .sl.sm-div { color: oklch(0.95 0.008 275 / 0.25); padding: 0 10px; }
+.w {
+  appearance: none; position: relative; isolation: isolate;
+  height: var(--h); padding: 0 11px; margin: 0; border: 0; background: none;
+  color: var(--fg); font: inherit; letter-spacing: inherit; text-transform: inherit;
+  text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;
+  transition: transform 140ms var(--ease);
+}
+.w:active { transform: scale(0.96); }
+.w::before {
+  content: ""; position: absolute; inset: 6px 0; z-index: -1; background: #fff;
+  clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end);
+}
+@media (hover: hover) and (pointer: fine) {
+  .w:hover::before { clip-path: inset(0 0); }
+  .w:hover { color: var(--bg); }
+}
+.w:is([aria-pressed="true"], [aria-expanded="true"])::before { clip-path: inset(0 0); }
+.w:is([aria-pressed="true"], [aria-expanded="true"]) { color: var(--bg); }
+.w:focus-visible { outline: none; box-shadow: inset 0 -3px 0 var(--focus); }
+.w.is-muted { color: var(--muted); }
+.w.is-muted:is(:hover, [aria-expanded="true"], [aria-pressed="true"]) { color: var(--bg); }
+
+/* ---------- Row 1: Top bar ---------- */
+.sm-top-wrap { position: relative; z-index: 8; padding: clamp(10px, 1.8vh, 20px) var(--pad) 0; display: grid; gap: 2px; }
+.sm-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sm-wordmark {
+  display: inline-flex; align-items: baseline; gap: 0.01em; text-decoration: none;
+  font-family: var(--slab); font-size: clamp(23px, 2.5vw, 32px); line-height: 1; letter-spacing: -0.02em;
+  color: var(--fg); flex: none;
+}
+.sm-wordmark span {
+  display: inline-block; color: var(--fg); font-weight: var(--w);
+  transform: translateY(var(--y)) rotate(var(--r));
+  transition: color 0.14s steps(3, end), transform 0.16s steps(4, end);
+}
+.sm-wordmark:hover span {
+  color: var(--c); transform: translateY(calc(var(--y) - 3px)) rotate(0deg);
+  transition-delay: calc(var(--i) * 28ms);
+}
+.sm-modes { margin-right: -11px; justify-content: flex-end; font-size: 13px; }
+.sm-modes .w { padding: 0 9px; height: 40px; }
+.sm-modes .sl { padding: 0 4px; }
+.sm-parked-row { justify-content: flex-end; margin-right: -9px; font-size: 12px; }
+.sm-parked-row[hidden] { display: none; }
+.sm-parked-row .w { height: 34px; padding: 0 9px; color: var(--muted); }
+.sm-parked-row .w:is(:hover, [aria-pressed="true"]) { color: var(--bg); }
+.sm-parked-row .sl { padding: 0 4px; }
+
+/* ---------- Row 2: Main Stage ---------- */
+.sm-stage { position: relative; z-index: 4; min-height: 0; min-width: 0; container-type: size; }
+
+/* ---------- Row 3: Footer ---------- */
+.sm-foot {
+  position: relative; z-index: 6;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+  padding: 0 var(--pad) clamp(10px, 1.8vh, 20px);
+}
+.sm-tech { color: var(--muted); font-size: clamp(11px, 1.25vw, 13px); justify-self: start; min-height: 24px; display: flex; align-items: center; }
+.sm-tech .tags { display: inline-flex; gap: 4px; }
+.sm-tech .tag {
+  display: inline-flex; align-items: center; height: 1.8em; padding: 0 0.5em;
+  border: 1px solid currentColor; border-radius: 3px;
+  font: 700 0.85em/1 var(--slab); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.sm-tech .tag.now { background: var(--muted); border-color: var(--muted); color: var(--bg); }
+.sm-tech .tag.off { opacity: 0.55; text-decoration: line-through; }
+.sm-foot-gate { justify-self: center; }
+.sm-app:not([data-m="dial"]) .sm-foot-gate { display: none; }
+
+/* ---------- Live Full-Colour Icon Cell + Sub-Pixel Aligned Intro Flash-to-Colour ---------- */
+/* Both .sm-live > a.toy .obj svg AND .sm-flash-frame occupy the EXACT same 82% x 82% square at 50% 50%.
+   Inside .sm-flash-frame, <i> applies the exact fitIcon() viewBox transform (--ew, --ex, --ey) so the
+   luminance mask matches the live full-colour SVG icon to 0.0 px! */
+.sm-cell { position: relative; display: grid; place-items: center; transform-origin: 50% 50%; }
+.sm-cell .sm-live { position: relative; z-index: 1; width: 100%; height: 100%; display: grid; place-items: center; transition: transform 140ms var(--ease); }
+.sm-cell:active .sm-live { transform: scale(0.94); }
+.sm-cell .sm-live > a.toy {
+  display: grid !important; place-items: center; width: 100%; height: 100%;
+  margin: 0 !important; padding: 0 !important; gap: 0 !important; text-decoration: none;
+  opacity: 1 !important; filter: none !important; transition: none !important;
+}
+.sm-cell .sm-live > a.toy .obj { width: 100%; height: 100%; display: grid; place-items: center; }
+.sm-cell .sm-live > a.toy .obj::after { display: none !important; }
+.sm-cell .sm-live > a.toy .obj svg { width: 82% !important; height: 82% !important; overflow: visible; }
+.sm-cell .sm-live > a.toy .name { display: none !important; }
+
+.sm-cell .sm-flash {
+  position: absolute; inset: 0; z-index: 3; pointer-events: none;
+  display: grid; place-items: center; opacity: 0;
+}
+.sm-cell .sm-flash::before {
+  content: ""; position: absolute; inset: -4%;
+  background: linear-gradient(90deg, #fff calc(50% - var(--box-split)), transparent 0 calc(50% + var(--box-split)), #fff 0);
+}
+.sm-cell .sm-flash-frame {
+  position: relative; z-index: 1; width: 82%; height: 82%; overflow: visible; opacity: 0;
+}
+.sm-cell .sm-flash-frame i {
+  position: absolute;
+  left: var(--ex, 0%); top: var(--ey, 0%);
+  width: var(--ew, 100%); height: var(--ew, 100%);
+  background: var(--bg);
+  mask: var(--em) 0 0 / 100% 100% no-repeat; -webkit-mask: var(--em) 0 0 / 100% 100% no-repeat;
+  mask-mode: luminance; -webkit-mask-mode: luminance;
+}
+.sm-cell .sm-flash-frame i.sm-no-em {
+  inset: 0; left: 0; top: 0; width: 100%; height: 100%;
+  mask: none; -webkit-mask: none; background: none; display: grid; place-items: center;
+  font: 800 24px/1 var(--slab); font-style: normal; color: var(--bg);
+}
+
+/* Note: flash settles to exact scale(1) BEFORE handing off to .sm-live at 56% -> zero size jump! */
+.sm-cell.is-intro .sm-live { animation: sm-live-in 0.46s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash { animation: sm-flash-in 0.46s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash::before { animation: sm-flash-part 0.46s steps(1, end) var(--stagger, 0ms) both; }
+.sm-cell.is-intro .sm-flash-frame { animation: sm-flash-em 0.46s steps(1, end) var(--stagger, 0ms) both; }
+@keyframes sm-live-in { 0%, 54% { opacity: 0; } 56%, 100% { opacity: 1; } }
+@keyframes sm-flash-in {
+  0% { opacity: 0; transform: scale(1.12); }
+  10% { opacity: 1; transform: scale(1.12); }
+  22%, 92% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1); }
+}
+@keyframes sm-flash-part {
+  0%, 54% { --box-split: 0%; }
+  68% { --box-split: 17%; }
+  82% { --box-split: 35%; }
+  100% { --box-split: 50%; }
+}
+@keyframes sm-flash-em { 0%, 8% { opacity: 0; } 10%, 54% { opacity: 1; } 56%, 100% { opacity: 0; } }
+
+/* ---------- Zero-Jump Locked Signal Intro Copy Block ---------- */
+/* Every row reserves exact fixed height so tabbing/stepping across all 73 toys produces 0 px shift! */
+.sm-copy {
+  --title-base: clamp(28px, min(4.2vw, 5.4vh), 52px);
+  display: grid;
+  grid-template-rows: calc(var(--title-base) * 1.14) 48px 50px auto;
+  row-gap: 8px;
+  align-items: start;
+  width: 100%;
+  min-width: 0;
+}
+.sm-title-box {
+  height: calc(var(--title-base) * 1.14);
+  display: flex; align-items: flex-end; width: 100%; min-width: 0; overflow: visible;
+}
+.sm-title {
+  margin: 0;
+  font: 800 var(--title-fit, var(--title-base))/1.04 var(--slab);
+  letter-spacing: -0.03em; word-spacing: -0.22em; text-transform: uppercase; color: #fff;
+  white-space: nowrap;
+  text-shadow: 0 2px 16px oklch(0.08 0.01 275 / 0.72);
+}
+.sm-title.is-unfurl { animation: sm-unfurl 0.24s steps(7, end) both; }
+@keyframes sm-unfurl {
+  0% { clip-path: inset(-0.15em 50% -0.15em 50%); }
+  100% { clip-path: inset(-0.15em 0% -0.15em 0%); }
+}
+.sm-motto {
+  margin: 0; align-self: start;
+  font: 400 clamp(13.5px, 1.65vh, 16.5px)/1.38 var(--b612);
+  color: oklch(0.95 0.008 275 / 0.86); max-width: 36ch; text-wrap: balance;
+  text-shadow: 0 1px 12px oklch(0.08 0.012 275 / 0.92), 0 0 3px oklch(0.08 0.012 275 / 0.8);
+}
+.sm-acc {
+  display: grid; align-content: start; gap: 7px;
+  font: 800 12.5px/1 var(--slab); letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg);
+  text-shadow: 0 1px 10px oklch(0.08 0.012 275 / 0.92), 0 0 3px oklch(0.08 0.012 275 / 0.8);
+}
+.sm-acc-flags { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.sm-acc .acc-i { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+.sm-acc .acc-i b { font: inherit; letter-spacing: inherit; }
+.sm-acc .g {
+  display: block; width: 22px; height: 15px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round;
+  color: var(--acc-ink); filter: drop-shadow(0 1px 4px oklch(0.08 0.012 275 / 0.85));
+}
+.sm-acc .acc-snd { position: relative; opacity: 0.78; }
+.sm-acc .acc-snd .g { color: #fff; }
+.sm-acc .acc-snd.is-flash::before {
+  content: ""; position: absolute; inset: -3px -5px; background: #fff; mix-blend-mode: difference; pointer-events: none;
+  animation: sm-snd-cut 0.24s steps(1, end) both;
+}
+@keyframes sm-snd-cut {
+  0%, 40% { clip-path: inset(0 0 0 0); opacity: 1; }
+  70% { clip-path: inset(0 28% 0 28%); opacity: 1; }
+  100% { clip-path: inset(0 50% 0 50%); opacity: 0; }
+}
+.sm-gate { margin-top: 2px; }
+.sm-gate :is(.w, .sl) { text-shadow: 0 1px 10px oklch(0.08 0.012 275 / 0.92), 0 0 3px oklch(0.08 0.012 275 / 0.8); }
+.sm-gate .w:is(:hover, [aria-expanded="true"], [aria-pressed="true"]) { text-shadow: none; }
+
+/* Centred copy alignment helpers */
+.sm-copy.is-center { justify-items: center; text-align: center; }
+.sm-copy.is-center .sm-title-box { justify-content: center; }
+.sm-copy.is-center .sm-acc { justify-items: center; }
+.sm-copy.is-center .sm-acc-flags { justify-content: center; }
+.sm-copy.is-center .sm-gate { justify-content: center; margin-left: 0 !important; }
+
+/* Bare Bar v3 list item (Console, Folio) */
+.sm-ch {
+  appearance: none; position: relative; isolation: isolate;
+  display: flex; align-items: center; gap: 10px; width: 100%; height: 38px; padding: 0 11px;
+  border: 0; background: none; color: oklch(0.95 0.008 275 / 0.78); cursor: pointer; text-align: left;
+  font: 800 13px/1 var(--slab); letter-spacing: 0.06em; text-transform: uppercase;
+  transition: transform 140ms var(--ease);
+}
+.sm-ch:active { transform: scale(0.98); }
+.sm-ch::before {
+  content: ""; position: absolute; inset: 4px 0; z-index: -1; background: #fff;
+  clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end);
+}
+.sm-ch i {
+  flex: none; width: 20px; height: 20px; background: currentColor;
+  mask: var(--em) center / contain no-repeat; -webkit-mask: var(--em) center / contain no-repeat;
+  mask-mode: luminance; -webkit-mask-mode: luminance;
+}
+.sm-ch i.sm-no-em { mask: none; -webkit-mask: none; background: none; display: grid; place-items: center; font: 800 12px/1 var(--slab); font-style: normal; }
+.sm-ch span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (hover: hover) and (pointer: fine) {
+  .sm-ch:hover::before { clip-path: inset(0 0); }
+  .sm-ch:hover { color: var(--bg); }
+}
+.sm-ch.is-act::before { clip-path: inset(0 0); }
+.sm-ch.is-act { color: var(--bg); }
+.sm-ch:focus-visible { outline: none; box-shadow: inset 0 -3px 0 var(--focus); }
+
+.sm-dial-wrap, .sm-track-wrap, .sm-hero-slot, .sm-console-spacer, .sm-single-icon, .sm-list, .sm-folio-list, .sm-marquee { display: none; }
+
+/* ============================================================================
+   KEPT 1: DIAL (Zero-jump locked centre rows + generous fuzzy CRT filling dial)
+   ============================================================================ */
+.sm-app[data-m="dial"] .sm-stage { display: grid; place-items: center; }
+.sm-app[data-m="dial"] .sm-dial-wrap {
+  display: block; position: relative; width: min(94cqh, 90cqw, 720px); aspect-ratio: 1; container-type: inline-size;
+}
+.sm-dial-wrap::before {
+  content: ""; position: absolute; inset: 22%; border-radius: 50%;
+  border: 1px solid oklch(0.36 0.016 275 / 0.55); pointer-events: none;
+}
+.sm-dial-wrap::after {
+  content: ""; position: absolute; inset: 24%; border-radius: 50%; pointer-events: none;
+  background: repeating-conic-gradient(from -0.5deg, oklch(0.56 0.016 275 / 0.65) 0 1deg, transparent 0 6deg);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 7px), #000 calc(100% - 6px));
+}
+.sm-hand {
+  position: absolute; left: 50%; top: 50%; width: 2px; height: 26%; border-radius: 2px;
+  background: linear-gradient(to bottom, var(--fg) 0 26%, transparent 26%); pointer-events: none; z-index: 1;
+}
+.sm-dial-mid {
+  position: absolute; inset: 26%; z-index: 2; pointer-events: none;
+  display: grid; align-content: center; justify-items: center;
+}
+.sm-dial-mid .sm-copy {
+  --title-base: clamp(18px, 5cqw, 34px);
+  grid-template-rows: calc(var(--title-base) * 1.18) 46px 34px;
+  row-gap: 1.4cqw;
+}
+.sm-dial-mid .sm-motto { font-size: clamp(11px, 2cqw, 14px); max-width: 30ch; }
+.sm-dial-mid .sm-motto:not(:empty)::before { content: ""; display: block; width: 22px; height: 1px; margin: 0 auto 1.4cqw; background: oklch(0.95 0.008 275 / 0.34); }
+.sm-dial-mid .sm-acc { font-size: clamp(9.5px, 1.55cqw, 11.5px); gap: 5px; }
+.sm-dial-mid .sm-acc .g { width: 18px; height: 12px; }
+.sm-dial-mid .sm-gate { display: none; }
+.sm-app[data-m="dial"] .sm-deck { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+.sm-app[data-m="dial"] .sm-cell {
+  position: absolute; width: 17.5%; height: 17.5%; pointer-events: auto;
+  left: calc(50% + var(--dx) * 41% - 8.75%); top: calc(50% + var(--dy) * 41% - 8.75%);
+  transition: scale 0.36s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.sm-app[data-m="dial"] .sm-cell:is(:hover, .is-act) { scale: 1.18; z-index: 5; }
+
+/* ============================================================================
+   KEPT 2: STRIP
+   ============================================================================ */
+.sm-app[data-m="strip"] .sm-stage {
+  display: grid; grid-template-rows: minmax(170px, 1.05fr) auto;
+  align-content: center; justify-items: center; gap: clamp(14px, 2.8vh, 30px); padding: 0 var(--pad);
+}
+.sm-app[data-m="strip"] .sm-track-wrap { display: block; position: relative; width: 100%; height: 100%; min-height: 170px; max-height: 270px; }
+.sm-app[data-m="strip"] .sm-deck { position: absolute; inset: 0; pointer-events: none; }
+.sm-app[data-m="strip"] .sm-cell {
+  position: absolute; top: 50%; width: clamp(120px, min(18vw, 24cqh), 184px); aspect-ratio: 1;
+  left: calc(50% + var(--off, 0) * clamp(142px, 18vw, 232px)); translate: -50% -50%;
+  scale: var(--sc, 0.4); opacity: var(--op, 0); pointer-events: var(--pe, none);
+  transition: left 0.22s steps(6, end), scale 0.22s steps(6, end), opacity 0.18s steps(5, end);
+}
+.sm-app[data-m="strip"] .sm-cell.is-snap { transition: none !important; }
+.sm-app[data-m="strip"] .sm-cell.is-act { scale: 1; opacity: 1; z-index: 5; }
+.sm-app[data-m="strip"] .sm-cell:not(.is-act):hover { opacity: 0.92; }
+.sm-strip-nav { position: absolute; top: 50%; translate: 0 -50%; z-index: 6; width: 44px; padding: 0; font-size: 22px; line-height: 1; }
+.sm-strip-nav[data-step="-1"] { left: max(0px, calc(50% - clamp(142px, 18vw, 232px) * 2.55)); }
+.sm-strip-nav[data-step="1"] { right: max(0px, calc(50% - clamp(142px, 18vw, 232px) * 2.55)); }
+.sm-app[data-m="strip"] .sm-hero-slot { display: grid; width: min(640px, 100%); }
+
+/* ============================================================================
+   KEPT 3: RAIL
+   ============================================================================ */
+.sm-app[data-m="rail"] .sm-stage {
+  display: grid; grid-template-rows: 1fr auto; gap: clamp(18px, 3.2vh, 32px);
+  padding: clamp(12px, 2vh, 24px) var(--pad) clamp(12px, 2vh, 22px);
+}
+.sm-app[data-m="rail"] .sm-hero-slot { display: grid; align-self: end; width: min(620px, 100%); }
+.sm-app[data-m="rail"] .sm-gate { margin-left: -11px; }
+.sm-app[data-m="rail"] .sm-deck {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
+  align-items: center; justify-items: center; gap: clamp(4px, 1vw, 14px); width: 100%;
+}
+.sm-app[data-m="rail"] .sm-cell { width: 100%; max-width: 82px; aspect-ratio: 1; transition: scale 0.34s cubic-bezier(0.3, 1.5, 0.5, 1); }
+.sm-app[data-m="rail"] .sm-cell:is(:hover, .is-act) { scale: 1.18; z-index: 5; }
+
+/* ============================================================================
+   KEPT 4: CONSOLE (Icon + Single-Line Title locked on same line, zero jump!)
+   ============================================================================ */
+.sm-app[data-m="console"] .sm-stage {
+  display: grid; grid-template-columns: minmax(0, 0.95fr) minmax(300px, 1.05fr) minmax(190px, 236px);
+  align-items: center; column-gap: clamp(20px, 3.2vw, 48px); padding: clamp(12px, 2vh, 24px) var(--pad);
+}
+.sm-app[data-m="console"] .sm-console-spacer { display: block; }
+.sm-app[data-m="console"] .sm-hero-slot { display: grid; align-content: center; width: 100%; }
+.sm-app[data-m="console"] .sm-gate { margin-left: -11px; }
+.sm-app[data-m="console"] .sm-single-icon { display: block; width: clamp(104px, min(12vw, 15vh), 138px); aspect-ratio: 1; margin-bottom: clamp(14px, 2vh, 20px); }
+.sm-app[data-m="console"] .sm-single-icon .sm-cell { width: 100%; height: 100%; }
+.sm-app[data-m="console"] .sm-deck { display: none; }
+.sm-app[data-m="console"] .sm-list { display: flex; flex-direction: column; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; margin-right: -11px; }
+
+/* ============================================================================
+   NEW 1: MAGNIFY (Spring-physics proximity wave dock + tracking CRT halo)
+   ============================================================================ */
+.sm-app[data-m="magnify"] .sm-stage {
+  display: grid; grid-template-rows: 1fr auto; align-items: center; justify-items: center;
+  padding: clamp(14px, 3vh, 30px) var(--pad) clamp(18px, 3.5vh, 36px); gap: clamp(16px, 3vh, 34px);
+}
+.sm-app[data-m="magnify"] .sm-hero-slot { grid-row: 1; display: grid; width: min(640px, 100%); align-self: center; }
+.sm-app[data-m="magnify"] .sm-deck {
+  grid-row: 2; position: relative; display: flex; align-items: flex-end; justify-content: center;
+  width: 100%; max-width: 1120px; height: clamp(110px, 18vh, 160px); gap: clamp(4px, 0.8vw, 12px);
+}
+.sm-app[data-m="magnify"] .sm-cell {
+  flex: 1 1 0; max-width: 82px; aspect-ratio: 1; will-change: transform;
+  transform: translate3d(var(--mx, 0px), var(--my, 0px), 0) scale(var(--ms, 1));
+  z-index: var(--mz, 1);
+}
+
+/* ============================================================================
+   NEW 2: ORBIT (Interactive 3D tilted planetary ring)
+   ============================================================================ */
+.sm-app[data-m="orbit"] .sm-stage {
+  display: grid; grid-template-rows: minmax(220px, 1.2fr) auto;
+  align-content: center; justify-items: center; gap: clamp(8px, 2vh, 22px); padding: 0 var(--pad);
+}
+.sm-app[data-m="orbit"] .sm-deck {
+  grid-row: 1; position: relative; width: min(92vw, 940px); height: 100%; min-height: 220px; max-height: 380px;
+  cursor: grab; touch-action: pan-y;
+}
+.sm-app[data-m="orbit"] .sm-deck:active { cursor: grabbing; }
+.sm-app[data-m="orbit"] .sm-cell {
+  position: absolute; left: 50%; top: 50%;
+  width: clamp(92px, min(13vw, 18cqh), 138px); aspect-ratio: 1;
+  transform: translate3d(calc(-50% + var(--ox, 0px)), calc(-50% + var(--oy, 0px)), 0) scale(var(--os, 1));
+  opacity: var(--oo, 1); filter: blur(var(--ob, 0px)); z-index: var(--oz, 1);
+}
+.sm-app[data-m="orbit"] .sm-hero-slot { grid-row: 2; display: grid; width: min(620px, 100%); }
+
+/* ============================================================================
+   NEW 3: FOLIO (Zero-scroll 2x6 typographic index left | Museum vitrine right)
+   ============================================================================ */
+.sm-app[data-m="folio"] .sm-stage {
+  display: grid; grid-template-columns: minmax(320px, 1.05fr) minmax(320px, 0.95fr);
+  align-items: center; column-gap: clamp(28px, 5vw, 84px); padding: clamp(12px, 2vh, 24px) var(--pad);
+}
+.sm-app[data-m="folio"] .sm-folio-list {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px clamp(12px, 2vw, 28px);
+  margin-left: -11px; align-content: center;
+}
+.sm-app[data-m="folio"] .sm-folio-list .sm-ch { height: 46px; font-size: 14px; }
+.sm-app[data-m="folio"] .sm-hero-slot { display: grid; align-content: center; width: 100%; max-width: 500px; }
+.sm-app[data-m="folio"] .sm-single-icon {
+  display: block; width: clamp(128px, min(15vw, 19vh), 168px); aspect-ratio: 1; margin-bottom: clamp(16px, 2.2vh, 24px);
+}
+.sm-app[data-m="folio"] .sm-single-icon .sm-cell { width: 100%; height: 100%; }
+.sm-app[data-m="folio"] .sm-gate { margin-left: -11px; }
+.sm-app[data-m="folio"] .sm-deck { display: none; }
+
+/* ============================================================================
+   NEW 4: PRISM (3x4 staggered desk; CRT lamp physically glides behind active icon)
+   ============================================================================ */
+.sm-app[data-m="prism"] .sm-stage {
+  display: grid; grid-template-columns: minmax(280px, 0.82fr) minmax(0, 1.18fr);
+  align-items: center; column-gap: clamp(24px, 4vw, 64px); padding: clamp(12px, 2vh, 24px) var(--pad);
+}
+.sm-app[data-m="prism"] .sm-hero-slot { display: grid; align-content: center; width: 100%; max-width: 460px; }
+.sm-app[data-m="prism"] .sm-gate { margin-left: -11px; }
+.sm-app[data-m="prism"] .sm-deck {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: clamp(14px, 2.8vh, 30px) clamp(12px, 2vw, 28px);
+  align-items: center; justify-items: center; max-width: 680px; width: 100%; justify-self: center;
+}
+.sm-app[data-m="prism"] .sm-cell {
+  width: clamp(68px, min(10vw, 14cqh), 114px); aspect-ratio: 1;
+  translate: var(--row-shift, 0px) 0;
+  transition: scale 0.3s var(--ease), opacity 0.24s var(--ease);
+}
+.sm-app[data-m="prism"] .sm-cell[data-row="1"] { --row-shift: clamp(16px, 2.8vw, 38px); }
+.sm-app[data-m="prism"] .sm-deck.has-act .sm-cell:not(.is-act) { opacity: 0.34; scale: 0.88; }
+.sm-app[data-m="prism"] .sm-cell.is-act { opacity: 1; scale: 1.24; z-index: 5; }
+
+/* ============================================================================
+   NEW 5: REEL (Kinetic vertical curved icon drum left | Open Signal stage right)
+   ============================================================================ */
+.sm-app[data-m="reel"] .sm-stage {
+  display: grid; grid-template-columns: clamp(140px, 18vw, 220px) minmax(0, 1fr);
+  align-items: center; column-gap: clamp(24px, 5vw, 84px); padding: 0 var(--pad);
+}
+.sm-app[data-m="reel"] .sm-deck { position: relative; width: 100%; height: 100%; min-height: 300px; pointer-events: none; }
+.sm-app[data-m="reel"] .sm-cell {
+  position: absolute; left: calc(50% + var(--rx, 0px)); top: calc(50% + var(--ry, 0px));
+  width: clamp(78px, min(10vw, 13cqh), 116px); aspect-ratio: 1;
+  translate: -50% -50%; scale: var(--rs, 0.6); opacity: var(--ro, 0); pointer-events: var(--pe, none);
+  transition: top 0.22s steps(6, end), left 0.22s steps(6, end), scale 0.22s steps(6, end), opacity 0.18s steps(5, end);
+}
+.sm-app[data-m="reel"] .sm-cell.is-snap { transition: none !important; }
+.sm-app[data-m="reel"] .sm-cell.is-act { scale: 1.16; opacity: 1; z-index: 5; }
+.sm-app[data-m="reel"] .sm-hero-slot { display: grid; align-content: center; width: 100%; max-width: 560px; }
+.sm-app[data-m="reel"] .sm-gate { margin-left: -11px; }
+
+/* ============================================================================
+   PARKED 1..5: Oblique, Arc, Drift, Type, Corner
+   ============================================================================ */
+.sm-app[data-m="oblique"] .sm-stage { position: relative; }
+.sm-app[data-m="oblique"] .sm-deck { position: absolute; inset: 0; pointer-events: none; }
+.sm-app[data-m="oblique"] .sm-cell {
+  position: absolute; width: clamp(46px, 6.6cqh, 68px); aspect-ratio: 1; pointer-events: auto;
+  left: calc(50% - var(--p) * 24%); top: calc(8% + var(--p) * 84%); translate: -50% -50%;
+  transition: scale 0.34s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.sm-app[data-m="oblique"] .sm-cell:is(:hover, .is-act) { scale: 1.22; z-index: 5; }
+.sm-app[data-m="oblique"] .sm-hero-slot { display: grid; position: absolute; left: 54%; right: var(--pad); top: 50%; translate: 0 -50%; max-width: 480px; }
+.sm-app[data-m="oblique"] .sm-gate { margin-left: -11px; }
+
+.sm-app[data-m="arc"] .sm-stage { position: relative; }
+.sm-app[data-m="arc"] .sm-deck { position: absolute; inset: 0; pointer-events: none; }
+.sm-app[data-m="arc"] .sm-cell {
+  position: absolute; width: clamp(54px, 7.2vw, 82px); aspect-ratio: 1; pointer-events: auto;
+  left: calc(50% + var(--ax) * min(44cqw, 62cqh)); top: calc(108% + var(--ay) * min(44cqw, 62cqh)); translate: -50% -50%;
+  transition: scale 0.34s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.sm-app[data-m="arc"] .sm-cell:is(:hover, .is-act) { scale: 1.2; z-index: 5; }
+.sm-app[data-m="arc"] .sm-hero-slot { display: grid; position: absolute; left: 50%; top: 32%; translate: -50% -50%; width: min(600px, calc(100% - 2 * var(--pad))); }
+
+.sm-app[data-m="drift"] .sm-stage { position: relative; }
+.sm-app[data-m="drift"] .sm-deck { position: absolute; inset: 0; pointer-events: none; }
+.sm-app[data-m="drift"] .sm-cell {
+  position: absolute; width: clamp(56px, 8cqh, 90px); aspect-ratio: 1; pointer-events: auto;
+  left: var(--cx); top: var(--cy); translate: -50% -50%;
+  transition: scale 0.34s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.sm-app[data-m="drift"] .sm-cell:is(:hover, .is-act) { scale: 1.2; z-index: 5; }
+.sm-app[data-m="drift"] .sm-hero-slot { display: grid; position: absolute; left: 50%; top: 50%; translate: -50% -50%; width: min(480px, 48cqw); }
+
+.sm-app[data-m="type"] .sm-stage {
+  display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.85fr);
+  align-items: center; column-gap: clamp(24px, 4vw, 64px); padding: clamp(12px, 2vh, 24px) var(--pad);
+}
+.sm-app[data-m="type"] .sm-marquee { display: flex; flex-direction: column; align-items: flex-start; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.sm-mword {
+  appearance: none; position: relative; isolation: isolate; padding: 4px 10px; margin-left: -10px; border: 0; background: none; cursor: pointer; text-align: left;
+  font: 800 clamp(18px, 3.3cqh, 34px)/1.08 var(--slab); letter-spacing: -0.03em; word-spacing: -0.22em;
+  text-transform: uppercase; color: oklch(0.95 0.008 275 / 0.56); white-space: nowrap;
+}
+.sm-mword::before { content: ""; position: absolute; inset: 2px 0; z-index: -1; background: #fff; clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end); }
+@media (hover: hover) and (pointer: fine) { .sm-mword:hover::before { clip-path: inset(0 0); } .sm-mword:hover { color: var(--bg); } }
+.sm-mword.is-act::before { clip-path: inset(0 0); }
+.sm-mword.is-act { color: var(--bg); }
+.sm-app[data-m="type"] .sm-hero-slot { display: grid; align-content: center; width: 100%; max-width: 420px; }
+.sm-app[data-m="type"] .sm-single-icon { display: block; width: clamp(124px, 15vw, 170px); aspect-ratio: 1; margin-bottom: 18px; }
+.sm-app[data-m="type"] .sm-single-icon .sm-cell { width: 100%; height: 100%; }
+.sm-app[data-m="type"] .sm-title-box { display: none; }
+.sm-app[data-m="type"] .sm-copy { grid-template-rows: 48px 50px auto; }
+.sm-app[data-m="type"] .sm-gate { margin-left: -11px; }
+.sm-app[data-m="type"] .sm-deck { display: none; }
+
+.sm-app[data-m="corner"] .sm-stage { position: relative; }
+.sm-app[data-m="corner"] .sm-deck { position: absolute; inset: 0; pointer-events: none; }
+.sm-app[data-m="corner"] .sm-cell {
+  position: absolute; width: clamp(50px, 7.6cqh, 78px); aspect-ratio: 1; pointer-events: auto;
+  left: var(--lx); top: var(--ly); translate: -50% -50%;
+  transition: scale 0.34s cubic-bezier(0.3, 1.5, 0.5, 1);
+}
+.sm-app[data-m="corner"] .sm-cell:is(:hover, .is-act) { scale: 1.2; z-index: 5; }
+.sm-app[data-m="corner"] .sm-hero-slot { display: grid; position: absolute; left: clamp(130px, 16vw, 220px); top: 44%; translate: 0 -50%; width: min(540px, 56vw); }
+.sm-app[data-m="corner"] .sm-gate { margin-left: -11px; }
+
+/* ---------- Redesigned All 73 Gallery Sheet: Large Icons + Clean Dark Blurred Glass ---------- */
+.sm-glass {
+  position: fixed; inset: 0; z-index: 9; opacity: 0; pointer-events: none;
+  background: oklch(0.11 0.012 275 / 0.88);
+  -webkit-backdrop-filter: blur(36px) brightness(0.32); backdrop-filter: blur(36px) brightness(0.32);
+  transition: opacity 0.12s steps(3, end);
+}
+.sm-glass[data-on] { opacity: 1; pointer-events: auto; }
+.sm-sheet {
+  position: fixed; left: var(--pad); right: var(--pad); top: clamp(56px, 8vh, 88px); bottom: clamp(20px, 3.5vh, 40px);
+  z-index: 10; max-width: 1180px; margin-inline: auto;
+  display: flex; flex-direction: column; gap: 18px; overflow: hidden;
+}
+.sm-sheet[hidden] { display: none; }
+.sm-sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.sm-sheet-hd { margin-left: -8px; font-size: 12.5px; }
+.sm-sheet-hd .w { padding: 0 8px; height: 38px; }
+.sm-sheet-hd .sl { padding: 0 3px; }
+.sm-sheet-close { flex: none; margin-right: -11px; }
+.sm-sheet-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 22px 14px;
+  overflow-y: auto; overscroll-behavior: contain; padding: 8px 4px 36px; align-content: start;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 34px), transparent);
+}
+.sm-card {
+  appearance: none; position: relative; isolation: isolate;
+  display: grid; justify-items: center; align-content: start; gap: 10px;
+  padding: 6px 4px; border: 0; background: none; cursor: pointer; text-align: center;
+  color: oklch(0.95 0.008 275 / 0.82);
+  transition: transform 140ms var(--ease);
+}
+.sm-card:active { transform: scale(0.95); }
+.sm-card-ic {
+  position: relative; width: 76px; height: 76px; display: grid; place-items: center; isolation: isolate;
+}
+.sm-card-ic::before {
+  content: ""; position: absolute; inset: -4px; z-index: -1; background: #fff;
+  clip-path: inset(0 50%); transition: clip-path 0.1s steps(3, end);
+}
+.sm-card-ic i {
+  display: block; width: 78%; height: 78%; background: var(--slot-ink, #fff);
+  mask: var(--em) center / contain no-repeat; -webkit-mask: var(--em) center / contain no-repeat;
+  mask-mode: luminance; -webkit-mask-mode: luminance;
+  transition: background 0.08s steps(2, end);
+}
+.sm-card-ic i.sm-no-em {
+  mask: none; -webkit-mask: none; background: none; display: grid; place-items: center;
+  font: 800 28px/1 var(--slab); font-style: normal; color: var(--slot-ink, #fff);
+}
+.sm-card span {
+  font: 700 11.5px/1.2 var(--slab); letter-spacing: 0.05em; text-transform: uppercase;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+@media (hover: hover) and (pointer: fine) {
+  .sm-card:hover { color: #fff; }
+  .sm-card:hover .sm-card-ic::before { clip-path: inset(0 0); }
+  .sm-card:hover .sm-card-ic i { background: var(--bg); }
+  .sm-card:hover .sm-card-ic i.sm-no-em { background: none; color: var(--bg); }
+}
+.sm-card.is-act { color: #fff; }
+.sm-card.is-act .sm-card-ic::before { clip-path: inset(0 0); }
+.sm-card.is-act .sm-card-ic i { background: var(--bg); }
+.sm-card.is-act .sm-card-ic i.sm-no-em { background: none; color: var(--bg); }
+.sm-card:focus-visible .sm-card-ic { box-shadow: inset 0 -3px 0 var(--focus); }
+
+/* ---------- Narrow / Portrait ---------- */
+@media (max-width: 860px) {
+  .sm-top { flex-wrap: wrap; gap: 6px; }
+  .sm-modes { font-size: 11px; justify-content: flex-start; margin-left: -9px; }
+  .sm-modes .w { padding: 0 7px; height: 34px; }
+  .sm-modes .sl { padding: 0 2px; }
+  .sm-app[data-m="rail"] .sm-deck { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .sm-app:is([data-m="console"], [data-m="folio"], [data-m="prism"], [data-m="reel"], [data-m="type"]) .sm-stage {
+    grid-template-columns: 1fr; grid-template-rows: auto 1fr; row-gap: 14px;
+  }
+  .sm-app[data-m="console"] .sm-console-spacer { display: none; }
+  .sm-app[data-m="console"] .sm-list { order: -1; max-height: 20vh; display: grid; grid-template-columns: 1fr 1fr; margin-right: 0; }
+  .sm-app[data-m="folio"] .sm-folio-list { order: 1; max-height: 30vh; overflow-y: auto; }
+  .sm-app[data-m="prism"] .sm-deck { grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .sm-app[data-m="prism"] .sm-cell[data-row="1"] { --row-shift: 0px; }
+  .sm-app[data-m="reel"] .sm-deck { min-height: 150px; }
+  .sm-single-icon { width: 82px !important; margin-bottom: 10px !important; }
+  .sm-foot { grid-template-columns: auto 1fr; }
+  .sm-foot-gate { justify-self: end; }
+  .sm-strip-nav[data-step="-1"] { left: 0; }
+  .sm-strip-nav[data-step="1"] { right: 0; }
+  .sm-sheet-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 16px 10px; }
+  .sm-card-ic { width: 62px; height: 62px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sm-cell.is-intro .sm-live, .sm-cell.is-intro .sm-flash, .sm-cell.is-intro .sm-flash::before, .sm-cell.is-intro .sm-flash-frame,
+  .sm-title.is-unfurl, .sm-acc .acc-snd.is-flash::before { animation: none !important; }
+  .sm-cell, .sm-cell .sm-live, .w, .w::before, .sm-ch, .sm-ch::before, .sm-card, .sm-card-ic::before, .sm-mword::before, .sm-glass, .sm-wordmark span { transition: none !important; }
+}
+`;
+
+/* ---------- Boot live menu iframe & mount Signal Menu ---------- */
+const frame = Object.assign(document.createElement('iframe'), { src: '../index.html?all', title: 'Signal Menu' });
+document.body.append(frame);
+await new Promise(r => frame.addEventListener('load', r, { once: true }));
+const d = frame.contentDocument;
+for (let i = 0; i < 30 && d.documentElement.dataset.sections; i++) await new Promise(r => setTimeout(r, 40));
+const gsap = d.defaultView.gsap;
+
+const [toysData, seriesData, loopsList] = await Promise.all([
+  fetch('../toys.json', { cache: 'no-cache' }).then(r => r.json()),
+  fetch('../series.json', { cache: 'no-cache' }).then(r => r.json()),
+  fetch('../shared/loops/index.json', { cache: 'no-cache' }).then(r => r.json()).catch(() => []),
+]);
+const LOOPS = new Set(loopsList);
+const rootUrl = p => new URL(p, d.baseURI).href;
+
+d.documentElement.classList.remove('js-reveal');
+const bin = Object.assign(d.createElement('div'), { className: 'sm-bin' });
+d.body.append(bin);
+const liveTiles = new Map();
+const tileViewBox = new Map();
+
+// Harvest live tiles and capture each SVG's exact fitIcon() viewBox so luminosity mask aligns to 0.0 px!
+d.querySelectorAll('main .shelf .toy').forEach(a => {
+  if (!toysData[a.id] || toysData[a.id].number == null) return;
+  a.setAttribute('target', '_top');
+  a.classList.add('is-in');
+  const svg = a.querySelector('.obj svg');
+  const vb = svg?.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+  if (vb && vb.length === 4 && vb[2] > 0) tileViewBox.set(a.id, vb);
+  liveTiles.set(a.id, a);
+  bin.append(a);
+});
+
+const ALL = Object.entries(toysData)
+  .filter(([id, t]) => t.number != null && liveTiles.has(id))
+  .map(([id, t]) => ({ id, ...t, emblemUrl: t.emblem ? rootUrl(t.emblem) : '', ink: inkOf(t.accent || '') }))
+  .sort((a, b) => a.number - b.number);
+const byId = Object.fromEntries(ALL.map(t => [t.id, t]));
+
+d.head.append(Object.assign(d.createElement('style'), { textContent: CSS }));
+injectSprite(d);
+
+const app = Object.assign(d.createElement('div'), { className: 'sm-app' });
+const urlParams = new URLSearchParams(location.search);
+let mode = ALL_MODES.some(([m]) => m === urlParams.get('m')) ? urlParams.get('m') : 'dial';
+let parkedOpen = PARKED.some(([m]) => m === mode);
+app.dataset.m = mode;
+
+const gateHTML = `
+  <a class="w" data-open target="_top">Play</a>
+  <span class="sl">/</span>
+  <button type="button" class="w" data-act="reroll">Re-roll</button>
+  <span class="sl">/</span>
+  <button type="button" class="w" data-sheet="all" aria-expanded="false">All ${ALL.length}</button>
+`;
+const btns = list => list.map(([m, label], i) => `${i ? '<span class="sl">/</span>' : ''}<button type="button" class="w" data-m="${m}" aria-pressed="${m === mode}">${label}</button>`).join('');
+
+app.innerHTML = `
+  <div class="sm-mesh" aria-hidden="true"></div>
+
+  <header class="sm-top-wrap">
+    <div class="sm-top">
+      <a class="sm-wordmark" href="${rootUrl('index.html?all')}" target="_top" aria-label="Stimming">${MARK.map(([ch, c, w, r, y], i) => `<span style="--c:${c};--w:${w};--r:${r}deg;--y:${y}px;--i:${i}">${ch}</span>`).join('')}</a>
+      <nav class="bar sm-modes" aria-label="Layout">
+        ${btns(KEPT)}
+        <span class="sl sm-div">|</span>
+        ${btns(FRESH)}
+        <span class="sl sm-div">|</span>
+        <button type="button" class="w is-muted" data-parked-toggle aria-expanded="${parkedOpen}">Parked</button>
+      </nav>
+    </div>
+    <nav class="bar sm-parked-row" id="sm-parked-row" ${parkedOpen ? '' : 'hidden'} aria-label="Parked layouts">
+      ${btns(PARKED)}
+    </nav>
+  </header>
+
+  <main class="sm-stage" id="sm-stage">
+    <div class="sm-dial-wrap" id="sm-dial-wrap">
+      <i class="sm-hand" id="sm-hand" aria-hidden="true"></i>
+      <div class="sm-dial-mid" id="sm-dial-mid"></div>
+    </div>
+
+    <div class="sm-track-wrap" id="sm-track-wrap">
+      <button type="button" class="w sm-strip-nav" data-step="-1" aria-label="Previous">‹</button>
+      <button type="button" class="w sm-strip-nav" data-step="1" aria-label="Next">›</button>
+    </div>
+
+    <div class="sm-console-spacer" aria-hidden="true"></div>
+    <nav class="sm-folio-list" id="sm-folio-list" aria-label="Toys"></nav>
+    <nav class="sm-marquee" id="sm-marquee" aria-label="Toys"></nav>
+
+    <section class="sm-hero-slot" id="sm-hero-slot" aria-live="polite">
+      <div class="sm-single-icon" id="sm-single-icon"></div>
+      <div id="sm-copy-host"></div>
+    </section>
+
+    <div class="sm-deck" id="sm-deck"></div>
+    <nav class="sm-list" id="sm-list" aria-label="Toys"></nav>
+  </main>
+
+  <footer class="sm-foot">
+    <div class="sm-tech" id="sm-tech"></div>
+    <div class="bar sm-foot-gate">${gateHTML}</div>
+  </footer>
+
+  <div class="sm-glass" id="sm-glass"></div>
+  <section class="sm-sheet" id="sm-sheet" hidden aria-label="All toys">
+    <div class="sm-sheet-top">
+      <div class="bar sm-sheet-hd" id="sm-sheet-hd"></div>
+      <div class="bar sm-sheet-close"><button type="button" class="w" data-close>Close</button></div>
+    </div>
+    <div class="sm-sheet-grid" id="sm-sheet-grid"></div>
+  </section>
+`;
+d.body.append(app);
+
+const copyBlock = Object.assign(d.createElement('div'), { className: 'sm-copy' });
+copyBlock.innerHTML = `
+  <div class="sm-title-box"><h1 class="sm-title" id="sm-title"></h1></div>
+  <p class="sm-motto" id="sm-motto"></p>
+  <div class="sm-acc" id="sm-acc"></div>
+  <div class="bar sm-gate">${gateHTML}</div>
+`;
+
+const stageEl = d.getElementById('sm-stage');
+const dialWrap = d.getElementById('sm-dial-wrap');
+const dialMid = d.getElementById('sm-dial-mid');
+const handNeedle = d.getElementById('sm-hand');
+const trackWrap = d.getElementById('sm-track-wrap');
+const singleIconHost = d.getElementById('sm-single-icon');
+const copyHost = d.getElementById('sm-copy-host');
+const deckEl = d.getElementById('sm-deck');
+const listEl = d.getElementById('sm-list');
+const folioListEl = d.getElementById('sm-folio-list');
+const marqueeEl = d.getElementById('sm-marquee');
+const parkedRow = d.getElementById('sm-parked-row');
+const techEl = d.getElementById('sm-tech');
+const glassEl = d.getElementById('sm-glass');
+const sheetEl = d.getElementById('sm-sheet');
+const sheetHd = d.getElementById('sm-sheet-hd');
+const sheetGrid = d.getElementById('sm-sheet-grid');
+
+if (gsap) gsap.set(handNeedle, { xPercent: -50, yPercent: -100, transformOrigin: '50% 100%' });
+
+const crt = await makeCRT(d, app);
+const still = matchMedia('(prefers-reduced-motion: reduce)');
+const shuffle = a => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
+
+let queue = [], hand = [], active = null, sheetOpen = false, seriesFilter = 'all', dwellTimer = 0;
+const prevDiffs = new Map();
+
+const emHTML = t => t.emblemUrl ? `<i style="--em:url(${t.emblemUrl})"></i>` : `<i class="sm-no-em">${t.name[0]}</i>`;
+
+// Exact viewBox alignment for luminosity mask inside .sm-flash-frame so emblem & live SVG overlap to 0.0 px!
+function alignedFlashHTML(t) {
+  if (!t.emblemUrl) return `<div class="sm-flash-frame"><i class="sm-no-em">${t.name[0]}</i></div>`;
+  const vb = tileViewBox.get(t.id);
+  let style = `--em:url(${t.emblemUrl})`;
+  if (vb) {
+    const [vx, vy, vw] = vb;
+    const ew = (128 / vw) * 100;
+    const ex = (-vx / vw) * 100;
+    const ey = (-vy / vw) * 100;
+    style += `;--ew:${ew.toFixed(3)}%;--ex:${ex.toFixed(3)}%;--ey:${ey.toFixed(3)}%`;
+  }
+  return `<div class="sm-flash-frame"><i style="${style}"></i></div>`;
+}
+
+function makeCell(toy, idx = 0) {
+  const cell = d.createElement('div');
+  cell.className = 'sm-cell';
+  cell.dataset.id = toy.id;
+  cell.dataset.idx = String(idx);
+  cell.dataset.row = String(Math.floor(idx / 4));
+
+  const p = idx / (SIZE - 1);
+  const dialRad = (idx * 360 / SIZE) * Math.PI / 180;
+  const arcRad = (-74 + p * 148) * Math.PI / 180;
+  const [cx, cy] = DRIFT_POS[idx] || [50, 50];
+  const lx = idx < 6 ? '6.5vw' : `${(18 + ((idx - 6) / 5) * 72).toFixed(2)}vw`;
+  const ly = idx < 6 ? `${(12 + (idx / 5) * 66).toFixed(2)}%` : '90%';
+
+  cell.style.setProperty('--p', p.toFixed(4));
+  cell.style.setProperty('--dx', Math.sin(dialRad).toFixed(4));
+  cell.style.setProperty('--dy', (-Math.cos(dialRad)).toFixed(4));
+  cell.style.setProperty('--ax', Math.sin(arcRad).toFixed(4));
+  cell.style.setProperty('--ay', (-Math.cos(arcRad)).toFixed(4));
+  cell.style.setProperty('--cx', `${cx}%`);
+  cell.style.setProperty('--cy', `${cy}%`);
+  cell.style.setProperty('--lx', lx);
+  cell.style.setProperty('--ly', ly);
+
+  const live = d.createElement('div');
+  live.className = 'sm-live';
+  const tile = liveTiles.get(toy.id);
+  if (tile) live.append(tile);
+
+  const fl = d.createElement('div');
+  fl.className = 'sm-flash';
+  fl.setAttribute('aria-hidden', 'true');
+  fl.innerHTML = alignedFlashHTML(toy);
+
+  cell.append(live, fl);
+  return cell;
+}
+
+function parkAllTiles() {
+  app.querySelectorAll('a.toy').forEach(a => {
+    a.dispatchEvent(new d.defaultView.FocusEvent('focusout', { bubbles: true }));
+    a.dispatchEvent(new d.defaultView.PointerEvent('pointerleave', { bubbles: false }));
+    bin.append(a);
+  });
+  deckEl.innerHTML = '';
+  singleIconHost.innerHTML = '';
+  prevDiffs.clear();
+}
+
+function flashCells(cells, staggerMs = 44) {
+  if (still.matches) return;
+  cells.forEach((cell, i) => {
+    cell.classList.remove('is-intro');
+    cell.style.setProperty('--stagger', `${i * staggerMs}ms`);
+  });
+  void app.offsetWidth;
+  cells.forEach(cell => cell.classList.add('is-intro'));
+}
+
+function stripVisibleCells(actIdx) {
+  const cells = [...deckEl.querySelectorAll('.sm-cell')];
+  if (!cells.length) return [];
+  return [0, -1, 1, -2, 2].map(o => cells[(actIdx + o + SIZE) % SIZE]).filter(Boolean);
+}
+
+// Keep every title strictly on ONE crisp line (shrink font-size only if wider than its slot; box height stays locked!).
+const titleBoxEl = copyBlock.querySelector('.sm-title-box');
+const titleEl = copyBlock.querySelector('#sm-title');
+const mottoEl = copyBlock.querySelector('#sm-motto');
+const accEl = copyBlock.querySelector('#sm-acc');
+
+function fitTitle() {
+  titleEl.style.removeProperty('--title-fit');
+  const maxW = titleBoxEl.clientWidth;
+  if (!maxW) return;
+  const sw = titleEl.scrollWidth;
+  if (sw > maxW) {
+    const basePx = parseFloat(d.defaultView.getComputedStyle(titleEl).fontSize) || 40;
+    const fitted = Math.max(15, Math.floor(basePx * (maxW / sw) * 0.98));
+    titleEl.style.setProperty('--title-fit', `${fitted}px`);
+  }
+}
+
+// Generous, fuzzy, softly masked CRT spotlight per layout.
+function updateCRTSpot(snap = false) {
+  if (!crt) return;
+  const w = app.clientWidth || 1, h = app.clientHeight || 1;
+  const minD = Math.min(w, h);
+  let x = 0.5, y = 0.46, rad = minD * 0.58, ellip = 1.08, aimOn = 0;
+
+  if (mode === 'dial') {
+    const r = dialWrap.getBoundingClientRect();
+    x = r.width ? (r.left + r.width / 2) / w : 0.5;
+    y = r.width ? (r.top + r.height / 2) / h : 0.5;
+    rad = (r.width || minD * 0.72) * 0.72;
+    ellip = 1.0;
+    aimOn = 1;
+  } else if (mode === 'strip') {
+    const r = trackWrap.getBoundingClientRect();
+    x = 0.5; y = r.height ? (r.top + r.height * 0.56) / h : 0.44;
+    rad = minD * 0.62; ellip = 1.28;
+  } else if (mode === 'rail') {
+    x = 0.56; y = 0.38; rad = minD * 0.64; ellip = 1.24;
+  } else if (mode === 'console') {
+    x = w < 860 ? 0.5 : 0.24; y = 0.5; rad = minD * 0.62; ellip = 0.98;
+  } else if (mode === 'magnify') {
+    const actCell = deckEl.querySelector('.sm-cell.is-act');
+    const r = actCell?.getBoundingClientRect();
+    x = r?.width ? (r.left + r.width / 2) / w : 0.5;
+    y = 0.46; rad = minD * 0.56; ellip = 1.15;
+  } else if (mode === 'orbit') {
+    const r = deckEl.getBoundingClientRect();
+    x = 0.5; y = r.height ? (r.top + r.height * 0.56) / h : 0.42;
+    rad = minD * 0.58; ellip = 1.3;
+  } else if (mode === 'folio') {
+    const r = singleIconHost.getBoundingClientRect();
+    x = r.width ? (r.left + r.width * 0.55) / w : 0.68;
+    y = r.height ? (r.top + r.height * 0.65) / h : 0.46;
+    rad = minD * 0.56; ellip = 1.08;
+  } else if (mode === 'prism') {
+    const actCell = deckEl.querySelector('.sm-cell.is-act');
+    const r = actCell?.getBoundingClientRect();
+    x = r?.width ? (r.left + r.width / 2) / w : 0.66;
+    y = r?.height ? (r.top + r.height / 2) / h : 0.5;
+    rad = minD * 0.48; ellip = 1.05;
+  } else if (mode === 'reel') {
+    x = 0.67; y = 0.48; rad = minD * 0.56; ellip = 1.14;
+  } else if (mode === 'oblique') {
+    x = 0.30; y = 0.46; rad = minD * 0.58; ellip = 1.08;
+  } else if (mode === 'type') {
+    const r = singleIconHost.getBoundingClientRect();
+    x = r.width ? (r.left + r.width / 2) / w : 0.72;
+    y = r.height ? (r.top + r.height / 2) / h : 0.46;
+    rad = minD * 0.54;
+  } else {
+    x = 0.5; y = 0.44; rad = minD * 0.58; ellip = 1.14;
+  }
+  crt.setSpot(x, y, rad, { ellip, aimOn, snap });
+}
+
+/* ---------- Magnify spring wave ---------- */
+const magState = Array.from({ length: SIZE }, () => ({ s: 1, y: 0, x: 0, ts: 1, ty: 0, tx: 0 }));
+let magRaf = 0;
+
+function setMagnifyTargets(clientX) {
+  const cells = [...deckEl.querySelectorAll('.sm-cell')];
+  if (!cells.length) return;
+  if (clientX == null || still.matches) {
+    magState.forEach(m => { m.ts = 1; m.ty = 0; m.tx = 0; });
+  } else {
+    const rects = cells.map(c => c.getBoundingClientRect());
+    const sigma = Math.max(85, (rects[0]?.width || 72) * 1.9);
+    cells.forEach((_, i) => {
+      const cx = rects[i].left + rects[i].width / 2;
+      const dx = cx - clientX;
+      const g = Math.exp(-(dx * dx) / (2 * sigma * sigma));
+      magState[i].ts = 1 + 0.68 * g;
+      magState[i].ty = -26 * g;
+      magState[i].tx = Math.sign(dx) * 16 * g * (1 - g);
+    });
+  }
+  wakeMagnify();
+}
+
+function wakeMagnify() {
+  if (magRaf || mode !== 'magnify') return;
+  const tick = () => {
+    magRaf = 0;
+    if (mode !== 'magnify') return;
+    const cells = deckEl.querySelectorAll('.sm-cell');
+    let moving = false;
+    cells.forEach((cell, i) => {
+      const m = magState[i];
+      if (!m) return;
+      m.s += (m.ts - m.s) * 0.24;
+      m.y += (m.ty - m.y) * 0.24;
+      m.x += (m.tx - m.x) * 0.24;
+      if (Math.abs(m.ts - m.s) + Math.abs(m.ty - m.y) + Math.abs(m.tx - m.x) > 0.015) moving = true;
+      else { m.s = m.ts; m.y = m.ty; m.x = m.tx; }
+      cell.style.setProperty('--ms', m.s.toFixed(4));
+      cell.style.setProperty('--my', `${m.y.toFixed(1)}px`);
+      cell.style.setProperty('--mx', `${m.x.toFixed(1)}px`);
+      cell.style.setProperty('--mz', String(Math.round(m.s * 10)));
+    });
+    if (moving) magRaf = requestAnimationFrame(tick);
+  };
+  magRaf = requestAnimationFrame(tick);
+}
+
+/* ---------- Orbit 3D planetary ring ---------- */
+const orbit = { angle: 0, dragging: false, startX: 0, startAng: 0, moved: false };
+
+function renderOrbit() {
+  if (mode !== 'orbit') return;
+  const cells = deckEl.querySelectorAll('.sm-cell');
+  const r = deckEl.getBoundingClientRect();
+  const rx = Math.min((r.width || 720) * 0.44, 420);
+  const ry = Math.min((r.height || 260) * 0.38, 146);
+  const tilt = 0.16;
+  cells.forEach((cell, i) => {
+    const a = (i * 2 * Math.PI / SIZE) - orbit.angle;
+    const x0 = Math.sin(a) * rx;
+    const z = Math.cos(a);
+    const y0 = z * ry * 0.84;
+    const x = x0;
+    const y = y0 + x0 * Math.sin(tilt) * 0.18;
+    const depth = (z + 1) * 0.5;
+    const sc = 0.40 + 0.84 * Math.pow(depth, 1.48);
+    const op = 0.22 + 0.78 * Math.pow(depth, 1.35);
+    const blur = depth < 0.42 ? (0.42 - depth) * 3.8 : 0;
+    cell.style.setProperty('--ox', `${x.toFixed(1)}px`);
+    cell.style.setProperty('--oy', `${y.toFixed(1)}px`);
+    cell.style.setProperty('--os', sc.toFixed(3));
+    cell.style.setProperty('--oo', op.toFixed(3));
+    cell.style.setProperty('--ob', `${blur.toFixed(2)}px`);
+    cell.style.setProperty('--oz', String(Math.round(depth * 100)));
+  });
+}
+
+function spinOrbitTo(idx, snap = false) {
+  if (mode !== 'orbit' || idx < 0) return;
+  const target = idx * 2 * Math.PI / SIZE;
+  const delta = Math.atan2(Math.sin(target - orbit.angle), Math.cos(target - orbit.angle));
+  const dest = orbit.angle + delta;
+  if (snap || !gsap || still.matches) {
+    orbit.angle = dest;
+    renderOrbit();
+  } else {
+    gsap.to(orbit, { angle: dest, duration: 0.58, ease: 'expo.out', overwrite: true, onUpdate: renderOrbit });
+  }
+}
+
+/* ---------- Reel vertical curved drum ---------- */
+function updateReel(actIdx) {
+  if (mode !== 'reel') return;
+  const r = deckEl.getBoundingClientRect();
+  const stepY = Math.min(92, Math.max(66, (r.height || 520) * 0.165));
+  deckEl.querySelectorAll('.sm-cell').forEach((cell, i) => {
+    let diff = i - actIdx;
+    if (diff > SIZE / 2) diff -= SIZE;
+    if (diff < -SIZE / 2) diff += SIZE;
+    const prev = prevDiffs.get(cell);
+    const wrapped = prev !== undefined && Math.abs(diff - prev) > 3;
+    prevDiffs.set(cell, diff);
+
+    const abs = Math.abs(diff);
+    if (wrapped) cell.classList.add('is-snap');
+    cell.style.setProperty('--ry', `${(diff * stepY).toFixed(1)}px`);
+    cell.style.setProperty('--rx', `${(abs * abs * -7).toFixed(1)}px`);
+    cell.style.setProperty('--rs', abs === 0 ? '1.16' : abs === 1 ? '0.78' : abs === 2 ? '0.56' : '0.35');
+    cell.style.setProperty('--ro', abs === 0 ? '1' : abs === 1 ? '0.7' : abs === 2 ? '0.34' : '0');
+    cell.style.setProperty('--pe', abs <= 2 ? 'auto' : 'none');
+    if (wrapped) { void cell.offsetWidth; cell.classList.remove('is-snap'); }
+  });
+}
+
+function updateStrip(actIdx) {
+  if (mode !== 'strip') return;
+  deckEl.querySelectorAll('.sm-cell').forEach((cell, i) => {
+    let diff = i - actIdx;
+    if (diff > SIZE / 2) diff -= SIZE;
+    if (diff < -SIZE / 2) diff += SIZE;
+    const prev = prevDiffs.get(cell);
+    const wrapped = prev !== undefined && Math.abs(diff - prev) > 3;
+    prevDiffs.set(cell, diff);
+
+    const abs = Math.abs(diff);
+    if (wrapped) cell.classList.add('is-snap');
+    cell.style.setProperty('--off', String(diff));
+    cell.style.setProperty('--sc', abs === 0 ? '1' : abs === 1 ? '0.66' : abs === 2 ? '0.42' : '0.24');
+    cell.style.setProperty('--op', abs === 0 ? '1' : abs === 1 ? '0.72' : abs === 2 ? '0.34' : '0');
+    cell.style.setProperty('--pe', abs <= 2 ? 'auto' : 'none');
+    if (wrapped) { void cell.offsetWidth; cell.classList.remove('is-snap'); }
+  });
+}
+
+const CENTERED_MODES = new Set(['dial', 'strip', 'magnify', 'orbit', 'arc', 'drift']);
+
+function placeContainers(m) {
+  copyBlock.classList.toggle('is-center', CENTERED_MODES.has(m));
+  if (m === 'dial') {
+    dialMid.append(copyBlock);
+    dialWrap.append(deckEl);
+  } else if (m === 'strip') {
+    copyHost.append(copyBlock);
+    trackWrap.append(deckEl);
+  } else if (m === 'reel') {
+    copyHost.append(copyBlock);
+    stageEl.prepend(deckEl);
+  } else {
+    copyHost.append(copyBlock);
+    stageEl.append(deckEl);
+  }
+}
+
+function mountSingleIcon(toy, animate = true) {
+  const prev = singleIconHost.querySelector('a.toy');
+  if (prev) {
+    prev.dispatchEvent(new d.defaultView.FocusEvent('focusout', { bubbles: true }));
+    prev.dispatchEvent(new d.defaultView.PointerEvent('pointerleave', { bubbles: false }));
+    bin.append(prev);
+  }
+  singleIconHost.innerHTML = '';
+  if (!toy) return;
+  const cell = makeCell(toy, 0);
+  singleIconHost.append(cell);
+  const tile = liveTiles.get(toy.id);
+  if (tile) tile.dispatchEvent(new d.defaultView.FocusEvent('focusin', { bubbles: true }));
+  if (animate) flashCells([cell], 0);
+}
+
+function mountHand() {
+  parkAllTiles();
+  const cells = [];
+  if (!SINGLE_ICON_MODES.has(mode)) {
+    hand.forEach((t, i) => {
+      const cell = makeCell(t, i);
+      deckEl.append(cell);
+      cells.push(cell);
+    });
+  }
+  const listHTML = hand.map(t => `<button type="button" class="sm-ch" data-id="${t.id}">${emHTML(t)}<span>${t.name}</span></button>`).join('');
+  listEl.innerHTML = listHTML;
+  folioListEl.innerHTML = listHTML;
+  marqueeEl.innerHTML = hand.map(t => `<button type="button" class="sm-mword" data-id="${t.id}">${t.name}</button>`).join('');
+
+  if (cells.length) {
+    if (mode === 'strip' || mode === 'reel') flashCells(stripVisibleCells(0), 42);
+    else flashCells(cells, 42);
+  }
+}
+
+function deal() {
+  clearTimeout(dwellTimer);
+  const next = [];
+  while (next.length < SIZE) {
+    if (!queue.length) {
+      let seen = [];
+      try { seen = JSON.parse(localStorage.getItem('stimming.signal.seen') || '[]'); } catch {}
+      const seenSet = new Set(seen);
+      queue = [
+        ...shuffle(ALL.filter(t => !seenSet.has(t.id) && !next.includes(t))),
+        ...shuffle(ALL.filter(t => seenSet.has(t.id) && !next.includes(t))),
+      ];
+    }
+    const pick = queue.shift();
+    if (pick && !next.includes(pick)) next.push(pick);
+  }
+  hand = next;
+  try {
+    const prev = JSON.parse(localStorage.getItem('stimming.signal.seen') || '[]');
+    localStorage.setItem('stimming.signal.seen', JSON.stringify([...hand.map(t => t.id), ...prev].slice(0, SIZE * 3)));
+  } catch {}
+  mountHand();
+  select(hand[0], { immediate: true, fromPointer: false });
+}
+
+function pointHand(idx, snap = false) {
+  if (idx < 0) return;
+  const deg = idx * 360 / SIZE;
+  crt?.aim(deg, snap);
+  if (!gsap) return;
+  if (snap || still.matches) gsap.set(handNeedle, { rotation: deg });
+  else gsap.to(handNeedle, { rotation: `${deg}_short`, duration: 0.65, ease: 'expo.out', overwrite: true });
+}
+
+function select(toy, { immediate = false, fromPointer = false } = {}) {
+  if (!toy) return;
+  const changed = !active || active.id !== toy.id;
+  const prevId = active?.id;
+  active = toy;
+
+  const [c1, c2] = meshColours(toy.accent);
+  app.style.setProperty('--acc-ink', toy.ink || '#fff');
+  app.style.setProperty('--c1', c1);
+  app.style.setProperty('--c2', c2);
+
+  const idx = hand.findIndex(t => t.id === toy.id);
+  if (changed) {
+    if (prevId && liveTiles.has(prevId) && !SINGLE_ICON_MODES.has(mode)) {
+      liveTiles.get(prevId).dispatchEvent(new d.defaultView.FocusEvent('focusout', { bubbles: true }));
+    }
+    if (SINGLE_ICON_MODES.has(mode)) {
+      mountSingleIcon(toy, !immediate);
+    } else if (!fromPointer && liveTiles.has(toy.id)) {
+      const tile = liveTiles.get(toy.id);
+      if (tile.parentElement?.classList.contains('sm-live')) {
+        tile.dispatchEvent(new d.defaultView.FocusEvent('focusin', { bubbles: true }));
+      }
+    }
+
+    titleEl.textContent = toy.name;
+    fitTitle();
+    if (!immediate && !still.matches) {
+      titleEl.classList.remove('is-unfurl');
+      void titleEl.offsetWidth;
+      titleEl.classList.add('is-unfurl');
+    }
+    mottoEl.textContent = toy.tag || '';
+
+    const fl = flagsHTML(toy.access);
+    accEl.innerHTML = (fl ? `<div class="sm-acc-flags">${fl}</div>` : '')
+      + (toy.sound ? `<span class="acc-i acc-snd${immediate ? '' : ' is-flash'}">${glyph('sound')}<b>Best with sound</b></span>` : '');
+
+    techEl.innerHTML = techHTML(toy.tech);
+    app.querySelectorAll('[data-open]').forEach(a => { a.href = rootUrl(`${toy.id}/index.html`); });
+
+    const stillUrl = rootUrl(`shared/stills/${toy.id}.webp`);
+    const loopUrl = LOOPS.has(toy.id) ? rootUrl(`shared/loops/${toy.id}.mp4`) : null;
+    crt?.show(stillUrl, loopUrl);
+  }
+
+  deckEl.classList.toggle('has-act', !!toy);
+  deckEl.querySelectorAll('.sm-cell').forEach(c => c.classList.toggle('is-act', c.dataset.id === toy.id));
+  if (idx >= 0) {
+    pointHand(idx, immediate);
+    updateStrip(idx);
+    updateReel(idx);
+    spinOrbitTo(idx, immediate);
+  }
+  listEl.querySelectorAll('.sm-ch').forEach(b => b.classList.toggle('is-act', b.dataset.id === toy.id));
+  folioListEl.querySelectorAll('.sm-ch').forEach(b => b.classList.toggle('is-act', b.dataset.id === toy.id));
+  marqueeEl.querySelectorAll('.sm-mword').forEach(b => b.classList.toggle('is-act', b.dataset.id === toy.id));
+  sheetGrid.querySelectorAll('.sm-card').forEach(b => b.classList.toggle('is-act', b.dataset.id === toy.id));
+
+  updateCRTSpot(immediate);
+}
+
+function toggleSheet(force) {
+  sheetOpen = typeof force === 'boolean' ? force : !sheetOpen;
+  app.querySelectorAll('[data-sheet="all"]').forEach(b => b.setAttribute('aria-expanded', String(sheetOpen)));
+  glassEl.toggleAttribute('data-on', sheetOpen);
+  sheetEl.hidden = !sheetOpen;
+  crt?.setDim(sheetOpen ? 0.3 : 1);
+  if (sheetOpen) renderSheet();
+}
+
+function renderSheet() {
+  const serKeys = Object.keys(seriesData).filter(k => ALL.some(t => t.series === k));
+  const chips = [['all', `All ${ALL.length}`], ...serKeys.map(k => [k, seriesData[k].name])];
+  sheetHd.innerHTML = chips.map(([k, label], i) => `${i ? '<span class="sl">/</span>' : ''}<button type="button" class="w" data-ser="${k}" aria-pressed="${k === seriesFilter}">${label}</button>`).join('');
+  const list = seriesFilter === 'all' ? ALL : ALL.filter(t => t.series === seriesFilter);
+  sheetGrid.innerHTML = list.map(t => `
+    <button type="button" class="sm-card${active && active.id === t.id ? ' is-act' : ''}" data-id="${t.id}" style="--slot-ink:${t.ink}">
+      <span class="sm-card-ic">${emHTML(t)}</span>
+      <span>${t.name}</span>
+    </button>`).join('');
+}
+
+function setMode(m) {
+  if (!ALL_MODES.some(([k]) => k === m)) return;
+  clearTimeout(dwellTimer);
+  const wasSingle = SINGLE_ICON_MODES.has(mode);
+  const nowSingle = SINGLE_ICON_MODES.has(m);
+  mode = m;
+  app.dataset.m = m;
+  app.querySelectorAll('[data-m]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === m)));
+  placeContainers(m);
+
+  if (m !== 'magnify') setMagnifyTargets(null);
+  prevDiffs.clear();
+
+  const curIdx = Math.max(0, hand.findIndex(t => t.id === active?.id));
+  if (nowSingle) {
+    parkAllTiles();
+    mountSingleIcon(active || hand[0], true);
+  } else if (wasSingle) {
+    mountHand();
+    const cur = hand.includes(active) ? active : hand[0];
+    active = null;
+    select(cur, { immediate: true });
+  } else {
+    const cells = [...deckEl.querySelectorAll('.sm-cell')];
+    if (m === 'strip') { updateStrip(curIdx); flashCells(stripVisibleCells(curIdx), 42); }
+    else if (m === 'reel') { updateReel(curIdx); flashCells(stripVisibleCells(curIdx), 42); }
+    else if (m === 'orbit') { spinOrbitTo(curIdx, true); flashCells(cells, 30); }
+    else { flashCells(cells, 34); }
+    pointHand(curIdx, true);
+  }
+
+  requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
+  const u = new URL(location.href);
+  u.searchParams.set('m', m);
+  history.replaceState(null, '', u);
+}
+
+function step(dir) {
+  const list = sheetOpen ? (seriesFilter === 'all' ? ALL : ALL.filter(t => t.series === seriesFilter)) : hand;
+  if (!list.length) return;
+  const idx = list.findIndex(t => active && t.id === active.id);
+  select(list[(idx < 0 ? 0 : idx + dir + list.length) % list.length]);
+}
+
+/* ---------- Events ---------- */
+app.querySelector('.sm-top-wrap').addEventListener('click', e => {
+  const pt = e.target.closest('[data-parked-toggle]');
+  if (pt) {
+    parkedOpen = !parkedOpen;
+    pt.setAttribute('aria-expanded', String(parkedOpen));
+    parkedRow.hidden = !parkedOpen;
+    requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
+    return;
+  }
+  const b = e.target.closest('[data-m]');
+  if (b) setMode(b.dataset.m);
+});
+
+deckEl.addEventListener('pointerover', e => {
+  if (e.pointerType === 'touch' || mode === 'strip' || mode === 'orbit' || mode === 'reel') return;
+  const c = e.target.closest('.sm-cell');
+  if (!c) return;
+  clearTimeout(dwellTimer);
+  dwellTimer = setTimeout(() => select(byId[c.dataset.id], { fromPointer: true }), mode === 'magnify' ? 18 : 45);
+});
+deckEl.addEventListener('pointermove', e => {
+  if (mode === 'magnify' && e.pointerType !== 'touch') setMagnifyTargets(e.clientX);
+});
+deckEl.addEventListener('pointerleave', () => {
+  clearTimeout(dwellTimer);
+  if (mode === 'magnify') setMagnifyTargets(null);
+});
+deckEl.addEventListener('click', e => {
+  if (orbit.moved) { e.preventDefault(); orbit.moved = false; return; }
+  const c = e.target.closest('.sm-cell');
+  if (!c) return;
+  const toy = byId[c.dataset.id];
+  if (!toy) return;
+  clearTimeout(dwellTimer);
+  if (!active || active.id !== toy.id) {
+    e.preventDefault();
+    select(toy, { fromPointer: true });
+  }
+});
+
+deckEl.addEventListener('pointerdown', e => {
+  if (mode !== 'orbit') return;
+  orbit.dragging = true; orbit.moved = false; orbit.startX = e.clientX; orbit.startAng = orbit.angle;
+  if (gsap) gsap.killTweensOf(orbit);
+  deckEl.setPointerCapture(e.pointerId);
+});
+deckEl.addEventListener('pointermove', e => {
+  if (!orbit.dragging || mode !== 'orbit') return;
+  const dx = e.clientX - orbit.startX;
+  if (Math.abs(dx) > 6) orbit.moved = true;
+  orbit.angle = orbit.startAng - dx * 0.0065;
+  renderOrbit();
+});
+const endOrbitDrag = () => {
+  if (!orbit.dragging) return;
+  orbit.dragging = false;
+  if (!orbit.moved) return;
+  const raw = Math.round(orbit.angle / (2 * Math.PI / SIZE));
+  const idx = ((raw % SIZE) + SIZE) % SIZE;
+  select(hand[idx]);
+};
+deckEl.addEventListener('pointerup', endOrbitDrag);
+deckEl.addEventListener('pointercancel', endOrbitDrag);
+
+trackWrap.addEventListener('click', e => {
+  const s = e.target.closest('[data-step]');
+  if (s) step(Number(s.dataset.step));
+});
+
+const bindWordList = (el, sel) => {
+  el.addEventListener('pointerover', e => {
+    if (e.pointerType === 'touch') return;
+    const b = e.target.closest(sel);
+    if (b) select(byId[b.dataset.id]);
+  });
+  el.addEventListener('click', e => {
+    const b = e.target.closest(sel);
+    if (!b) return;
+    const toy = byId[b.dataset.id];
+    if (!toy) return;
+    if (active && active.id === toy.id && !matchMedia('(pointer: coarse)').matches) {
+      window.top.location.href = rootUrl(`${toy.id}/index.html`);
+    } else {
+      select(toy);
+    }
+  });
+};
+bindWordList(listEl, '.sm-ch');
+bindWordList(folioListEl, '.sm-ch');
+bindWordList(marqueeEl, '.sm-mword');
+bindWordList(sheetGrid, '.sm-card');
+
+sheetHd.addEventListener('click', e => {
+  const s = e.target.closest('[data-ser]');
+  if (s) { seriesFilter = s.dataset.ser; renderSheet(); }
+});
+sheetEl.querySelector('[data-close]').addEventListener('click', () => toggleSheet(false));
+glassEl.addEventListener('click', () => toggleSheet(false));
+
+app.addEventListener('click', e => {
+  if (e.target.closest('[data-act="reroll"]')) { deal(); return; }
+  if (e.target.closest('[data-sheet="all"]')) { toggleSheet(); }
+});
+
+new ResizeObserver(() => {
+  if (mode === 'orbit') renderOrbit();
+  if (mode === 'reel') updateReel(Math.max(0, hand.findIndex(t => t.id === active?.id)));
+  fitTitle();
+  updateCRTSpot(true);
+}).observe(app);
+
+let wheelAt = 0;
+app.addEventListener('wheel', e => {
+  if (sheetOpen || e.target.closest('.sm-list, .sm-marquee')) return;
+  const now = performance.now();
+  if (now - wheelAt < 160) return;
+  if (Math.abs(e.deltaY) < 12 && Math.abs(e.deltaX) < 12) return;
+  wheelAt = now;
+  step((e.deltaY || e.deltaX) > 0 ? 1 : -1);
+}, { passive: true });
+
+const PRIMARY = [...KEPT, ...FRESH];
+const onKey = e => {
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'escape') { toggleSheet(false); return; }
+  const n = Number(k);
+  if (n >= 1 && n <= PRIMARY.length) { setMode(PRIMARY[n - 1][0]); return; }
+  if (k === 'r') { deal(); return; }
+  if (k === 'a') { toggleSheet(); return; }
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); step(1); return; }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); step(-1); return; }
+  if (e.key === 'Enter' && active && !e.target.closest('button, a')) { window.top.location.href = rootUrl(`${active.id}/index.html`); }
+};
+d.addEventListener('keydown', onKey);
+window.addEventListener('keydown', onKey);
+
+placeContainers(mode);
+deal();
+requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
+frame.classList.add('ready');
+</script>
+</body>
+</html>
