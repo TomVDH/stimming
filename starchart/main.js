@@ -20,12 +20,7 @@ import { makeCard, CARD_STYLES } from './card.js';
 import { makeArticle, loadArticles } from './article.js';
 import { cardLines } from './facts.js';
 
-// Dev shows always on this toy (Tom, 2026-11-24): the address gains ?dev before the bar reads it.
-if (!new URLSearchParams(location.search).has('dev')) {
-  const u = new URL(location.href);
-  u.searchParams.set('dev', '');
-  history.replaceState(history.state, '', u);
-}
+// Dev rows show only when ?dev is added manually to the address.
 mark('libs');
 
 const ID = 'starchart';

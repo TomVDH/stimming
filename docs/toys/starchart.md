@@ -276,7 +276,7 @@ The sun is the default: the furnace, and apart from Desert eclipse's white coron
 
 ## Dev (`?dev`)
 
-The Dev button always shows on this toy (Tom, 2026-11-24): the page adds `?dev` to its own address before the bar reads it. Rows that do not act on the object in view grey out. Its rows are stored per browser; 1 is the house default; Reset puts every row back. Dev opens as a small popover at the right, with no dark glass over the stage, so the star stays in view while you tune (Tom, 2026-11-23). The shared Bar v3 Dev popover draws it.
+The Dev button shows only when `?dev` is added manually to the address (Tom, 2026-11-26). Rows that do not act on the object in view grey out. Its rows are stored per browser; 1 is the house default; Reset puts every row back. Dev opens as a small popover at the right, with no dark glass over the stage, so the star stays in view while you tune (Tom, 2026-11-23). The shared Bar v3 Dev popover draws it.
 
 | Group | Rows |
 |---|---|

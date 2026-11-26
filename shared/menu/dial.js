@@ -161,6 +161,57 @@ void main() {
   o = vec4(tube * a, a * 0.92);
 }`;
 
+const LAB_CRT_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+out vec4 o;
+uniform vec2 uRes;
+uniform float uPx, uTime, uStrength;
+
+float hash(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+uint pcg(uint v) { uint t = v * 747796405u + 2891336453u; uint w = ((t >> ((t >> 28u) + 4u)) ^ t) * 277803737u; return (w >> 22u) ^ w; }
+float rnd(vec2 p, float f) { uvec2 u = uvec2(ivec2(p)); return float(pcg(u.x + pcg(u.y + pcg(uint(f))))) / 4294967295.0; }
+float vn(vec2 x, float f) {
+  vec2 i = floor(x), u = fract(x);
+  u = u * u * (3.0 - 2.0 * u);
+  return mix(mix(rnd(i, f), rnd(i + vec2(1.0, 0.0), f), u.x), mix(rnd(i + vec2(0.0, 1.0), f), rnd(i + vec2(1.0, 1.0), f), u.x), u.y);
+}
+
+void main() {
+  vec2 p = (vUv - 0.5) * 2.0;
+  float asp = uRes.x / max(1.0, uRes.y);
+  vec2 pa = vec2(p.x * max(1.0, asp * 0.62), p.y);
+  float r = length(pa);
+
+  float rowPx = max(3.0, floor(3.0 * uPx + 0.5));
+  float m = floor(mod(gl_FragCoord.x / max(1.0, floor(uPx + 0.5)), 3.0));
+  vec3 stripe = vec3(m == 0.0, m == 1.0, m == 2.0) * 0.82 + 0.28;
+  vec3 grille = mix(vec3(1.0), stripe / 0.553, 0.36);
+  float sy = fract(gl_FragCoord.y / rowPx) - 0.5;
+  float scan = mix(1.0, exp(-sy * sy / (0.30 * 0.30)) * 1.38, 0.56);
+
+  vec3 c = vec3(0.009, 0.0095, 0.013) * grille;
+  float away = vUv.y - fract(uTime * 0.085) * 1.3 + 0.15;
+  float band = exp(-away * away / 0.0018);
+  float roll = exp(-pow((fract(vUv.y + uTime * 0.07) - 0.5) * 9.0, 2.0)) * 0.0045;
+  c += (roll + band * 0.0065) * uStrength * grille;
+
+  float field = floor(uTime * 24.0);
+  vec2 gp = mat2(0.89, 0.45, -0.45, 0.89) * gl_FragCoord.xy / uPx;
+  float n = mix(rnd(gl_FragCoord.xy, field), vn(gp / 1.6, field + 7.0), 0.4) - 0.5;
+  float lump = vn(pa * 2.4 + vec2(uTime * 0.05, -uTime * 0.03), 3.0);
+  float heavy = (0.58 + 0.62 * lump) * (1.0 + 0.28 * r * r);
+  float snowAmp = 0.036 * uStrength;
+
+  c *= 1.0 + n * 0.40 * heavy;
+  c += n * snowAmp * heavy * scan;
+  c += step(0.99993, rnd(floor(gl_FragCoord.xy / (2.0 * uPx)), field + 3.0)) * 0.38 * uStrength;
+
+  c *= (1.0 - 0.34 * smoothstep(0.18, 1.05, r * r)) * (1.0 + 0.01 * sin(uTime * 113.0));
+  c = pow(max(c, 0.0), vec3(1.0 / 2.2));
+  o = vec4(c, 1.0);
+}`;
+
 const FOOT_MESH_FS = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -635,6 +686,75 @@ async function makeCRT(host) {
   return { show, setStandby, setPaused, setSpot, aim };
 }
 
+/** @param {HTMLElement} host */
+async function makeLabCRT(host) {
+  const canvas = Object.assign(document.createElement('canvas'), { className: 'sm-lab-crt' });
+  canvas.setAttribute('aria-hidden', 'true');
+  const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
+  if (!gl) return null;
+  host.prepend(canvas);
+
+  const still = matchMedia('(prefers-reduced-motion: reduce)');
+  const tick = () => new Promise(r => setTimeout(r, 16));
+  const FRAME = 1000 / 24 - 2;
+  /** @type {any} */ let P, vao;
+  async function build() {
+    P = (await linked(gl, { crt: program(gl, TRI_VS, LAB_CRT_FS) }, { limit: 500, wait: tick })).crt;
+    vao = gl.createVertexArray();
+  }
+  await build();
+
+  let time = Math.random() * 40, strength = 1, active = false, raf = 0, last = 0, gone = false;
+  function draw() {
+    if (gone || !P) return;
+    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    const w = Math.max(2, Math.round((host.clientWidth || 1) * dpr));
+    const h = Math.max(2, Math.round((host.clientHeight || 1) * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    gl.useProgram(P.p);
+    gl.uniform2f(P.u.uRes, w, h);
+    gl.uniform1f(P.u.uPx, dpr);
+    gl.uniform1f(P.u.uTime, time);
+    gl.uniform1f(P.u.uStrength, strength);
+    gl.viewport(0, 0, w, h);
+    tri(gl, null, vao);
+  }
+  const wake = () => {
+    if (!active || gone || document.hidden) return;
+    draw();
+    if (!still.matches && !raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+  };
+  /** @param {number} now */
+  function frame(now) {
+    if (!active || document.hidden || still.matches) { raf = 0; return; }
+    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
+    raf = 0;
+    const dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
+    time += dt;
+    draw();
+    raf = requestAnimationFrame(frame);
+  }
+  onContextLoss(canvas, {
+    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
+    async restored() { await build(); gone = false; wake(); },
+  });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
+    else wake();
+  });
+  return {
+    draw,
+    /** @param {boolean} on @param {number} [s] */
+    setActive(on, s = 1) {
+      active = on;
+      strength = s;
+      if (!active) { cancelAnimationFrame(raf); raf = 0; return; }
+      wake();
+    },
+  };
+}
+
 /* ---------- Icon cleanup & promoted top-down Harmonograph + glossy Ebru Marbling icons ---------- */
 /** @param {Element | null} svg */
 function stripHarshShadows(svg) {
@@ -1047,6 +1167,25 @@ async function boot() {
   const crt = await makeCRT(app).catch(() => null);
   const topMesh = await makeTopMesh(app).catch(() => null);
   const footMesh = await makeFooterMesh(app, getDialGeom).catch(() => null);
+  /** @type {Awaited<ReturnType<typeof makeLabCRT>> | null} */ let labCrt = null;
+  /** @type {Promise<any> | null} */ let labCrtBoot = null;
+  const syncLabCRT = () => {
+    const on = sheetOpen && seriesFilter === 'lab';
+    if (!on) {
+      delete sheetEl.dataset.labCrt;
+      labCrt?.setActive(false);
+      return;
+    }
+    const strength = labUnlocked ? 0.5 : 1.0;
+    sheetEl.dataset.labCrt = labUnlocked ? 'grid' : 'gate';
+    if (labCrt) { labCrt.setActive(true, strength); return; }
+    if (!labCrtBoot) {
+      labCrtBoot = makeLabCRT(sheetEl).catch(() => null).then(c => {
+        labCrt = c;
+        if (sheetOpen && seriesFilter === 'lab') labCrt?.setActive(true, labUnlocked ? 0.5 : 1.0);
+      });
+    }
+  };
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const shuffle = a => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 
@@ -1326,6 +1465,7 @@ async function boot() {
       + `<button type="button" class="w" data-ser="lab" aria-pressed="${seriesFilter === 'lab'}">Lab${labUnlocked ? ` ${LAB.length}` : ''}</button>`;
 
     if (seriesFilter === 'lab' && !labUnlocked) {
+      syncLabCRT();
       sheetGrid.classList.add('is-gate');
       sheetGrid.innerHTML = `
         <div class="sm-lab-gate" id="sm-lab-gate">
@@ -1361,6 +1501,7 @@ async function boot() {
       return;
     }
 
+    syncLabCRT();
     sheetGrid.classList.remove('is-gate');
     const frag = document.createDocumentFragment();
     if (seriesFilter === 'lab') {
@@ -1405,7 +1546,7 @@ async function boot() {
     sheetEl.hidden = !sheetOpen;
     crt?.setPaused(sheetOpen);
     if (sheetOpen) { clearTimeout(idleTimer); renderSheet(); }
-    else { restoreStageTiles(); if (!isStandby) bumpIdle(); }
+    else { syncLabCRT(); restoreStageTiles(); if (!isStandby) bumpIdle(); }
   }
 
   /** @param {number} dir */
@@ -1479,6 +1620,7 @@ async function boot() {
     updateCRTSpot(true);
     footMesh?.draw?.();
     topMesh?.draw?.();
+    if (sheetOpen && seriesFilter === 'lab') labCrt?.draw?.();
   }).observe(app);
 
   let wheelAt = 0;
@@ -1510,6 +1652,6 @@ async function boot() {
   const urlParams = new URLSearchParams(location.search);
   deal(urlParams.get('toy'));
   if (initView === 'all' || initView === 'lab') toggleSheet(true);
-  setTimeout(() => rerollWrap.setAttribute('data-on', ''), matchMedia('(max-width: 860px)').matches ? 0 : 5000);
+  setTimeout(() => rerollWrap.setAttribute('data-on', ''), matchMedia('(max-width: 860px)').matches ? 400 : 1600);
   requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
 }
