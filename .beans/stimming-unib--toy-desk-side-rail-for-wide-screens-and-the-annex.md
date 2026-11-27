@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-27T18:59:19Z
-updated_at: 2026-11-27T19:19:57Z
+updated_at: 2026-11-27T19:33:40Z
 ---
 
 Tom (2026-11-27): the annex lab needs work and better integration in the toy bench; the desk UI and menu need a clean-up and better wide-screen response. Picks: side rail from 1440 px; annex integrate only, no new title blocks.
@@ -31,3 +31,9 @@ Note: Sheet frames come from annexlab/round2.html, which shows Glass only.
 ## Follow-up fix (2026-11-27)
 
 Sheet frames lay out at 1280 x 800 and scale to the card. At card width the lab fell into its phone layout. Fixed in the Annex tab and annexlab/sheet.html.
+
+## Follow-up fix 2 (2026-11-27)
+
+- desk.css: the main rules apply to body > main only; the annex's own main took the rail grid.
+- annex.js: the annex sizes from its frame (cqw, a container query), not the window.
+- annex.js: a Width row (Fit, 1920, 1440, 1280, 768, 375); wider than the panel zooms out.
