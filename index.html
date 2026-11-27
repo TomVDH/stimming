@@ -2006,7 +2006,8 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     <script>
       // Toys fade in through grain as they enter the view, a few frames apart.
       (() => {
-        if (!('IntersectionObserver' in window)) return;
+        const v = document.documentElement.dataset.view;
+        if (!('IntersectionObserver' in window) || v === 'dial' || v === 'all' || v === 'lab') return;
         document.documentElement.classList.add('js-reveal');
         let batch = 0, batchT = 0;
         const io = new IntersectionObserver(entries => {
@@ -2199,6 +2200,8 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
     <script>
       // The main shelf deals its toys in a fresh order on every load.
       (() => {
+        const v = document.documentElement.dataset.view;
+        if (v === 'dial' || v === 'all' || v === 'lab') return;
         const shelf = document.querySelector('main > .shelf'), items = [...shelf.children];
         for (let i = items.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [items[i], items[j]] = [items[j], items[i]]; }
         shelf.append(...items);
@@ -15089,15 +15092,21 @@ a.toy:hover .obj .series, a.toy:focus-visible .obj .series { rotate: -6deg; scal
   // Every icon is framed to its drawing, so its long side fills 110 of 128 like Pin art.
   // Icons whose drawing runs past the tile (clipped art) keep their frame.
   // Rotated groups inflate getBBox, so an icon can give its frame in data-box.
-  const fitIcon = svg => {
-    const box = svg.dataset.box?.split(' ').map(Number);
-    const b = box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : svg.getBBox(), side = Math.max(b.width, b.height);
-    if (!side || b.x < -2 || b.y < -2 || b.x + b.width > 130 || b.y + b.height > 130) return;
-    const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
-    svg.setAttribute('viewBox', `${(cx - size / 2).toFixed(2)} ${(cy - size / 2).toFixed(2)} ${size.toFixed(2)} ${size.toFixed(2)}`);
-    svg.style.overflow = 'visible';
+  // Batch getBBox reads before writing viewBox attributes to avoid interleaved layout thrash.
+  const fitAll = root => {
+    const writes = [];
+    root.querySelectorAll('.toy .obj svg').forEach(svg => {
+      const box = svg.dataset.box?.split(' ').map(Number);
+      const b = box ? { x: box[0], y: box[1], width: box[2], height: box[3] } : svg.getBBox(), side = Math.max(b.width, b.height);
+      if (!side || b.x < -2 || b.y < -2 || b.x + b.width > 130 || b.y + b.height > 130) return;
+      const size = (side * 128) / 110, cx = b.x + b.width / 2, cy = b.y + b.height / 2;
+      writes.push([svg, `${(cx - size / 2).toFixed(2)} ${(cy - size / 2).toFixed(2)} ${size.toFixed(2)} ${size.toFixed(2)}`]);
+    });
+    for (const [svg, vb] of writes) {
+      svg.setAttribute('viewBox', vb);
+      svg.style.overflow = 'visible';
+    }
   };
-  const fitAll = root => root.querySelectorAll('.toy .obj svg').forEach(fitIcon);
   fitAll(document.querySelector('main'));
 
   // Main icons map the pointer into viewBox units and react to it.

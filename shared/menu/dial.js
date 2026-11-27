@@ -8,12 +8,54 @@ import { injectSprite, flagsHTML, techHTML, glyph, inkOf } from '../access.js';
 import { shotIcon } from '../series/shots.js';
 
 const SIZE = 12;
+const MENU_FPS = 30;
+const MENU_STEP = 1000 / MENU_FPS;
 const LAB_PASS = 'celestible';
 const HEX_PREVIEW_KEYS = ['eastvan', 'goo', 'science', 'maths', 'dark'];
 
 const root = document.documentElement;
 const initView = root.dataset.view;
 const fail = () => { delete root.dataset.view; delete root.dataset.dial; root.classList.remove('js-reveal'); };
+
+// Unified 30 fps frame clock: all menu WebGL layers tick in lockstep and sleep at 0 rAF when idle.
+function createMenuClock() {
+  /** @type {Set<(now: number, dt: number) => boolean>} */
+  const tasks = new Set();
+  let raf = 0, last = 0;
+  /** @param {number} now */
+  function tick(now) {
+    raf = 0;
+    if (document.hidden || !tasks.size) { last = 0; return; }
+    if (last && now - last < MENU_STEP - 2) {
+      raf = requestAnimationFrame(tick);
+      return;
+    }
+    const dt = last ? Math.min((now - last) / 1000, 0.1) : 1 / MENU_FPS;
+    last = now;
+    for (const fn of [...tasks]) {
+      if (!fn(now, dt)) tasks.delete(fn);
+    }
+    if (tasks.size && !document.hidden) raf = requestAnimationFrame(tick);
+    else last = 0;
+  }
+  const poke = () => {
+    if (!raf && tasks.size && !document.hidden) raf = requestAnimationFrame(tick);
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { cancelAnimationFrame(raf); raf = 0; last = 0; }
+    else poke();
+  });
+  return {
+    /** @param {(now: number, dt: number) => boolean} fn */
+    add(fn) { tasks.add(fn); poke(); },
+    /** @param {(now: number, dt: number) => boolean} fn */
+    remove(fn) {
+      tasks.delete(fn);
+      if (!tasks.size) { cancelAnimationFrame(raf); raf = 0; last = 0; }
+    },
+  };
+}
+const menuClock = createMenuClock();
 
 if (initView === 'dial' || initView === 'all' || initView === 'lab') {
   boot().catch(e => { fail(); console.error('Signal Dial:', e); });
@@ -318,7 +360,7 @@ async function makeFooterMesh(host, getDial) {
 
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const tick = () => new Promise(r => setTimeout(r, 16));
-  const TAIL = 2.6, FRAME = 1000 / 30 - 2;
+  const TAIL = 2.6, SCALE = 0.4;
   /** @type {any} */ let P, vao;
   async function build() {
     P = (await linked(gl, { mesh: program(gl, TRI_VS, FOOT_MESH_FS) }, { limit: 500, wait: tick })).mesh;
@@ -327,61 +369,70 @@ async function makeFooterMesh(host, getDial) {
   await build();
 
   const ptr = { x: 0.5, y: 0.2 }, want = { x: 0.5, y: 0.2 };
-  let time = Math.random() * 40, stir = 0, until = 0, raf = 0, last = 0, gone = false;
+  let time = Math.random() * 40, stir = 0, until = 0, paused = false, gone = false;
+  let box = { left: 0, top: 0, width: 1, height: 1 };
+  function measure() {
+    const r = canvas.getBoundingClientRect();
+    box = { left: r.left, top: r.top, width: r.width || 1, height: r.height || 1 };
+  }
+  measure();
   function draw() {
-    if (gone || !P) return;
-    const dpr = Math.min(devicePixelRatio || 1, 1.5);
-    const w = Math.max(2, Math.round(canvas.clientWidth * dpr)), h = Math.max(2, Math.round(canvas.clientHeight * dpr));
+    if (gone || !P || paused) return;
+    const w = Math.max(2, Math.round(box.width * SCALE)), h = Math.max(2, Math.round(box.height * SCALE));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    const cr = canvas.getBoundingClientRect();
     const g = getDial();
     gl.useProgram(P.p);
     gl.uniform2f(P.u.uRes, w, h);
     gl.uniform2f(P.u.uPtr, ptr.x, ptr.y);
     gl.uniform3f(P.u.uDial, g[0], g[1], g[2]);
-    gl.uniform4f(P.u.uBox, cr.left, cr.top, cr.width || 1, cr.height || 1);
+    gl.uniform4f(P.u.uBox, box.left, box.top, box.width, box.height);
     gl.uniform1f(P.u.uTime, time);
     gl.uniform1f(P.u.uStir, stir);
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     tri(gl, null, vao);
   }
-  /** @param {number} now */
-  function frame(now) {
-    if (document.hidden) { raf = 0; return; }
-    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
-    raf = 0;
-    const dt = Math.min((now - last) / 1000, 0.1), awake = now < until;
-    last = now;
+  /** @param {number} now @param {number} dt */
+  function step(now, dt) {
+    if (gone || paused || document.hidden) return false;
+    const awake = now < until;
     stir += ((awake ? 1 : 0) - stir) * (1 - Math.exp(-dt * 2.2));
     time += dt * (0.25 + 0.75 * stir);
     ptr.x += (want.x - ptr.x) * (1 - Math.exp(-dt * 4));
     ptr.y += (want.y - ptr.y) * (1 - Math.exp(-dt * 4));
     draw();
-    if (awake || stir > 0.01) raf = requestAnimationFrame(frame);
+    return awake || stir > 0.01;
   }
   const wake = () => {
+    if (paused || gone || still.matches) return;
     until = performance.now() + TAIL * 1000;
-    if (!raf && !gone && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+    menuClock.add(step);
   };
   if (still.matches) draw();
   else {
     document.addEventListener('pointermove', e => {
-      const r = canvas.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      want.x = (e.clientX - r.left) / r.width;
-      want.y = 1 - (e.clientY - r.top) / r.height;
+      if (paused || !box.width || !box.height) return;
+      want.x = (e.clientX - box.left) / box.width;
+      want.y = 1 - (e.clientY - box.top) / box.height;
       wake();
     }, { passive: true });
     wake();
   }
-  new ResizeObserver(draw).observe(canvas);
+  new ResizeObserver(() => { measure(); draw(); }).observe(canvas);
   onContextLoss(canvas, {
-    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
-    async restored() { await build(); gone = false; draw(); },
+    lost() { gone = true; menuClock.remove(step); },
+    async restored() { await build(); gone = false; measure(); draw(); },
   });
   host.setAttribute('data-foot-mesh', '');
-  return { draw };
+  return {
+    draw() { measure(); draw(); },
+    /** @param {boolean} on */
+    setPaused(on) {
+      paused = on;
+      if (paused) menuClock.remove(step);
+      else { measure(); draw(); }
+    },
+  };
 }
 
 /** @param {HTMLElement} host */
@@ -394,7 +445,7 @@ async function makeTopMesh(host) {
 
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const tick = () => new Promise(r => setTimeout(r, 16));
-  const SCALE = 0.38, FRAME = 1000 / 30 - 2;
+  const SCALE = 0.25;
   /** @type {any} */ let P, vao;
   async function build() {
     P = (await linked(gl, { mesh: program(gl, TRI_VS, TOP_MESH_FS) }, { limit: 500, wait: tick })).mesh;
@@ -404,11 +455,11 @@ async function makeTopMesh(host) {
 
   const cur = [[0.72, 0.16, 285], [0.62, 0.15, 325], [0.76, 0.14, 245]];
   const tgt = [[0.72, 0.16, 285], [0.62, 0.15, 325], [0.76, 0.14, 245]];
-  let time = Math.random() * 20, raf = 0, last = 0, until = 0, gone = false;
+  let time = Math.random() * 20, until = 0, paused = false, gone = false;
 
   const hDiff = (to, from) => ((to - from + 540) % 360) - 180;
   function draw() {
-    if (gone || !P) return;
+    if (gone || !P || paused) return;
     const w = Math.max(2, Math.round(canvas.clientWidth * SCALE)), h = Math.max(2, Math.round(canvas.clientHeight * SCALE));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
     gl.useProgram(P.p);
@@ -421,13 +472,9 @@ async function makeTopMesh(host) {
     gl.clear(gl.COLOR_BUFFER_BIT);
     tri(gl, null, vao);
   }
-  /** @param {number} now */
-  function frame(now) {
-    if (document.hidden) { raf = 0; return; }
-    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
-    raf = 0;
-    const dt = Math.min((now - last) / 1000, 0.1);
-    last = now;
+  /** @param {number} now @param {number} dt */
+  function step(now, dt) {
+    if (gone || paused || document.hidden) return false;
     const k = 1 - Math.exp(-dt * 2.1);
     let err = 0;
     for (let i = 0; i < 3; i++) {
@@ -440,7 +487,7 @@ async function makeTopMesh(host) {
     const drifting = now < until;
     if (drifting || err > 0.004) time += dt * 0.65;
     draw();
-    if (!still.matches && (drifting || err > 0.004)) raf = requestAnimationFrame(frame);
+    return !still.matches && (drifting || err > 0.004);
   }
   /** @param {number[][]} lchs @param {boolean} [snap] */
   function setColours(lchs, snap = false) {
@@ -450,16 +497,25 @@ async function makeTopMesh(host) {
     }
     if (snap || still.matches) { draw(); return; }
     until = performance.now() + 2400;
-    if (!raf && !gone && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); }
+    if (!paused && !gone) menuClock.add(step);
   }
   new ResizeObserver(draw).observe(canvas);
   onContextLoss(canvas, {
-    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
+    lost() { gone = true; menuClock.remove(step); },
     async restored() { await build(); gone = false; draw(); },
   });
   host.setAttribute('data-top-mesh', '');
   draw();
-  return { setColours, draw };
+  return {
+    setColours,
+    draw,
+    /** @param {boolean} on */
+    setPaused(on) {
+      paused = on;
+      if (paused) menuClock.remove(step);
+      else draw();
+    },
+  };
 }
 
 /** @param {HTMLElement} host */
@@ -472,14 +528,17 @@ async function makeCRT(host) {
 
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const tick = () => new Promise(r => setTimeout(r, 16));
+  const MAX_BUF = 960, STILL_CACHE_MAX = 18, VID_DWELL_MS = 180;
   /** @type {any} */ let P, A, C, vao, pics;
   /** @type {any[]} */ let glow = [];
   let has = [0, 0], imgSz = [[512, 512], [512, 512]];
-  /** @type {HTMLVideoElement | null} */ let vid = null;
-  let src = '', raf = 0, last = 0, drawn = 0, moved = 0, time = 0, mix = 0, power = 1, powerTo = 1, dim = 0, dimTo = 0;
-  let spotX = 0.5, spotY = 0.5, spotToX = 0.5, spotToY = 0.5, spotRad = 460, spotRadTo = 460;
-  let aimNow = 0, aimTo = 0, aimBlend = 0, aimBlendTo = 0, paused = false, fresh = true, gone = false;
-  const FRAME = 1000 / 30 - 2;
+  /** @type {Map<string, HTMLImageElement>} */ const stillCache = new Map();
+  const vid = document.createElement('video');
+  vid.muted = true; vid.loop = true; vid.playsInline = true; vid.preload = 'auto';
+  let vidActive = false, vidTimer = 0, lastVidTime = -1;
+  let src = '', drawn = 0, moved = 0, time = 0, mix = 0, power = 1, powerTo = 1, dim = 0, dimTo = 0;
+  let spotCx = 0, spotCy = 0, spotRad = 420, boxSide = 860;
+  let aimNow = 0, aimTo = 0, aimBlend = 0, aimBlendTo = 0, paused = false, sleeping = false, fresh = true, gone = false;
   const ease = t => 1 - Math.pow(1 - t, 4);
 
   async function build() {
@@ -489,7 +548,7 @@ async function makeCRT(host) {
     const blank = () => {
       const t = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, t);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
@@ -501,32 +560,72 @@ async function makeCRT(host) {
   }
   await build();
 
-  const drop = () => { if (vid) { vid.pause(); vid.removeAttribute('src'); vid.load(); vid = null; } };
+  const dropVideo = () => {
+    clearTimeout(vidTimer); vidTimer = 0;
+    if (vidActive || vid.getAttribute('src')) {
+      vidActive = false;
+      lastVidTime = -1;
+      vid.pause();
+      vid.removeAttribute('src');
+      vid.load();
+    }
+  };
   const settle = () => { pics.reverse(); imgSz.reverse(); has = [1, 0]; mix = 0; };
+
+  /** @param {string} url @param {HTMLImageElement} im */
+  function cacheStill(url, im) {
+    stillCache.delete(url);
+    stillCache.set(url, im);
+    if (stillCache.size > STILL_CACHE_MAX) {
+      const oldest = stillCache.keys().next().value;
+      if (oldest) stillCache.delete(oldest);
+    }
+  }
+
+  /** @param {string} url */
+  function preloadStill(url) {
+    if (stillCache.has(url)) return;
+    const im = new Image();
+    im.decoding = 'async';
+    im.onload = () => cacheStill(url, im);
+    im.src = url;
+  }
+
+  function applyBox() {
+    boxSide = Math.max(64, Math.ceil(spotRad * 2.04));
+    canvas.style.left = `${Math.round(spotCx - boxSide * 0.5)}px`;
+    canvas.style.top = `${Math.round(spotCy - boxSide * 0.5)}px`;
+    canvas.style.width = `${boxSide}px`;
+    canvas.style.height = `${boxSide}px`;
+  }
 
   function draw() {
     if (gone || !P) return;
-    const dpr = Math.min(devicePixelRatio || 1, 1.5);
-    const w = Math.max(2, Math.round((host.clientWidth || 1) * dpr));
-    const h = Math.max(2, Math.round((host.clientHeight || 1) * dpr));
+    const dpr = Math.min(devicePixelRatio || 1, 1.25);
+    const w = Math.max(2, Math.min(MAX_BUF, Math.round(boxSide * dpr)));
+    const h = w;
+    const px = w / Math.max(1, boxSide);
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    if (!glow.length || glow[0].w !== w || glow[0].h !== h) {
+    const standbyQuiet = dim < 0.002 && has[1] === 0 && power === powerTo && (performance.now() - moved > 450);
+    const needGlow = standbyQuiet ? 1 : 3;
+    if (!glow.length || glow[0].w !== w || glow[0].h !== h || (!standbyQuiet && glow.length < 3)) {
       glow.forEach(t => free(gl, t));
-      glow = [0, 1, 2].map(() => target(gl, w, h, { format: gl.RGBA8 }));
+      glow = Array.from({ length: Math.max(needGlow, 3) }, () => target(gl, w, h, { format: gl.RGBA8 }));
       fresh = true;
     }
     const kick = has[1] ? Math.pow(Math.max(0, 1 - mix / 0.36), 2) : 0;
+    const radPx = spotRad * px;
 
     gl.useProgram(P.p);
     [[pics[0], P.u.uA], [pics[1], P.u.uB]].forEach(([t, u], i) => {
       gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, t); gl.uniform1i(u, i);
     });
-    gl.uniform1f(P.u.uPx, dpr);
+    gl.uniform1f(P.u.uPx, px);
     gl.uniform2f(P.u.uRes, w, h);
     gl.uniform2f(P.u.uImgA, imgSz[0][0], imgSz[0][1]);
     gl.uniform2f(P.u.uImgB, imgSz[1][0], imgSz[1][1]);
-    gl.uniform2f(P.u.uSpot, spotX, spotY);
-    gl.uniform1f(P.u.uSpotRad, spotRad * dpr);
+    gl.uniform2f(P.u.uSpot, 0.5, 0.5);
+    gl.uniform1f(P.u.uSpotRad, radPx);
     gl.uniform1f(P.u.uPower, 1 - Math.pow(1 - power, 3));
     gl.uniform1f(P.u.uMix, ease(mix));
     gl.uniform1f(P.u.uKick, kick);
@@ -539,18 +638,22 @@ async function makeCRT(host) {
     gl.bindFramebuffer(gl.FRAMEBUFFER, glow[0].fb);
     tri(gl, glow[0], vao);
 
-    const off = fresh || still.matches;
-    gl.useProgram(A.p);
-    bind(gl, A, 'uNow', 0, glow[0]);
-    bind(gl, A, 'uWas', 1, glow[1]);
-    gl.uniform3f(A.u.uKeep, ...(/** @type {[number, number, number]} */ (GLOW.map(t => (off ? 0 : Math.exp(-gap / t))))));
-    tri(gl, glow[2], vao);
+    let srcTarget = glow[0];
+    if (!standbyQuiet) {
+      const off = fresh || still.matches;
+      gl.useProgram(A.p);
+      bind(gl, A, 'uNow', 0, glow[0]);
+      bind(gl, A, 'uWas', 1, glow[1]);
+      gl.uniform3f(A.u.uKeep, ...(/** @type {[number, number, number]} */ (GLOW.map(t => (off ? 0 : Math.exp(-gap / t))))));
+      tri(gl, glow[2], vao);
+      srcTarget = glow[2];
+    }
 
     gl.useProgram(C.p);
-    bind(gl, C, 'uTex', 0, glow[2]);
+    bind(gl, C, 'uTex', 0, srcTarget);
     gl.uniform2f(C.u.uRes, w, h);
-    gl.uniform2f(C.u.uSpot, spotX, spotY);
-    gl.uniform1f(C.u.uSpotRad, spotRad * dpr);
+    gl.uniform2f(C.u.uSpot, 0.5, 0.5);
+    gl.uniform1f(C.u.uSpotRad, radPx);
     gl.uniform1f(C.u.uAim, aimNow);
     gl.uniform1f(C.u.uUseAim, aimBlend);
     gl.uniform1f(C.u.uEllipX, 1);
@@ -561,19 +664,15 @@ async function makeCRT(host) {
     gl.bindVertexArray(vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-    [glow[1], glow[2]] = [glow[2], glow[1]];
+    if (!standbyQuiet) [glow[1], glow[2]] = [glow[2], glow[1]];
     fresh = false;
     drawn = now;
   }
 
-  const wake = () => { if (!raf && !gone && !paused && !document.hidden) { last = performance.now(); raf = requestAnimationFrame(frame); } };
-  /** @param {number} now */
-  function frame(now) {
-    if (document.hidden || paused) { raf = 0; return; }
-    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
-    raf = 0;
-    const dt = Math.min((now - last) / 1000, 0.1), rolling = has[1] === 1;
-    last = now;
+  /** @param {number} now @param {number} dt */
+  function step(now, dt) {
+    if (document.hidden || paused || gone || sleeping) return false;
+    const rolling = has[1] === 1;
     if (rolling) mix = Math.min(1, mix + dt / CHANGE);
     const opening = power !== powerTo;
     if (opening) power = Math.min(powerTo, power + dt / POWER);
@@ -582,33 +681,56 @@ async function makeCRT(host) {
     const blendingAim = Math.abs(aimBlendTo - aimBlend) > 0.004;
     if (blendingAim) aimBlend += (aimBlendTo - aimBlend) * Math.min(1, dt * 5.0); else aimBlend = aimBlendTo;
 
-    const k = Math.min(1, dt * 11);
-    const movingSpot = Math.abs(spotToX - spotX) + Math.abs(spotToY - spotY) > 0.0015 || Math.abs(spotRadTo - spotRad) > 0.5;
-    if (movingSpot && !still.matches) {
-      spotX += (spotToX - spotX) * k;
-      spotY += (spotToY - spotY) * k;
-      spotRad += (spotRadTo - spotRad) * k;
-    } else { spotX = spotToX; spotY = spotToY; spotRad = spotRadTo; }
-
     const dAim = Math.atan2(Math.sin(aimTo - aimNow), Math.cos(aimTo - aimNow));
     const aiming = Math.abs(dAim) > 0.004;
     if (aiming) aimNow += dAim * Math.min(1, dt * 12); else aimNow = aimTo;
 
     if (!still.matches) time += dt;
-    const playing = vid !== null && vid.readyState >= 2 && !vid.paused;
-    if (playing && vid) {
+    const playing = vidActive && vid.readyState >= 2 && !vid.paused;
+    if (playing && vid.currentTime !== lastVidTime) {
+      lastVidTime = vid.currentTime;
       const slot = has[1] ? 1 : 0;
       imgSz[slot] = [vid.videoWidth || 512, vid.videoHeight || 512];
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, pics[slot]);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid);
-      gl.generateMipmap(gl.TEXTURE_2D);
     }
-    if (rolling || opening || dimming || blendingAim || movingSpot || aiming || playing) moved = now;
+    if (rolling || opening || dimming || blendingAim || aiming || playing) moved = now;
     const fading = !still.matches && now - moved < 350;
-    if (rolling || opening || dimming || blendingAim || movingSpot || aiming || playing || fading || now - drawn > 48) draw();
+    if (rolling || opening || dimming || blendingAim || aiming || playing || fading || now - drawn > 48) draw();
     if (rolling && mix >= 1) settle();
-    if (!still.matches || rolling || opening || dimming || blendingAim || movingSpot || aiming) raf = requestAnimationFrame(frame);
+    return !still.matches || rolling || opening || dimming || blendingAim || aiming;
+  }
+
+  const wake = () => { if (!gone && !paused && !sleeping && !document.hidden) menuClock.add(step); };
+
+  /** @param {HTMLImageElement} im @param {string} url @param {string | null} loopUrl */
+  function commitImage(im, url, loopUrl) {
+    if (url !== src || gone) return;
+    if (has[1] && ease(mix) > 0.5) settle();
+    imgSz[1] = [im.naturalWidth || 512, im.naturalHeight || 512];
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, pics[1]);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
+    if (!has[0] && !has[1]) { power = still.matches ? 1 : 0; powerTo = 1; }
+    has[1] = 1; mix = 0;
+    if (still.matches) { mix = 1; dim = dimTo; aimBlend = aimBlendTo; draw(); settle(); return; }
+    wake();
+    if (loopUrl && dimTo > 0.5 && !paused && !sleeping) {
+      vidTimer = window.setTimeout(() => {
+        if (url !== src || gone || dimTo < 0.5 || paused || sleeping) return;
+        vidActive = false;
+        lastVidTime = -1;
+        vid.onloadeddata = () => {
+          if (url !== src || gone || dimTo < 0.5 || paused || sleeping) return;
+          vidActive = true;
+          vid.play().catch(() => {});
+          wake();
+        };
+        vid.src = loopUrl;
+        vid.load();
+      }, VID_DWELL_MS);
+    }
   }
 
   /** @param {string} url @param {string | null} loopUrl */
@@ -617,32 +739,17 @@ async function makeCRT(host) {
     src = url;
     dimTo = 1;
     aimBlendTo = 1;
-    drop();
+    sleeping = false;
+    dropVideo();
+    const cached = stillCache.get(url);
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      cacheStill(url, cached);
+      commitImage(cached, url, loopUrl);
+      return;
+    }
     const im = new Image();
-    im.onload = () => {
-      if (url !== src || gone) return;
-      if (has[1] && ease(mix) > 0.5) settle();
-      imgSz[1] = [im.naturalWidth || 512, im.naturalHeight || 512];
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, pics[1]);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, im);
-      gl.generateMipmap(gl.TEXTURE_2D);
-      if (!has[0] && !has[1]) { power = still.matches ? 1 : 0; powerTo = 1; }
-      has[1] = 1; mix = 0;
-      if (still.matches) { mix = 1; dim = dimTo; aimBlend = aimBlendTo; draw(); settle(); return; }
-      wake();
-      if (loopUrl && dimTo > 0.5) {
-        const v = document.createElement('video');
-        v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'auto';
-        v.addEventListener('loadeddata', () => {
-          if (url !== src || gone || dimTo < 0.5) return;
-          vid = v;
-          v.play().catch(() => {});
-          wake();
-        }, { once: true });
-        v.src = loopUrl;
-      }
-    };
+    im.decoding = 'async';
+    im.onload = () => { cacheStill(url, im); commitImage(im, url, loopUrl); };
     im.src = url;
   }
 
@@ -650,20 +757,30 @@ async function makeCRT(host) {
   function setStandby(on, snap = false) {
     dimTo = on ? 0 : 1;
     aimBlendTo = on ? 0 : 1;
-    if (on) { drop(); src = ''; }
+    if (on) { dropVideo(); src = ''; }
     if (snap || still.matches) { dim = dimTo; aimBlend = aimBlendTo; draw(); }
     wake();
   }
   /** @param {boolean} on */
   function setPaused(on) {
     paused = on;
-    if (paused) { if (vid) vid.pause(); cancelAnimationFrame(raf); raf = 0; }
-    else { if (vid && dimTo > 0.5) vid.play().catch(() => {}); wake(); }
+    if (paused) { if (vidActive) vid.pause(); clearTimeout(vidTimer); menuClock.remove(step); }
+    else { if (vidActive && dimTo > 0.5) vid.play().catch(() => {}); wake(); }
   }
-  /** @param {number} x @param {number} y @param {number} rad @param {boolean} [snap] */
-  function setSpot(x, y, rad, snap = false) {
-    spotToX = x; spotToY = y; spotRadTo = rad;
-    if (snap || still.matches) { spotX = x; spotY = y; spotRad = rad; fresh = true; draw(); }
+  /** @param {boolean} on */
+  function setSleeping(on) {
+    if (sleeping === on) return;
+    sleeping = on;
+    if (sleeping) { dropVideo(); menuClock.remove(step); }
+    else wake();
+  }
+  /** @param {number} cx @param {number} cy @param {number} rad */
+  function setSpot(cx, cy, rad) {
+    if (Math.abs(cx - spotCx) < 0.5 && Math.abs(cy - spotCy) < 0.5 && Math.abs(rad - spotRad) < 0.5) return;
+    spotCx = cx; spotCy = cy; spotRad = rad;
+    applyBox();
+    fresh = true;
+    draw();
     wake();
   }
   /** @param {number} deg @param {boolean} [snap] */
@@ -672,18 +789,18 @@ async function makeCRT(host) {
     if (snap || still.matches) aimNow = aimTo;
     wake();
   }
-  new ResizeObserver(() => draw()).observe(host);
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { if (vid) vid.pause(); cancelAnimationFrame(raf); raf = 0; }
-    else if (!paused) { if (vid && dimTo > 0.5) vid.play().catch(() => {}); wake(); }
+    if (document.hidden) { if (vidActive) vid.pause(); }
+    else if (!paused && !sleeping && vidActive && dimTo > 0.5) vid.play().catch(() => {});
   });
   onContextLoss(canvas, {
-    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; drop(); },
+    lost() { gone = true; menuClock.remove(step); dropVideo(); },
     async restored() { await build(); gone = false; const a = src; src = ''; if (a) show(a, null); else draw(); },
   });
+  applyBox();
   draw();
   if (!still.matches) wake();
-  return { show, setStandby, setPaused, setSpot, aim };
+  return { show, preloadStill, setStandby, setPaused, setSleeping, setSpot, aim };
 }
 
 /** @param {HTMLElement} host */
@@ -696,7 +813,6 @@ async function makeLabCRT(host) {
 
   const still = matchMedia('(prefers-reduced-motion: reduce)');
   const tick = () => new Promise(r => setTimeout(r, 16));
-  const FRAME = 1000 / 24 - 2;
   /** @type {any} */ let P, vao;
   async function build() {
     P = (await linked(gl, { crt: program(gl, TRI_VS, LAB_CRT_FS) }, { limit: 500, wait: tick })).crt;
@@ -704,10 +820,10 @@ async function makeLabCRT(host) {
   }
   await build();
 
-  let time = Math.random() * 40, strength = 1, active = false, raf = 0, last = 0, gone = false;
+  let time = Math.random() * 40, strength = 1, active = false, gone = false;
   function draw() {
     if (gone || !P) return;
-    const dpr = Math.min(devicePixelRatio || 1, 1.5);
+    const dpr = 1;
     const w = Math.max(2, Math.round((host.clientWidth || 1) * dpr));
     const h = Math.max(2, Math.round((host.clientHeight || 1) * dpr));
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
@@ -719,29 +835,21 @@ async function makeLabCRT(host) {
     gl.viewport(0, 0, w, h);
     tri(gl, null, vao);
   }
+  /** @param {number} _now @param {number} dt */
+  function step(_now, dt) {
+    if (!active || gone || document.hidden || still.matches) return false;
+    time += dt;
+    draw();
+    return true;
+  }
   const wake = () => {
     if (!active || gone || document.hidden) return;
     draw();
-    if (!still.matches && !raf) { last = performance.now(); raf = requestAnimationFrame(frame); }
+    if (!still.matches) menuClock.add(step);
   };
-  /** @param {number} now */
-  function frame(now) {
-    if (!active || document.hidden || still.matches) { raf = 0; return; }
-    if (now - last < FRAME) { raf = requestAnimationFrame(frame); return; }
-    raf = 0;
-    const dt = Math.min((now - last) / 1000, 0.1);
-    last = now;
-    time += dt;
-    draw();
-    raf = requestAnimationFrame(frame);
-  }
   onContextLoss(canvas, {
-    lost() { gone = true; cancelAnimationFrame(raf); raf = 0; },
+    lost() { gone = true; menuClock.remove(step); },
     async restored() { await build(); gone = false; wake(); },
-  });
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) { cancelAnimationFrame(raf); raf = 0; }
-    else wake();
   });
   return {
     draw,
@@ -749,7 +857,7 @@ async function makeLabCRT(host) {
     setActive(on, s = 1) {
       active = on;
       strength = s;
-      if (!active) { cancelAnimationFrame(raf); raf = 0; return; }
+      if (!active) { menuClock.remove(step); return; }
       wake();
     },
   };
@@ -1011,6 +1119,10 @@ function upgradeMarbleIcon(a, gsap) {
 /* ---------- Boot Signal Dial directly on index.html ---------- */
 async function boot() {
   const gsap = /** @type {any} */ (window).gsap;
+  if (gsap?.ticker) {
+    gsap.ticker.fps(MENU_FPS);
+    gsap.ticker.lagSmoothing(500, Math.round(MENU_STEP));
+  }
   const [toysData, seriesData, loopsList] = await Promise.all([
     fetch('toys.json').then(r => r.json()),
     fetch('series.json').then(r => r.json()),
@@ -1020,27 +1132,40 @@ async function boot() {
   const rootUrl = p => new URL(p, document.baseURI).href;
 
   root.classList.remove('js-reveal');
-  const bin = Object.assign(document.createElement('div'), { className: 'sm-bin' });
-  document.body.append(bin);
 
   /** @type {Map<string, HTMLAnchorElement>} */ const liveTiles = new Map();
   /** @type {Map<string, HTMLAnchorElement>} */ const labTiles = new Map();
   /** @type {Map<string, number[]>} */ const tileViewBox = new Map();
+  /** @type {Set<string>} */ const preparedTiles = new Set();
   /** @type {any[]} */ const LAB = [];
+
+  // Hold unmounted tiles off-DOM; prepare each SVG lazily on first mount.
+  /** @param {string} id @param {HTMLAnchorElement | undefined} a */
+  function prepareTile(id, a) {
+    if (!a || preparedTiles.has(id)) return;
+    preparedTiles.add(id);
+    if (id === 'harmono') upgradeHarmonoIcon(a, gsap);
+    if (id === 'marble') upgradeMarbleIcon(a, gsap);
+    const svg = a.querySelector('.obj svg');
+    stripHarshShadows(svg);
+    const vb = svg?.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
+    if (vb && vb.length === 4 && vb[2] > 0) tileViewBox.set(id, vb);
+  }
+
+  /** @param {HTMLAnchorElement} a */
+  function detachTile(a) {
+    a.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    a.dispatchEvent(new PointerEvent('pointerleave', { bubbles: false }));
+    a.remove();
+  }
 
   document.querySelectorAll('main .shelf .toy').forEach(node => {
     const a = /** @type {HTMLAnchorElement} */ (node);
     if (a.closest('section.lab')) return;
     if (!toysData[a.id] || toysData[a.id].number == null) return;
     a.classList.add('is-in');
-    if (a.id === 'harmono') upgradeHarmonoIcon(a, gsap);
-    if (a.id === 'marble') upgradeMarbleIcon(a, gsap);
-    const svg = a.querySelector('.obj svg');
-    const vb = svg?.getAttribute('viewBox')?.trim().split(/[\s,]+/).map(Number);
-    if (vb && vb.length === 4 && vb[2] > 0) tileViewBox.set(a.id, vb);
-    stripHarshShadows(svg);
     liveTiles.set(a.id, a);
-    bin.append(a);
+    a.remove();
   });
 
   document.querySelectorAll('section.lab .shelf .toy').forEach(node => {
@@ -1052,10 +1177,9 @@ async function boot() {
     const rawName = labelNode ? [...labelNode.childNodes].filter(c => c.nodeType === 3).map(c => c.textContent).join('').trim() : id;
     const stage = labelNode?.querySelector('.alpha') ? 'Alpha' : labelNode?.querySelector('.beta') ? 'Beta' : '';
     a.classList.add('is-in');
-    stripHarshShadows(a.querySelector('.obj svg'));
     labTiles.set(id, a);
     LAB.push({ id, ...t, name: t.name || rawName, stage, href: a.getAttribute('href') || `${id}/index.html`, isLab: true });
-    bin.append(a);
+    a.remove();
   });
   const labById = Object.fromEntries(LAB.map(t => [t.id, t]));
 
@@ -1160,10 +1284,13 @@ async function boot() {
 
   if (gsap) gsap.set(handNeedle, { xPercent: -50, yPercent: -100, transformOrigin: '50% 100%' });
 
-  const getDialGeom = () => {
+  let dialGeom = [0, 0, 0];
+  function measureDial() {
     const r = dialWrap.getBoundingClientRect();
-    return r.width ? [r.left + r.width / 2, r.top + r.height / 2, r.width * 0.5] : [0, 0, 0];
-  };
+    dialGeom = r.width ? [r.left + r.width / 2, r.top + r.height / 2, r.width * 0.5] : [0, 0, 0];
+    return dialGeom;
+  }
+  const getDialGeom = () => (dialGeom[2] > 0 ? dialGeom : measureDial());
   const crt = await makeCRT(app).catch(() => null);
   const topMesh = await makeTopMesh(app).catch(() => null);
   const footMesh = await makeFooterMesh(app, getDialGeom).catch(() => null);
@@ -1193,10 +1320,14 @@ async function boot() {
   /** @type {any[]} */ let hand = [];
   /** @type {any} */ let active = null;
   let sheetOpen = false, seriesFilter = initView === 'lab' ? 'lab' : 'all', dwellTimer = 0;
-  let isStandby = false, idleTimer = 0, leaveTimer = 0, pointerSelection = false;
-  const IDLE_MS = 15000;
+  let isStandby = false, idleTimer = 0, sleepTimer = 0, leaveTimer = 0, pointerSelection = false;
+  let prefetchToken = 0;
+  const IDLE_MS = 15000, SLEEP_MS = 60000;
   let labUnlocked = false;
   try { labUnlocked = sessionStorage.getItem('stimming.lab.ok') === '1'; } catch {}
+  /** @type {Map<string, string>} */ const titleFitCache = new Map();
+  /** @type {IntersectionObserver | null} */ let sheetIO = null;
+  /** @type {Map<Element, HTMLAnchorElement>} */ const mountedSheetTiles = new Map();
 
   /** @param {any} t */
   function alignedFlashHTML(t) {
@@ -1221,7 +1352,10 @@ async function boot() {
     cell.style.setProperty('--dy', (-Math.cos(rad)).toFixed(4));
     const live = Object.assign(document.createElement('div'), { className: 'sm-live' });
     const tile = liveTiles.get(toy.id);
-    if (tile) live.append(tile);
+    if (tile) {
+      prepareTile(toy.id, tile);
+      live.append(tile);
+    }
     const fl = Object.assign(document.createElement('div'), { className: 'sm-flash' });
     fl.setAttribute('aria-hidden', 'true');
     fl.innerHTML = alignedFlashHTML(toy);
@@ -1230,11 +1364,7 @@ async function boot() {
   }
 
   function parkAllTiles() {
-    app.querySelectorAll('a.toy').forEach(a => {
-      a.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-      a.dispatchEvent(new PointerEvent('pointerleave', { bubbles: false }));
-      bin.append(a);
-    });
+    app.querySelectorAll('a.toy').forEach(a => detachTile(/** @type {HTMLAnchorElement} */ (a)));
     deckEl.innerHTML = '';
   }
 
@@ -1256,27 +1386,38 @@ async function boot() {
     cells.forEach(cell => cell.classList.add('is-intro'));
   }
 
-  function fitTitle() {
-    titleEl.style.removeProperty('--title-fit');
+  /** @param {string} [id] */
+  function fitTitle(id = active?.id || '') {
     const maxW = titleBoxEl.clientWidth;
     if (!maxW) return;
+    const key = id ? `${id}@${maxW}` : '';
+    if (key && titleFitCache.has(key)) {
+      const cached = titleFitCache.get(key) || '';
+      if (cached) titleEl.style.setProperty('--title-fit', cached);
+      else titleEl.style.removeProperty('--title-fit');
+      return;
+    }
+    titleEl.style.removeProperty('--title-fit');
     let basePx = parseFloat(getComputedStyle(titleEl).fontSize) || 32;
     const maxH = basePx * 2.35;
+    let fitted = '';
     let guard = 0;
     while ((titleEl.scrollWidth > maxW + 1 || titleEl.scrollHeight > maxH) && basePx > 16 && guard++ < 14) {
       basePx = Math.max(16, basePx - 1.5);
-      titleEl.style.setProperty('--title-fit', `${basePx}px`);
+      fitted = `${basePx}px`;
+      titleEl.style.setProperty('--title-fit', fitted);
     }
+    if (key) titleFitCache.set(key, fitted);
   }
 
-  function updateCRTSpot(snap = false) {
+  function updateCRTSpot() {
     if (!crt) return;
+    const g = measureDial();
     const w = app.clientWidth || 1, h = app.clientHeight || 1;
-    const r = dialWrap.getBoundingClientRect();
-    const x = r.width ? (r.left + r.width / 2) / w : 0.5;
-    const y = r.width ? (r.top + r.height / 2) / h : 0.5;
-    const rad = (r.width || Math.min(w, h) * 0.72) * 0.6;
-    crt.setSpot(x, y, rad, snap);
+    const cx = g[2] > 0 ? g[0] : w * 0.5;
+    const cy = g[2] > 0 ? g[1] : h * 0.5;
+    const rad = (g[2] > 0 ? g[2] * 2 : Math.min(w, h) * 0.72) * 0.6;
+    crt.setSpot(cx, cy, rad);
   }
 
   /** @param {number} idx @param {boolean} [snap] */
@@ -1287,6 +1428,14 @@ async function boot() {
     if (!gsap) return;
     if (snap || still.matches) gsap.set(handNeedle, { rotation: deg });
     else gsap.to(handNeedle, { rotation: `${deg}_short`, duration: 0.65, ease: 'expo.out', overwrite: true });
+  }
+
+  function bumpSleep() {
+    clearTimeout(sleepTimer);
+    crt?.setSleeping(false);
+    sleepTimer = window.setTimeout(() => {
+      if (!sheetOpen) crt?.setSleeping(true);
+    }, SLEEP_MS);
   }
 
   /** @param {boolean} [snap] */
@@ -1302,10 +1451,28 @@ async function boot() {
   }
 
   function bumpIdle() {
+    bumpSleep();
     clearTimeout(idleTimer);
     idleTimer = window.setTimeout(() => {
       if (!sheetOpen && !isStandby) enterStandby(false);
     }, IDLE_MS);
+  }
+
+  /** @param {any[]} toys */
+  function prefetchHand(toys) {
+    if (!crt) return;
+    const conn = /** @type {any} */ (navigator).connection;
+    if (conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))) return;
+    const token = ++prefetchToken;
+    const urls = toys.map(t => rootUrl(`shared/stills/${t.id}.webp`));
+    let idx = 0;
+    const schedule = /** @type {any} */ (window).requestIdleCallback || (fn => setTimeout(fn, 240));
+    const step = () => {
+      if (token !== prefetchToken || sheetOpen || document.hidden) return;
+      for (let k = 0; k < 2 && idx < urls.length; k++, idx++) crt.preloadStill(urls[idx]);
+      if (idx < urls.length) schedule(step, { timeout: 1200 });
+    };
+    schedule(step, { timeout: 1200 });
   }
 
   /** @param {any} toy @param {{ immediate?: boolean, fromPointer?: boolean }} [opts] */
@@ -1339,7 +1506,7 @@ async function boot() {
         }
       }
       titleEl.textContent = toy.name;
-      fitTitle();
+      fitTitle(toy.id);
       if (!immediate && !still.matches) {
         titleEl.classList.remove('is-unfurl');
         void titleEl.offsetWidth;
@@ -1358,14 +1525,13 @@ async function boot() {
 
     deckEl.querySelectorAll('.sm-cell').forEach(c => c.classList.toggle('is-act', /** @type {HTMLElement} */ (c).dataset.id === toy.id));
     if (idx >= 0) pointHand(idx, immediate);
-    sheetGrid.querySelectorAll('.sm-card').forEach(b => b.classList.toggle('is-act', /** @type {HTMLElement} */ (b).dataset.id === toy.id));
-    updateCRTSpot(immediate);
   }
 
   /** @param {string | null} [pinId] */
   function deal(pinId = null) {
     clearTimeout(dwellTimer);
     clearTimeout(leaveTimer);
+    bumpSleep();
     const next = [];
     if (pinId && byId[pinId]) next.push(byId[pinId]);
     while (next.length < SIZE) {
@@ -1394,21 +1560,21 @@ async function boot() {
     });
     flashCells(cells);
     pulseDialRing();
+    prefetchHand(hand);
     if (pinId && byId[pinId]) {
       select(hand[0], { immediate: true, fromPointer: false });
     } else {
       active = null;
       enterStandby(false);
-      updateCRTSpot(true);
+      updateCRTSpot();
     }
   }
 
   function clearSheetTiles() {
-    sheetGrid.querySelectorAll('a.toy').forEach(a => {
-      a.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-      a.dispatchEvent(new PointerEvent('pointerleave', { bubbles: false }));
-      bin.append(a);
-    });
+    sheetIO?.disconnect();
+    sheetIO = null;
+    for (const tile of mountedSheetTiles.values()) detachTile(tile);
+    mountedSheetTiles.clear();
     sheetGrid.innerHTML = '';
   }
 
@@ -1416,8 +1582,12 @@ async function boot() {
     clearSheetTiles();
     deckEl.querySelectorAll('.sm-cell').forEach(cell => {
       const live = cell.querySelector('.sm-live');
-      const tile = liveTiles.get(/** @type {HTMLElement} */ (cell).dataset.id || '');
-      if (live && tile) live.append(tile);
+      const id = /** @type {HTMLElement} */ (cell).dataset.id || '';
+      const tile = liveTiles.get(id);
+      if (live && tile) {
+        prepareTile(id, tile);
+        live.append(tile);
+      }
     });
   }
 
@@ -1431,19 +1601,50 @@ async function boot() {
     return hexStackHTML;
   };
 
-  /** @param {any} t @param {Map<string, HTMLAnchorElement>} tiles */
-  function makeSheetCard(t, tiles) {
+  /** @param {any} t */
+  function makeSheetCard(t) {
     const card = document.createElement('div');
     card.className = `sm-card${active && active.id === t.id ? ' is-act' : ''}`;
     card.dataset.id = t.id;
     if (t.isLab) card.dataset.lab = '1';
     const ic = Object.assign(document.createElement('div'), { className: 'sm-card-ic' });
-    const tile = tiles.get(t.id);
-    if (tile) ic.append(tile);
     const label = Object.assign(document.createElement('span'), { className: 'sm-card-name' });
     label.innerHTML = t.stage ? `${t.name}<span class="sm-card-stage">(${t.stage})</span>` : t.name;
     card.append(ic, label);
     return card;
+  }
+
+  /** @param {Map<string, HTMLAnchorElement>} tiles */
+  function mountSheetObserver(tiles) {
+    /** @param {Element} card */
+    const attach = card => {
+      if (mountedSheetTiles.has(card)) return;
+      const id = /** @type {HTMLElement} */ (card).dataset.id || '';
+      const tile = tiles.get(id);
+      const ic = card.querySelector('.sm-card-ic');
+      if (!tile || !ic) return;
+      prepareTile(id, tile);
+      ic.append(tile);
+      mountedSheetTiles.set(card, tile);
+    };
+    /** @param {Element} card */
+    const release = card => {
+      const tile = mountedSheetTiles.get(card);
+      if (!tile) return;
+      detachTile(tile);
+      mountedSheetTiles.delete(card);
+    };
+    if (!('IntersectionObserver' in window)) {
+      sheetGrid.querySelectorAll('.sm-card').forEach(attach);
+      return;
+    }
+    sheetIO = new IntersectionObserver(entries => {
+      for (const e of entries) {
+        if (e.isIntersecting) attach(e.target);
+        else release(e.target);
+      }
+    }, { root: sheetGrid, rootMargin: '280px 0px' });
+    sheetGrid.querySelectorAll('.sm-card').forEach(card => sheetIO?.observe(card));
   }
 
   /** @param {string} name @param {string} [iconHTML] @param {string} [color] */
@@ -1510,7 +1711,7 @@ async function boot() {
       const body = LAB.filter(t => !t.slate && !t.bench);
       if (slate.length) {
         frag.append(makeRubricHeader('Slate'));
-        slate.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+        slate.forEach(t => frag.append(makeSheetCard(t)));
       }
       const grouped = new Map(Object.keys(seriesData).map(k => [k, /** @type {any[]} */ ([])]));
       /** @type {any[]} */ const rest = [];
@@ -1520,20 +1721,23 @@ async function boot() {
         const s = seriesData[k];
         const iconHTML = s.icon ? shotIcon(k, s.icon, { tilt: 'Dutch', frame: 'Hex ring', line: 'Series', c: s.color }) : '';
         frag.append(makeRubricHeader(s.name, iconHTML, s.color));
-        items.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+        items.forEach(t => frag.append(makeSheetCard(t)));
       }
       if (rest.length) {
         frag.append(makeRubricHeader('Other'));
-        rest.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+        rest.forEach(t => frag.append(makeSheetCard(t)));
       }
       if (bench.length) {
         frag.append(makeRubricHeader('Bench'));
-        bench.forEach(t => frag.append(makeSheetCard(t, labTiles)));
+        bench.forEach(t => frag.append(makeSheetCard(t)));
       }
+      sheetGrid.append(frag);
+      mountSheetObserver(labTiles);
     } else {
-      ALL.forEach(t => frag.append(makeSheetCard(t, liveTiles)));
+      ALL.forEach(t => frag.append(makeSheetCard(t)));
+      sheetGrid.append(frag);
+      mountSheetObserver(liveTiles);
     }
-    sheetGrid.append(frag);
   }
 
   /** @param {boolean} [force] */
@@ -1545,8 +1749,20 @@ async function boot() {
     app.querySelectorAll('[data-sheet="all"]').forEach(b => b.setAttribute('aria-expanded', String(sheetOpen)));
     sheetEl.hidden = !sheetOpen;
     crt?.setPaused(sheetOpen);
-    if (sheetOpen) { clearTimeout(idleTimer); renderSheet(); }
-    else { syncLabCRT(); restoreStageTiles(); if (!isStandby) bumpIdle(); }
+    topMesh?.setPaused(sheetOpen);
+    footMesh?.setPaused(sheetOpen);
+    if (sheetOpen) {
+      clearTimeout(idleTimer);
+      clearTimeout(sleepTimer);
+      deckEl.querySelectorAll('a.toy').forEach(a => detachTile(/** @type {HTMLAnchorElement} */ (a)));
+      renderSheet();
+    } else {
+      syncLabCRT();
+      restoreStageTiles();
+      updateCRTSpot();
+      bumpSleep();
+      if (!isStandby) bumpIdle();
+    }
   }
 
   /** @param {number} dir */
@@ -1588,13 +1804,13 @@ async function boot() {
       select(toy, { fromPointer: true });
     }
   });
-  app.addEventListener('pointermove', () => { if (!sheetOpen && !isStandby) bumpIdle(); }, { passive: true });
+  app.addEventListener('pointermove', () => {
+    if (sheetOpen) return;
+    bumpSleep();
+    if (!isStandby) bumpIdle();
+  }, { passive: true });
+  app.addEventListener('pointerdown', () => { if (!sheetOpen) bumpSleep(); }, { passive: true });
 
-  sheetGrid.addEventListener('pointerover', e => {
-    if (e.pointerType === 'touch') return;
-    const c = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest('.sm-card'));
-    if (c && !c.dataset.lab && byId[c.dataset.id || '']) select(byId[c.dataset.id || ''], { fromPointer: true });
-  });
   sheetGrid.addEventListener('click', e => {
     const targetEl = /** @type {Element} */ (e.target);
     const c = /** @type {HTMLElement | null} */ (targetEl.closest('.sm-card'));
@@ -1615,17 +1831,26 @@ async function boot() {
     if (targetEl.closest('[data-sheet="all"]')) { seriesFilter = 'all'; toggleSheet(); }
   });
 
+  let resizeRaf = 0;
   new ResizeObserver(() => {
-    fitTitle();
-    updateCRTSpot(true);
-    footMesh?.draw?.();
-    topMesh?.draw?.();
-    if (sheetOpen && seriesFilter === 'lab') labCrt?.draw?.();
+    if (resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      titleFitCache.clear();
+      fitTitle();
+      if (!sheetOpen) {
+        updateCRTSpot();
+        footMesh?.draw?.();
+        topMesh?.draw?.();
+      }
+      if (sheetOpen && seriesFilter === 'lab') labCrt?.draw?.();
+    });
   }).observe(app);
 
   let wheelAt = 0;
   app.addEventListener('wheel', e => {
     if (sheetOpen) return;
+    bumpSleep();
     const now = performance.now();
     if (now - wheelAt < 160) return;
     if (Math.abs(e.deltaY) < 12 && Math.abs(e.deltaX) < 12) return;
@@ -1635,6 +1860,7 @@ async function boot() {
 
   window.addEventListener('keydown', e => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!sheetOpen) bumpSleep();
     const targetEl = /** @type {HTMLElement | null} */ (e.target);
     if (targetEl && targetEl.closest('input, textarea, select')) {
       if (e.key === 'Escape') { targetEl.blur(); toggleSheet(false); }
@@ -1653,5 +1879,5 @@ async function boot() {
   deal(urlParams.get('toy'));
   if (initView === 'all' || initView === 'lab') toggleSheet(true);
   setTimeout(() => rerollWrap.setAttribute('data-on', ''), matchMedia('(max-width: 860px)').matches ? 400 : 1600);
-  requestAnimationFrame(() => { fitTitle(); updateCRTSpot(true); });
+  requestAnimationFrame(() => { fitTitle(); updateCRTSpot(); });
 }
