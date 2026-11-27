@@ -20,6 +20,7 @@ import { StudioStage } from './stage.ts';
 import { InspectBackdrop } from './post.ts';
 import { BillShadowMap } from './shadows.ts';
 import { createCashSound } from './sound.ts';
+import { makeBillTray } from './tray.ts';
 
 mark('libs');
 
@@ -260,7 +261,7 @@ const ui = initPage({
       ['space', 'Hold or tap to shower bills'],
       ['I', 'Inspect or release a bill'],
       ['F', 'Flip front and back while inspecting'],
-      ['← →', 'Step through the eight designs'],
+      ['← →', 'Step through the ten designs'],
       ['R', 'Rotate the inspected bill 90 degrees'],
       ['C', 'Clear the stage'],
     ],
@@ -268,6 +269,9 @@ const ui = initPage({
 });
 
 const stageEl = document.getElementById('stage')!;
+const billTray = makeBillTray(stageEl.closest<HTMLElement>('.stim-frame') ?? stageEl.parentElement!,
+  () => inspector?.isOpen ? inspector.current.id : opts.filter,
+  id => ui.choice?.set(id, true), glyphIcon, ALL_ICON);
 const chips = [...document.querySelectorAll<HTMLElement>('.s2-chip')];
 inspectChip = chips.find(b => b.querySelector('.s2-label')?.textContent === 'Inspect') ?? null;
 flipChip = chips.find(b => b.querySelector('.s2-label')?.textContent === 'Flip') ?? null;
@@ -670,7 +674,7 @@ stageEl.addEventListener('wheel', e => {
 
 /* ---------- keyboard ---------- */
 function sheetOpen(): boolean {
-  return !!document.querySelector('.sg-sheet:not([hidden]), .s2-sheet:not([hidden])');
+  return billTray.isOpen || !!document.querySelector('.sg-sheet:not([hidden]), .s2-sheet:not([hidden])');
 }
 
 addEventListener('keydown', e => {

@@ -1,7 +1,7 @@
 // Banknote catalog: dimensions, substrates, traced security masks, windows, and watermarks.
 // UV origin sits at bottom-left (0,0) to top-right (1,1).
 
-export type BillId = 'celeste' | 'emma' | 'demas' | 'elmo' | 'lucas' | 'mark' | 'peter' | 'tom';
+export type BillId = 'celeste' | 'cheryl' | 'emma' | 'demas' | 'elmo' | 'helena' | 'lucas' | 'mark' | 'peter' | 'tom';
 
 export type RectZone = readonly [u0: number, v0: number, u1: number, v1: number];
 export type EllipseZone = readonly [cx: number, cy: number, rx: number, ry: number];
@@ -32,6 +32,29 @@ export interface BillDef {
 
 const NO_WIN: EllipseZone = [0, 0, 0, 0];
 
+const CHERYL: BillDef = {
+    id: 'cheryl',
+    label: 'Cheryl',
+    title: '10000 Yen',
+    currency: 'Cheryl Cinnamorolls',
+    aspect: 1500 / 725,
+    frontUrl: './bills/cheryl-front.webp',
+    backUrl: './bills/cheryl-back.webp',
+    maskFrontUrl: './bills/cheryl-front-mask.webp',
+    maskBackUrl: './bills/cheryl-back-mask.webp',
+    polymer: false,
+    glyph: '¥',
+    glyphColor: 'oklch(0.78 0.12 65)',
+    tint: [1.0, 0.96, 0.88],
+    windowsFront: [NO_WIN, NO_WIN],
+    windowsBack: [NO_WIN, NO_WIN],
+    watermarkFront: [0.39, 0.20, 0.62, 0.79],
+    watermarkBack: [0.39, 0.20, 0.62, 0.79],
+    foilHue: 0.7,
+    foilGain: 0.75,
+    relief: 0.85,
+};
+
 export const BILLS: readonly BillDef[] = [
   {
     id: 'celeste',
@@ -55,6 +78,7 @@ export const BILLS: readonly BillDef[] = [
     foilGain: 0.92,
     relief: 0.90,
   },
+  CHERYL,
   {
     id: 'emma',
     label: 'Emma',
@@ -120,6 +144,28 @@ export const BILLS: readonly BillDef[] = [
     foilHue: 3.1,
     foilGain: 0.94,
     relief: 0.90,
+  },
+  {
+    id: 'helena',
+    label: 'Helena',
+    title: '1000 Pesetas',
+    currency: 'Helena Pesetas',
+    aspect: 1500 / 752,
+    frontUrl: './bills/helena-front.webp',
+    backUrl: './bills/helena-back.webp',
+    maskFrontUrl: './bills/helena-front-mask.webp?v=2',
+    maskBackUrl: './bills/helena-back-mask.webp?v=2',
+    polymer: false,
+    glyph: '₧',
+    glyphColor: 'oklch(0.72 0.13 142)',
+    tint: [0.97, 1.0, 0.95],
+    windowsFront: [NO_WIN, NO_WIN],
+    windowsBack: [NO_WIN, NO_WIN],
+    watermarkFront: [0.0, 0.0, 0.285, 1.0],
+    watermarkBack: [0.0, 0.0, 0.285, 1.0],
+    foilHue: 2.45,
+    foilGain: 0.82,
+    relief: 0.88,
   },
   {
     id: 'lucas',
