@@ -71,7 +71,7 @@ export const mangosteen = {
     thru: [0.08, 0.006, 0.03], thruK: 4,
     skinA: [0.006, 0.0018, 0.006], skinB: [0.02, 0.004, 0.016], mottle: 4,
     blush: [0.06, 0.018, 0.016], blushK: 0.2, blushDir: [0, -1, 0],
-    pores: 0.03, poreScale: 30, rough: 0.34, f0: 0.045, wrap: 0.2,
+    pores: 0.03, poreScale: 30, rough: 0.3, f0: 0.04, wrap: 0.2,
     speck: [0.9, 18, 0.25], speckCol: [0.18, 0.1, 0.035],
     sheen: [0.025, 0.015, 0.03], tipDark: 0.1,
   },

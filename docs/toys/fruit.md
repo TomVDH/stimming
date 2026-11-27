@@ -18,26 +18,31 @@ One big fruit on a dark ground, under a warm key from the front left, a hot rim 
 | 8 | Passion fruit | A mound of 300 soft golden jelly sacs as real geometry, each with a dark seed off its middle, over a juice floor; a thick spongy pith with a yellow lining. Skin: deep purple folds and dimples, fine white specks |
 | 9 | Starfruit | A deep star slice: clear golden flesh at two depths with small juice-cell glints; a pale star core, a pale vein out along each arm, faint walls from each valley; small flat seeds near the core; a thin skin, brown at the ridge tips. Waxy golden skin, ridges green then brown at the crest |
 | 0 | Fig | Wet strands of flesh, each a round ridge of its own shade, deep wine at the middle to rose and pale pink at the rind; many honey seeds with small shadows; an irregular dark slit in the middle; a cream rind with strands reaching in. Skin dark purple, green toward the stem, faint ribs and a dusty bloom |
+| Ribbon | Lemon | Tapered yellow peel with oil glands, pale pith, membranes and radial juice sacs |
+| Ribbon | Mango | Blushed gold skin with lenticels, orange fibrous flesh, a flat ejectable stone and recessed opposite hollow |
+| Ribbon | Avocado | Uneven green skin, creamy green-to-yellow flesh, a rounded ejectable stone and its recessed hollow |
+| Ribbon | Papaya | Green-gold skin, salmon-orange flesh and a recessed chamber of individual dark seeds; repeated squeeze releases black seeds |
+| Ribbon | Coconut | Coarse brown fibers, thick pale flesh and a recessed central cavity |
 
 ## Play
 
 | Input | Act |
 |---|---|
 | Press the fruit | A dent where pressed. Release: it springs back with a hop. |
-| Hold | Squeeze: the fruit squashes flat and its fuzz ruffles. |
-| Swipe across it | Slice: juice in the fruit's colour bursts out; the halves swing their faces to the eye. |
-| Tap a half | It hops and wobbles and throws a few drops. |
+| Hold still | Squeeze: a ring confirms the hold, the fruit squashes flat and its fuzz ruffles. An open piece first gives juice; repeated squeezes work loose its seeds, arils or stone. |
+| Swipe through it | Slice: a warm cut trail previews the line; juice in the fruit's colour bursts out; the halves swing their faces to the eye. |
+| Tap a half | It hops, wobbles and throws a few drops. Repeated taps release its seeds, arils or stone where present. |
 | Hold a half | That half squashes and drips juice from its face; release: it springs back and squirts. |
-| Drag the background | The lights swing round the fruit. From behind, light comes through the skin and the flesh. |
-| Swipe across a half or a wedge | It splits lengthwise, along the swipe: two wedges open like a book, each with a lengthwise cut face. Wedges split again while they are wide enough. |
-| Flick a half or a wedge | A quick short drag: it jolts, and its loose bits tumble out of the face: arils, pulp sacs or seeds. They bounce, roll and rest on the floor until the next fruit. |
-| Tap the gap | Join: every piece slides back, the wedges become the two halves, which meet with a thunk. |
+| Drag the background | No action. The studio lighting stays fixed. |
+| Swipe through a half or a wedge | It splits lengthwise along the preview line. The new wedges open, separate on contact and settle on the table. |
+| Flick a half or a wedge | A quick short drag throws that piece. It slides, turns, bounces and pushes other pieces; arils, pulp sacs or seeds tumble out where the fruit has them. The visible table edge rebounds it into frame. |
+| Join or Space | Every piece and loose bit returns to the fruit; the juice clears; the two halves meet with a thunk. |
 | Pick a fruit | The fruit on stage rolls off to the left; the new one rolls in from the right. |
-| Keys | 1 to 0 pick a fruit, Space slices or joins, F flicks every piece (or slices a whole fruit), hold S squeezes |
+| Keys | 1 to 0 pick a fruit, Space slices or joins, F throws the last-touched open piece, hold S squeezes that piece |
 
 ## Bar v3
 
-Choice Fruit (ten options, a stepper; keys 1 to 0). Actions Slice (Space), Flick (F) and Squeeze (S, hold). Slider Fuzz, kept per fruit: any fruit can grow fuzz. Quality in Settings.
+Choice Fruit opens a scrollable ribbon; keys 1 to 0 still pick directly. Slice changes to Join while the fruit is open. Flick (F) is available only when pieces are open. Squeeze (S) is a hold action. Each fruit determines its own fuzz; there is no Fuzz control. Quality in Settings.
 
 ## How it works
 
@@ -46,20 +51,26 @@ three.js 0.170, WebGL2, custom shaders only. The ideas of raspberry.luruke.com a
 | Part | File | Method |
 |---|---|---|
 | Depth | `half.js` | The cut-face shader passes the view ray's slide per unit depth (`gPar`); a fruit samples its flesh again below the cut. |
-| Light | `glsl.js` | Wrap diffuse with a scatter tint; reflections of a procedural studio (key, rim, fill and top softboxes) blurred by roughness; Schlick Fresnel |
-| Wedges | `main.js`, `half.js` | A piece is a half's meshes with a sector round the axis: every shader of the half drops what lies outside it. Pieces clone the half's meshes with their own uniforms, relinked to the light rig. A lengthwise cut face draws the fruit's own cross-section pattern, read by depth toward the skin and turned slowly along the length; fruits with open chambers fill them with juice cells there. Each piece finds its own floor contact. |
-| Floor | `main.js` | The whole fruit's lowest skin point sets its rest height. Each frame an open half finds its lowest hull point in its new pose and sits there; its own squash keeps that point down. |
+| Harvest flesh | `harvest.js`, `half.js` | Lemon, mango, avocado, papaya and coconut sample a second layer below the cut and add fruit-specific, backlit scattering. Lemon and mango show stronger transmission; avocado and coconut keep a restrained diffuse response. Juice-cell relief breaks the wet reflection. |
+| Light | `glsl.js` | Wrap diffuse with a scatter tint; reflections of a procedural studio blurred by roughness; Schlick Fresnel and roughness-dependent microfacet highlights on key and rim lights. |
+| Skin materials | `skin-surface.js`, `half.js` | Each fruit has its own procedural relief, roughness, wax coat, bloom and velvet profile. Derivatives transfer surface relief into world-space normals. The skin combines diffuse energy attenuation, GGX highlights and studio reflections with a separate wax layer. Kiwi and peach favor velvet, fig a dusty bloom, citrus oil-gland relief, and mangosteen a stronger wax coat. Skin transmission is restrained independently from wet flesh. |
+| Continuous harvest shapes | `harvest-shapes.js`, `half.js`, `main.js` | Lemon, mango, avocado, papaya and coconut sample continuous signed fruit coordinates across both halves. Join normals sample both sides; longitude normals share an average. Closed halves share one origin; floor support separates only as they open. |
+| Fruit ribbon | `tray.js`, `tray.css`, `previews/` | The Fruit control opens a Star Chart-style ribbon over fading glass. Transparent renders show one cut half per fruit. Each strip holds 49 views across a 60° arc; hover or keyboard focus turns 30° each way at 30 fps. Rest and reduced motion hold the center view. Selected state, touch scrolling, arrow keys and Escape remain available. `preview.js` bakes the strips through the existing renderer in QA mode. |
+| Wedges | `main.js`, `half.js` | A piece is a half's meshes with a sector round the axis: every shader of the half drops what lies outside it. Pieces clone the half's meshes with their own uniforms, relinked to the light rig. A lengthwise cut face draws the fruit's own cross-section pattern, read by depth toward the skin and turned slowly along the length; fruits with open chambers fill them with juice cells there. The two sides of a fresh cut sit a hair inside their own wedges, so wet faces never fight on one depth plane. |
+| Piece physics | `main.js`, `piece-physics.js` | Each piece keeps its own table position and velocity, lift, axial rotation, table rotation, size, mass, squeeze history and remaining contents. Children inherit the parent's momentum once, then move independently. Three contacts along the length and up to two across the sector follow its rendered transform; six bounded contact passes separate overlapping pieces by inverse mass with friction and restitution. Each correction refreshes its contacts; low-speed contacts do not bounce. Camera-aware bounds rebound free pieces before they leave view. Gravity, floor bounce and friction settle them. Join springs every piece home before the original halves return. |
+| Stones | `main.js`, `peach.js`, `rambutan.js` | The detailed peach stone and rambutan seed belong to one piece after subdivision, never every shader-clipped child. A repeated squeeze can eject that existing mesh as a rolling, bouncing table object. |
+| Floor | `main.js` | The whole fruit's lowest skin point sets its rest height. Each open piece finds its lowest transformed hull point, then its lift bounces against that floor contact. Up to eight soft contact shadows ground the pieces separately, spreading and fading while a piece is airborne. |
 | Light through | `half.js` | For each skin point, the path each light runs inside the fruit's ellipsoid to reach it (cut short at an open half's face); Beer-Lambert in the fruit's own colour, brightest looking toward the light. Cut faces glow more toward the back light. |
 | Halves | `half.js` | A lathe skin per half, the cut face at x = 0. The join ring's normals lie in the cut plane, and a press on the whole fruit dents both halves, so the seam never shows. Skin colour, specks and pores run in fruit space, so the seam does not show. |
 | Cut face | `half.js` | A disc that follows the fruit's outline (a crease, a star), or a ring round a pit. Each fruit gives its colour and a relief; the relief bends a wet film that reflects the studio. |
 | Arils | `arils.js` (pomegranate, passion fruit) | Each aril is its own mesh: a teardrop whose radius is capped by a smooth minimum against the plane to each neighbour, and by the cut plane. Shading runs in the aril's own sphere space: the view chord, the seed, Beer-Lambert, a sharp studio reflection. Contact and depth darken it. |
 | Juice beads | `half.js` | Instanced ellipsoids. Four steps along the view chord in the bead's own space, a chord to each light from every step, Beer-Lambert per channel. A seed inside ends the view ray: seen through the juice. |
 | Fuzz | `fuzz.js` | Instanced ribbons on four control points with fibre wrap light. Per fruit: count, length, width, lift and curl (the rambutan's spines). |
-| Fruits | `kiwi.js` to `fig.js`, listed in `fruits.js` | Shape, skin look, tip parts, the cut face |
-| Bits | `bits.js` | Up to 90 loose bits as instanced teardrop juice beads (the cut faces' optics, a seed inside). Gravity, a damped bounce, floor friction that turns into a roll, pushes between bits and off the fruit's pieces, rest once still. Per fruit: pomegranate arils, passion fruit sacs, kiwi, dragon fruit and starfruit seeds. A hard landing ticks. |
+| Fruits | `kiwi.js` to `fig.js`, `harvest.js`, listed in `fruits.js` | Shape, skin look, tip parts, the cut face |
+| Bits | `bits.js` | Up to 90 loose bits as instanced teardrop juice beads (the cut faces' optics, a seed inside). Gravity, a damped bounce and floor friction turn into a roll. Three moving proxies per fruit piece push and wake resting bits. Bits separate from each other and rest once still. Per fruit: pomegranate arils, passion fruit sacs, kiwi, dragon fruit and starfruit seeds. A hard landing ticks. |
 | Puddle | `puddle.js` | Landed drops splat into a float texture over the floor (depth, and colour times depth). Juice flows from deep to shallow while it is thicker than a thin film, so the edge holds and colours mix. The floor draws it with a rim normal from the depth gradient, the floor tinted under it, and a planar reflection: the scene rendered from a mirror camera below the floor, at half size, only while there is juice. It flows for six seconds after the last drop, then rests; a new fruit drains it. |
 | Juice | `juice.js` | Up to 120 drops with the bead optics, stretched along their flight |
-| Finish | `post.js` | Depth of field (disc gather), bloom, ACES, vignette, grain |
+| Finish | `post.js` | Depth of field (disc gather), bloom, ACES, vignette and grain. Scene and blur targets clear explicitly; non-finite colour or depth samples are contained before bloom. |
 
 Baked soft light (spherical-harmonic transfer) is skipped: it needs an offline bake.
 

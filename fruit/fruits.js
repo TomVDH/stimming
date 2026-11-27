@@ -9,5 +9,6 @@ import { mangosteen } from './mangosteen.js';
 import { passion } from './passion.js';
 import { starfruit } from './starfruit.js';
 import { fig } from './fig.js';
+import { lemon, mango, avocado, papaya, coconut } from './harvest.js';
 
-export const FRUITS = [kiwi, pomegranate, orange, peach, dragon, rambutan, mangosteen, passion, starfruit, fig];
+export const FRUITS = [kiwi, pomegranate, orange, peach, dragon, rambutan, mangosteen, passion, starfruit, fig, lemon, mango, avocado, papaya, coconut];

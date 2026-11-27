@@ -67,7 +67,7 @@ export const fig = {
     thru: [0.12, 0.02, 0.04], thruK: 3.5,
     skinA: [0.022, 0.007, 0.02], skinB: [0.065, 0.018, 0.045], mottle: 4,
     blush: [0.07, 0.09, 0.03], blushK: 0.5, blushDir: [1, 0, 0],
-    pores: 0.04, poreScale: 35, rough: 0.6, f0: 0.03, wrap: 0.25,
+    pores: 0.04, poreScale: 35, rough: 0.7, f0: 0.028, wrap: 0.25,
     speck: [0.84, 70, 0.25], speckCol: [0.2, 0.17, 0.18],
     sheen: [0.14, 0.13, 0.17], tipDark: 0.05,
     glsl: /* glsl */`

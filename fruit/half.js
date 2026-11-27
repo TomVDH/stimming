@@ -3,6 +3,7 @@
 // Each fruit module gives the shape, the skin look and its cut face.
 import * as THREE from 'three';
 import { LIGHT, DENT, BEAD } from './glsl.js';
+import { skinSurface } from './skin-surface.js';
 
 // A fixed-seed random stream, so each load lays the same fruit.
 export function rng(seed) {
@@ -56,7 +57,25 @@ export function skinGeometry(F, e) {
   g.computeVertexNormals();
   // The join ring: its normals lie in the cut plane, so both halves shade alike at the seam.
   const N = g.attributes.normal;
+  // Average duplicated angular vertices to close the longitude shading seam.
+  for (let i = 0; i <= NR; i++) {
+    const first = i * (NC + 1), last = first + NC;
+    const n = new THREE.Vector3().fromBufferAttribute(N, first).add(new THREE.Vector3().fromBufferAttribute(N, last)).normalize();
+    N.setXYZ(first, n.x, n.y, n.z); N.setXYZ(last, n.x, n.y, n.z);
+  }
   for (let j = 0; j <= NC; j++) {
+    if (['lemon', 'mango', 'avocado', 'papaya', 'coconut'].includes(F.id)) {
+      const ph = j / NC * Math.PI * 2, d = 0.0001;
+      const point = (t, a, side) => {
+        const r = F.shape(Math.abs(t), a, side);
+        return new THREE.Vector3(-F.A*t, F.B*r*Math.cos(a), F.C*r*Math.sin(a));
+      };
+      const along = point(d, ph, e).sub(point(-d, -ph, -e).multiply(new THREE.Vector3(1, 1, -1)));
+      const across = point(0, ph+d, e).sub(point(0, ph-d, e));
+      const n = along.cross(across).normalize();
+      N.setXYZ(j, n.x, n.y, n.z);
+      continue;
+    }
     const ny = N.getY(j), nz = N.getZ(j), l = Math.hypot(ny, nz) || 1;
     N.setXYZ(j, 0, ny / l, nz / l);
   }
@@ -73,7 +92,7 @@ const LOOK = {
   thru: [0.9, 0.35, 0.1], thruK: 3,
   sheen: [0.22, 0.14, 0.06], tipDark: 0.25,
 };
-export function skinMaterial(U, look) {
+export function skinMaterial(U, look, id = 'kiwi') {
   const L = { ...LOOK, ...look };
   const v3 = a => ({ value: new THREE.Vector3(...a) });
   return new THREE.ShaderMaterial({
@@ -88,6 +107,7 @@ export function skinMaterial(U, look) {
     vertexShader: `${VERT_HEAD}\nvoid main() {\n${DENTED}\n}`,
     fragmentShader: /* glsl */`
       ${LIGHT}
+      ${skinSurface(id)}
       uniform float uFuzz, uSide, uMottle, uBlushK, uPores, uPoreScale, uRough, uF0, uWrap, uTipDark;
       uniform vec3 uSkinA, uSkinB, uBlush, uBlushDir, uSheen, uSss, uSpeck, uSpeckCol, uThru, uAbc;
       uniform float uThruK, uCut;
@@ -98,12 +118,12 @@ export function skinMaterial(U, look) {
         vec3 v = normalize(cameraPosition - vW);
         // Colour and pores in fruit space, so the seam does not show.
         vec3 fp = vL * vec3(uSide, 1.0, uSide);
-        if (uPores > 0.0) {
+        ${['lemon', 'mango', 'avocado', 'papaya', 'coconut'].includes(id) ? '' : `if (uPores > 0.0) {
           vec3 q = fp * uPoreScale;
           float e = 0.35, c = vn(q);
           vec3 g = vec3(vn(q + vec3(e, 0, 0)) - c, vn(q + vec3(0, e, 0)) - c, vn(q + vec3(0, 0, e)) - c) / e;
-          n = normalize(n - uPores * (g - n * dot(g, n)));
-        }
+          n = normalize(n - uPores * 0.35 * (g - n * dot(g, n)));
+        }`}
         float m = vn(fp * uMottle) * 0.6 + vn(fp * uMottle * 2.7) * 0.4;
         vec3 base = mix(uSkinA, uSkinB, m);
         // A blush on the sun side, broken by noise.
@@ -117,8 +137,10 @@ export function skinMaterial(U, look) {
         float roughAdd = 0.0;
         ${L.glsl || ''}
         // Fuzz hides the skin's shine: it reads rougher as the fuzz grows.
-        float rough = mix(clamp(uRough + roughAdd, 0.02, 1.0), 0.95, uFuzz * 0.7);
-        vec3 col = shade(base, n, v, rough, uWrap, uSss * base, uF0 * (1.0 - 0.6 * uFuzz));
+        float microRough = (vn(fp * uPoreScale * 0.55) - 0.5) * min(0.16, uPores * 0.3 + 0.05);
+        float rough = mix(clamp(uRough + roughAdd + microRough, 0.08, 1.0), 0.95, uFuzz * 0.7);
+        n = skinNormal(n, vW, skinRelief(fp));
+        vec3 col = skinBRDF(base, n, v, fp, rough - uRough, uFuzz);
         float nv = clamp(dot(n, v), 0.0, 1.0);
         // Velvet: fine fuzz lights up at grazing angles.
         float sheen = pow(1.0 - nv, 2.4);
@@ -138,9 +160,9 @@ export function skinMaterial(U, look) {
             float ph = 0.15 + 1.4 * pow(max(dot(-v, Lw), 0.0), 3.0);
             back += (i == 0 ? uRimCol : uKeyCol) * exp(-uThruK * t) * ph * smoothstep(-0.2, 0.3, -dot(n, Lw));
           }
-          col += uThru * back * 1.8 * (1.0 - 0.7 * uFuzz);
+          col += uThru * back * 0.65 * (1.0 - 0.7 * uFuzz);
         }
-        col += uSheen * sheen * (uKeyCol * (0.25 + 0.6 * max(dot(n, uKeyDir), 0.0)) + uRimCol * 0.9 * max(dot(n, uRimDir) + 0.3, 0.0)) * (0.5 + 0.5 * uFuzz);
+        col += uSheen * sheen * uFuzz * (uKeyCol * max(dot(n, uKeyDir), 0.0) + uRimCol * max(dot(n, uRimDir), 0.0)) * 0.35;
         gl_FragColor = vec4(col, 1.0);
       }`,
   });
@@ -170,7 +192,7 @@ function ringGeometry([hy, hz]) {
 // bed is GLSL: vec3 bed(vec2 f, float r, float a, inout float glow).
 // The GLSL also gives float relief(vec2 f): the cut's height, for the wet film.
 // vert sets vF (the face pattern's point) and vTy, vTz (its two directions, in world space).
-function bedMaterial(U, bed, vert, { wet = 1, rough = 0.5, wrap = 0.6, bumpK = 1 } = {}, defines = {}) {
+function bedMaterial(U, bed, vert, { wet = 1, rough = 0.5, wrap = 0.6, bumpK = 1, scatter = 0, scatterDepth = 0.06 } = {}, defines = {}) {
   return new THREE.ShaderMaterial({
     uniforms: U, defines,
     side: defines.LONGFACE ? THREE.DoubleSide : THREE.FrontSide,
@@ -185,6 +207,10 @@ function bedMaterial(U, bed, vert, { wet = 1, rough = 0.5, wrap = 0.6, bumpK = 1
       // A fruit reads it to draw flesh below the cut, for depth.
       vec2 gPar;
       ${bed}
+      vec3 finiteCol(vec3 c) {
+        if (any(notEqual(c, c))) return vec3(0.0);
+        return clamp(c, vec3(0.0), vec3(24.0));
+      }
       void main() {
         secClip(vL);
         float r = length(vF);
@@ -201,18 +227,29 @@ function bedMaterial(U, bed, vert, { wet = 1, rough = 0.5, wrap = 0.6, bumpK = 1
         gPar = vec2(0.0);
 #endif
         float glow = 0.0;
-        vec3 col = bed(vF, r, a, glow);
+        vec3 col = finiteCol(bed(vF, r, a, glow));
+        ${scatter > 0 ? `
+        vec2 deeper = vF - gPar * ${scatterDepth.toFixed(3)};
+        float deepGlow = 0.0;
+        vec3 deepCol = finiteCol(bed(deeper, length(deeper), atan(deeper.y, deeper.x), deepGlow));
+        col = mix(col, deepCol, ${scatter.toFixed(3)} * clamp(glow, 0.0, 1.0));
+        ` : ''}
         // The cut is wet: its relief breaks a film of juice.
         float e = 0.0012;
         float h0 = relief(vF), hy = relief(vF + vec2(e, 0.0)), hz = relief(vF + vec2(0.0, e));
         vec3 nw = normalize(n - (vTy * (hy - h0) + vTz * (hz - h0)) / e * ${bumpK.toFixed(2)} * ${defines.LONGFACE ? '0.15' : '1.0'});
         // A cut face tips up into the key; flesh holds less light than paint.
         vec3 lit = shade(col * 0.72, nw, v, ${rough.toFixed(2)}, ${wrap.toFixed(2)}, col * 0.45, 0.0);
+        ${scatter > 0 ? `
+        float throughLight = pow(max(dot(-v, uRimDir), 0.0), 2.0);
+        float wrapLight = max(dot(-nw, uRimDir) * 0.5 + 0.5, 0.0);
+        lit += col * uRimCol * ${scatter.toFixed(3)} * clamp(glow, 0.0, 1.0) * (0.12 + 0.4 * throughLight) * wrapLight;
+        ` : ''}
         // Glow: the back light soaks through the thin flesh, most when we look toward it.
         lit += col * uRimCol * uGlow * glow * (0.2 + 1.1 * pow(max(dot(-v, uRimDir), 0.0), 2.0));
         float nv = clamp(dot(nw, v), 0.0, 1.0);
         lit += studio(reflect(-v, nw), 0.04) * fresnel(nv, 0.025) * ${wet.toFixed(2)};
-        gl_FragColor = vec4(lit, 1.0);
+        gl_FragColor = vec4(finiteCol(lit), 1.0);
       }`,
   });
 }
@@ -240,7 +277,7 @@ export function bedMesh(U, F, bed, opts = {}) {
 // A lengthwise cut face: the plane through the axis at angle phi, in a half of fruit F.
 // Its flesh is the fruit's own cross-section pattern, read by depth toward the skin;
 // the pattern turns slowly along the length, so the cut is not one long streak.
-export function longFaceMesh(U, F, src, phi, e) {
+export function longFaceMesh(U, F, src, phi, e, edge = 1) {
   const NT = 40, NR = 24, pos = [], uvF = [], nrm = [], idx = [];
   const c = Math.cos(phi), s = Math.sin(phi);
   for (let i = 0; i <= NT; i++) {
@@ -248,7 +285,10 @@ export function longFaceMesh(U, F, src, phi, e) {
     const r = F.shape(t, phi, e);
     for (let j = 0; j <= NR; j++) {
       const rho = j / NR;
-      pos.push(-F.A * t, F.B * r * rho * c, F.C * r * rho * s);
+      // Each side of a cut moves a hair into its own wedge. Adjacent pieces no
+      // longer render two wet faces on the exact same depth plane.
+      const inset = 0.0022 * edge;
+      pos.push(-F.A * t, F.B * r * rho * c - s * inset, F.C * r * rho * s + c * inset);
       const tw = phi + t * 1.3;
       uvF.push(rho * Math.cos(tw), rho * Math.sin(tw));
       nrm.push(0, -s, c);
@@ -423,7 +463,7 @@ export function solidMaterial(U, { col = 'vec3(0.03)', rough = 0.3, f0 = 0.04, w
 // F.face(U, g, R, e) adds the cut face and returns its parts.
 export function makeHalf(F, U, e, seed) {
   const g = new THREE.Group();
-  const skinMat = skinMaterial(U, F.look);
+  const skinMat = skinMaterial(U, F.look, F.id);
   const skin = new THREE.Mesh(skinGeometry(F, e), skinMat);
   g.add(skin);
   F.tip?.(U, g, skinMat, e);

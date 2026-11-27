@@ -76,7 +76,7 @@ vec3 bed(vec2 f, float r, float a, inout float glow) {
 }`;
 
 export const orange = {
-  id: 'orange', label: 'Orange', A, B, C,
+  id: 'orange', label: 'Blood orange', A, B, C,
   shape: (() => {
     const nz = createNoise3D(rng(13));
     return (t, ph, e) => Math.pow(Math.max(0, 1 - t * t), 0.5) * (1 + e * t * 0.3)
@@ -86,7 +86,7 @@ export const orange = {
     thru: [1.0, 0.42, 0.04], thruK: 2.5,
     skinA: [0.55, 0.11, 0.006], skinB: [0.76, 0.2, 0.01], mottle: 6,
     blush: [0.3, 0.02, 0.012], blushK: 0.5, blushDir: [0.3, 0.7, 0.3],
-    pores: 0.38, poreScale: 85, rough: 0.26, f0: 0.05, wrap: 0.35, sss: [0.8, 0.3, 0.0],
+    pores: 0.38, poreScale: 85, rough: 0.34, f0: 0.04, wrap: 0.35, sss: [0.8, 0.3, 0.0],
     speck: [0.7, 160, 0.3], speckCol: [0.9, 0.4, 0.03],
     sheen: [0.1, 0.035, 0.006], tipDark: 0.08,
     glsl: /* glsl */`

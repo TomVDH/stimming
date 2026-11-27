@@ -72,7 +72,7 @@ export const peach = {
     thru: [1.0, 0.45, 0.2], thruK: 2.2,
     skinA: [0.72, 0.33, 0.05], skinB: [0.86, 0.47, 0.09], mottle: 5,
     blush: [0.48, 0.025, 0.02], blushK: 0.9, blushDir: [0.25, 0.85, 0.45],
-    pores: 0.04, poreScale: 40, rough: 0.8, f0: 0.03, wrap: 0.45, sss: [0.9, 0.35, 0.15],
+    pores: 0.04, poreScale: 40, rough: 0.86, f0: 0.028, wrap: 0.45, sss: [0.9, 0.35, 0.15],
     speck: [0.8, 70, 0.7], speckCol: [0.7, 0.36, 0.1],
     sheen: [0.5, 0.3, 0.2], tipDark: 0,
   },
@@ -139,6 +139,7 @@ export const peach = {
       sg.computeVertexNormals();
       sg.scale(0.2, SY * B * 0.92, SZ * C * 0.92);
       const stone = new THREE.Mesh(sg, solidMaterial(U, { col: 'mix(mix(vec3(0.3, 0.012, 0.016), vec3(0.05, 0.012, 0.008), smoothstep(0.1, 0.4, vTip) * (1.0 - smoothstep(0.55, 0.9, vTip))), vec3(0.2, 0.06, 0.03), smoothstep(0.6, 1.0, vTip)) * (0.8 + 0.3 * vn(vL * 50.0))', rough: 0.55, wrap: 0.35, sss: 'vec3(0.5, 0.05, 0.03)', bump: 0.35, bumpScale: 90 }));
+      stone.userData.ejectable = { radius: 0.24 };
       g.add(stone);
       parts.push(stone);
     }

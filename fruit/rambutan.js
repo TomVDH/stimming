@@ -53,7 +53,7 @@ export const rambutan = {
     thru: [0.7, 0.04, 0.03], thruK: 2,
     skinA: [0.14, 0.006, 0.006], skinB: [0.3, 0.014, 0.01], mottle: 4,
     blush: [0.42, 0.2, 0.02], blushK: 0.2, blushDir: [0, -1, 0.2],
-    pores: 0.35, poreScale: 14, rough: 0.55, f0: 0.035, wrap: 0.3, sss: [0.5, 0.05, 0.02],
+    pores: 0.35, poreScale: 14, rough: 0.64, f0: 0.03, wrap: 0.3, sss: [0.5, 0.05, 0.02],
     sheen: [0.08, 0.02, 0.01], tipDark: 0.15,
   },
   fuzz: { k: 0.85, count: 0.036, lift: 1.1, curl: 1.2, len: 0.3, width: 8, root: [[0.26, 0.008, 0.008], [0.4, 0.02, 0.012]], tip: [0.24, 0.05, 0.015], trans: [0.5, 0.03, 0.02] },
@@ -86,6 +86,7 @@ export const rambutan = {
       const sg = new THREE.SphereGeometry(1, 64, 40);
       sg.scale(0.13, SY * B * 0.93, SZ * C * 0.93);
       const seed = new THREE.Mesh(sg, solidMaterial(U, { col: 'mix(vec3(0.13, 0.07, 0.035), vec3(0.28, 0.17, 0.08), vn(vL * 30.0))', rough: 0.35, wrap: 0.3, bump: 0.15, bumpScale: 50 }));
+      seed.userData.ejectable = { radius: 0.18 };
       g.add(seed);
       parts.push(seed);
     }

@@ -13,11 +13,16 @@ varying vec2 vUv;
 #ifndef TAPS
 #define TAPS 32
 #endif
-float lin(float d) { float z = d * 2.0 - 1.0; return 2.0 * uNear * uFar / (uFar + uNear - z * (uFar - uNear)); }
+vec3 finiteCol(vec3 c) {
+  if (any(notEqual(c, c))) return vec3(0.0);
+  return clamp(c, vec3(0.0), vec3(48.0));
+}
+float finiteDepth(float d) { return d == d ? clamp(d, 0.0, 1.0) : 1.0; }
+float lin(float d) { float z = finiteDepth(d) * 2.0 - 1.0; return 2.0 * uNear * uFar / max(uFar + uNear - z * (uFar - uNear), 0.0001); }
 // The blur radius in pixels; negative in front of the focus plane.
-float coc(float z) { return clamp(uAperture * (z - uFocus) / z * uRes.y, -uMaxR, uMaxR); }
+float coc(float z) { return clamp(uAperture * (z - uFocus) / max(z, 0.0001) * uRes.y, -uMaxR, uMaxR); }
 void main() {
-  vec3 c0 = texture2D(tCol, vUv).rgb;
+  vec3 c0 = finiteCol(texture2D(tCol, vUv).rgb);
   float r0 = coc(lin(texture2D(tDepth, vUv).r));
   vec3 acc = c0;
   float wsum = 1.0, fg = 0.0;
@@ -30,7 +35,7 @@ void main() {
     float r = sqrt(fi / float(TAPS)) * R;
     vec2 o = vec2(cos(fi * GA + rot), sin(fi * GA + rot)) * r;
     vec2 uv = vUv + o / uRes;
-    vec3 c = texture2D(tCol, uv).rgb;
+    vec3 c = finiteCol(texture2D(tCol, uv).rgb);
     float rs = coc(lin(texture2D(tDepth, uv).r));
     // A far tap behind a sharp centre cannot bleed onto it.
     float rr = rs > r0 ? clamp(abs(r0) * 2.0, 0.0, abs(rs)) : abs(rs);
@@ -55,6 +60,8 @@ varying vec2 vUv;
 float hh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 void main() {
   vec3 c = texture2D(tCol, vUv).rgb;
+  if (any(notEqual(c, c))) c = vec3(0.0);
+  c = clamp(c, vec3(0.0), vec3(48.0));
   // A lens vignette: a wide oval falloff.
   vec2 q = (vUv - 0.5) * vec2(uAsp, 1.0);
   c *= mix(1.0, 0.55, smoothstep(0.35, 1.05, length(q)));
@@ -110,6 +117,7 @@ export function makePost(renderer) {
     },
     render(scene, camera, { frame = 0, focus = 5, aperture = 0.012 } = {}) {
       renderer.setRenderTarget(rt);
+      renderer.clear(true, true, true);
       renderer.render(scene, camera);
       let src = rt;
       if (level >= 1) {
@@ -118,6 +126,7 @@ export function makePost(renderer) {
         dofM.uniforms.uFocus.value = focus;
         dofM.uniforms.uAperture.value = aperture;
         renderer.setRenderTarget(rtB);
+        renderer.clear(true, false, false);
         dofQ.render(renderer);
         src = rtB;
       }

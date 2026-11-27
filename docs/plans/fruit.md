@@ -1,6 +1,6 @@
 # Fruit slice (`fruit`)
 
-Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
+Status: active. Refinement bean `stimming-2dm2`; original feature `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 
 ## Asks (Tom, 2026-11-23)
 
@@ -33,10 +33,19 @@ Status: active. Bean `stimming-7pgt`. Toy doc: `docs/toys/fruit.md`.
 
 | Pass | What |
 |---|---|
-| Floor, seams, halves, light | Exact floor contact; no seams; halves squeeze, drip and wobble on their own; light through the fruit with a light drag |
+| Floor, seams, halves, light | Exact floor contact; no seams; halves squeeze, drip and wobble on their own; fixed studio lighting shows light through the fruit |
 | Juice puddle | Drops pool into one glossy puddle that spreads, holds its edge, mixes colours and mirrors the fruit |
 | Wedges | A swipe across a half or wedge splits it lengthwise along the swipe; pieces are sectors of the half; lengthwise faces from each fruit's pattern |
 | Loose seeds | Flick a piece (or press F): arils, sacs or seeds tumble out, bounce, roll and rest |
+| Interaction and contacts | One exclusive gesture state; touch-aware slice, squeeze and flick thresholds; independently moving child pieces; progressive squeeze from juice to contents; actual piece throws contained by the visible table; compound contacts along each rendered wedge; exact floor support; explicit clean Join |
+
+The 2026-11-27 contact correction stays within the normal 2.5 MB toy budget: no library, asset or render pass was added. Shared wet cut faces are inset into their own wedges, post-processing contains invalid HDR/depth samples before bloom, and airborne contact shadows soften rather than remaining painted onto the floor.
+
+The fruit ribbon follows Star Chart's horizontal tray with ten fruit portraits. The light rig adds roughness-dependent microfacet highlights to the existing procedural studio reflections. Playwright rendered all ten fruits without console errors; the normal-motion desktop swap took longer than four seconds in the headless check and needs a live performance look.
+
+The fruit portraits now use their own colors, and the blood orange is named and shown with red flesh. During a swap the transformed hull corrects the roll height against the floor. A Playwright sample of the kiwi-to-blood-orange roll stayed at or above the floor across 26 frames.
+
+Tom approved lemon, mango, avocado, papaya and coconut. These join the ribbon with individual skin profiles, interiors and transparent rotating cutaway previews. Fuzz now belongs to the fruit definition; the slider and saved overrides are removed. Background dragging no longer moves the light or camera.
 
 Ideas waiting: tear open or peel, a bite.
 
@@ -59,6 +68,6 @@ Order: Tom's pick. Each fruit is one pass, one commit, shown before the next.
 |---|---|
 | Each drupelet a turbid sphere | Juice beads: kiwi jelly ring, pomegranate arils, passion fruit sacs |
 | Hairs as camera-facing ribbons | Kiwi and peach fuzz, rambutan spines |
-| Velvet for fine fuzz | A sheen term scaled by the Fuzz slider |
+| Velvet for fine fuzz | A sheen term scaled by each fruit's fixed fuzz |
 | Baked soft light (SH transfer) | Skipped: needs an offline bake |
 | Lens finish | Depth of field, bloom, ACES, vignette, grain, quality presets |

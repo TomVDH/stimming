@@ -62,7 +62,7 @@ float box(vec3 d, vec3 c, float w, float h, float rough) {
   vec3 t2 = cross(c, t1);
   float u = abs(dot(d, t1) / k), v = abs(dot(d, t2) / k);
   float s = 0.015 + rough * rough * 1.6;
-  return smoothstep(w + s, w - s, u) * smoothstep(h + s, h - s, v) / (1.0 + rough * rough * 12.0);
+  return (1.0 - smoothstep(w - s, w + s, u)) * (1.0 - smoothstep(h - s, h + s, v)) / (1.0 + rough * rough * 12.0);
 }
 vec3 studio(vec3 d, float rough) {
   vec3 c = mix(uGround, uSky, smoothstep(-0.3, 0.6, d.y)) * 0.7;
@@ -76,6 +76,18 @@ vec3 studio(vec3 d, float rough) {
   return c;
 }
 float fresnel(float nv, float f0) { return f0 + (1.0 - f0) * pow(1.0 - nv, 5.0); }
+vec3 directSpec(vec3 n, vec3 v, vec3 l, vec3 light, float rough, float f0) {
+  float nl = max(dot(n, l), 0.0), nv = max(dot(n, v), 0.001);
+  vec3 hv = v + l;
+  vec3 h = hv * inversesqrt(max(dot(hv, hv), 0.00001));
+  float nh = max(dot(n, h), 0.0), vh = max(dot(v, h), 0.0);
+  float a = max(rough * rough, 0.025), a2 = a * a;
+  float d = nh * nh * (a2 - 1.0) + 1.0;
+  float distribution = a2 / max(3.141593 * d * d, 0.00001);
+  float k = (rough + 1.0) * (rough + 1.0) * 0.125;
+  float visibility = (nv / (nv * (1.0 - k) + k)) * (nl / max(nl * (1.0 - k) + k, 0.0001));
+  return light * distribution * visibility * fresnel(vh, f0) * nl / max(4.0 * nv * nl, 0.001);
+}
 // A surface lit by the rig: wrap diffuse with a scatter tint, then the studio's reflection.
 vec3 shade(vec3 albedo, vec3 n, vec3 v, float rough, float wrap, vec3 sss, float f0) {
   float nk = dot(n, uKeyDir), nr = dot(n, uRimDir);
@@ -86,6 +98,8 @@ vec3 shade(vec3 albedo, vec3 n, vec3 v, float rough, float wrap, vec3 sss, float
   col += sss * (uKeyCol * (dk - max(nk, 0.0)) + uRimCol * (dr - max(nr, 0.0)) * 0.6);
   float nv = clamp(dot(n, v), 0.0, 1.0);
   col += studio(reflect(-v, n), rough) * fresnel(nv, f0);
+  col += directSpec(n, v, uKeyDir, uKeyCol, rough, f0) * 0.35;
+  col += directSpec(n, v, uRimDir, uRimCol, rough, f0) * 0.15;
   return col;
 }
 `;

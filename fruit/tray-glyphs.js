@@ -1,0 +1,17 @@
+// Fruit portraits for the selection ribbon.
+const paths = {
+  kiwi: '<ellipse cx="40" cy="40" rx="30" ry="25"/><ellipse class="pale" cx="40" cy="40" rx="24" ry="19"/><ellipse class="core" cx="40" cy="40" rx="7" ry="5"/><g class="seeds"><ellipse cx="40" cy="26" rx="2" ry="3"/><ellipse cx="52" cy="31" rx="2" ry="3"/><ellipse cx="57" cy="40" rx="2" ry="3"/><ellipse cx="52" cy="49" rx="2" ry="3"/><ellipse cx="40" cy="54" rx="2" ry="3"/><ellipse cx="28" cy="49" rx="2" ry="3"/><ellipse cx="23" cy="40" rx="2" ry="3"/><ellipse cx="28" cy="31" rx="2" ry="3"/></g>',
+  pomegranate: '<path d="M30 15l-3-9 8 4 5-7 5 7 8-4-3 9c15 5 21 16 20 29-1 20-14 28-30 28S11 64 10 44c-1-13 5-24 20-29z"/><circle class="pale" cx="40" cy="44" r="23"/><g class="seeds"><circle cx="32" cy="34" r="4"/><circle cx="42" cy="31" r="4"/><circle cx="51" cy="36" r="4"/><circle cx="28" cy="44" r="4"/><circle cx="39" cy="42" r="4"/><circle cx="50" cy="46" r="4"/><circle cx="33" cy="55" r="4"/><circle cx="44" cy="55" r="4"/></g>',
+  orange: '<circle cx="40" cy="40" r="30"/><circle class="pale" cx="40" cy="40" r="25"/><circle class="core" cx="40" cy="40" r="3"/><path class="lines" d="M40 17v20M40 43v20M17 40h20M43 40h20M24 24l13 13M43 43l13 13M56 24L43 37M37 43L24 56"/>',
+  peach: '<path d="M40 18c-8-10-27-5-30 14-4 22 11 37 30 40 19-3 34-18 30-40-3-19-22-24-30-14z"/><path class="lines" d="M40 18c-6 9-6 22 0 35M40 17c0-7 3-11 8-13"/><path class="pale" d="M44 15c4-8 12-10 19-8-3 7-10 11-19 8z"/>',
+  dragon: '<path d="M40 9l5 8 10-5 1 9 11-1-3 9c7 8 9 15 5 24-5 12-17 19-29 19S16 65 11 53C7 44 9 37 16 29l-3-9 11 1 1-9 10 5z"/><ellipse class="pale" cx="40" cy="45" rx="23" ry="21"/><g class="seeds"><circle cx="30" cy="36" r="2"/><circle cx="42" cy="33" r="2"/><circle cx="52" cy="39" r="2"/><circle cx="25" cy="46" r="2"/><circle cx="37" cy="43" r="2"/><circle cx="48" cy="50" r="2"/><circle cx="34" cy="55" r="2"/></g>',
+  rambutan: '<path d="M40 13l4-9 3 10 9-6-1 11 11-3-5 10 10 4-9 6 9 8-10 1 5 10-11-2 1 10-9-5-4 10-3-10-9 6 1-11-10 3 5-10-10-3 9-7-8-7 10-2-3-10 10 4-1-11 9 6z"/><circle class="pale" cx="40" cy="40" r="22"/><ellipse class="core" cx="40" cy="40" rx="9" ry="13"/>',
+  mangosteen: '<circle cx="40" cy="43" r="29"/><path class="pale" d="M18 19c3-8 9-10 17-5 3-8 8-8 11 0 8-5 14-3 16 5-8 5-15 6-22 2-7 4-14 3-22-2z"/><path class="lines" d="M40 13V5"/><path class="pale" d="M20 43a20 20 0 0140 0c0 12-9 20-20 20s-20-8-20-20z"/><path class="lines" d="M40 39v23M40 40L25 55M40 40l15 15"/>',
+  passion: '<circle cx="40" cy="40" r="30"/><circle class="pale" cx="40" cy="40" r="23"/><g class="seeds"><circle cx="31" cy="30" r="5"/><circle cx="43" cy="29" r="5"/><circle cx="52" cy="36" r="5"/><circle cx="27" cy="42" r="5"/><circle cx="39" cy="41" r="5"/><circle cx="51" cy="49" r="5"/><circle cx="33" cy="53" r="5"/><circle cx="43" cy="56" r="5"/></g>',
+  starfruit: '<path d="M40 7l7 21 22-1-17 14 8 22-20-13-20 13 8-22-17-14 22 1z"/><path class="pale" d="M40 19l5 15 15-1-12 10 5 14-13-9-13 9 5-14-12-10 15 1z"/><circle class="core" cx="40" cy="39" r="3"/>',
+  fig: '<path d="M40 5c-5 13-12 17-20 27-12 16-7 35 20 39 27-4 32-23 20-39C52 22 45 18 40 5z"/><path class="pale" d="M40 18c-6 10-20 19-20 30 0 12 9 18 20 19 11-1 20-7 20-19 0-11-14-20-20-30z"/><path class="core" d="M40 27c-5 8-14 15-14 23 0 8 6 12 14 13 8-1 14-5 14-13 0-8-9-15-14-23z"/>',
+};
+
+export function fruitGlyph(id) {
+  return `<svg class="fruit-glyph" data-fruit="${id}" viewBox="0 0 80 80" aria-hidden="true">${paths[id] || paths.kiwi}</svg>`;
+}

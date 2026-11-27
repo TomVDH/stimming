@@ -125,5 +125,6 @@ export function makeJuice(L) {
       mesh.count = drops.length;
       mesh.instanceMatrix.needsUpdate = true;
     },
+    clear() { drops.length = 0; mesh.count = 0; },
   };
 }

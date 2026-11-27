@@ -65,7 +65,17 @@ export function makeBits(U, F, onBounce = null) {
       moving = false;
       for (let s = 0; s < n; s++) {
         for (const b of bits) {
-          if (b.rest) continue;
+          if (b.rest) {
+            for (const sp of spheres) {
+              d.subVectors(b.p, sp.c);
+              if (d.length() < sp.r + rad * b.k + 0.03 && sp.v.lengthSq() > 0.02) {
+                b.rest = false;
+                b.v.copy(sp.v).multiplyScalar(0.45).setY(Math.max(0.25, sp.v.y * 0.35));
+                break;
+              }
+            }
+            if (b.rest) continue;
+          }
           b.v.y -= 9.8 * h;
           b.v.multiplyScalar(Math.exp(-h * 0.4));
           b.p.addScaledVector(b.v, h);
@@ -91,8 +101,8 @@ export function makeBits(U, F, onBounce = null) {
             if (l < m && l > 1e-5) {
               d.divideScalar(l);
               b.p.addScaledVector(d, m - l);
-              const vn = b.v.dot(d);
-              if (vn < 0) b.v.addScaledVector(d, -1.4 * vn);
+              const vn = t1.subVectors(b.v, sp.v).dot(d);
+              if (vn < 0) b.v.addScaledVector(d, -1.35 * vn).addScaledVector(sp.v, 0.12);
             }
           }
         }
@@ -106,7 +116,7 @@ export function makeBits(U, F, onBounce = null) {
             d.divideScalar(l);
             const push = (m - l) * 0.5;
             a.p.addScaledVector(d, -push); c.p.addScaledVector(d, push);
-            const vr = c.v.clone().sub(a.v).dot(d);
+            const vr = t1.subVectors(c.v, a.v).dot(d);
             if (vr < 0) { a.v.addScaledVector(d, vr * 0.6); c.v.addScaledVector(d, -vr * 0.6); a.rest = c.rest = false; }
           }
         }

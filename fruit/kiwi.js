@@ -119,7 +119,7 @@ export const kiwi = {
     // Under the fuzz the skin is a dark green-brown, with small pale lenticels.
     skinA: [0.03, 0.022, 0.008], skinB: [0.075, 0.05, 0.018], mottle: 6,
     blush: [0.05, 0.045, 0.012], blushK: 0.3, blushDir: [0, -1, 0],
-    rough: 0.8, f0: 0.03, wrap: 0.2,
+    rough: 0.86, f0: 0.028, wrap: 0.2,
     speck: [0.84, 90, 0.5], speckCol: [0.16, 0.11, 0.05],
     sheen: [0.18, 0.11, 0.048], tipDark: 0.3,
   },

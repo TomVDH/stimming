@@ -65,7 +65,7 @@ export const starfruit = {
     thru: [0.6, 0.3, 0.03], thruK: 2.6,
     skinA: [0.5, 0.19, 0.004], skinB: [0.6, 0.29, 0.01], mottle: 5,
     blush: [0.3, 0.32, 0.02], blushK: 0.25, blushDir: [0, -1, 0],
-    pores: 0.02, poreScale: 40, rough: 0.2, f0: 0.05, wrap: 0.45, sss: [0.5, 0.26, 0.03],
+    pores: 0.02, poreScale: 40, rough: 0.26, f0: 0.04, wrap: 0.45, sss: [0.5, 0.26, 0.03],
     sheen: [0.04, 0.03, 0.008], tipDark: 0.3,
     glsl: /* glsl */`
       // Each ridge's edge turns green, then brown at its very crest.
