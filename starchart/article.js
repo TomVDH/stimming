@@ -211,6 +211,8 @@ export function makeArticle(o) {
     shut.addEventListener('click', close);
     box.append(shut);
     lines.push(shut);
+    // Hide every line before mounting so syncFade()'s layout read never flashes the full article.
+    if (!RM.matches) [name, ...lines].forEach(el => el.classList.add('is-shut'));
     o.stage.append(box);
     // Clear the edge fades whenever the column rests at an end.
     const syncFade = () => {
@@ -224,7 +226,6 @@ export function makeArticle(o) {
     shown = id;
     if (RM.matches) return;
     // The name flashes in a white box, then each line wipes on behind a white bar, as the card's do.
-    [name, ...lines].forEach(el => el.classList.add('is-shut'));
     later(() => { name.classList.remove('is-shut'); name.classList.add('is-flash'); }, 0);
     later(() => name.classList.remove('is-flash'), 7 * FRAME);
     let at = 11 * FRAME;
