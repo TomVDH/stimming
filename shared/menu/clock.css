@@ -7,23 +7,24 @@
 /* The Clock fits the window: the wordmark, the tagline, the gaps and the clock all scale with its height,
    so the whole clock shows with no scroll. The footer may lie below the fold. */
 :root[data-view="clock"] {
-  --pad: clamp(14px, 3svh, 44px);
-  --gap: clamp(10px, 2.4svh, 30px);
-  /* A phone has height to spare, so its wordmark may grow with the width. */
-  --title: clamp(32px, min(12vw, 8svh), 100px);
-  --tag: clamp(12px, min(1.6vw, 1.75svh), 17px);
-  /* The footer scales with the window height too: its top margin, the chip and its foot. */
-  --foot-gap: clamp(8px, 2.6svh, 64px);
-  --chip: clamp(24px, 3.2svh, 40px);
-  --foot-pad: clamp(8px, 1.8svh, 28px);
-  /* The footer's height: the margin, the chip, the hover name, the quips and the foot. */
-  --foot: calc(var(--gap) + var(--foot-gap) + var(--chip) + 58px + var(--foot-pad));
-  /* The clock takes the height that is left: the window less the blocks above and the footer below.
-     So the whole page fits the window. Below 200 px the page scrolls instead. */
-  /* The Re-roll stands under the clock (Tom, 2026-11-25): its gap and height come off too. */
-  --roll: 44px;
-  --free: calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px - var(--gap) - var(--roll));
-  --clk: max(200px, min(92vw, 1200px, calc(var(--free) - var(--foot))));
+  --pad: clamp(10px, 2svh, 28px);
+  --gap: clamp(8px, 1.5svh, 20px);
+  --tag-gap: clamp(4px, 0.8svh, 12px);
+  /* Compact header scales smoothly with viewport height so the dial commands the screen. */
+  --title: clamp(28px, min(10vw, 6.2svh), 78px);
+  --tag: clamp(11px, min(1.5vw, 1.55svh), 15px);
+  /* The footer stays anchored cleanly along the bottom edge. */
+  --foot-gap: clamp(6px, 1.2svh, 18px);
+  --chip: clamp(22px, 2.8svh, 34px);
+  --foot-pad: clamp(6px, 1.2svh, 16px);
+  --roll-gap: clamp(10px, 1.5svh, 18px);
+  --roll: clamp(28px, 3.6svh, 38px);
+  /* Exact non-clock heights: header, Re-roll clearance, and footer, with no double-counted gaps. */
+  --head: calc(var(--pad) + 1.05 * var(--title) + var(--tag-gap) + 1.45 * var(--tag));
+  --roll-room: calc(var(--roll-gap) + var(--roll));
+  --foot: calc(var(--foot-gap) + var(--chip) + 46px + var(--foot-pad));
+  --free: calc(100svh - 16px - var(--head) - var(--roll-room) - var(--foot) - 24px);
+  --clk: max(200px, min(90vw, 1080px, var(--free)));
 }
 /* Phones: the dial keeps 24 px clear of each edge, so a held toy never meets it.
    The gaps open up, since a phone has height to spare. */
@@ -31,19 +32,29 @@
   :root[data-view="clock"] {
     --pad: clamp(18px, 4svh, 44px);
     --gap: clamp(16px, 3.6svh, 34px);
+    --tag-gap: clamp(8px, 1.4svh, 16px);
     --clk: max(200px, min(100vw - 48px, 660px, calc(100svh - var(--pad) - 1.1 * var(--title) - 2.4 * var(--gap) - 2.9 * var(--tag) - 20px)));
   }
 }
-:root[data-view="clock"] .wrap { padding-block-start: var(--pad); gap: var(--gap); }
-/* The page fills the window, and the footer and its glow stand on the bottom edge. */
-/* The body keeps its 8 px margin, so the wrap is 16 px short of the window. */
-:root[data-view="clock"] .wrap { box-sizing: border-box; min-height: calc(100svh - 16px); grid-template-rows: auto auto auto 1fr; }
+:root[data-view="clock"] .wrap {
+  box-sizing: border-box;
+  min-height: calc(100svh - 16px);
+  padding-block: var(--pad) 0;
+  gap: 0;
+  /* Middle row takes 1fr so the Clock dial sits vertically centred in the viewport. */
+  grid-template-rows: auto auto 1fr auto;
+}
 :root[data-view="clock"] .credit { align-self: end; margin-top: var(--foot-gap); }
 :root[data-view="clock"] .title { font-size: var(--title); }
-:root[data-view="clock"] .tagline { font-size: var(--tag); margin-top: calc(-0.6 * var(--gap)); }
-:root[data-view="clock"] main { gap: var(--gap); }
-/* The Re-roll hangs under the clock; this room keeps the footer clear of it. */
-:root[data-view="clock"] main { padding-bottom: calc(var(--gap) + var(--roll)); }
+:root[data-view="clock"] .tagline { font-size: var(--tag); margin-top: var(--tag-gap); }
+:root[data-view="clock"] main {
+  gap: 0;
+  align-self: stretch;
+  align-content: center;
+  /* Re-roll hangs under the dial; keep its clearance balanced so the circle sits centred. */
+  padding-top: calc(var(--gap) * 0.5);
+  padding-bottom: calc(var(--roll-room) + var(--gap) * 0.5);
+}
 
 /* The shelf and the face share one grid cell, so the face lies under the toys. */
 :root[data-view="clock"] main > .shelf {
@@ -156,7 +167,7 @@
    It keeps its font; it scales with the face. */
 .clock-roll { display: none; }
 :root[data-view="clock"] .clock-roll {
-  position: absolute; left: 50%; top: calc(100% + var(--gap)); translate: -50% 0; z-index: 1;
+  position: absolute; left: 50%; top: calc(100% + var(--roll-gap)); translate: -50% 0; z-index: 1;
   display: inline-flex; align-items: center; gap: max(6px, 1.2cqw); min-height: max(26px, 5cqw); padding: max(6px, 1.3cqw) max(11px, 2.4cqw); border-radius: 999px; cursor: pointer;
   border: 1px solid color-mix(in oklch, var(--fg) 26%, transparent); background: none; color: var(--fg);
   font: 500 clamp(10px, 1.8cqw, 12px)/1 "Iosevka Term Slab", ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; white-space: nowrap;
@@ -224,7 +235,7 @@
   :root[data-view="clock"] main > .shelf .name { position: static; width: auto; height: auto; overflow: visible; clip-path: none; white-space: normal; }
   /* The face gives up its box, so the Re-roll becomes the next row of the page. */
   :root[data-view="clock"] .clock-face { display: contents; }
-  :root[data-view="clock"] main { padding-bottom: 0; }
+  :root[data-view="clock"] main { gap: var(--gap); padding-block: var(--gap) 0; align-content: start; }
   :root[data-view="clock"] :is(.clock-comet, .clock-mid), :root[data-view="clock"] main::before { display: none; }
   :root[data-view="clock"] .clock-roll {
     position: static; translate: none; justify-self: center;

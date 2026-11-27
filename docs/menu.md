@@ -72,7 +72,7 @@ Files: `shared/menu/clock.css`, `shared/menu/clock.js`, `shared/menu/tube.js`, `
 
 ### Fit
 - In the Clock view the wordmark, tagline, gaps and clock scale with the window height (`--pad`, `--gap`, `--title`, `--tag`, `--clk` in `clock.css`).
-- The clock takes the height that is left after the blocks above and the footer below: at least 200 px, at most 92% of the width and 1200 px. The footer's margin, chip and foot scale with the window height too, so the whole page fits the window. Below 200 px the page scrolls.
+- The Clock row takes `1fr` (`grid-template-rows: auto auto 1fr auto`), so the dial sits vertically centred in the viewport and maximizes the free height between the header and footer: at least 200 px, at most 90% of the width and 1080 px. Below 200 px the page scrolls.
 - The page fills the window: the footer and its glow stand on the bottom edge, with no band under them.
 - A phone in portrait (640 px wide at most) shows the dozen as a grid of three with names, like the whole shelf: no dial, comet, tube or wait dot. A tap opens the toy. The Re-roll stands under the grid and shows at once. On load and on a Re-roll the dozen comes in out of a grainy blur, one toy after another, as the old menu did.
 - Phones, portrait up to 640 px: the dial keeps 24 px clear of each edge. The page never pans sideways.

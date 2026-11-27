@@ -30,6 +30,7 @@ The page also lists the code libraries in `docs/standards/code.md`; a new librar
 | OpenStreetMap extracts by Overpass: `canal/beernem.json`, `dijkstra/maps/*.json`, `motorway/roads.json`, Train Ride's roads, paths and buildings | Canal at dusk, Dijkstra, Lit motorway, Train Ride | <https://www.openstreetmap.org/copyright> | ODbL 1.0 | Credits page; Canal at dusk, Dijkstra, Lit motorway also on the stage |
 | SWISSIMAGE and swissALTI3D (`trainride/sat-*.webp`, ground height; `trainride/tools/sat.py`) | Train Ride | <https://www.swisstopo.admin.ch/en/geodata-free> | swisstopo open data, credit "© swisstopo" | Credits page |
 | Farmland use (BLW, via geodienste.ch) and NFI forest mix and vegetation height (BAFU, via swisstopo) | Train Ride | <https://geodienste.ch/>, <https://www.swisstopo.admin.ch/> | Swiss federal open data | Credits page |
+| Chip layout polygons of the MOS 6502 (Greg James, Brian Silverman, Barry Silverman) and the Motorola 6800 (Ijor), packed to `wafer/6502.bin` and `wafer/6800.bin` by `wafer/tools/pack.mjs`; drawn as vectors, contacts derived | Wafer hunt | <https://github.com/trebonian/visual6502> (`segdefs.js`, `chip-6800/segdefs.js`), <http://www.visual6502.org> | CC BY-NC-SA 3.0 (stated in each file's header; the repo has no licence file) | Credits page |
 
 Observatory's `observatory/stars.bin` and `observatory/stars.json` are derived from HYG v4.4 (cut by `tools/hyg-cut.mjs`) and carry the same licence, CC BY-SA 4.0.
 
