@@ -22,11 +22,11 @@ export default {
   // Paths here are from the site root; the desk lives one folder down.
   root: '../',
   // The pages beside the desk.
-  links: [['Access kit', 'access.html'], ['Type trials', 'type.html'], ['Icon sheet', '../icons/sheet.html'], ['Inventory', '../inventorylab/']],
+  links: [['Access kit', 'access.html'], ['Type trials', 'type.html'], ['Icon sheet', '../icons/sheet.html'], ['Inventory', '../inventorylab/'], ['Annex sheet', '../annexlab/sheet.html']],
   // Groups in strip order, with their filter word.
   groups: [['main', 'Main'], ['lab', 'Lab'], ['unlisted', 'Unlisted']],
   // Panel modules from ./panels/, in tab order.
-  panels: ['icons', 'feedback', 'intro', 'share'],
+  panels: ['icons', 'feedback', 'intro', 'share', 'annex'],
   // The item a bare address opens.
   first: 'railgun',
 

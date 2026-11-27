@@ -1,10 +1,11 @@
 ---
 # stimming-u67n
 title: 'Doodle Hunt: a silicon die with hidden chip-art doodles (Lab, Shader type)'
-status: in-progress
+status: completed
 type: feature
+priority: normal
 created_at: 2026-11-27T07:00:59Z
-updated_at: 2026-11-27T07:00:59Z
+updated_at: 2026-11-27T07:38:34Z
 ---
 
 New Lab toy. A silicon die seen flat: thin-film iridescence, etched SDF doodles hidden in a dense chip pattern. Pan and zoom; tap a doodle when spotted; a quiet tally counts finds. Stack type: Shader (raw WebGL2 + GLSL, shared/gl.js). Sound: none for v1. Tom: 'silicon / chip -- silicon doodle kind of thing. Impressive fidelity on the shading -- this may not need to be a full 3d GPU toy', then GO.

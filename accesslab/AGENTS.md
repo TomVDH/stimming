@@ -4,7 +4,7 @@ Two workbench pages, `noindex`. Plan: `docs/plans/access.md`. Bean: `stimming-9e
 
 | Page | What |
 |---|---|
-| `index.html` | The toy desk: one toy at a time; Icon, Feedback, Intro and Share tabs; one YAML per toy |
+| `index.html` | The toy desk: one toy at a time; Icon, Feedback, Intro, Share and Annex tabs; one YAML per toy |
 | `access.html` | The access kit: glyphs, tech tags, tiles, ColorSym |
 
 - The desk is a template. Read `TEMPLATE.md` before you add a panel or reuse it.
