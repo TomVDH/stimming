@@ -26,7 +26,7 @@ Bar: v3, the Signal bar, over Bar v2 (`signal: true` in `cauldron/index.html`). 
 
 | Slot | Holds |
 |---|---|
-| Choice | `Ingredients` list: Any (the old round, no heading), then Solids (sixteen) and Liquids (cream, squid ink, chilli oil, saffron) |
+| Choice | `Ingredients` tray: Any, Solids, Witchy, Odd and Liquids in a scrollable ribbon |
 | Actions | `+ Ingredients` (T), `Throw out` (C) |
 | Slider | `Heat`, 0 to 1, default 0.5: flame height, heat, bubbles, steam, the simmer's sound |
 | How to play | Click: add an ingredient, push an ingredient down. Drag: stir the soup, move an ingredient, pour the liquid. ← →: stir the soup. T: add an ingredient. C: throw out the soup |
@@ -215,7 +215,7 @@ None in `tests/`. Checked on 2026-11-15 in the built-in browser pane: a clean co
 |---|---|
 | Hands | Tap a thing to dunk it; drag a thing to pull it (it lifts, drips, leaves a wake); with a liquid picked, a drag pours along the path |
 | Things | 16 kinds: the ten, cleaner and chunkier, plus potato (cubes), leek (rings), garlic (cloves), chilli (sweats oil), bay leaf (never cooks through), noodles (melt) |
-| Tray | Any, then Solids, Witchy, Odd and Liquids groups in the Bar v3 Ingredients sheet. Any throws only the Solids |
+| Tray | A scrollable ribbon with Any, Solids, Witchy, Odd and Liquids. Any throws only the Solids |
 | Witchy and Odd | Tom, 2026-11-17: ten witchy and ten odd things, two of each per round, bean `stimming-bont`. All twenty are in. Each has its own step in `ACT`; `AIM` runs after the springs; `free()` names the things on the soup |
 | Frog | Kicks now and then (legs out, a shove, a wake). Sometimes it hops onto the rim at the sides or back, turns to face the soup, sits 2.5 to 5 s and jumps back in; a hotter pot makes hops likelier. It croaks on each jump. A tap makes it kick away. It never cooks |
 | Candle stub | Floats upright and burns down over 90 s, then melts away. Its wax leaves a film of fat. The flame lights the soup, the things and the iron near it, and glints in the soup. A tap puts it out with a hiss and a puff; it lights again after 2.5 s |
