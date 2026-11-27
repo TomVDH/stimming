@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Bubbelplastiek /ˈbʏbəlplɑsˌtik/ |
-| Motto | One is none. / Ééntje is geentje. |
+| Motto | Just one more. Obviously. / Ééntje is geentje. |
 | Shelf | Main, number 2 |
 | Stage | None |
 | Series | None |

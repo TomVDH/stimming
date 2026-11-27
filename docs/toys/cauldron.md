@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None (Tom sets it) |
-| Motto | None |
+| Motto | If it fits, it's soup. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

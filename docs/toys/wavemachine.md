@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Golfmachine /ˈɣɔlfmɑˌʃinə/ (draft) |
-| Motto | None |
+| Motto | The ocean, with the edges neatly contained. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

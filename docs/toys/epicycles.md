@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Epicykels /ˌeːpiˈsikəls/ (draft) |
-| Motto | None |
+| Motto | Circles riding circles. Naturally. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

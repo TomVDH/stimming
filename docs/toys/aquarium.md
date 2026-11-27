@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Aquarium /aːˈkʋaːrijʏm/ (draft, for Tom) |
-| Motto | None |
+| Motto | The fish have no idea what day it is. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

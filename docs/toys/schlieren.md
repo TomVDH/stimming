@@ -9,7 +9,7 @@ A section marked (gen) comes from toys.json, series.json or the page source.
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Hot air finally showing its work. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None (proposal: `science`) |

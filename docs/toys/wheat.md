@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Tarwestorm /ˈtɑrʋəˌstɔrm/ (draft) |
-| Motto | None |
+| Motto | The field saw the weather coming. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

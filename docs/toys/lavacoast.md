@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Lavakust /ˈlaːvaːˌkʏst/ (draft) |
-| Motto | None |
+| Motto | New coastline, coming in hot. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

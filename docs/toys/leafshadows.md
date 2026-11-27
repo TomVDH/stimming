@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Bladerschaduw /ˈblaːdərˌsxaːdyʋ/ (draft) |
-| Motto | None |
+| Motto | The tree is drawing on the wall again. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet |
-| Motto | None |
+| Motto | Sit back. The brushes have this. |
 | Shelf | Main, number 70 |
 | Stage | Alpha |
 | Series | None |

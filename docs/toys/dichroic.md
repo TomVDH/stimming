@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Dichroïsch glas /diˈxroːis ɣlɑs/ (draft) |
-| Motto | None |
+| Motto | Can't settle on a colour. Fair enough. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

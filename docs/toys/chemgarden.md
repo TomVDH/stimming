@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Chemische tuin /ˈxeːmisə ˈtœyn/ (draft, for Tom) |
-| Motto | None |
+| Motto | Gardening for people who own a lab coat. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

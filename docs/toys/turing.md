@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet |
-| Motto | None yet |
+| Motto | Spots and stripes figuring themselves out. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

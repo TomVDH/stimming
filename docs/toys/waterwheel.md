@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Waterrad /ˈʋaːtərˌrɑt/ (draft) |
-| Motto | None |
+| Motto | Going round on the river's time. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

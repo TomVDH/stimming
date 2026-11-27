@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Belgisch weer /ˈbɛlɣis ˈʋeːr/ |
-| Motto | It's raining cats and dogs. / Het regent pijpenstelen. |
+| Motto | Pick a drop. That's your horse now. / Het regent pijpenstelen. |
 | Shelf | Main, number 22 |
 | Stage | None |
 | Series | Light & glass |

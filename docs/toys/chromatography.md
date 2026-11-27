@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Chromatografie /ˌxroːmaːtoːɣraːˈfi/ (draft) |
-| Motto | None |
+| Motto | All those colours were in there the whole time. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

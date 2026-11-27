@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Teeveeboom /ˌteːˈveːˌboːm/ |
-| Motto | Who has the remote? / Wie heeft de afstandsbediening? |
+| Motto | Five hundred channels and still a tree. / Wie heeft de afstandsbediening? |
 | Shelf | Main, number 23 |
 | Stage | None |
 | Series | Odd one out (`odd`, Raar) |

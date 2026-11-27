@@ -6,7 +6,7 @@
 | | |
 |---|---|
 | Dutch | Spoorkanon /ˈspoːrkaˌnɔn/ |
-| Motto | None |
+| Motto | A very persuasive way to move something. |
 | Shelf | Main, number 40 |
 | Stage | Beta |
 | Series | After dark (`dark`, Na donker) |

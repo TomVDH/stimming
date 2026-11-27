@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Tewaterlating /təˈʋaːtərˌlaːtɪŋ/ (draft) |
-| Motto | None |
+| Motto | A very big thing meeting the water all at once. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

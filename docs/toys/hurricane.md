@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Orkaanoog /ɔrˈkaːnˌoːx/ (draft) |
-| Motto | None |
+| Motto | A little quiet in the middle of all that. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

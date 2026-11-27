@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Spookfile /ˈspoːkˌfilə/ (draft) |
-| Motto | None |
+| Motto | Nobody knows why we're braking. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

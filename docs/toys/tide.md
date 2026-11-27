@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Lichtend tij /ˈlɪxtənt ˈtɛi/ (draft) |
-| Motto | None |
+| Motto | The sea is showing off after dark. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

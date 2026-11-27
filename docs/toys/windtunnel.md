@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Air has notes on your design. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

@@ -8,7 +8,7 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Pressing it again can't hurt. Probably. |
 | Shelf | Main, number 58 |
 | Stage | Alpha |
 | Series | None |

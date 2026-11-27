@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Misthoorn /ˈmɪstˌɦoːrn/ |
-| Motto | None |
+| Motto | For when the view needs subtitles. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | Beta |
 | Series | Vistas (`vistas`, Vergezichten) |

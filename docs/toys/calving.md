@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Kalven /ˈkɑlvə(n)/ (draft) |
-| Motto | None |
+| Motto | The glacier has decided to downsize. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

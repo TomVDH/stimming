@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Someone is comfortable, at least. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

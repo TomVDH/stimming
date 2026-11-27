@@ -8,7 +8,7 @@ Toy doc. Rules: docs/plans/toy-docs.md. Prose: ASD-STE100, double density. No em
 | | |
 |---|---|
 | Dutch | None yet |
-| Motto | None |
+| Motto | Everyone's going somewhere at once. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

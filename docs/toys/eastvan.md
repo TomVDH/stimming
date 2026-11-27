@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet |
-| Motto | None |
+| Motto | Look up from your phone for this bit. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | Alpha |
 | Series | East Van (`eastvan`, East Van) |

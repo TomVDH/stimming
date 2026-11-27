@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Glitterpot /ˈɡlɪtərˌpɔt/ (draft, for Tom) |
-| Motto | None |
+| Motto | Give it a shake. Then give it a minute. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

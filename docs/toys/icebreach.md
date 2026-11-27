@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | IJsdoorbraak /ˈɛizdoːrˌbraːk/ (draft) |
-| Motto | None |
+| Motto | Something big is coming through. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

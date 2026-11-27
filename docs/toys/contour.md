@@ -4,7 +4,7 @@
 |---|---|
 | Number | 73 |
 | Dutch | Hoogtekaart /ˈɦoːxtəˌkaːrt/ (draft) |
-| Motto | None |
+| Motto | Mountains, flattened for your convenience. |
 | Shelf | Main shelf (Tom, 2026-11-23), stage alpha, version 1.5 |
 | Series | Science fair (Tom's pick) |
 | Accent | `oklch(0.76 0.12 70)` |

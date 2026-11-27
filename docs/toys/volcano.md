@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Vulkaan /vʏlˈkaːn/ (draft) |
-| Motto | None |
+| Motto | The mountain has something to get off its chest. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

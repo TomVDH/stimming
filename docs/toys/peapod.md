@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Peul /pøːl/ (draft) |
-| Motto | None |
+| Motto | Peas in their own little sleeping bags. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

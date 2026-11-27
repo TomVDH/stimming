@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | The kitchen scourer has other plans. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

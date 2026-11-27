@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | You can't rush a good hum. |
 | Shelf | Main, number 61 |
 | Stage | Beta |
 | Series | None (proposal: `science`) |

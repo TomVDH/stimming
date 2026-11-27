@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Wiebelogen /ˈʋibəlˌoːɣə/ |
-| Motto | They saw that / Da hebben ze gezien |
+| Motto | Suddenly everything has an opinion. / Da hebben ze gezien |
 | Shelf | Main, number 27 |
 | Stage | None |
 | Series | None |

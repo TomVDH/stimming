@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Overlaat /ˈoːvərˌlaːt/ (draft) |
-| Motto | None |
+| Motto | Water taking the impressive way down. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

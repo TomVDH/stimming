@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None (Tom sets it) |
-| Motto | None |
+| Motto | A crust with somewhere else to be. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

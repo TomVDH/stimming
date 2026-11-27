@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Duik in een gasreus /dœyk ɪn ən ˈɣɑsˌrøːs/ (draft) |
-| Motto | None |
+| Motto | There's a lot more down there. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Sloopkogel /ˈsloːpˌkoːɣəl/ (draft) |
-| Motto | None |
+| Motto | A strong argument against that wall. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

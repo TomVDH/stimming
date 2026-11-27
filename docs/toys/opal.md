@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Opaal /oːˈpaːl/ (draft) |
-| Motto | None |
+| Motto | A little weather system inside a rock. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

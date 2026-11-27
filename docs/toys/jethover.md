@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Zweefjet /ˈzʋeːfˌdʒɛt/ (draft) |
-| Motto | None |
+| Motto | Staying put takes quite a bit of effort. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

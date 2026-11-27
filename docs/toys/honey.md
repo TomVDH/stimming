@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Taking the scenic route to the spoon. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None (proposed: `goo`) |

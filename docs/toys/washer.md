@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None (Tom sets it) |
-| Motto | None |
+| Motto | The line between before and after is addictive. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |
