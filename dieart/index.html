@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.11 0.015 268); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Die art</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<link rel="modulepreload" href="../shared/stim.js">
+<link rel="modulepreload" href="../shared/intro.js">
+<link rel="modulepreload" href="https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js">
+<style>
+/* Die art: optical silicon microscope doodle hunt in three.js. */
+:root { --stage: oklch(0.10 0.016 268); }
+.stage--dieart {
+  background: radial-gradient(ellipse 75% 75% at 50% 50%, oklch(0.15 0.025 268), oklch(0.08 0.014 272) 82%);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.stage--dieart canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.65s ease; touch-action: none; cursor: grab;
+}
+.stage--dieart canvas.on { opacity: 1; }
+.stage--dieart.dragging canvas { cursor: grabbing; }
+.stage--dieart.over-doodle canvas { cursor: crosshair; }
+
+/* Subtle optical reticle overlay */
+.da-reticle {
+  position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  opacity: 0.42; transition: opacity 0.35s ease;
+}
+.da-reticle[hidden] { display: none; }
+.da-reticle svg { width: 100%; height: 100%; display: block; }
+.stage--dieart.over-doodle .da-reticle { opacity: 0.72; }
+
+/* Minimal Signal telemetry strip (top right) */
+.da-hud {
+  position: absolute; top: max(18px, env(safe-area-inset-top)); right: max(18px, env(safe-area-inset-right));
+  z-index: 3; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 7px;
+  font-family: "Iosevka Term Slab", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: oklch(0.92 0.02 250 / 0.86);
+}
+.da-pill {
+  display: inline-flex; align-items: center; gap: 10px;
+  padding: 6px 11px; border-radius: 999px;
+  background: oklch(0.13 0.015 268 / 0.62);
+  border: 1px solid oklch(0.85 0.04 240 / 0.14);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 24px oklch(0.04 0.01 270 / 0.4);
+}
+.da-count {
+  font-variant-numeric: tabular-nums;
+  color: oklch(0.95 0.11 85);
+  font-weight: 600;
+}
+.da-sep { opacity: 0.3; }
+.da-mag, .da-layer { font-variant-numeric: tabular-nums; opacity: 0.85; }
+.da-scale {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 4px 10px; border-radius: 999px;
+  background: oklch(0.13 0.015 268 / 0.5);
+  border: 1px solid oklch(0.85 0.04 240 / 0.1);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.da-scale-bar {
+  display: inline-block; height: 2px; min-width: 28px; max-width: 110px;
+  background: oklch(0.92 0.04 220 / 0.82);
+  box-shadow: -1px 0 0 oklch(0.92 0.04 220 / 0.82), 1px 0 0 oklch(0.92 0.04 220 / 0.82);
+  position: relative;
+}
+.da-scale-bar::before, .da-scale-bar::after {
+  content: ""; position: absolute; top: -3px; width: 1px; height: 8px;
+  background: oklch(0.92 0.04 220 / 0.82);
+}
+.da-scale-bar::before { left: 0; }
+.da-scale-bar::after { right: 0; }
+.da-scale-val { font-variant-numeric: tabular-nums; opacity: 0.78; font-size: 10px; }
+
+/* Progress pips */
+.da-pips {
+  display: flex; gap: 4px; padding: 4px 8px; border-radius: 999px;
+  background: oklch(0.13 0.015 268 / 0.45);
+  border: 1px solid oklch(0.85 0.04 240 / 0.08);
+}
+.da-pip {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: oklch(0.85 0.02 250 / 0.22);
+  transition: background 0.35s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.35s ease;
+}
+.da-pip.on {
+  background: oklch(0.88 0.16 82);
+  box-shadow: 0 0 8px oklch(0.86 0.16 82 / 0.85);
+  transform: scale(1.15);
+}
+
+/* Discovery & scan toast (top center) */
+.da-toast {
+  position: absolute; top: max(20px, env(safe-area-inset-top)); left: 50%;
+  transform: translate(-50%, -10px);
+  z-index: 4; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 9px 16px; border-radius: 14px;
+  background: oklch(0.13 0.02 268 / 0.76);
+  border: 1px solid oklch(0.88 0.14 84 / 0.36);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 36px oklch(0.04 0.01 270 / 0.55);
+  opacity: 0; transition: opacity 0.28s ease, transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+  text-align: center;
+}
+.da-toast.show { opacity: 1; transform: translate(-50%, 0); }
+.da-toast-title {
+  font-family: "Iosevka Term Slab", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.11em; text-transform: uppercase;
+  color: oklch(0.96 0.08 86);
+}
+.da-toast-meta {
+  font-family: "Iosevka Term Slab", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
+  color: oklch(0.84 0.04 220 / 0.82);
+}
+
+/* Directional scan beacon arrow */
+.da-beacon {
+  position: absolute; left: 50%; top: 50%;
+  width: 240px; height: 240px; margin: -120px 0 0 -120px;
+  pointer-events: none; z-index: 3;
+  opacity: 0; transition: opacity 0.35s ease;
+}
+.da-beacon.show { opacity: 1; }
+.da-beacon svg { width: 100%; height: 100%; display: block; }
+
+@media (max-width: 680px) {
+  .da-hud { top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); }
+  .da-pips { display: none; }
+  .da-toast { top: max(56px, env(safe-area-inset-top)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage--dieart canvas, .da-reticle, .da-toast, .da-pip, .da-beacon { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-emblem" style="--emblem: url(../shared/emblems/dieart.svg)"></span><span class="intro-name">Die art</span><span class="intro-sub">Stimming Lab</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--dieart" id="stage" tabindex="0" role="application" aria-label="Silicon microchip under an optical microscope. Drag to pan the wafer, scroll to zoom, rack focus across metal layers, switch Brightfield, Darkfield, DIC or UV illumination, and click hidden microscopic doodles etched into the die.">
+      <div class="da-reticle" id="da-reticle" aria-hidden="true">
+        <svg viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid slice">
+          <g fill="none" stroke="oklch(0.92 0.05 215 / 0.55)" stroke-width="0.9">
+            <circle cx="500" cy="500" r="96" stroke-dasharray="3 9"/>
+            <line x1="458" y1="500" x2="486" y2="500"/>
+            <line x1="514" y1="500" x2="542" y2="500"/>
+            <line x1="500" y1="458" x2="500" y2="486"/>
+            <line x1="500" y1="514" x2="500" y2="542"/>
+            <path d="M476 476 h8 m-8 0 v8 M524 476 h-8 m8 0 v8 M476 524 h8 m-8 0 v-8 M524 524 h-8 m8 0 v-8" stroke-width="1.2"/>
+          </g>
+        </svg>
+      </div>
+      <div class="da-beacon" id="da-beacon" aria-hidden="true">
+        <svg viewBox="0 0 240 240">
+          <g id="da-beacon-rot" transform="rotate(0 120 120)">
+            <path d="M120 14 L127 28 L120 24 L113 28 Z" fill="oklch(0.88 0.17 86)"/>
+            <path d="M98 22 A102 102 0 0 1 142 22" fill="none" stroke="oklch(0.88 0.16 86 / 0.68)" stroke-width="1.6" stroke-linecap="round"/>
+          </g>
+        </svg>
+      </div>
+      <div class="da-hud" aria-live="polite">
+        <div class="da-pill">
+          <span class="da-count" id="da-count">0 / 10</span>
+          <span class="da-sep">·</span>
+          <span class="da-mag" id="da-mag">18×</span>
+          <span class="da-sep">·</span>
+          <span class="da-layer" id="da-layer">M2</span>
+        </div>
+        <div class="da-scale">
+          <span class="da-scale-bar" id="da-scale-bar" style="width: 56px"></span>
+          <span class="da-scale-val" id="da-scale-val">50 μm</span>
+        </div>
+        <div class="da-pips" id="da-pips" aria-hidden="true"></div>
+      </div>
+      <div class="da-toast" id="da-toast" role="status" aria-live="polite">
+        <div class="da-toast-title" id="da-toast-title"></div>
+        <div class="da-toast-meta" id="da-toast-meta"></div>
+      </div>
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Die art</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="module" src="./dist/main.js?v=1"></script>
+</body>
+</html>
