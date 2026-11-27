@@ -379,7 +379,8 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 .ax-sh-card h3 em[data-k="no"] { color: oklch(0.74 0.16 28); }
 .ax-sh-card p { margin: 6px 0 10px; min-height: 3em; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .ax-sh-frame { position: relative; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--ax-surface, oklch(0.2 0.014 275)); }
-.ax-sh-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+/* The lab lays out at desktop size, then scales down to the card. */
+.ax-sh-frame iframe { position: absolute; left: 0; top: 0; width: 1280px; height: 800px; border: 0; transform-origin: 0 0; transform: scale(var(--k, 0.35)); }
 .ax-sh-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 .ax-sh-bar :is(button, a) {
   height: 30px; padding: 0 12px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px;
@@ -552,7 +553,13 @@ function watchSheet(/** @type {HTMLElement} */ sheet) {
     else if (!en.isIntersecting && f.dataset.on) { delete f.dataset.on; f.removeAttribute('src'); }
   }), { root: sheet, rootMargin: '10% 0px' });
   sheet.querySelectorAll('iframe').forEach(f => sheetIO?.observe(f));
+  // Each frame's scale follows its card width.
+  sheetRO?.disconnect();
+  sheetRO = new ResizeObserver(es => es.forEach(en => /** @type {HTMLElement} */ (en.target).style.setProperty('--k', String(en.contentRect.width / 1280))));
+  sheet.querySelectorAll('.ax-sh-frame').forEach(f => sheetRO?.observe(f));
 }
+/** @type {ResizeObserver | null} */
+let sheetRO = null;
 
 function setView(/** @type {'live' | 'sheet'} */ v) {
   view = v;

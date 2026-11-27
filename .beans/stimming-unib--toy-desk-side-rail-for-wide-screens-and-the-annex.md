@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-27T18:59:19Z
-updated_at: 2026-11-27T19:07:59Z
+updated_at: 2026-11-27T19:19:57Z
 ---
 
 Tom (2026-11-27): the annex lab needs work and better integration in the toy bench; the desk UI and menu need a clean-up and better wide-screen response. Picks: side rail from 1440 px; annex integrate only, no new title blocks.
@@ -27,3 +27,7 @@ Note: Sheet frames come from annexlab/round2.html, which shows Glass only.
 - accesslab/panels/annex.js: one control group (View, Transition, Title, Scroll); the frame fills the panel; a Live / Sheet view holds the old annex sheet.
 - accesslab/desk.config.js: the Annex sheet link is gone.
 - annexlab/: each page carries a parked note to the Annex tab.
+
+## Follow-up fix (2026-11-27)
+
+Sheet frames lay out at 1280 x 800 and scale to the card. At card width the lab fell into its phone layout. Fixed in the Annex tab and annexlab/sheet.html.
