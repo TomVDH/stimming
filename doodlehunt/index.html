@@ -1,0 +1,716 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="dark">
+<style>html { background: oklch(0.07 0.008 265); }</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Doodle Hunt</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="../shared/stim.css">
+<link rel="stylesheet" href="../shared/intro.css">
+<style>
+/* Doodle Hunt: a silicon die hides seven etched doodles. */
+:root { --stage: oklch(0.07 0.008 265); }
+.stage--doodlehunt { background: var(--stage); cursor: grab; }
+.stage--doodlehunt.grab { cursor: grabbing; }
+.stage--doodlehunt canvas {
+  position: absolute; inset: 0; display: block; width: 100%; height: 100%;
+  opacity: 0; transition: opacity 0.8s ease; touch-action: none;
+}
+.stage--doodlehunt canvas.on { opacity: 1; }
+/* The tally counts the found doodles; this bar build leaves the bottom left free. */
+.tally {
+  position: absolute; left: 14px; bottom: 14px; z-index: 1;
+  display: flex; gap: 7px; pointer-events: none;
+}
+.tally i {
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1px solid oklch(0.8 0.02 270 / 0.4);
+  transition: background 0.4s ease, box-shadow 0.4s ease, border-color 0.4s ease;
+}
+.tally i.on {
+  background: oklch(0.84 0.1 210); border-color: transparent;
+  box-shadow: 0 0 7px oklch(0.84 0.1 210 / 0.65);
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage--doodlehunt canvas, .tally i { transition: none; }
+}
+</style>
+</head>
+<body>
+<div class="intro" aria-hidden="true">
+  <div class="intro-mark"><div class="intro-text"><span class="intro-name">Doodle Hunt</span></div></div>
+</div>
+
+<div class="wrap">
+  <main>
+    <div class="stage stage--doodlehunt" id="stage" tabindex="0" role="application" aria-label="A silicon die hides seven etched doodles. Drag to pan across the die. Scroll or pinch to zoom. Click a doodle when you spot it. The dots count your finds.">
+      <p class="fail" hidden>This toy cannot run in this browser. It needs WebGL 2.</p>
+      <div class="tally" role="status" aria-label="0 of 7 doodles found"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
+  </main>
+  <section class="about" aria-labelledby="toy-name">
+    <h1 class="display" id="toy-name">Doodle Hunt</h1>
+    <div class="vignette" hidden></div>
+  </section>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "culori": "https://cdn.jsdelivr.net/npm/culori@4.0.1/+esm",
+    "tone": "https://cdn.jsdelivr.net/npm/tone@15.0.4/+esm",
+    "gsap": "https://cdn.jsdelivr.net/npm/gsap@3.13.0/+esm",
+    "simplex-noise": "https://cdn.jsdelivr.net/npm/simplex-noise@4.0.3/+esm"
+  }
+}
+</script>
+<script type="module">
+import { initPage, whenVisible, fitCanvas, onQuality, reduced, onReducedChange, stage as mark, pageReady } from '../shared/stim.js';
+import { intro as playIntro } from '../shared/intro.js';
+import { TRI_VS, program, linked, tri, onContextLoss } from '../shared/gl.js';
+mark('libs');
+
+const stage = document.getElementById('stage');
+const TAU = Math.PI * 2;
+const clamp = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
+
+/* ---------- bar ---------- */
+// The reset handler binds once the die exists.
+const act = { reset() {} };
+let sheen = 0.55;
+const ui = initPage({ id: 'doodlehunt', bar: {
+  slider: { label: 'Sheen', min: 0, max: 1, step: 0.01, value: sheen, onInput: v => { sheen = v; touch(); still(); } },
+  reset: () => act.reset(),
+  quality: true,
+  keys: [['drag', 'pan the die'], ['scroll', 'zoom in or out'], ['click', 'mark a doodle']],
+  // Bar v3 lists every input in How to play: one instruction per row.
+  help: [['drag', 'Pan the die'], ['scroll', 'Zoom in or out'], ['pinch', 'Zoom in or out'], ['click', 'Mark a doodle you spotted']],
+} });
+
+const introDone = playIntro({ ready: pageReady() });
+
+/* ---------- doodles ---------- */
+// Each doodle is stroke SDF primitives in a local frame of radius 1.
+// A segment reads [0, x0, y0, x1, y1]; a circle stroke reads [1, cx, cy, r].
+const DOODLES = [
+  { name: 'rocket', prims: [
+    [0, -0.24, -0.42, -0.24, 0.22], [0, 0.24, -0.42, 0.24, 0.22],
+    [0, -0.24, 0.22, 0, 0.62], [0, 0.24, 0.22, 0, 0.62],
+    [0, -0.24, -0.42, 0.24, -0.42], [1, 0, 0.06, 0.11],
+    [0, -0.24, -0.2, -0.52, -0.58], [0, -0.52, -0.58, -0.24, -0.44],
+    [0, 0.24, -0.2, 0.52, -0.58], [0, 0.52, -0.58, 0.24, -0.44],
+    [0, -0.1, -0.44, 0, -0.78], [0, 0.1, -0.44, 0, -0.78],
+  ] },
+  { name: 'cat', prims: [
+    [1, 0, 0.02, 0.42],
+    [0, -0.32, 0.3, -0.44, 0.7], [0, -0.44, 0.7, -0.14, 0.44],
+    [0, 0.32, 0.3, 0.44, 0.7], [0, 0.44, 0.7, 0.14, 0.44],
+    [1, -0.15, 0.1, 0.05], [1, 0.15, 0.1, 0.05],
+    [0, -0.42, 0.02, -0.7, 0.1], [0, -0.42, -0.08, -0.7, -0.12],
+    [0, 0.42, 0.02, 0.7, 0.1], [0, 0.42, -0.08, 0.7, -0.12],
+    [0, -0.05, -0.12, 0.05, -0.12],
+  ] },
+  { name: 'heart', prims: [
+    [1, -0.21, 0.16, 0.25], [1, 0.21, 0.16, 0.25],
+    [0, -0.43, 0.02, 0, -0.58], [0, 0.43, 0.02, 0, -0.58],
+  ] },
+  { name: 'fish', prims: [
+    [1, 0.05, 0, 0.4],
+    [0, 0.42, 0.1, 0.72, 0.32], [0, 0.72, 0.32, 0.66, 0],
+    [0, 0.66, 0, 0.72, -0.32], [0, 0.72, -0.32, 0.42, -0.1],
+    [1, -0.12, 0.1, 0.05], [0, 0.08, 0.22, 0.08, -0.22],
+  ] },
+  { name: 'star', prims: [] },
+  { name: 'smiley', prims: [
+    [1, 0, 0, 0.55],
+    [1, -0.19, 0.16, 0.06], [1, 0.19, 0.16, 0.06],
+    [0, -0.3, -0.06, -0.16, -0.26], [0, -0.16, -0.26, 0.16, -0.26], [0, 0.16, -0.26, 0.3, -0.06],
+  ] },
+  { name: 'bolt', prims: [
+    [0, 0.16, 0.68, -0.26, 0.02], [0, -0.26, 0.02, -0.02, 0.02],
+    [0, -0.02, 0.02, -0.14, -0.66], [0, -0.14, -0.66, 0.28, -0.06],
+    [0, 0.28, -0.06, 0.04, -0.06], [0, 0.04, -0.06, 0.16, 0.68],
+  ] },
+];
+// The star outline alternates outer and inner points.
+for (let i = 0; i < 10; i++) {
+  const a0 = Math.PI / 2 + (i * Math.PI) / 5, a1 = a0 + Math.PI / 5;
+  const r0 = i % 2 ? 0.27 : 0.62, r1 = (i + 1) % 2 ? 0.27 : 0.62;
+  DOODLES[4].prims.push([0, Math.cos(a0) * r0, Math.sin(a0) * r0, Math.cos(a1) * r1, Math.sin(a1) * r1]);
+}
+// A tap and the shader read the same distances.
+function sdSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy || 1e-9;
+  const t = clamp(((px - ax) * dx + (py - ay) * dy) / l2);
+  return Math.hypot(px - (ax + dx * t), py - (ay + dy * t));
+}
+function doodleDist(i, qx, qy) {
+  let m = 1e9;
+  for (const pr of DOODLES[i].prims) {
+    const d = pr[0] === 0 ? sdSeg(qx, qy, pr[1], pr[2], pr[3], pr[4]) : Math.abs(Math.hypot(qx - pr[1], qy - pr[2]) - pr[3]);
+    if (d < m) m = d;
+  }
+  return m;
+}
+
+/* ---------- shaders ---------- */
+const HEAD = `#version 300 es
+precision highp float;
+precision highp int;
+`;
+const DIE_FS = HEAD + `
+in vec2 vUv;
+out vec4 o;
+uniform vec2 uRes;
+uniform vec3 uView;
+uniform float uTime;
+uniform float uSeed;
+uniform vec2 uTilt;
+uniform float uSheen;
+uniform float uDetail;
+uniform float uReduced;
+uniform float uEtch;
+uniform float uSweep;
+uniform vec4 uDood[7];
+uniform float uN[7];
+uniform vec4 uPrim[112];
+uniform float uFound[7];
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(0.1031, 0.1030));
+  p += dot(p, p.yx + 33.33);
+  return fract((p.x + p.y) * p.x);
+}
+float vnoise(vec2 p) {
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash21(i), hash21(i + vec2(1, 0)), f.x), mix(hash21(i + vec2(0, 1)), hash21(i + vec2(1, 1)), f.x), f.y);
+}
+// The chip pattern: a coarse grid of memory, logic or plain blocks.
+// It returns the pattern height and the metal coverage.
+vec2 pattern(vec2 p, vec2 so) {
+  vec2 g = p * vec2(6.0, 4.0) + so;
+  vec2 id = floor(g);
+  vec2 f = fract(g);
+  float kind = hash21(id);
+  float vb = hash21(id + 7.31);
+  float edge = min(min(f.x, 1.0 - f.x), min(f.y, 1.0 - f.y));
+  float fw = fwidth(p.x) + 1e-6;
+  float h = 0.0, mtl = 0.0;
+  if (kind < 0.44) {
+    // Memory arrays: a fine cross hatch of regular cells.
+    float per = 0.0042 * (1.0 + vb * 0.6);
+    vec2 q = abs(fract(p / per) - 0.5);
+    float dl = (0.5 - max(q.x, q.y)) * per;
+    float m = 1.0 - smoothstep(per * 0.16 - fw * 1.5, per * 0.16 + fw * 1.5, dl);
+    // The hatch fades to its mean before it can shimmer.
+    float lod = clamp(per / (fw * 3.0) - 0.5, 0.0, 1.0);
+    h = m = mix(0.4, m, lod);
+    mtl = m;
+  } else if (kind < 0.8) {
+    // Logic: Manhattan wires, with vias where the wires cross.
+    float per = 0.0055 * (1.0 + vb * 0.4);
+    vec2 gg = p / per + so * 3.1;
+    float row = floor(gg.y), cl = floor(gg.x);
+    float fy = abs(fract(gg.y) - 0.5), fx = abs(fract(gg.x) - 0.5);
+    float aa = fw / per * 1.4;
+    float hw = step(hash21(vec2(row, id.x * 3.7)), 0.34);
+    float vw = step(hash21(vec2(cl, id.y * 5.1)), 0.34);
+    float wth = 0.16;
+    float hl = hw * (1.0 - smoothstep(wth - aa, wth + aa, fy));
+    float vl = vw * (1.0 - smoothstep(wth - aa, wth + aa, fx));
+    float via = hw * vw * (1.0 - smoothstep(0.3 - aa, 0.3 + aa, length(vec2(fx, fy))));
+    // The wires stop short of the block edge.
+    float marg = smoothstep(0.02, 0.07, edge);
+    float m = max(max(hl, vl), via) * marg;
+    h = m;
+    mtl = m * 0.9;
+  } else {
+    // Plain diffusion: a soft mottle, slightly lower than metal.
+    h = vnoise(p * 90.0 + so) * 0.12;
+  }
+  // A dark scribe line parts the blocks; each block sits at its own height.
+  float gap = smoothstep(0.0, 0.035, edge);
+  return vec2(h * (0.25 + 0.75 * gap) + vb * 0.1, mtl * gap);
+}
+float sdSeg(vec2 p, vec2 a, vec2 b) {
+  vec2 pa = p - a, ba = b - a;
+  float t = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-9), 0.0, 1.0);
+  return length(pa - ba * t);
+}
+// The nearest stroke of doodle i, in its local frame.
+float doodleDist(int i, vec2 q) {
+  float d = 1e9;
+  for (int j = 0; j < 16; j++) {
+    if (float(j) >= uN[i]) break;
+    vec4 pr = uPrim[i * 16 + j];
+    if (pr.w < -0.5) d = min(d, abs(length(q - pr.xy) - pr.z));
+    else d = min(d, sdSeg(q, pr.xy, pr.zw));
+  }
+  return d;
+}
+void main() {
+  vec2 px = vUv * uRes;
+  vec2 p = (px - 0.5 * uRes) / uView.z + uView.xy;
+  float fw = fwidth(p.x) + 1e-6;
+  vec2 so = vec2(mod(uSeed, 89.0), mod(uSeed, 131.0));
+  // The die is a rounded rectangle; dieD is negative inside.
+  vec2 hd = vec2(0.5, 0.32);
+  vec2 dq = abs(p) - hd + 0.014;
+  float dieD = length(max(dq, 0.0)) + min(max(dq.x, dq.y), 0.0) - 0.014;
+  // The desk under the die, with a soft contact shadow.
+  vec3 bg = vec3(0.011, 0.012, 0.017);
+  bg *= 0.55 + 0.45 * clamp(exp(max(dieD, 0.0) * 30.0), 0.0, 1.0);
+  float inside = smoothstep(fw, -fw, dieD);
+  vec3 col = bg;
+  if (inside > 0.0) {
+    vec2 pm = pattern(p, so);
+    float hgt = pm.x, mtl = pm.y;
+    vec3 dcol = mix(vec3(0.040, 0.047, 0.062), vec3(0.15, 0.145, 0.15), mtl);
+    // The height shading is lit from the top-left.
+    if (uDetail > 0.5) {
+      float e = max(fw * 1.5, 0.0008);
+      vec2 L = vec2(-0.5, 0.75);
+      float s = (pattern(p + L * e, so).x - pattern(p - L * e, so).x) / (2.0 * e);
+      dcol *= clamp(1.0 + s * 0.02, 0.6, 1.4);
+      // Fine grain keeps the plain areas alive.
+      dcol *= 0.96 + 0.08 * vnoise(p * 700.0 + so);
+    }
+    // The thin film: a slow field, tilted by the pointer.
+    float th = vnoise(p * 2.4 + so * 0.7) * 2.0 + dot(p, uTilt) * 1.4 + hgt * 0.5;
+    vec3 ir = 0.5 + 0.5 * cos(6.28318 * (th * vec3(1.0, 1.07, 1.15) + vec3(0.0, 0.33, 0.67)));
+    dcol += ir * (0.02 + 0.07 * mtl) * uSheen;
+    if (uDetail > 0.5) {
+      // Micro-scratches: sparse anisotropic streaks.
+      vec2 sp = mat2(0.995, 0.1, -0.1, 0.995) * p;
+      float sc = vnoise(vec2(sp.x * 30.0, sp.y * 800.0) + so);
+      dcol += (smoothstep(0.985, 1.0, sc) - smoothstep(0.985, 1.0, vnoise(vec2(sp.x * 30.0, sp.y * 800.0) + so + 40.0))) * 0.05;
+    }
+    // The doodles: etched grooves with a lit rim and a faint hue shift.
+    vec2 Ld = vec2(-0.5, 0.75);
+    for (int i = 0; i < 7; i++) {
+      vec4 D = uDood[i];
+      if (D.z <= 0.0) continue;
+      vec2 q0 = p - D.xy;
+      if (dot(q0, q0) > D.z * D.z * 2.6) continue;
+      float cr = cos(D.w), sr = sin(D.w);
+      vec2 q = mat2(cr, -sr, sr, cr) * q0 / D.z;
+      float dd = doodleDist(i, q) * D.z;
+      float gw = max(D.z * 0.05, fw * 1.1);
+      float cut = 1.0 - smoothstep(gw - fw, gw + fw, dd);
+      float rimB = smoothstep(gw * 1.1, gw * 1.9, dd) * (1.0 - smoothstep(gw * 2.2, gw * 3.4, dd));
+      // A second sample toward the light picks the lit side of the groove.
+      float dL = uDetail > 0.5 ? doodleDist(i, q - Ld * (gw * 1.5 / D.z)) * D.z : dd;
+      float sideL = clamp(0.5 + 0.6 * clamp((dL - dd) / gw, -1.0, 1.0), 0.0, 1.0);
+      dcol *= 1.0 - cut * (0.28 + 0.3 * (1.0 - sideL)) * uEtch;
+      dcol += vec3(0.5, 0.52, 0.58) * rimB * sideL * 0.09 * uEtch;
+      vec3 tint = 0.5 + 0.5 * cos(6.28318 * (float(i) * 0.13 + vec3(0.0, 0.33, 0.67)));
+      dcol = mix(dcol, dcol * (0.8 + 0.4 * tint), (cut + rimB) * 0.35 * uEtch);
+      float ft = uFound[i];
+      if (ft > -1e8) {
+        float age = uTime - ft;
+        float rr = length(q0);
+        // A find pulses once; reduced motion keeps only the still ring.
+        if (uReduced < 0.5 && age < 1.4) {
+          float pr = age * D.z * 3.2;
+          float band = exp(-pow((rr - pr) / (D.z * (0.25 + age * 0.5)), 2.0));
+          dcol += vec3(0.55, 0.62, 0.72) * band * exp(-age * 2.6) * 0.5;
+        }
+        // A soft glow and a still ring stay on a found doodle.
+        float glow = exp(-dd * dd / (gw * gw * 9.0)) * 0.5;
+        glow += exp(-pow((rr - D.z * 1.05) / (D.z * 0.16), 2.0)) * 0.22;
+        dcol += tint * glow * 0.3;
+      }
+    }
+    // The last find sends one slow sheen sweep across the die.
+    if (uSweep >= 0.0) {
+      float st = clamp((uTime - uSweep) / 3.0, 0.0, 1.0);
+      float proj = dot(p, vec2(0.89, 0.45));
+      float band = exp(-pow((proj - mix(-0.75, 0.75, st)) * 4.5, 2.0));
+      dcol += ir * band * 0.4 * (1.0 - st);
+    }
+    col = mix(bg, dcol, inside);
+    // The rim catches the light on the top-left edge.
+    float rim = (1.0 - smoothstep(0.0, 0.005 + fw, abs(dieD))) * inside;
+    float side = clamp(0.5 + 0.5 * dot(normalize(p / hd + 1e-4), vec2(-0.7, 0.7)), 0.0, 1.0);
+    col += rim * mix(0.015, 0.09, side);
+  }
+  // A gentle vignette and dither finish the frame.
+  vec2 vv = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  col *= 1.0 - 0.4 * smoothstep(0.5, 1.3, length(vv));
+  col += (hash21(gl_FragCoord.xy + fract(uTime) * 61.0) - 0.5) * 0.006;
+  o = vec4(col, 1.0);
+}`;
+
+/* ---------- WebGL ---------- */
+const canvas = document.createElement('canvas');
+stage.prepend(canvas);
+let gl = null, P = null, vao = null;
+async function initGL() {
+  gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance' });
+  if (!gl) throw new Error('WebGL 2 unavailable');
+  P = await linked(gl, { die: program(gl, TRI_VS, DIE_FS) });
+  vao = gl.createVertexArray();
+}
+
+/* ---------- the die ---------- */
+// Die half extents in die units; the die is a little wider than tall.
+const DIE = { x: 0.5, y: 0.32 };
+const SEED_KEY = 'stimming.doodlehunt.seed', FOUND_KEY = 'stimming.doodlehunt.found';
+let seed = 0, seedN = 1;
+const rnd = () => (seedN = (seedN * 16807) % 2147483647) / 2147483647;
+// Per doodle: centre, size and rotation; foundT holds find times.
+// A found time below -1e8 means hidden; -1e6 means found on an earlier visit.
+const doodles = DOODLES.map(() => ({ x: 0, y: 0, s: 0.02, rot: 0 }));
+const foundT = new Float32Array(7).fill(-1e9);
+let sweep = -1, time = 0;
+// Rejection sampling keeps margins to the edges and the other doodles.
+function placeDoodles() {
+  seedN = seed % 2147483646 + 1;
+  for (let i = 0; i < 7; i++) {
+    const d = doodles[i];
+    d.s = 0.02 + rnd() * 0.01;
+    d.rot = (rnd() - 0.5) * 0.9;
+    const mx = DIE.x - d.s - 0.05, my = DIE.y - d.s - 0.05;
+    for (let tries = 0; ; tries++) {
+      const x = (rnd() * 2 - 1) * mx, y = (rnd() * 2 - 1) * my;
+      const clear = doodles.slice(0, i).every(o => Math.hypot(o.x - x, o.y - y) > o.s + d.s + (tries < 60 ? 0.1 : 0.05));
+      if (clear || tries > 200) { d.x = x; d.y = y; break; }
+    }
+  }
+}
+// The doodle data goes up once per die.
+const primBuf = new Float32Array(7 * 16 * 4), nBuf = new Float32Array(7), posBuf = new Float32Array(7 * 4);
+function uploadDoodles() {
+  if (!P) return;
+  primBuf.fill(0);
+  nBuf.fill(0);
+  DOODLES.forEach((d, i) => {
+    nBuf[i] = d.prims.length;
+    d.prims.forEach((pr, j) => {
+      const o = (i * 16 + j) * 4;
+      if (pr[0] === 0) primBuf.set([pr[1], pr[2], pr[3], pr[4]], o);
+      else primBuf.set([pr[1], pr[2], pr[3], -1], o);
+    });
+    posBuf.set([doodles[i].x, doodles[i].y, doodles[i].s, doodles[i].rot], i * 4);
+  });
+  gl.useProgram(P.die.p);
+  gl.uniform4fv(P.die.u.uPrim, primBuf);
+  gl.uniform1fv(P.die.u.uN, nBuf);
+  gl.uniform4fv(P.die.u.uDood, posBuf);
+  gl.uniform1f(P.die.u.uSeed, seed % 3600 + 0.5);
+}
+// The seed and the finds survive a reload.
+function store() {
+  try {
+    localStorage.setItem(SEED_KEY, String(seed));
+    localStorage.setItem(FOUND_KEY, JSON.stringify([...foundT].map((t, i) => (t > -1e8 ? i : -1)).filter(i => i >= 0)));
+  } catch { /* Storage can be blocked; the game still runs. */ }
+}
+function recall() {
+  try {
+    const s = Number(localStorage.getItem(SEED_KEY));
+    if (!(s > 0)) return;
+    seed = s;
+    const f = JSON.parse(localStorage.getItem(FOUND_KEY) || '[]');
+    if (Array.isArray(f)) for (const i of f) if (i >= 0 && i < 7) foundT[i] = -1e6;
+  } catch { /* A bad record starts a fresh die. */ }
+}
+
+/* ---------- the tally ---------- */
+const tally = stage.querySelector('.tally');
+function updateTally() {
+  const n = [...foundT].filter(t => t > -1e8).length;
+  [...tally.children].forEach((el, i) => el.classList.toggle('on', foundT[i] > -1e8));
+  tally.setAttribute('aria-label', `${n} of 7 doodles found`);
+}
+// A tap within the doodle's radius counts; low zoom widens it in screen space.
+function hitAt(p) {
+  for (let i = 0; i < 7; i++) {
+    if (foundT[i] > -1e8) continue;
+    const d = doodles[i];
+    const dx = p.x - d.x, dy = p.y - d.y;
+    if (dx * dx + dy * dy > d.s * d.s * 2.6) continue;
+    const cr = Math.cos(d.rot), sr = Math.sin(d.rot);
+    const qx = (dx * cr + dy * sr) / d.s, qy = (-dx * sr + dy * cr) / d.s;
+    if (doodleDist(i, qx, qy) * d.s < Math.max(d.s * 0.8, 22 / view.s)) return i;
+  }
+  return -1;
+}
+function find(i) {
+  foundT[i] = time;
+  const n = [...foundT].filter(t => t > -1e8).length;
+  updateTally();
+  store();
+  // The seventh find earns the one slow sheen sweep.
+  if (n === 7 && !reduced()) sweep = time;
+  touch();
+}
+
+/* ---------- view ---------- */
+// The view centres on (x, y) in die units; s is canvas pixels per die unit.
+const view = { x: 0, y: 0, s: 0 };
+let W = 1, H = 1, sFit = 100, rung = 0;
+function clampView() {
+  view.s = clamp(view.s, sFit * 0.9, sFit * 30);
+  view.x = clamp(view.x, -DIE.x * 0.8, DIE.x * 0.8);
+  view.y = clamp(view.y, -DIE.y * 0.8, DIE.y * 0.8);
+}
+function layout() {
+  const f = fitCanvas(canvas, { low: rung >= 1 });
+  W = f.W;
+  H = f.H;
+  sFit = 0.92 * Math.min(W / (DIE.x * 2), H / (DIE.y * 2));
+  if (!view.s) view.s = sFit;
+  clampView();
+}
+// A client point to a die point, with y up.
+function toDie(cx, cy) {
+  const r = canvas.getBoundingClientRect();
+  const fx = ((cx - r.left) / r.width) * W, fy = (1 - (cy - r.top) / r.height) * H;
+  return { x: (fx - W / 2) / view.s + view.x, y: (fy - H / 2) / view.s + view.y };
+}
+
+/* ---------- render ---------- */
+function render() {
+  const q = P.die;
+  gl.useProgram(q.p);
+  gl.uniform2f(q.u.uRes, W, H);
+  gl.uniform3f(q.u.uView, view.x, view.y, view.s);
+  gl.uniform1f(q.u.uTime, time);
+  gl.uniform2f(q.u.uTilt, tilt.x, tilt.y);
+  gl.uniform1f(q.u.uSheen, sheen);
+  gl.uniform1f(q.u.uDetail, rung >= 2 ? 0 : 1);
+  gl.uniform1f(q.u.uReduced, reduced() ? 1 : 0);
+  // The etch sharpens as the die zooms in.
+  gl.uniform1f(q.u.uEtch, clamp(0.35 + 0.5 * Math.log2(view.s / sFit), 0.3, 1));
+  gl.uniform1f(q.u.uSweep, sweep);
+  gl.uniform1fv(q.u.uFound, foundT);
+  tri(gl, null, vao);
+}
+
+/* ---------- pointer ---------- */
+// A press becomes a drag after 8 px; a second finger starts a pinch.
+// A press released under 260 ms without a drag is a tap.
+const pts = new Map();
+let pinch = null, hoverOn = false;
+const tilt = { x: 0, y: 0, tx: 0, ty: 0 };
+function down(e) {
+  if (!P || e.button > 0) return;
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* A synthetic pointer has no capture. */ }
+  pts.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), drag: pts.size > 0 });
+  if (pts.size === 2) {
+    const [a, b] = [...pts.values()];
+    a.drag = b.drag = true;
+    pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, s0: view.s, mid: toDie((a.x + b.x) / 2, (a.y + b.y) / 2) };
+  }
+  stage.classList.add('grab');
+  touch();
+}
+function move(e) {
+  const pt = pts.get(e.pointerId);
+  if (!pt) {
+    // A hovering mouse tilts the light, more softly under reduced motion.
+    if (e.pointerType !== 'mouse') return;
+    const r = canvas.getBoundingClientRect();
+    const k = reduced() ? 0.5 : 1;
+    tilt.tx = (((e.clientX - r.left) / r.width) * 2 - 1) * k;
+    tilt.ty = (1 - ((e.clientY - r.top) / r.height) * 2) * k;
+    hoverOn = true;
+    touch();
+    return;
+  }
+  const px = pt.x, py = pt.y;
+  pt.x = e.clientX;
+  pt.y = e.clientY;
+  if (!pt.drag && Math.hypot(pt.x - pt.x0, pt.y - pt.y0) > 8) pt.drag = true;
+  if (pts.size === 2 && pinch) {
+    const [a, b] = [...pts.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    view.s = clamp(pinch.s0 * d / pinch.d0, sFit * 0.9, sFit * 30);
+    // The die point under the pinch's start middle stays under the middle.
+    const r = canvas.getBoundingClientRect();
+    const fx = (((a.x + b.x) / 2 - r.left) / r.width) * W, fy = (1 - ((a.y + b.y) / 2 - r.top) / r.height) * H;
+    view.x = pinch.mid.x - (fx - W / 2) / view.s;
+    view.y = pinch.mid.y - (fy - H / 2) / view.s;
+  } else if (pt.drag) {
+    const k = W / canvas.getBoundingClientRect().width / view.s;
+    view.x -= (pt.x - px) * k;
+    view.y += (pt.y - py) * k;
+  }
+  clampView();
+  touch();
+}
+// A cancel or a lost capture ends the gesture without a tap.
+function up(e) {
+  const pt = pts.get(e.pointerId);
+  if (!pt) return;
+  pts.delete(e.pointerId);
+  if (pts.size < 2) pinch = null;
+  // A finger that survives a pinch keeps dragging and never taps.
+  if (pts.size === 1) {
+    const rest = [...pts.values()][0];
+    rest.drag = true;
+    rest.x0 = rest.x;
+    rest.y0 = rest.y;
+  }
+  if (!pts.size) stage.classList.remove('grab');
+  if (e.type === 'pointerup' && !pt.drag && performance.now() - pt.t0 < 260) {
+    const i = hitAt(toDie(e.clientX, e.clientY));
+    if (i >= 0) find(i);
+  }
+  touch();
+}
+// The wheel zooms to the pointer.
+function wheel(e) {
+  if (!P) return;
+  e.preventDefault();
+  const before = toDie(e.clientX, e.clientY);
+  const k = Math.exp(-e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0012));
+  view.s = clamp(view.s * k, sFit * 0.9, sFit * 30);
+  const after = toDie(e.clientX, e.clientY);
+  view.x += before.x - after.x;
+  view.y += before.y - after.y;
+  clampView();
+  touch();
+  still();
+}
+
+/* ---------- frame loop ---------- */
+// The drift sways the sheen for 60 s after the last input, at 30 fps.
+let raf = 0, last = 0, visible = true, lastInput = performance.now(), driftT = 0, driftTo = 0;
+const driftSpeed = (now = performance.now()) => (reduced() ? 0 : clamp((62000 - (now - lastInput)) / 2000));
+const eventsBusy = () => [...foundT].some(t => t > -1e8 && time - t < 1.5) || (sweep >= 0 && time - sweep < 3.4);
+const busy = () => visible && (pts.size > 0 || eventsBusy() || driftSpeed() > 0);
+function wake() {
+  if (raf || !visible || !P) return;
+  if (driftTo) { clearTimeout(driftTo); driftTo = 0; } else last = performance.now();
+  raf = requestAnimationFrame(frame);
+}
+function touch() { lastInput = performance.now(); wake(); }
+function frame(now) {
+  raf = 0;
+  const lively = pts.size > 0 || eventsBusy();
+  const raw = (now - last) / 1000, dt = Math.min(1 / 30, raw);
+  last = now;
+  if (lively) watch(raw);
+  try {
+    time += dt;
+    driftT += dt * driftSpeed(now);
+    // The idle drift sways the light while no pointer is near.
+    if (!pts.size && !hoverOn && driftSpeed(now) > 0) {
+      tilt.tx = 0.5 * Math.cos(driftT * 0.21);
+      tilt.ty = 0.5 * Math.sin(driftT * 0.17);
+    }
+    tilt.x += (tilt.tx - tilt.x) * (1 - Math.exp(-dt * 5));
+    tilt.y += (tilt.ty - tilt.y) * (1 - Math.exp(-dt * 5));
+    render();
+  } finally {
+    if (!busy()) { /* Asleep: no loop runs until the next input. */ }
+    else if (raf || driftTo) { /* The next frame is already booked. */ }
+    else if (pts.size || eventsBusy()) raf = requestAnimationFrame(frame);
+    // Drift alone runs at 30 fps.
+    else driftTo = setTimeout(() => { driftTo = 0; raf = requestAnimationFrame(frame); }, Math.max(0, 31 - (performance.now() - now)));
+  }
+}
+function still() { if (P) render(); }
+
+/* ---------- watchdog ---------- */
+// After 4 s of lively frames, 2 s of slow frames steps down one rung.
+// Rung 1 drops the pixel ratio; rung 2 drops scratches, grain and rims.
+// The ladder never steps up live.
+let runT = 0, slowT = 0, avgT = 1 / 60;
+function watch(raw) {
+  if (raw > 0.25 || rung >= 2) return;
+  runT += raw;
+  avgT += (raw - avgT) * 0.1;
+  if (runT < 4) return;
+  slowT = avgT > 1 / 38 ? slowT + raw : 0;
+  if (slowT < 2) return;
+  rung++;
+  slowT = 0;
+  avgT = 1 / 60;
+  layout();
+}
+
+/* ---------- actions ---------- */
+act.reset = () => {
+  seed = (Math.random() * 2 ** 31) | 0;
+  foundT.fill(-1e9);
+  sweep = -1;
+  placeDoodles();
+  uploadDoodles();
+  updateTally();
+  store();
+  touch();
+  still();
+};
+
+/* ---------- boot ---------- */
+mark('build');
+recall();
+if (!seed) seed = (Math.random() * 2 ** 31) | 0;
+placeDoodles();
+try {
+  await initGL();
+  layout();
+  uploadDoodles();
+  updateTally();
+  render();
+  gl.finish();
+  canvas.classList.add('on');
+  mark('first-frame');
+} catch (err) {
+  stage.querySelector('.fail').hidden = false;
+  ui.hideControls?.();
+  throw err;
+}
+// The first drift starts once the intro has lifted.
+Promise.race([introDone, new Promise(r => setTimeout(r, 9000))]).then(() => touch());
+
+// A lost context stops the loop; a restored one rebuilds the program.
+// The die state lives on the CPU, so the hunt goes on where it stopped.
+onContextLoss(canvas, {
+  lost() {
+    P = null;
+    cancelAnimationFrame(raf);
+    clearTimeout(driftTo);
+    raf = driftTo = 0;
+  },
+  async restored() {
+    await initGL();
+    uploadDoodles();
+    render();
+    wake();
+  },
+  failed(err) {
+    console.error(err);
+    stage.querySelector('.fail').hidden = false;
+    ui.hideControls?.();
+  },
+});
+
+canvas.addEventListener('pointerdown', down);
+canvas.addEventListener('pointermove', move);
+canvas.addEventListener('pointerup', up);
+canvas.addEventListener('pointercancel', up);
+canvas.addEventListener('lostpointercapture', up);
+canvas.addEventListener('wheel', wheel, { passive: false });
+canvas.addEventListener('pointerleave', () => { hoverOn = false; tilt.tx = 0; tilt.ty = 0; });
+
+new ResizeObserver(() => { layout(); still(); }).observe(stage);
+onReducedChange(() => { touch(); still(); });
+onQuality(() => { rung = 0; runT = slowT = 0; layout(); still(); });
+// A hidden tab stops the loop at once.
+whenVisible(stage, v => {
+  visible = v;
+  if (!v) { cancelAnimationFrame(raf); clearTimeout(driftTo); raf = driftTo = 0; return; }
+  if (busy()) wake(); else still();
+});
+</script>
+</body>
+</html>
