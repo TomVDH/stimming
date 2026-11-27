@@ -108,7 +108,7 @@ Every toy page that uses them carries this importmap, word for word:
 | Hidden | The loop and the sim clock stop at once (`whenVisible`) |
 | Reduced motion | No ambient drift; gestures still answer, more softly |
 
-- Budgets: 30 fps or better. First frame under 3 s on a cold load (`tools/loadtime.mjs`). The toy's own files under 1 MB; more needs Tom's yes. Idle: no rAF loop and no running audio nodes.
+- Budgets: 30 fps or better. First frame under 3 s on a cold load (`tools/loadtime.mjs`). Toy's own files (Tom, 2026-11-27): stay under 2.5 MB recommended, 5 MB comfortable max, and up to 7.5 to 10 MB for S-tier or statement pieces (replaces the 1 MB cap). Idle: no rAF loop and no running audio nodes.
 - Slow-frame step: after 4 s, a frame-time average above 1/38 s for 2 s steps down one rung (pixel ratio, then effect buffers, then counts). It never steps up live and never writes `stimming.quality`. A toy may remember its rung per device and lower it after sustained fast frames, for the next visit only (Tom, 2026-11-25). On High it falls back to Standard.
 - Same frame: a shift of 1/255 on a few pixels. A larger change needs Tom's look.
 
