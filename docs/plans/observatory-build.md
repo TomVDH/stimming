@@ -25,7 +25,7 @@ Tom removed the green laser on 2026-11-23 (`stimming-4itb`). The laser tasks bel
 - Sky: tonight's real sky from the clock, always night, no moon.
 - The machine moves at real speed or slower, heavy and with inertia (Tom, 2026-11-17): cupola cap 2°/s with acceleration 0.6°/s², tube cap 1.5°/s with acceleration 0.5°/s², shutter 6 s on an S-curve; a damped settle at each stop; nothing snaps.
 - Sound muted by default, starts after a gesture. Idle: loop stops 60 s after the last input. Hidden: stop at once. Reduced motion: real speed only, no trails, crossfade instead of the flight.
-- Budgets: 30 fps or better, first frame under 3 s, toy files under 1 MB, catalog files under 300 KB.
+- Budgets: 30 fps or better, first frame under 3 s, toy files under 2.5 MB recommended (5 MB comfortable max, up to 7.5 to 10 MB for S-tier or statement pieces), catalog files under 300 KB.
 - Code comments: ASD-STE100, `.claude/rules/adjudant-code.md`. Prose: no em dashes.
 - **Tom's gates** (stop and show, commit nothing visible before his yes): the blockout (Task 3), the catalog download (Task 4), the Lab menu entry (Task 3), the look (Task 7), the eyepiece (Task 9).
 

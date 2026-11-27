@@ -197,7 +197,7 @@ Approved by Tom as proposed.
 
 - **Source.** HYG, the current release from its author's repository. Licence CC BY-SA 4.0: credit in `CREDITS.md`; the cut-down file carries the same licence.
 - **Download.** About 30 MB as CSV. It goes to the scratchpad, not the repo. Ask Tom first, with the file name, the source and the size.
-- **The cut.** A script, `tools/hyg-cut.mjs`, keeps stars to magnitude 6.5 (about 9,000) and the fields above. It writes `observatory/stars.bin` (packed numbers) and `observatory/stars.json` (names). Target: under 300 KB together, inside the 1 MB toy budget.
+- **The cut.** A script, `tools/hyg-cut.mjs`, keeps stars to magnitude 6.5 (about 9,000) and the fields above. It writes `observatory/stars.bin` (packed numbers) and `observatory/stars.json` (names). Target: under 300 KB together, well inside the 2.5 MB recommended toy budget (5 MB max, up to 7.5 to 10 MB S-tier).
 
 ## Bar v2 and settings
 
@@ -214,7 +214,7 @@ Approved by Tom as proposed.
 - Sound muted by default; it starts after a gesture. Voices: dome motor, shutter, a quiet wind.
 - Idle: no rAF loop after 60 s. Fast time is "drifting" at 30 fps. Hidden: stop at once.
 - Reduced motion: real speed only, no trails; the flight down the tube becomes a crossfade.
-- Budgets: 30 fps or better, first frame under 3 s, toy files under 1 MB.
+- Budgets: 30 fps or better, first frame under 3 s, toy files under 2.5 MB recommended (5 MB comfortable max, up to 7.5 to 10 MB for S-tier or statement pieces).
 - Feature bean: worktree `.worktrees/stimming-wqq9`, branch `feature/stimming-wqq9`, merge by PR.
 - Lab first: a `toys.json` entry and a Lab menu entry with the icon, as in the Lantern lake commit `acd73c78`.
 

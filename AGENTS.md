@@ -20,6 +20,7 @@ Plain HTML and JS; toys move to TypeScript one at a time (Tom, 2026-11-16). A Ty
 9. A change that makes a doc line false fixes it in the same commit. A standard changes only from Tom's own words.
 10. Sound is muted by default (Star Chart plays by default: Tom, 2026-11-25). Idle pages do no per-frame work. Respect `prefers-reduced-motion`.
 11. Never use brand names for toys (exceptions: Domino Day, Strandbeest, and Zena for now).
+12. Toy size budget (Tom, 2026-11-27): stay under 2.5 MB recommended, 5 MB comfortable max, and up to 7.5 to 10 MB for S-tier or statement pieces.
 
 ## Read before work
 

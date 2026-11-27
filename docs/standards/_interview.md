@@ -45,7 +45,7 @@ Working log for epic `stimming-51dy`. One line per answer. The rebuild reads thi
 | 17 | Code layout | Inline until about 800 lines of script; past that, `<id>/main.js` and named modules. Existing toys split only when ported. |
 | 18 | Format and lint | Prettier + ESLint, dev tools only. |
 | 19 | Types | `@ts-check` and JSDoc on exports in `shared/` now. Toys opt in when ported. |
-| 20 | Perf budget | First frame under 3 s cold (`tools/loadtime.mjs`). Toy's own files under 1 MB; more needs Tom's yes. Idle: no rAF loop, no audio nodes. 30 fps floor stays. |
+| 20 | Perf budget | First frame under 3 s cold (`tools/loadtime.mjs`). Toy's own files under 1 MB; more needs Tom's yes (superseded 2026-11-27: stay under 2.5 MB recommended, 5 MB comfortable max, up to 7.5 to 10 MB for S-tier or statement pieces). Idle: no rAF loop, no audio nodes. 30 fps floor stays. |
 
 ## Card 6: code hygiene
 

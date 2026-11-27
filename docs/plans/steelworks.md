@@ -152,7 +152,7 @@ Indoors, so no distance delay. Every hit jitters in pitch, time and level. The c
 - Lively while the drill turns, the iron runs or sparks fly. Drifting at 30 fps while the runners cool and the fume thins. Asleep 60 s after the last input, easing out over 2 s. Hidden: loop and sim clock stop.
 - Reduced motion: no ambient fume drift or flicker. The tap still runs, with fewer sparks and no shake.
 - Ladder (`shared/detail.js`): pixel ratio to 1, then haze, fume march and bloom buffers down, then sparks and fume steps halved.
-- Budgets: 30 fps on the dev PC; first frame under 3 s cold (shader links count); own files under 1 MB.
+- Budgets: 30 fps on the dev PC; first frame under 3 s cold (shader links count); own files under 2.5 MB recommended (5 MB comfortable max, up to 7.5 to 10 MB for S-tier or statement pieces).
 
 ## 6. Cost, risks, bean, questions
 
