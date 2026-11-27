@@ -339,9 +339,9 @@ const NOTCH = 2, NOTCH_REACH = 0.4, MAGNETS = [0, 1, NOTCH];
 const STICKY = [[NOTCH, -1], [1, -1], [1, 1]];
 // A pause of GAP ms ends a gesture; PUSH is the travel that leaves the stop.
 const GAP = 220, PUSH = 0.25;
-// A hand gesture leads the view by one stop at most: four wheel ticks.
-// A fling cannot run the target to the end, so the view stops near the hand.
-const LEAD = 1;
+// A hand gesture leads the view by three quarters of a stop at most: three wheel ticks.
+// A fling cannot run the target to the end, so the view stops close to the hand.
+const LEAD = 0.75;
 const stick = { at: null, dir: 0, armed: false, push: 0, last: 0 };
 let settle = 0;
 function zoomBy(dz) {
@@ -409,10 +409,10 @@ function follow(x, X, v, T, dt, firm = false) {
   if (firm && (X - x) * (nx - X) > 0) return [X, 0];
   return [nx, nv];
 }
-// Each follower's time constant at Zoom weight 1; the house weight 2 settles a stop in about 3.5 s.
-const ZOOM_T = 0.35;
-// Zooming in is slower and heavier than zooming out (Tom, 2026-11-24).
-const ZOOM_IN = 1.4;
+// Each follower's time constant at Zoom weight 1; the house weight 2 settles a stop in about 2.1 s (Tom, 2026-11-26).
+const ZOOM_T = 0.22;
+// Zooming in is gently heavier than zooming out.
+const ZOOM_IN = 1.18;
 // Steps both followers; true while the zoom moves.
 // Steps the two followers toward the target.
 function stepFollow(dt) {
@@ -687,7 +687,7 @@ const ui = initPage({ id: ID, bar: {
     { type: 'choice', id: 'fpsCap', group: 'Frames', label: 'Frame cap', hint: 'Frames a second while the star moves; Unlimited follows the screen.', value: '0', persist: true, options: [['0', 'Unlimited'], ['60', '60'], ['30', '30'], ['24', '24']].map(([value, label]) => ({ value, label })), onPick: () => poke() },
     { type: 'slider', id: 'frameBlend', group: 'Frames', label: 'Frame blending', hint: 'How much of the last frame stays in the new one; 0 is off.', min: 0, max: 0.9, step: 0.05, value: 0, persist: true, onInput: () => poke() },
     { type: 'slider', id: 'motionBlur', group: 'Frames', label: 'Motion blur', hint: 'The shutter: a share of the camera move between frames. 0 is off.', min: 0, max: 1, step: 0.05, value: 0, persist: true, onInput: () => poke() },
-    { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.75 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
+    { type: 'slider', id: 'zoomWeight', group: 'Zoom', label: 'Zoom weight', hint: 'How heavy the zoom feels: each step settles over about 1.1 s times this.', min: 0.3, max: 3, step: 0.05, value: 2, persist: true },
     { type: 'choice', id: 'cardStyle', group: 'Card', label: 'Card style', hint: 'How the star card looks when the zoom settles on the full star.', value: 'intro', options: CARD_STYLES.map(([value, label]) => ({ value, label })), persist: true, onPick: () => replayCard() },
     { type: 'button', id: 'cardShow', group: 'Card', label: 'Star card', hint: 'Plays the star card now, at any zoom.', text: 'Show', onClick: () => showCard() },
     // The choir and rumble switches and levels live in Settings (Tom, 2026-11-24).
@@ -1662,6 +1662,7 @@ stage.addEventListener('pointerdown', e => {
   const [x, y] = local(e);
   const now = performance.now();
   Object.assign(pointer, { id: e.pointerId, x0: x, y0: y, x, y, at: now, t0: now, drag: false, egg: false, p0: st.pitch, w0: st.yaw });
+  dragGoal.pitch = st.pitch; dragGoal.yaw = st.yaw;
   pressed = pickAt(x, y).t;
   poke();
 });
@@ -1676,9 +1677,9 @@ stage.addEventListener('pointermove', e => {
   const k = 0.75 / Math.max(320, cssH);
   // The long lens holds still; far out the mouse sways the lens instead.
   if (!canTurn()) return;
-  st.pitch = clamp(pointer.p0 + (y - pointer.y0) * k, -0.32, 0.32);
-  st.yaw = clamp(pointer.w0 + (x - pointer.x0) * k, -0.32, 0.32);
-  setRot();
+  dragGoal.pitch = clamp(pointer.p0 + (y - pointer.y0) * k, -0.32, 0.32);
+  dragGoal.yaw = clamp(pointer.w0 + (x - pointer.x0) * k, -0.32, 0.32);
+  if (calm) { st.pitch = dragGoal.pitch; st.yaw = dragGoal.yaw; setRot(); }
   poke();
 });
 function endPointer(e) {
@@ -1722,19 +1723,23 @@ function stepTurn(dt) {
   return easing;
 }
 
-/* ---------- turn back: a released star eases home ---------- */
-// After a drag the star turns back to its home angle over about 3 s (Tom, 2026-11-24).
+/* ---------- turn drag & return: smooth follow during drag, eased home on release ---------- */
+const dragGoal = { pitch: 0, yaw: 0 };
 const back = { vp: 0, vy: 0 };
-const BACK_T = 0.9;
-// Steps the return; true while the star still turns.
+const DRAG_T = 0.08, BACK_T = 0.65;
+// Steps drag smoothing or return home; true while the star still turns.
 function stepTurnBack(dt) {
-  if (pointer.drag || (st.pitch === 0 && st.yaw === 0)) return false;
-  if (calm) { st.pitch = st.yaw = 0; back.vp = back.vy = 0; setRot(); return false; }
-  [st.pitch, back.vp] = follow(st.pitch, 0, back.vp, BACK_T, dt);
-  [st.yaw, back.vy] = follow(st.yaw, 0, back.vy, BACK_T, dt);
-  if (Math.abs(st.pitch) + Math.abs(st.yaw) + Math.abs(back.vp) + Math.abs(back.vy) < 1e-4) { st.pitch = st.yaw = 0; back.vp = back.vy = 0; }
+  const dragging = pointer.drag && canTurn();
+  const tp = dragging ? dragGoal.pitch : 0, ty = dragging ? dragGoal.yaw : 0;
+  if (!dragging && st.pitch === 0 && st.yaw === 0) return false;
+  if (calm) { st.pitch = tp; st.yaw = ty; back.vp = back.vy = 0; setRot(); return false; }
+  const T = dragging ? DRAG_T : BACK_T;
+  [st.pitch, back.vp] = follow(st.pitch, tp, back.vp, T, dt, true);
+  [st.yaw, back.vy] = follow(st.yaw, ty, back.vy, T, dt, true);
+  const still = Math.abs(st.pitch - tp) + Math.abs(st.yaw - ty) + Math.abs(back.vp) + Math.abs(back.vy) < 1e-4;
+  if (still) { st.pitch = tp; st.yaw = ty; back.vp = back.vy = 0; }
   setRot();
-  return true;
+  return !still;
 }
 
 /* ---------- the eye: light adapts late to the zoom ---------- */
@@ -1756,7 +1761,7 @@ function stepEye(dt) {
 /* ---------- sway: far out the mouse gently nudges the lens ---------- */
 // A slow, critically damped follow: no overshoot, about 2 s to settle (Tom, 2026-11-24).
 const sway = { x: 0, y: 0, vx: 0, vy: 0 };
-const SWAY_T = 0.9;
+const SWAY_T = 0.6;
 // Steps the follow; true while it moves.
 // A lensed far star sways from the full view on: its full view is already far out (Tom, 2026-11-24).
 function stepSway(dt) {
@@ -1770,12 +1775,12 @@ function stepSway(dt) {
   if (still) { sway.x = tx; sway.y = ty; sway.vx = sway.vy = 0; }
   return !still;
 }
-// Zoom through every view: the wheel, a two-finger pinch, the - and = keys.
+// Zoom through every view: the wheel (inverted, Tom 2026-11-26), a two-finger pinch, the - and = keys.
 stage.addEventListener('wheel', e => {
   e.preventDefault();
   // Line and page scrolls, as from some mice, count as pixels.
   const px = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1;
-  zoomBy(clamp(e.deltaY * px, -120, 120) * 0.0025);
+  zoomBy(-clamp(e.deltaY * px, -120, 120) * 0.0025);
 }, { passive: false });
 const touches = new Map();
 let pinch0 = 0;
