@@ -95,7 +95,8 @@ function drawStrip() {
   const list = items.filter(i => state.filter === 'all' || (state.filter === 'todo' ? !desk.touched(i.id) : i.group === state.filter));
   $('strip').innerHTML = list.map((it, n) => `${n && list[n - 1].group !== it.group ? '<span class="gap"></span>' : ''}<button type="button" class="${it.group === 'unlisted' ? 'un' : ''}${desk.touched(it.id) ? ' touched' : ''}" data-id="${it.id}" title="${esc(it.name)}" aria-label="${esc(it.name)}" aria-current="${it.id === state.id}">${it.emblem ? `<i style="--em: url(${config.root}${it.emblem})"></i>` : '<span class="nil"></span>'}</button>`).join('');
   const cur = /** @type {HTMLElement | null} */ ($('strip').querySelector('[aria-current="true"]'));
-  if (cur) $('strip').scrollLeft = cur.offsetLeft - $('strip').clientWidth / 2;
+  // The rail strip scrolls down; the inline strip scrolls across.
+  if (cur) Object.assign($('strip'), { scrollLeft: cur.offsetLeft - $('strip').clientWidth / 2, scrollTop: cur.offsetTop - $('strip').offsetTop - $('strip').clientHeight / 2 });
 }
 function drawTabs() {
   const tabs = [...panels.map(p => [p.id, p.label, p.status?.(desk.item, desk) || '']), ['yaml', 'YAML', '']];

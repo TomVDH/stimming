@@ -7,11 +7,22 @@ const ROOT = new URL('../../', import.meta.url).href;
 
 const STYLE = `
 .ax-wrap { display: grid; gap: 10px; }
-/* Controls: Bar v3 rows, matching the Intro panel. */
-.ax-ctl { display: grid; grid-template-columns: max-content 1fr; align-items: start; column-gap: 14px; }
-.ax-ctl > .lab { padding-top: 10px; font: 800 10px/1 var(--slab); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
-.ax-ctl > .bar .w { height: 34px; }
+/* Controls: one group; each row is a label column and a Bar v3 word row. */
+.ax-wrap { --ax-chrome: 220px; --ax-h: max(480px, calc(100svh - 48px - var(--ax-chrome))); }
+.ax-ctl { display: grid; border: 1px solid var(--line); border-radius: 12px; padding: 0 12px; }
+.ax-row { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: start; column-gap: 12px; padding: 3px 0; }
+.ax-row + .ax-row { border-top: 1px solid var(--line); }
+.ax-row > .lab { padding-top: 12px; font: 800 10px/1 var(--slab); letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.ax-row > .bar { min-width: 0; }
+.ax-row > .bar .w { height: 34px; }
 .ax-ctl .lab-i { padding: 0 4px 0 11px; font: 800 10px/1 var(--slab); letter-spacing: 0.14em; color: var(--muted); }
+@media (max-width: 599px) {
+  .ax-row { grid-template-columns: minmax(0, 1fr); padding: 8px 0 4px; }
+  .ax-row > .lab { padding-top: 0; }
+  .ax-row > .bar { margin-top: 2px; }
+}
+.ax-wrap[data-view="sheet"] :is(.ax-row:not(.r-view), .ax-frame, .ax-judge) { display: none; }
+.ax-wrap[data-view="live"] .ax-sheet { display: none; }
 
 /* Viewport frame: holds the scrollable annex and the pinned back chip. */
 .ax-frame { position: relative; border-radius: 18px; overflow: hidden; background: var(--bg); box-shadow: 0 0 0 1px var(--line); }
@@ -26,7 +37,7 @@ const STYLE = `
   --ax-gutter: clamp(20px, 5vw, 56px);
   --ax-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ax-emblem: none;
-  position: relative; height: clamp(480px, 70vh, 840px); overflow-y: auto; overflow-x: clip;
+  position: relative; height: var(--ax-h); overflow-y: auto; overflow-x: clip;
   background: var(--bg); color: var(--fg); scrollbar-color: var(--line) var(--bg);
 }
 body.ax-full { overflow: hidden; }
@@ -34,11 +45,12 @@ body.ax-full .ax-frame { position: fixed; inset: 0; z-index: 90; border-radius: 
 body.ax-full .ax-vp { height: 100svh; }
 body.ax-full .ax-ctl {
   position: fixed; left: 50%; top: 8px; translate: -50% 0; z-index: 210;
-  display: flex; align-items: center; gap: 6px; padding: 0 12px;
+  display: flex; align-items: center; gap: 6px; padding: 0 12px; border: 0;
   background: oklch(0.1 0.012 275 / 0.84); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
-body.ax-full .ax-ctl > :not(.r-scroll) { display: none; }
-body.ax-full .ax-ctl > .lab.r-scroll { display: none; }
+body.ax-full .ax-ctl > .ax-row:not(.r-scroll) { display: none; }
+body.ax-full .ax-ctl > .ax-row.r-scroll { display: flex; padding: 0; border: 0; }
+body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 
 .ax-vp ::selection { background: var(--ax-accent); color: var(--ax-ink); }
 .ax-page { position: relative; min-height: 100%; }
@@ -355,6 +367,28 @@ body.ax-full .ax-ctl > .lab.r-scroll { display: none; }
 .ax-vp.rm.read .ax-stage { visibility: visible; }
 .ax-vp.rm * { transition: none !important; }
 
+/* Sheet view: the lab's test sheet, live frames that load only while in view. */
+.ax-sheet { height: var(--ax-h); overflow-y: auto; padding: 4px 4px 24px 0; scrollbar-color: var(--line) var(--bg); }
+.ax-sheet h2 { margin: 28px 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -0.015em; }
+.ax-sheet h2:first-child { margin-top: 4px; }
+.ax-sheet h2 + p { margin: 0 0 16px; max-width: 70ch; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.ax-sh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap: 24px 20px; }
+.ax-sh-card h3 { margin: 0; display: flex; align-items: baseline; gap: 10px; font-size: 16px; font-weight: 700; }
+.ax-sh-card h3 em { font: 500 11px/1 var(--slab); font-style: normal; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
+.ax-sh-card h3 em[data-k="pick"] { color: oklch(0.86 0.15 150); }
+.ax-sh-card h3 em[data-k="no"] { color: oklch(0.74 0.16 28); }
+.ax-sh-card p { margin: 6px 0 10px; min-height: 3em; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.ax-sh-frame { position: relative; aspect-ratio: 16 / 10; border-radius: 12px; overflow: hidden; background: var(--ax-surface, oklch(0.2 0.014 275)); }
+.ax-sh-frame iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.ax-sh-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.ax-sh-bar :is(button, a) {
+  height: 30px; padding: 0 12px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px;
+  background: none; color: var(--fg); cursor: pointer; text-decoration: none; font: 500 11px/1 var(--slab); letter-spacing: 0.12em; text-transform: uppercase;
+}
+.ax-sh-bar button[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.ax-sh-bar :is(button, a):hover { border-color: var(--fg); }
+.ax-sh-bar span { flex: 1; }
+
 /* Judge bar: matches Intro panel. */
 .ax-judge { display: flex; flex-wrap: wrap; align-items: center; gap: 0 10px; padding-top: 4px; }
 .ax-judge input { flex: 1 1 320px; min-width: 0; background: none; border: 0; border-bottom: 1px solid var(--line); color: var(--fg); font: 500 15px/1.4 var(--sans); padding: 6px 0; }
@@ -421,6 +455,14 @@ let travel = 1;
 let played = false;
 let lastP = -1;
 let gen = 0;
+/** @type {'live' | 'sheet'} */
+let view = 'live';
+/** @type {HTMLElement | null} */
+let wrapEl = null;
+/** @type {ResizeObserver | null} */
+let fitRO = null;
+/** @type {IntersectionObserver | null} */
+let sheetIO = null;
 
 const keepS = () => desk.keep.set('annex', S);
 const esc = (/** @type {any} */ s) => desk.esc(s);
@@ -445,7 +487,7 @@ function ctlHTML() {
   const full = document.body.classList.contains('ax-full');
   const sl = '<span class="sl">/</span>';
   const lab = (/** @type {string} */ l) => `<span class="lab-i">${l}</span>`;
-  const row = (/** @type {string} */ cls, /** @type {string} */ l, /** @type {string} */ html) => `<span class="lab ${cls}">${l}</span><div class="bar ${cls}">${html}</div>`;
+  const row = (/** @type {string} */ cls, /** @type {string} */ l, /** @type {string} */ html) => `<div class="ax-row ${cls}"><span class="lab">${l}</span><div class="bar">${html}</div></div>`;
   const stopBtn = (/** @type {string} */ y, /** @type {string} */ l) => `<button class="w" type="button" data-y="${y}">${l}</button>`;
   const dirRow = desk.words(DIRS, 'data-dir', (/** @type {string} */ v) => S.dir === v);
   const layRow = desk.words(LAYOUTS, 'data-lay', (/** @type {string} */ v) => S.dir === 'h' && S.layout === v)
@@ -453,9 +495,10 @@ function ctlHTML() {
   const scrollRow = stopBtn('0', 'Toy') + sl + stopBtn('0.5', 'Mid') + sl + stopBtn('1', 'Zone')
     + sl + lab('Stage') + desk.words([['live', 'Live toy'], ['still', 'Still']], 'data-st', (/** @type {string} */ v) => S.stage === v)
     + sl + `<button class="w" type="button" data-aa="rm" aria-pressed="${!!S.rm}">Reduced motion</button>`
-    + sl + `<button class="w" type="button" data-aa="full" aria-pressed="${full}">${full ? 'Leave full screen' : 'Full screen'}</button>`
-    + sl + `<a class="w" href="../annexlab/sheet.html" target="_blank" rel="noopener">Annex sheet ↗</a>`;
-  return row('r-dir', 'Transition', dirRow)
+    + sl + `<button class="w" type="button" data-aa="full" aria-pressed="${full}">${full ? 'Leave full screen' : 'Full screen'}</button>`;
+  const viewRow = desk.words([['live', 'Live'], ['sheet', 'Sheet']], 'data-view', (/** @type {string} */ v) => view === v);
+  return row('r-view', 'View', viewRow)
+    + row('r-dir', 'Transition', dirRow)
     + row('r-lay', 'Title', layRow)
     + row('r-scroll', 'Scroll', scrollRow);
 }
@@ -465,6 +508,67 @@ function judgeHTML() {
   const ok = j ? j.ok : null;
   return `<div class="bar"><button class="w" type="button" data-aj="ok" aria-pressed="${ok === true}">Annex OK</button><span class="sl">/</span><button class="w" type="button" data-aj="bad" aria-pressed="${ok === false}">Needs work</button></div>`
     + `<input type="text" data-ajn placeholder="Notes on transition, seam, or title layout for ${esc(item.name)}" value="${esc(j?.note || '')}">`;
+}
+
+// Sheet view: one row per card. Lab query, name, verdict kind, verdict, what it is.
+const SHEET_DIRS = /** @type {[string, string, string, string, string][]} */ ([
+  ['d=h&v=b', 'H · Flash cut', 'pick', "Tom's pick", "The dark sheet rises over the dimmed toy. The title lands in the intro's beats. At rest: the full toy, and one About hint bottom centre."],
+  ['d=a', 'A · Recede', '', 'Parked', 'The stage shrinks to 0.86 and dims; the zone rises as a sheet. The pick of round 1.'],
+  ['d=d', 'D · Drum', '', 'Parked', 'The toy and the zone are two faces of one drum; the stage tips back.'],
+  ['d=e', 'E · Placard', '', 'Parked', "A bar in the toy's accent rides up and docks as the header."],
+  ['d=f', 'F · Tide', '', 'Parked', "The menu's Wave divider floods up over the toy in the series colour."],
+  ['d=g', 'G · Lead figure', '', 'Parked', "The stage shrinks into the article's first picture and stays live."],
+]);
+const SHEET_LAYS = /** @type {[string, string, string, string, string][]} */ ([
+  ['d=h&v=a', '1 · Window', 'no', 'Rejected: trite', 'The emblem is a hole in the sheet; the toy plays on behind it.'],
+  ['d=h&v=b', '2 · Giant', 'no', 'Rejected: trite', 'The emblem runs off the left edge and leans to the pointer.'],
+  ['d=h&v=c', '3 · Echo', 'no', 'Rejected: trite', 'The emblem repeats at falling sizes; the flash runs down the row.'],
+  ['d=h&v=d', '4 · Orbit', 'no', 'Rejected: trite', 'Both names run in a ring round the emblem; the ring turns with the scroll.'],
+]);
+const SHEET_STOPS = /** @type {[string, number][]} */ ([['Toy', 0], ['Mid', 0.5], ['Zone', 1]]);
+
+const sheetUrl = (/** @type {HTMLElement} */ f) => `${ROOT}annexlab/round2.html?${f.dataset.q}&y=${f.dataset.y}`;
+
+function sheetCard(/** @type {[string, string, string, string, string]} */ [query, name, kind, verdict, text], /** @type {number} */ startAt) {
+  const stops = SHEET_STOPS.map(([w, y]) => `<button type="button" data-sy="${y}" aria-pressed="${y === startAt}">${w}</button>`).join('');
+  return `<article class="ax-sh-card"><h3>${esc(name)}<em data-k="${kind}">${esc(verdict)}</em></h3><p>${esc(text)}</p>`
+    + `<div class="ax-sh-frame"><iframe title="${esc(name)}" data-q="${query}" data-y="${startAt}"></iframe></div>`
+    + `<div class="ax-sh-bar">${stops}<span></span><button type="button" data-use="${query}">Use</button><a href="${ROOT}annexlab/round2.html?${query}" target="_blank" rel="noopener">Open</a></div></article>`;
+}
+
+function sheetHTML() {
+  return `<h2>Transition</h2><p>How the visitor gets from the toy to the content zone. The frames are the lab on Glass; Use applies a pick to ${esc(item?.name || 'the toy')} in the Live view.</p>`
+    + `<div class="ax-sh-grid">${SHEET_DIRS.map(r => sheetCard(r, 0.5)).join('')}</div>`
+    + `<h2>Flash cut: title block layouts</h2><p>The block the flash lands on. Tom rejected the first set (Stack, Poster, Ledger, Centre, Side: gone from the lab) and this second set.</p>`
+    + `<div class="ax-sh-grid">${SHEET_LAYS.map(r => sheetCard(r, 1)).join('')}</div>`;
+}
+
+/** Each sheet frame holds a live toy, so only the frames in view stay loaded. */
+function watchSheet(/** @type {HTMLElement} */ sheet) {
+  sheetIO?.disconnect();
+  sheetIO = new IntersectionObserver(es => es.forEach(en => {
+    const f = /** @type {HTMLIFrameElement} */ (en.target);
+    if (en.isIntersecting && !f.dataset.on) { f.dataset.on = '1'; f.src = sheetUrl(f); }
+    else if (!en.isIntersecting && f.dataset.on) { delete f.dataset.on; f.removeAttribute('src'); }
+  }), { root: sheet, rootMargin: '10% 0px' });
+  sheet.querySelectorAll('iframe').forEach(f => sheetIO?.observe(f));
+}
+
+function setView(/** @type {'live' | 'sheet'} */ v) {
+  view = v;
+  if (wrapEl) wrapEl.dataset.view = v;
+  if (v === 'sheet' && document.body.classList.contains('ax-full')) setFull(false);
+  const ctl = document.querySelector('.ax-ctl');
+  if (ctl) ctl.innerHTML = ctlHTML();
+  fit();
+  if (v === 'live') { measure(); lastP = -1; drive(); }
+}
+
+/** Frame height: the viewport less the controls and the judge bar, kept in --ax-chrome. */
+function fit() {
+  if (!wrapEl) return;
+  const h = (/** @type {string} */ sel) => /** @type {HTMLElement | null} */ (wrapEl?.querySelector(sel))?.offsetHeight || 0;
+  wrapEl.style.setProperty('--ax-chrome', `${h('.ax-ctl') + (view === 'live' ? h('.ax-judge') : 0) + 20}px`);
 }
 
 /** Pick three sibling toys: same series first, then nearby listed toys. */
@@ -849,6 +953,26 @@ export default {
       }
 
       const ds = b.dataset;
+      if (ds.view) { setView(ds.view === 'sheet' ? 'sheet' : 'live'); return; }
+      if (ds.sy !== undefined) {
+        const frame = /** @type {HTMLIFrameElement | null} */ (b.closest('.ax-sh-card')?.querySelector('iframe'));
+        if (!frame) return;
+        frame.dataset.y = ds.sy;
+        b.closest('.ax-sh-bar')?.querySelectorAll('button[data-sy]').forEach(o => o.setAttribute('aria-pressed', String(o === b)));
+        if (frame.dataset.on) frame.src = sheetUrl(frame);
+        return;
+      }
+      if (ds.use) {
+        const q = new URLSearchParams(ds.use);
+        S.dir = q.get('d') || 'h';
+        if (S.dir === 'h') S.layout = q.get('v') || S.layout;
+        keepS();
+        setView('live');
+        applyMode();
+        goStop(0);
+        if (S.dir === 'h') replayBeats();
+        return;
+      }
       if (ds.dir) { S.dir = ds.dir; keepS(); applyMode(); return; }
       if (ds.lay) { S.dir = 'h'; S.layout = ds.lay; keepS(); applyMode(); replayBeats(); return; }
       if (ds.st) { S.stage = ds.st; keepS(); syncStage(); applyMode(); return; }
@@ -902,11 +1026,20 @@ export default {
     played = false;
     lastP = -1;
 
-    host.innerHTML = `<div class="ax-wrap">`
+    host.innerHTML = `<div class="ax-wrap" data-view="${view}">`
       + `<div class="ax-ctl">${ctlHTML()}</div>`
       + `<div class="ax-frame"><div class="ax-vp">${annexBodyHTML(it)}</div>`
       + `<button class="ax-back" type="button" data-aa="top"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg>${esc(it.name)}</button></div>`
+      + `<div class="ax-sheet">${sheetHTML()}</div>`
       + `<div class="ax-judge">${judgeHTML()}</div></div>`;
+
+    wrapEl = /** @type {HTMLElement} */ (host.querySelector('.ax-wrap'));
+    watchSheet(/** @type {HTMLElement} */ (host.querySelector('.ax-sheet')));
+    fitRO?.disconnect();
+    fitRO = new ResizeObserver(fit);
+    fitRO.observe(/** @type {Element} */ (host.querySelector('.ax-ctl')));
+    fitRO.observe(/** @type {Element} */ (host.querySelector('.ax-judge')));
+    fit();
 
     frameEl = /** @type {HTMLElement} */ (host.querySelector('.ax-frame'));
     vp = /** @type {HTMLElement} */ (host.querySelector('.ax-vp'));
@@ -966,6 +1099,9 @@ export default {
     ro?.disconnect(); ro = null;
     cutsIO?.disconnect(); cutsIO = null;
     spyIO?.disconnect(); spyIO = null;
+    sheetIO?.disconnect(); sheetIO = null;
+    fitRO?.disconnect(); fitRO = null;
+    wrapEl = null;
     vp = null;
     frameEl = null;
   },
