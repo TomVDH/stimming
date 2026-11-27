@@ -29,7 +29,7 @@ const STYLE = `
 /* The annex sizes from the frame, never from the desk window. */
 .ax-frame { container: ax / inline-size; width: var(--aw, 100%); margin-inline: auto; zoom: var(--z, 1); }
 .ax-vp {
-  --p: 0; --sy: 0; --vh: 620px; --lip: 14px;
+  --p: 0; --vh: 620px; --lip: 14px;
   --ax-accent: var(--acc-ink, oklch(0.9 0.07 200));
   --ax-series: oklch(0.88 0.1 200);
   --ax-ink: oklch(0.16 0.012 275);
@@ -69,7 +69,7 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 .ax-vp.read .ax-stage { visibility: hidden; }
 
 /* Sticky stage for fixed-stage transitions inside the scrollable viewport. */
-.ax-vp:is([data-dir="a"], [data-dir="f"], [data-dir="g"], [data-dir="h"]):not(.rm) .ax-scene { position: sticky; top: 0; z-index: 1; }
+.ax-vp:is([data-dir="g"], [data-dir="h"]):not(.rm) .ax-scene { position: sticky; top: 0; z-index: 1; }
 
 /* ---------- the content zone ---------- */
 .ax-annex { position: relative; z-index: 2; margin-top: calc(var(--lip) * -1); }
@@ -170,24 +170,6 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 .ax-frame.no-back .ax-back { display: none; }
 .ax-back:hover { border-color: var(--ax-accent); color: var(--ax-accent); }
 
-/* ---------- A · Recede ---------- */
-.ax-vp[data-dir="a"] { --dim: 0.68; }
-.ax-vp[data-dir="a"]:not(.rm) .ax-stage { transform: scale(calc(1 - var(--p) * 0.14)); border-radius: calc(var(--p) * 24px); }
-.ax-vp[data-dir="a"] .ax-lip { border-radius: 18px 18px 0 0; border-top: 1px solid var(--line); }
-.ax-vp[data-dir="a"] .ax-lip .lip-handle { display: block; width: 44px; height: 4px; border-radius: 2px; background: var(--line); transition: background-color 0.2s ease; }
-.ax-vp[data-dir="a"] .ax-lip:hover .lip-handle { background: var(--ax-accent); }
-
-/* ---------- D · Drum ---------- */
-.ax-vp[data-dir="d"] { --dim: 0.82; --lip: 18px; }
-.ax-vp[data-dir="d"]:not(.rm) .ax-page { perspective: 1500px; perspective-origin: 50% calc(var(--sy) * 1px + var(--vh) * 0.5); }
-.ax-vp[data-dir="d"]:not(.rm) .ax-scene { transform-origin: 50% calc(100% - var(--lip)); transform: rotateX(calc(var(--p) * -66deg)); }
-.ax-vp[data-dir="d"]:not(.rm):not(.read) .ax-annex { transform-origin: 50% 0; transform: rotateX(calc((1 - var(--p)) * 66deg)); }
-.ax-vp[data-dir="d"] .ax-lip { background: var(--ax-surface); border-top: 1px solid oklch(0.42 0.02 275); color: var(--fg); }
-.ax-vp[data-dir="d"] .ax-lip .lip-chev { display: block; width: 16px; height: 16px; }
-.ax-vp[data-dir="d"] .ax-lip:hover { color: var(--ax-accent); }
-.ax-veil { display: none; position: absolute; z-index: 3; inset: 0 0 auto 0; height: calc(var(--vh) * 1.3); pointer-events: none; background: oklch(0.1 0.012 275); opacity: calc((1 - var(--p)) * 0.6); }
-.ax-vp[data-dir="d"]:not(.rm):not(.read) .ax-veil { display: block; }
-
 /* ---------- E · Placard ---------- */
 .ax-vp[data-dir="e"] { --dim: 0.78; --lip: 46px; }
 .ax-vp[data-dir="e"]:not(.rm) .ax-scene { overflow: clip; }
@@ -213,17 +195,6 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 .ax-vp[data-dir="e"].stuck .ax-lip > :is(.ax-nav, .pl-play) { display: inline-flex; }
 .ax-vp[data-dir="e"] .ax-index { display: none; }
 .ax-vp[data-dir="e"] .ax-sec { scroll-margin-top: 70px; }
-
-/* ---------- F · Tide ---------- */
-.ax-vp[data-dir="f"] { --dim: 0.8; --lip: 30px; }
-.ax-vp[data-dir="f"]:not(.rm) .ax-stage { transform: scale(calc(1 - var(--p) * 0.05)); }
-.ax-vp[data-dir="f"] .ax-lip { background: none; color: var(--ax-series); }
-.ax-vp[data-dir="f"] .ax-lip .tide { display: block; position: absolute; left: 0; top: -47px; width: 100%; height: 100px; overflow: visible; pointer-events: none; }
-.tide .tide-fill { fill: var(--bg); stroke: none; }
-.tide .tide-line { fill: none; stroke: var(--ax-series); stroke-width: 1.6; }
-.ax-vp[data-dir="f"] .ax-lip .lip-label { display: inline-flex; position: relative; align-items: center; gap: 8px; height: 26px; padding: 0 12px; border-radius: 999px; background: var(--bg); transition: color 0.2s ease; }
-.lip-label svg { width: 20px; height: 20px; stroke: none; }
-.ax-vp[data-dir="f"] .ax-lip:hover .lip-label { color: var(--fg); }
 
 /* ---------- G · Lead figure ---------- */
 .ax-vp[data-dir="g"] { --dim: 0; }
@@ -298,10 +269,10 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 .ax-vp[data-dir="h"] .ax-nl { font-size: clamp(18px, 2cqw, 24px); }
 .ax-vp[data-dir="h"] .ax-tag { font-size: 16px; }
 
-/* Flash cut title block layouts (?v=a..d). */
+/* Flash cut title block: the Window layout. */
 .ax-vp[data-dir="h"] .ax-title { display: block; }
 .ax-vp[data-dir="h"] .ax-title .ax-facts { display: none; }
-.ax-facts--credits, .ax-echo, .ax-ring { display: none; }
+.ax-facts--credits { display: none; }
 .ax-vp[data-dir="h"] .ax-facts--credits { display: grid; max-width: 420px; }
 
 /* 1 · Window */
@@ -322,46 +293,6 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
 .ax-vp[data-dir="h"][data-v="a"]:not(.rm).read .ax-stage { visibility: visible; }
 .ax-vp[data-dir="h"][data-v="a"]:not(.rm) .ax-badge { visibility: hidden; width: var(--win); margin-bottom: 26px; }
 .ax-vp[data-dir="h"][data-v="a"] .ax-title h1 { font-size: clamp(48px, 7.6cqw, 108px); }
-
-/* 2 · Giant */
-.ax-vp[data-dir="h"][data-v="b"] .ax-title > div { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "badge ." "badge name" "badge nl" "badge tag"; grid-template-rows: 1fr auto auto auto; column-gap: clamp(20px, 3.6cqw, 48px); }
-.ax-vp[data-dir="h"][data-v="b"] .ax-badge {
-  grid-area: badge; width: clamp(200px, 36cqw, 480px); margin: -1cqw 0 0 calc(var(--ax-gutter) * -1 - 5cqw);
-  translate: calc(var(--mx, 0) * 16px) calc(var(--my, 0) * 12px); rotate: calc(var(--mx, 0) * -3deg);
-  transition: translate 0.6s var(--ax-out), rotate 0.6s var(--ax-out);
-}
-.ax-vp[data-dir="h"][data-v="b"] .ax-title h1 { grid-area: name; font-size: clamp(44px, 6.4cqw, 96px); }
-.ax-vp[data-dir="h"][data-v="b"] .ax-nl { grid-area: nl; }
-.ax-vp[data-dir="h"][data-v="b"] .ax-tag { grid-area: tag; padding-bottom: 2cqw; }
-
-/* 3 · Echo */
-.ax-vp[data-dir="h"][data-v="c"] { --echo: clamp(110px, 16cqw, 220px); }
-.ax-vp[data-dir="h"][data-v="c"] .ax-title > div { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "badge echo" "name name" "nl nl" "tag tag"; align-items: end; column-gap: clamp(10px, 1.5cqw, 20px); }
-.ax-vp[data-dir="h"][data-v="c"] .ax-badge { grid-area: badge; width: var(--echo); margin: 0 0 24px; }
-.ax-vp[data-dir="h"][data-v="c"] .ax-echo { grid-area: echo; display: flex; align-items: flex-end; gap: clamp(10px, 1.5cqw, 20px); margin: 0 0 24px; min-width: 0; }
-.ax-echo i { flex: none; aspect-ratio: 1; }
-.ax-echo i:nth-child(1) { width: calc(var(--echo) * 0.62); opacity: 0.8; --d: 0.63s; }
-.ax-echo i:nth-child(2) { width: calc(var(--echo) * 0.38); opacity: 0.6; --d: 0.7s; }
-.ax-echo i:nth-child(3) { width: calc(var(--echo) * 0.24); opacity: 0.44; --d: 0.767s; }
-.ax-echo i:nth-child(4) { width: calc(var(--echo) * 0.15); opacity: 0.3; --d: 0.833s; }
-.ax-vp[data-dir="h"][data-v="c"] .ax-title h1 { grid-area: name; font-size: clamp(48px, 8cqw, 114px); }
-.ax-vp[data-dir="h"][data-v="c"] .ax-nl { grid-area: nl; }
-.ax-vp[data-dir="h"][data-v="c"] .ax-tag { grid-area: tag; }
-.ax-vp[data-dir="h"][data-v="c"].h-play .ax-echo .ax-emblem { animation: ax-h-hide var(--d) steps(1, end), ax-h-echo 0.067s var(--d) steps(1, end); }
-.ax-vp[data-dir="h"][data-v="c"].h-play .ax-nl { --d: 0.967s; }
-.ax-vp[data-dir="h"][data-v="c"].h-play .ax-tag span:first-child { --d: 1.1s; }
-.ax-vp[data-dir="h"][data-v="c"].h-play .ax-tag span:last-child { --d: 1.233s; }
-@keyframes ax-h-echo { 0%, 100% { background: #fff; } }
-
-/* 4 · Orbit */
-.ax-vp[data-dir="h"][data-v="d"] .ax-title { text-align: center; padding-top: clamp(36px, 6cqw, 84px); }
-.ax-vp[data-dir="h"][data-v="d"] .ax-title > div > * { margin-left: auto; margin-right: auto; }
-.ax-vp[data-dir="h"][data-v="d"] .ax-badge { position: relative; width: clamp(100px, 13cqw, 176px); margin-bottom: clamp(84px, 11cqw, 148px); }
-.ax-vp[data-dir="h"][data-v="d"] .ax-ring { display: block; position: absolute; inset: -62%; width: 224%; height: 224%; overflow: visible; rotate: calc(var(--sy) * 0.06deg); }
-.ax-ring text { font: 500 21px var(--slab); letter-spacing: 0.04em; text-transform: uppercase; fill: var(--fg); }
-.ax-vp[data-dir="h"][data-v="d"] .ax-title h1 { font-size: clamp(48px, 8cqw, 112px); }
-.ax-vp[data-dir="h"][data-v="d"] .ax-index { justify-content: center; }
-.ax-vp.rm .ax-ring { rotate: none; }
 
 /* Reduced motion: a plain scroll. */
 .ax-vp.rm .ax-title { transform: none; }
@@ -403,26 +334,17 @@ body.ax-full .ax-ctl > .ax-row.r-scroll > .lab { display: none; }
   .ax-sec { grid-template-columns: minmax(0, 1fr); }
   .ax-try { grid-template-columns: minmax(0, 1fr); }
   .ax-nav { display: none !important; }
-  .ax-vp[data-dir="h"][data-v="b"] .ax-title > div { grid-template-columns: minmax(0, 1fr); grid-template-areas: "badge" "name" "nl" "tag"; }
-  .ax-vp[data-dir="h"][data-v="b"] .ax-badge { width: 56cqw; margin-bottom: 20px; }
-  .ax-vp[data-dir="h"][data-v="c"] .ax-echo i:nth-child(4) { display: none; }
 }
 `;
 
 const DIRS = /** @type {[string, string][]} */ ([
   ['h', 'H · Flash cut ★'],
-  ['a', 'A · Recede'],
-  ['d', 'D · Drum'],
   ['e', 'E · Placard'],
-  ['f', 'F · Tide'],
   ['g', 'G · Lead figure'],
 ]);
 
 const LAYOUTS = /** @type {[string, string][]} */ ([
   ['a', '1 · Window'],
-  ['b', '2 · Giant'],
-  ['c', '3 · Echo'],
-  ['d', '4 · Orbit'],
 ]);
 
 const TIER_LIB = /** @type {Record<string, [string, string, string][]>} */ ({
@@ -517,18 +439,12 @@ function judgeHTML() {
 
 // Sheet view: one row per card. Lab query, name, verdict kind, verdict, what it is.
 const SHEET_DIRS = /** @type {[string, string, string, string, string][]} */ ([
-  ['d=h&v=b', 'H · Flash cut', 'pick', "Tom's pick", "The dark sheet rises over the dimmed toy. The title lands in the intro's beats. At rest: the full toy, and one About hint bottom centre."],
-  ['d=a', 'A · Recede', '', 'Parked', 'The stage shrinks to 0.86 and dims; the zone rises as a sheet. The pick of round 1.'],
-  ['d=d', 'D · Drum', '', 'Parked', 'The toy and the zone are two faces of one drum; the stage tips back.'],
+  ['d=h&v=a', 'H · Flash cut', 'pick', "Tom's pick", "The dark sheet rises over the dimmed toy. The title lands in the intro's beats. At rest: the full toy, and one About hint bottom centre."],
   ['d=e', 'E · Placard', '', 'Parked', "A bar in the toy's accent rides up and docks as the header."],
-  ['d=f', 'F · Tide', '', 'Parked', "The menu's Wave divider floods up over the toy in the series colour."],
   ['d=g', 'G · Lead figure', '', 'Parked', "The stage shrinks into the article's first picture and stays live."],
 ]);
 const SHEET_LAYS = /** @type {[string, string, string, string, string][]} */ ([
   ['d=h&v=a', '1 · Window', 'no', 'Rejected: trite', 'The emblem is a hole in the sheet; the toy plays on behind it.'],
-  ['d=h&v=b', '2 · Giant', 'no', 'Rejected: trite', 'The emblem runs off the left edge and leans to the pointer.'],
-  ['d=h&v=c', '3 · Echo', 'no', 'Rejected: trite', 'The emblem repeats at falling sizes; the flash runs down the row.'],
-  ['d=h&v=d', '4 · Orbit', 'no', 'Rejected: trite', 'Both names run in a ring round the emblem; the ring turns with the scroll.'],
 ]);
 const SHEET_STOPS = /** @type {[string, number][]} */ ([['Toy', 0], ['Mid', 0.5], ['Zone', 1]]);
 
@@ -544,7 +460,7 @@ function sheetCard(/** @type {[string, string, string, string, string]} */ [quer
 function sheetHTML() {
   return `<h2>Transition</h2><p>How the visitor gets from the toy to the content zone. The frames are the lab on Glass; Use applies a pick to ${esc(item?.name || 'the toy')} in the Live view.</p>`
     + `<div class="ax-sh-grid">${SHEET_DIRS.map(r => sheetCard(r, 0.5)).join('')}</div>`
-    + `<h2>Flash cut: title block layouts</h2><p>The block the flash lands on. Tom rejected the first set (Stack, Poster, Ledger, Centre, Side: gone from the lab) and this second set.</p>`
+    + `<h2>Flash cut: title block layouts</h2><p>The block the flash lands on. Tom rejected every other layout (Stack, Poster, Ledger, Centre, Side, Giant, Echo, Orbit).</p>`
     + `<div class="ax-sh-grid">${SHEET_LAYS.map(r => sheetCard(r, 1)).join('')}</div>`;
 }
 
@@ -597,15 +513,6 @@ function siblingsOf(/** @type {any} */ it) {
   const same = it.raw?.series ? pool.filter((/** @type {any} */ o) => o.raw?.series === it.raw.series) : [];
   const rest = pool.filter((/** @type {any} */ o) => !same.includes(o));
   return [...same, ...rest].slice(0, 3);
-}
-
-/** Build the ring text path for 4 · Orbit. */
-function ringSVG(/** @type {any} */ it) {
-  const chunk = `${it.name}${it.raw?.nl ? ` · ${it.raw.nl}` : ''} · `;
-  let line = '';
-  while (line.length < 56) line += chunk;
-  const pid = `ax-ring-path-${it.id}`;
-  return `<svg class="ax-ring" viewBox="0 0 400 400"><path id="${esc(pid)}" d="M200 200m-176 0a176 176 0 1 1 352 0a176 176 0 1 1-352 0" fill="none"/><text><textPath href="#${esc(pid)}" textLength="1100" lengthAdjust="spacing">${esc(line)}</textPath></text></svg>`;
 }
 
 function ideaHTML(/** @type {any} */ it) {
@@ -668,8 +575,6 @@ function annexBodyHTML(/** @type {any} */ it) {
         <span class="lip-handle"></span>
         <span class="lip-word">About</span>
         <svg class="lip-chev" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>
-        <svg class="tide" aria-hidden="true"><path class="tide-fill"/><path class="tide-line"/></svg>
-        <span class="lip-label">${serIcon ? `<span class="lip-icon">${serIcon}</span>` : ''}About ${esc(it.name)}</span>
         <span class="pl-no">${esc(noPrefix)}</span>
         <span class="pl-name">${esc(it.name)}</span>
         <span class="pl-nl">${esc(t.nl || '')}</span>
@@ -680,14 +585,12 @@ function annexBodyHTML(/** @type {any} */ it) {
         <button class="pl-read" type="button" data-aa="read">Read<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3.5 8.5L8 13l4.5-4.5"/></svg></button>
         <button class="pl-play" type="button" data-aa="top" hidden>Play<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 13V3M3.5 7.5L8 3l4.5 4.5"/></svg></button>
       </div>
-      <div class="ax-veil"></div>
 
       <div class="ax-body">
         <div class="ax-col">
           <header class="ax-title">
             <div>
-              <span class="ax-badge" aria-hidden="true"><span class="ax-emblem" style="${embStyle}"></span>${ringSVG(it)}</span>
-              <span class="ax-echo" aria-hidden="true">${`<i><span class="ax-emblem" style="${embStyle}"></span></i>`.repeat(4)}</span>
+              <span class="ax-badge" aria-hidden="true"><span class="ax-emblem" style="${embStyle}"></span></span>
               <h1 id="ax-name">${esc(it.name)}</h1>
               ${t.nl ? `<p class="ax-nl"><span style="font-weight: 600; color: var(--fg)">${esc(t.nl)}</span>${t.ipa ? ` <span>/${esc(t.ipa)}/</span>` : ''}</p>` : ''}
               ${t.tag || t.tagNl ? `<p class="ax-tag">${t.tag ? `<span style="color: var(--fg)">${esc(t.tag)}</span>` : ''}${t.tagNl ? `<span>${esc(t.tagNl)}</span>` : ''}</p>` : ''}
@@ -798,22 +701,6 @@ function dock(/** @type {number} */ p) {
   stage.style.visibility = r.bottom < vr.top ? 'hidden' : 'visible';
 }
 
-function drawTide(/** @type {number} */ p) {
-  if (!vp) return;
-  const tide = vp.querySelector('.tide'), tideFill = tide?.querySelector('.tide-fill'), tideLine = tide?.querySelector('.tide-line');
-  if (!tide || !tideFill || !tideLine) return;
-  const w = tide.clientWidth || vp.clientWidth, base = 62;
-  const swell = S.rm ? 0 : 38 * Math.sin(Math.PI * p);
-  const long = Math.max(420, w / 2.2), ph = vp.scrollTop * 0.012;
-  const at = (/** @type {number} */ x) => base + swell * (Math.sin(x / long * 6.2832 + ph) + 0.4 * Math.sin(x / (long * 0.37) * 6.2832 - 1.7 * ph)) / 1.4;
-  let d = `M0 ${at(0).toFixed(1)}`;
-  for (let x = 0, up = true; x < w + 12; x += 12, up = !up) {
-    d += `Q${x + 6} ${(at(x + 6) + (up ? -5 : 5)).toFixed(1)} ${x + 12} ${at(x + 12).toFixed(1)}`;
-  }
-  tideLine.setAttribute('d', d);
-  tideFill.setAttribute('d', `${d}V100H0Z`);
-}
-
 function fadeCorners(/** @type {number} */ p) {
   const iframe = /** @type {HTMLIFrameElement | null} */ (vp?.querySelector('.ax-toy'));
   if (!iframe || iframe.hidden) return;
@@ -840,12 +727,10 @@ function drive() {
   const sy = vp.scrollTop;
   const p = Math.min(1, Math.max(0, sy / travel));
   vp.style.setProperty('--p', p.toFixed(4));
-  vp.style.setProperty('--sy', sy.toFixed(1));
   const isRead = p >= 1;
   vp.classList.toggle('read', isRead);
   frameEl.classList.toggle('read', isRead);
   vp.classList.toggle('stuck', sy >= travel - 0.5);
-  if (S.dir === 'f') drawTide(p);
   dock(p);
   beats(p);
   if (p !== lastP) { fadeCorners(p); lastP = p; }
@@ -932,6 +817,9 @@ export default {
 
     const osRm = matchMedia('(prefers-reduced-motion: reduce)').matches;
     S = { dir: 'h', layout: 'a', stage: 'live', rm: osRm, ...desk.keep.get('annex', {}) };
+    // Stored state may name a scrapped option.
+    if (!['h', 'e', 'g'].includes(S.dir)) S.dir = 'h';
+    S.layout = 'a';
 
     try {
       seriesMap = await fetch(`${ROOT}series.json`, { cache: 'no-cache' }).then(r => r.json());
@@ -991,8 +879,9 @@ export default {
       }
       if (ds.use) {
         const q = new URLSearchParams(ds.use);
-        S.dir = q.get('d') || 'h';
-        if (S.dir === 'h') S.layout = q.get('v') || S.layout;
+        const d = q.get('d') || 'h';
+        S.dir = ['h', 'e', 'g'].includes(d) ? d : 'h';
+        S.layout = 'a';
         keepS();
         setView('live');
         applyMode();
@@ -1084,13 +973,6 @@ export default {
 
     vp.addEventListener('scroll', () => {
       if (!ticking) { ticking = true; requestAnimationFrame(drive); }
-    }, { passive: true });
-
-    vp.addEventListener('pointermove', e => {
-      if (!vp || S.dir !== 'h' || S.layout !== 'b' || S.rm) return;
-      const r = vp.getBoundingClientRect();
-      vp.style.setProperty('--mx', (((e.clientX - r.left) / Math.max(1, r.width)) * 2 - 1).toFixed(3));
-      vp.style.setProperty('--my', (((e.clientY - r.top) / Math.max(1, r.height)) * 2 - 1).toFixed(3));
     }, { passive: true });
 
     // Headings flash on entry in H · Flash cut.
