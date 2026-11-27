@@ -50,6 +50,18 @@ Use a skill where the project requires one. Other skills are the agent's choice.
 | A term or a glossary change | `domain-modeling` |
 | A long interview on a plan or standard | `grill-with-docs` |
 
+## Outside Claude Code
+
+Some pieces run only in Claude Code. Another agent reads the same files by hand.
+
+| Piece | In Claude Code | Any other agent |
+|---|---|---|
+| `ADJUDANT.md` | `@`-imported every turn | Read it first; `AGENTS.md` says so |
+| `.claude/rules/adjudant-code.md` | Loads when a code file is read or edited | Read it before editing code |
+| Hookify hooks (`.claude/hookify.*.md`) | Fire on matching actions | Read them; follow the rule without the hook |
+| Vault writes | Through the `adjudant` skill | Leave the note in the bean; a Claude session writes the vault |
+| Plugin skills (`superpowers:*`, `hookify:*`, `/code-review`, `grill-with-docs`) | Invoked by name | Do the same step in plain chat: brainstorm before a feature, debug systematically, review before merge |
+
 ## Working in a shared checkout
 
 Toy chats share one checkout. Rules for git and commits: `docs/standards/process.md`.
