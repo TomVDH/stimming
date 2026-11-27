@@ -7,6 +7,7 @@ import { detail } from '../shared/detail.js';
 import { ALGOS, LIST, shuffled, isSorted } from './algos.js';
 import { makeRenderer, ROD_FLOATS } from './render.js';
 import { makeSound, noteOf } from './sound.js';
+import { makeAlgorithmTray } from './algorithm-tray.js';
 mark('libs');
 
 const ID = 'sorting';
@@ -38,7 +39,7 @@ let N = 48, a = [], gen = null, running = false, due = 0, markV = -1;
 // Per rod, by value: shown slot, goal slot, heat, tip glint, sheen, shuffle wait.
 let pos, goal, heat, tip, sheen, wait;
 let sheenTo = 0, sweepT = -1, sweepNote = -1, sweepIdx = 0, startAfterShuffle = false, dealing = false;
-let colors = [];
+let colors = [], palette = -1;
 let gl = null, R = null, raf = 0, visible = true, last = 0, frameNo = 0, calm = reduced();
 let cssW = 1, cssH = 1, dpr = 1, started = false, heard = false;
 let view = { x0: 0, pitch: 1, floor: 0, maxH: 1, drop: 1, hw: 1 };
@@ -72,6 +73,7 @@ const ui = initPage({ id: ID, bar: {
   ],
 } });
 const introDone = playIntro({ ready: pageReady() });
+makeAlgorithmTray(stage.closest('.stim-frame') || stage.parentElement, LIST, ALGOS, () => algo, value => ui.choice.set(value, true));
 const kit = audioKit({ keys: new Set([' ', 's', 'S', '1', '2', '3', '4', '5', '6']), sleepMs: 1500 });
 const snd = makeSound(kit);
 const sortBtn = () => document.querySelectorAll('.stim-ui [aria-keyshortcuts="Space"]');
@@ -83,11 +85,26 @@ canvas.setAttribute('aria-hidden', 'true');
 stage.prepend(canvas);
 const D = detail({ maxDpr: 2, budget: 2.6e6, steps: 2, settle: 2, onChange: () => resize(true) });
 
-// Low rods are deep indigo, then violet and rose; high rods are warm gold.
+// Hue pairs run across rod heights; the second pair colours their tips.
+const PALETTES = [
+  [278, 440, 278, 440], [20, 360, 20, 360], [310, -30, 310, -30],
+  [210, 330, 260, 420], [20, 125, 320, 220], [155, 290, 60, 185],
+  [300, 420, 200, 320], [75, 250, 350, 485], [250, 100, 330, 180],
+  [10, 110, 10, 110], [145, 235, 145, 235], [290, 375, 290, 375],
+];
+function nextPalette() {
+  if (palette < 0) { palette = Math.floor(Math.random() * PALETTES.length); return; }
+  const offset = 1 + Math.floor(Math.random() * (PALETTES.length - 1));
+  palette = (palette + offset) % PALETTES.length;
+}
 function ramp(n) {
+  if (palette < 0) nextPalette();
+  const [a, b, c, d] = PALETTES[palette];
   colors = Array.from({ length: n }, (_, v) => {
     const t = v / Math.max(1, n - 1);
-    return linFit(0.44 + 0.42 * t, 0.15 + 0.04 * Math.sin(Math.PI * t), 278 + 162 * t);
+    const light = 0.55 + 0.19 * t;
+    const chroma = 0.16 + 0.03 * Math.sin(Math.PI * t);
+    return [linFit(light, chroma, a + (b - a) * t), linFit(light, chroma, c + (d - c) * t)];
   });
 }
 
@@ -215,6 +232,8 @@ function pick(v) {
 // Deals the rods into a new order; then starts when asked.
 function shuffle(thenStart) {
   gen = null; running = false; markV = -1; sweepT = -1; sheenTo = 0;
+  nextPalette();
+  ramp(N);
   const b = shuffled(N);
   b.forEach((v, i) => {
     goal[v] = i;
@@ -245,8 +264,9 @@ function draw() {
     const h = (0.07 + 0.93 * (v + 1) / N) * view.maxH * dpr;
     rodBuf[o] = (view.x0 + (pos[v] + 0.5) * view.pitch) * dpr;
     rodBuf[o + 1] = floor; rodBuf[o + 2] = hw; rodBuf[o + 3] = h;
-    rodBuf[o + 4] = c[0]; rodBuf[o + 5] = c[1]; rodBuf[o + 6] = c[2]; rodBuf[o + 7] = Math.min(1, heat[v]);
+    rodBuf[o + 4] = c[0][0]; rodBuf[o + 5] = c[0][1]; rodBuf[o + 6] = c[0][2]; rodBuf[o + 7] = Math.min(1, heat[v]);
     rodBuf[o + 8] = tip[v]; rodBuf[o + 9] = sheen[v]; rodBuf[o + 10] = v === markV ? 1 : 0; rodBuf[o + 11] = 0;
+    rodBuf[o + 12] = c[1][0]; rodBuf[o + 13] = c[1][1]; rodBuf[o + 14] = c[1][2]; rodBuf[o + 15] = 0;
   }
   const sx = sweepT >= 0 ? (view.x0 + (sweepIdx + 0.5) * view.pitch) * dpr : -1e4;
   const sl = sweepT >= 0 ? Math.min(1, sweepT * 4) * (1 - clamp((sweepT - SWEEP) / 0.6, 0, 1)) : 0;

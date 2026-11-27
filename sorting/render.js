@@ -8,20 +8,22 @@ const HEAD = `#version 300 es
 precision highp float;
 `;
 
-// One rod: cx, floor y, half width, height | r, g, b, heat | tip, sheen, mark, spare.
+// One rod: position, base colour, light states and tip colour.
 // uMirror 1 draws the reflection and the floor light under the floor.
 const ROD_VS = `#version 300 es
 in vec2 aCorner;
 in vec4 aA;
 in vec4 aB;
 in vec4 aC;
+in vec4 aD;
 uniform vec2 uRes;
 uniform float uMirror, uDrop;
 flat out vec4 vA;
 flat out vec4 vB;
 flat out vec4 vC;
+flat out vec4 vD;
 void main() {
-  vA = aA; vB = aB; vC = aC;
+  vA = aA; vB = aB; vC = aC; vD = aD;
   float w = aA.z;
   float padX = w * (uMirror > 0.5 ? 7.0 : 4.0);
   float lo = uMirror > 0.5 ? aA.y - uDrop : aA.y - w;
@@ -33,6 +35,7 @@ const ROD_FS = `${HEAD}
 flat in vec4 vA;
 flat in vec4 vB;
 flat in vec4 vC;
+flat in vec4 vD;
 uniform float uMirror, uDrop;
 out vec4 o;
 const vec3 HOT = vec3(1.0, 0.94, 0.86);
@@ -51,7 +54,7 @@ void main() {
   float shade = 0.34 + 0.95 * exp(-u * u * 7.0) + 0.42 * smoothstep(0.6, 0.98, abs(u));
   // The foot and the cap glow a little more than the middle.
   shade *= 1.0 + 0.35 * exp(-py / (w * 5.0)) + 0.25 * exp(-max(h - py, 0.0) / (w * 2.5));
-  vec3 base = vB.rgb * (1.0 + 0.55 * sheen);
+  vec3 base = mix(vB.rgb, vD.rgb, smoothstep(0.0, 1.0, clamp(py / h, 0.0, 1.0))) * (1.0 + 0.55 * sheen);
   // Heat turns the rod white-hot, keeping a trace of its colour.
   vec3 hot = mix(base, HOT, 0.6) * (1.0 + 0.9 * heat);
   vec3 c = mix(base, hot, heat) * shade * body;
@@ -108,12 +111,12 @@ void main() {
   o = vec4(c, 1.0);
 }`;
 
-export const ROD_FLOATS = 12;
+export const ROD_FLOATS = 16;
 const MAX_RODS = 256;
 
 export async function makeRenderer(gl) {
   const P = await linked(gl, {
-    rod: program(gl, ROD_VS, ROD_FS, ['aCorner', 'aA', 'aB', 'aC']),
+    rod: program(gl, ROD_VS, ROD_FS, ['aCorner', 'aA', 'aB', 'aC', 'aD']),
     final: program(gl, TRI_VS, FINAL),
   });
   const empty = gl.createVertexArray();
@@ -129,7 +132,7 @@ export async function makeRenderer(gl) {
   const inst = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, inst);
   gl.bufferData(gl.ARRAY_BUFFER, MAX_RODS * ROD_FLOATS * 4, gl.DYNAMIC_DRAW);
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 4; i++) {
     gl.enableVertexAttribArray(1 + i);
     gl.vertexAttribPointer(1 + i, 4, gl.FLOAT, false, ROD_FLOATS * 4, i * 16);
     gl.vertexAttribDivisor(1 + i, 1);

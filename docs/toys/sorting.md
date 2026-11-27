@@ -26,7 +26,7 @@ Idea 9, group B: pick an algorithm; the bars sort themselves, each swap a tone. 
 ## Direction
 
 - Flat, face on. Rods of glass lit from inside stand on a black glass floor that mirrors them.
-- Colour by height, a dusk ramp: deep indigo, violet, rose, warm gold. A sorted row is one gradient.
+- Colour follows height. Each shuffle picks a new gradient, rainbow or two-axis colour mesh.
 - White is the flash: a compare lights two rod tips; a swap or a move heats whole rods white. Rods cool in about 0.2 s, so each algorithm leaves its own wake of light.
 - A pivot or a held key: a small cool light on the floor under its rod.
 - Sorted: a column of white light runs the row in 1.7 s and the rising scale plays; the row keeps a warm sheen until the next shuffle.
@@ -38,7 +38,7 @@ Bar v3, from the `bar` spec in `initPage()`.
 
 | Slot | Holds |
 |---|---|
-| Choice | Algorithm: a list of 29 in nine groups; keys 1 to 6 pick Bubble, Insertion, Quick, Merge, Heap, LSD radix |
+| Choice | Algorithm: a tray of 29 in nine groups, with previews, explanations and arrows to scroll; keys 1 to 6 pick Bubble, Insertion, Quick, Merge, Heap, LSD radix |
 | Actions | Sort (Space: sort, pause, go on), Shuffle (S) |
 | Slider | Speed: 3 to 12000 steps a second, log scale, default 60 (stored as `pace`) |
 | Settings | Rods: 16, 32, 48, 64, 96, 128, 192, 256 (default 48, 32 on a narrow stage; a narrow stage holds at most 128); Quality |
