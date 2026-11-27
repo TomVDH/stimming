@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Wasdraad /ˈʋɑzˌdraːt/ |
-| Motto | None |
+| Motto | A forecast written in laundry. |
 | Shelf | Main, number 43 |
 | Stage | None |
 | Series | Vistas (`vistas`, Vergezichten) |

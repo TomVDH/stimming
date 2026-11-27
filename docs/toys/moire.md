@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Moirésluiers /mʋaːˈreːˌslœyərs/ (draft, for Tom) |
-| Motto | None |
+| Motto | Two perfectly normal patterns causing trouble together. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

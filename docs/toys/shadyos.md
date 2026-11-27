@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | LoucheOS /ˈluʃəˌoːˌɛs/ |
-| Motto | None |
+| Motto | Everything is under control. Probably. |
 | Shelf | Main, number 30 |
 | Stage | Alpha |
 | Series | Odd one out (`odd`, Raar) |

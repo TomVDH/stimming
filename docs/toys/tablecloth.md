@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Tafelkleedtruc /ˈtaːfəlkleːtˌtrʏk/ (draft) |
-| Motto | None |
+| Motto | The dishes are feeling surprisingly optimistic. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

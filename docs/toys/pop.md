@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Bubbelplastiek /ˈbʏbəlplɑsˌtik/ |
-| Motto | One is none. / Ééntje is geentje. |
+| Motto | Just one more. Obviously. / Ééntje is geentje. |
 | Shelf | Main, number 2 |
 | Stage | None |
 | Series | None |
@@ -18,6 +18,8 @@
 
 A honeycomb sheet of bubble-wrap domes fills the stage. A tap pops one cell, a sweep pops a path, and a held squeeze charges a jumbo cell of seven and bursts it.
 Eighteen materials change the light, the burst, the sound and the feel. Popped cells fill again after a time.
+Each material picks a random colour range suited to its surface.
+Material changes and Shuffle pick a new range; `?kind=` overrides the initial field.
 
 ## Controls
 
@@ -76,7 +78,7 @@ Drift: none. Pop field is the reference port for the library set (`AGENTS.md`): 
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 2067 | The page: CSS, markup, one module script |
+| `index.html` | 2142 | The page: CSS, markup, one module script |
 | `legacy.html` | 1944 | The CPU-lit build |
 <!-- /gen:files -->
 
@@ -86,11 +88,15 @@ Drift: none. Pop field is the reference port for the library set (`AGENTS.md`): 
 |---|---|---|---|
 | 1. Domes | Composer | `domeMat` ×2 (small, jumbo): four instanced layers, flat and swollen | Lights each dome per material |
 | 2. Films | Composer | `filmMat` ×2: one textured quad per popped cell, from a sprite atlas | Draws the popped skin |
-| 3. Bloom | Composer | `UnrealBloomPass` (strength 0.14, radius 0.35, threshold 0.96) | Glow on the hot highlights |
+| 3. Bloom | Composer | `UnrealBloomPass` (strength 0.04, radius 0.35, threshold 0.96) | Faint glow on the hot highlights |
 | 4. Copy | Screen | `ShaderPass(CopyShader)` | Puts the frame on the canvas |
 | 5. 2D layer | 2D canvas | Canvas 2D | Wipe, bits, focus ring |
 
 The camera is orthographic in CSS pixels, y down. Blending is premultiplied over.
+Each material sets its roughness, metalness and reflection strengths in `PBR`.
+The `MAT_COLOURS` table sets the available hue and chroma pairs.
+The dome shader uses GGX, Smith masking and Schlick Fresnel for direct reflections.
+The material patterns, colour ramps and thin-film effects remain stylized.
 
 ### Uniforms: `domeMat` (`:1811`)
 
@@ -99,6 +105,7 @@ The camera is orthographic in CSS pixels, y down. Blending is premultiplied over
 | `uMap` | `sampler2D` | Shape map: hex or flower | `hexTex`, `flowerTex` |
 | `uMat` | `int` | Material index into `MAT_DEFS` | 0 to 17 |
 | `uLight` | `vec3` | The point light; it follows the pointer | |
+| `uPbr` | `vec4` | Roughness, metalness, direct and softbox strengths | Per material |
 | `uR` | `float` | Cell radius, px | From the layout |
 | `uBox` | `float` | Quad box size | |
 | `uBlocks` | `float` | Block size | 15 for disco, else 12 |

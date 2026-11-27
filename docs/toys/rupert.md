@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Strong opinions about which end you touch. |
 | Shelf | Main, number 60 |
 | Stage | Beta |
 | Series | None |

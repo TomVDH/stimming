@@ -9,7 +9,7 @@ A section marked (gen) comes from toys.json, series.json or the page source.
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | The cracks got the fancy treatment. |
 | Shelf | Main, number 57 |
 | Stage | Beta |
 | Series | None (proposal: `poke`) |

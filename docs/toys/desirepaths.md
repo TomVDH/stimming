@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Olifantenpaadjes /ˌoːliˈfɑntəˌpaːcəs/ (draft) |
-| Motto | None |
+| Motto | Apparently everyone had the same shortcut. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

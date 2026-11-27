@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Lichtvloed /ˈlɪxtˌvlut/ |
-| Motto | None |
+| Motto | Finding the way without asking for directions. |
 | Shelf | Main, number 36 |
 | Stage | None |
 | Series | Maths class |

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Staallijn /ˈstaːlˌlɛin/ (draft) |
-| Motto | None |
+| Motto | Hot metal with places to be. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

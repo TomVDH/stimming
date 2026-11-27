@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Zonsverduistering /ˈzɔnsfərˌdœystərɪŋ/ (draft) |
-| Motto | None |
+| Motto | The sun has stepped out for a moment. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

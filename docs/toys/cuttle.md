@@ -9,7 +9,7 @@ A section marked (gen) comes from toys.json, series.json or the page source.
 | | |
 |---|---|
 | Dutch | None (Tom sets it) |
-| Motto | None |
+| Motto | Getting dressed at the speed of thought. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

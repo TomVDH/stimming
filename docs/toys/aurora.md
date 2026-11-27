@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Noorderlicht /ˈnoːrdərˌlɪxt/ (draft) |
-| Motto | None |
+| Motto | The sky is putting on something comfortable. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

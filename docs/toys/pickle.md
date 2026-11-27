@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Gloeiende augurk /ˈɣlujəndə ɑuˈɣʏrk/ (draft) |
-| Motto | None |
+| Motto | Some experiments raise more questions than others. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

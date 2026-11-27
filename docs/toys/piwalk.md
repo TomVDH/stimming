@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Piwandeling /ˈpiːˌʋɑndəlɪŋ/ (draft) |
-| Motto | None |
+| Motto | Following a number that never gets to the point. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

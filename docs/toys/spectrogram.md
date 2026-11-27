@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Spectrogram /ˌspɛktroːˈɣrɑm/ (draft) |
-| Motto | None |
+| Motto | A sound leaving a trail behind it. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Staalfabriek /ˈstaːlfaːˌbrik/ (draft) |
-| Motto | None |
+| Motto | It's getting warm in here. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

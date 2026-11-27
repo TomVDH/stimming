@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Supergeleiderbaan /ˈsypərɣəˌlɛidərˌbaːn/ (draft) |
-| Motto | None |
+| Motto | Taking the scenic route without touching it. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

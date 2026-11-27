@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Zena /ˈzeːna/ |
-| Motto | None |
+| Motto | A little lift and a lot of nerve. |
 | Shelf | Main, number 65 |
 | Stage | Alpha |
 | Series | None |

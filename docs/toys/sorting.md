@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Sorteerklanken /sɔrˈteːrˌklɑŋkə(n)/ (draft) |
-| Motto | None |
+| Motto | Please hold while the numbers get their lives together. |
 | Shelf | Main, number 74, series Maths class (since 2026-11-23) |
 | Stage | None, version 1.5 (Tom: "no alpha") |
 | Accent | `oklch(0.78 0.15 20)` |

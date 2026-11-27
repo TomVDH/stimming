@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | BZ-reactie /beːˈzɛt reːˈjɑksi/ (draft) |
-| Motto | None |
+| Motto | Chemistry going around in circles again. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

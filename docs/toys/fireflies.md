@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Nobody called the meeting, but here they are. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

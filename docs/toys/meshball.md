@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Holding it together, one line at a time. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

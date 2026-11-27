@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Dubbele spleet /ˈdʏbələ ˈspleːt/ (draft) |
-| Motto | None |
+| Motto | It behaves differently when you're watching. Relatable. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

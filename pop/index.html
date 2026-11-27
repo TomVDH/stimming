@@ -191,6 +191,33 @@ function fieldOf(kind, h) {
   const span = R01(240, 330) * sgn();
   return (u, v) => { const t = d(u, v); return toLab([0.78 + 0.05 * Math.sin(t * TAU), 0.17, h + span * t]); };
 }
+// Each material picks a coherent range of colour for its sheet.
+const MAT_COLOURS = {
+  gloss: [[165, 0.13], [205, 0.14], [315, 0.13], [35, 0.14]],
+  rubber: [[15, 0.15], [85, 0.13], [150, 0.12], [245, 0.12]],
+  foil: [[85, 0.01], [85, 0.10], [45, 0.12]],
+  jelly: [[20, 0.18], [115, 0.15], [180, 0.14], [320, 0.16]],
+  soap: [[180, 0.04], [260, 0.04], [340, 0.04]],
+  toon: [[20, 0.18], [95, 0.16], [220, 0.17], [320, 0.17]],
+  glass: [[180, 0.035], [220, 0.035], [140, 0.035]],
+  candy: [[15, 0.19], [115, 0.16], [210, 0.16], [335, 0.18]],
+  latex: [[20, 0.17], [85, 0.16], [155, 0.15], [280, 0.16]],
+  pixel: [[25, 0.17], [140, 0.16], [230, 0.17], [320, 0.17]],
+  lava: [[25, 0.20], [40, 0.20], [55, 0.18]],
+  ice: [[190, 0.035], [220, 0.045], [255, 0.035]],
+  holo: [[180, 0.09], [260, 0.10], [330, 0.09]],
+  paper: [[75, 0.035], [90, 0.025], [55, 0.06]],
+  gum: [[10, 0.12], [335, 0.13], [290, 0.09]],
+  topo: [[135, 0.10], [205, 0.10], [65, 0.09]],
+  popcorn: [[85, 0.07], [95, 0.055], [75, 0.08]],
+  disco: [[260, 0.025], [85, 0.08], [325, 0.11], [205, 0.10]],
+};
+function materialField(mat) {
+  const [h, c] = pick(MAT_COLOURS[mat]);
+  const pale = mat === 'paper' || mat === 'popcorn' || mat === 'ice' || mat === 'glass' || mat === 'soap';
+  const L = pale ? R01(0.82, 0.90) : R01(0.68, 0.78);
+  return { h, field: meshOf([[Math.min(0.95, L + 0.08), c * 0.65, h - 8], [L, c, h], [L - 0.12, c * 1.05, h + 10]]) };
+}
 // Bins: k-means in OKLab picks NB colours that cover the sheet.
 let binLch = [];
 function paintCells() {
@@ -226,16 +253,13 @@ const pick = (a, not) => { let v; do v = a[(Math.random() * a.length) | 0]; whil
 let rec = { kind: 'arc', h: 165, field: meshOf([MINT, CYAN, BLUE], true), mat: 'gloss', den: 22, jum: null, gap: 0.075 };
 // A ?mat= query starts the sheet in that material.
 const qs = new URLSearchParams(location.search), qMat = qs.get('mat'), qKind = qs.get('kind');
-if (MATS.includes(qMat)) { rec.mat = qMat; ui.choice.set(qMat); }
+if (MATS.includes(qMat)) { rec.mat = qMat; Object.assign(rec, materialField(qMat)); ui.choice.set(qMat); }
 // A ?kind= query starts the sheet in that colour mode.
 if (KINDS.includes(qKind)) { rec.kind = qKind; rec.field = fieldOf(qKind, rec.h); }
 // Each roll changes the material, at least.
 function freshRecipe(p) {
-  let h = 0;
-  // The new hue starts well away from the old one.
-  for (let n = 0; n < 8; n++) { h = Math.random() * 360; if (Math.abs(((h - p.h + 540) % 360) - 180) > 70) break; }
-  const kind = pick(KINDS, p.kind);
-  return { kind, h, field: fieldOf(kind, h), mat: pick(MATS, p.mat), den: pick(DENS), jum: pick(JUMS), gap: pick(GAPS) };
+  const mat = pick(MATS, p.mat);
+  return { kind: 'material', ...materialField(mat), mat, den: pick(DENS), jum: pick(JUMS), gap: pick(GAPS) };
 }
 const SHADE = [0.42, 0.07, 240];
 const skinOf = ([L, C, h]) => ({
@@ -1563,13 +1587,13 @@ act.roll = () => {
   rattle();
   if (!reduce) gsap.fromTo(dieSvg, { rotation: -280, scale: 0.5 }, { rotation: 0, scale: 1, duration: 0.52, ease: 'back.out(2.2)', transformOrigin: '50% 50%', overwrite: true });
 };
-// A new material keeps the paint, the size and the gap.
+// A new material picks its paint and keeps the size and gap.
 // Quick steps lay one sheet, for the last material only.
 act.mat = m => {
   clearTimeout(matT);
   matT = setTimeout(() => {
     const step = document.querySelector('.stim-ui .s2-step');
-    if (m !== rec.mat && !newSheet({ ...rec, mat: m }, wipeFrom(step || die))) ui.choice.set(rec.mat);
+    if (m !== rec.mat && !newSheet({ ...rec, ...materialField(m), kind: 'material', mat: m }, wipeFrom(step || die))) ui.choice.set(rec.mat);
   }, 140);
 };
 
@@ -1640,10 +1664,23 @@ void main() {
   gl_Position = projectionMatrix * modelViewMatrix * vec4(vWorld, 0.0, 1.0);
 }`;
 const MAT_DEFS = MATS.map((m, i) => `#define M_${m.toUpperCase()} ${i}`).join('\n');
+// Roughness, metalness, direct light and softbox strength per material.
+const PBR = {
+  gloss: [0.34, 0, 0.24, 0.14], rubber: [0.88, 0, 0.12, 0.025],
+  foil: [0.30, 0.9, 0.24, 0.17], jelly: [0.38, 0, 0.18, 0.10],
+  soap: [0.24, 0, 0.16, 0.10], toon: [0.55, 0, 0.12, 0.06],
+  glass: [0.22, 0, 0.20, 0.12], candy: [0.36, 0, 0.20, 0.11],
+  latex: [0.48, 0, 0.17, 0.10], pixel: [0.50, 0, 0.14, 0.07],
+  lava: [0.80, 0, 0.08, 0.02], ice: [0.30, 0, 0.16, 0.09],
+  holo: [0.34, 0.45, 0.17, 0.10], paper: [0.95, 0, 0.06, 0.01],
+  gum: [0.72, 0, 0.10, 0.03], topo: [0.85, 0, 0.05, 0.01],
+  popcorn: [0.75, 0, 0.10, 0.03], disco: [0.36, 0.85, 0.20, 0.14],
+};
 const DOME_FRAG = MAT_DEFS + `
 uniform sampler2D uMap;
 uniform int uMat;
 uniform vec3 uLight;
+uniform vec4 uPbr;
 uniform float uR;
 uniform float uBlocks;
 uniform float uShR;
@@ -1798,8 +1835,20 @@ void main() {
   }
   if (uMat == M_ICE) v = mix(v, oklchLin(vec3(0.97, 0.02, hue)), mw);
   if (uMat == M_LAVA) v = mix(oklchLin(vec3(0.3, 0.015, 50.0)) * (0.35 + 0.9 * q) * ao, oklchLin(vec3(0.84, 0.2, hue)), em);
-  // Reflections and hot spots stay well below full strength.
-  v = mix(v, vLi, w * 0.55) + s * 0.4;
+  // GGX, Smith masking and Schlick Fresnel model the direct reflection.
+  float nv = max(n.z, 0.001), nl = max(ndl, 0.0), vh = max(Hh.z, 0.0);
+  float rough = uPbr.x, alpha = rough * rough, a2 = alpha * alpha;
+  float d = ndh * ndh * (a2 - 1.0) + 1.0;
+  float D = a2 / max(3.14159265 * d * d, 0.0001);
+  float k = (rough + 1.0) * (rough + 1.0) * 0.125;
+  float G = (nv / (nv * (1.0 - k) + k)) * (nl / (nl * (1.0 - k) + k));
+  vec3 f0 = mix(vec3(0.04), vMi, uPbr.y);
+  vec3 F = f0 + (1.0 - f0) * pow(1.0 - vh, 5.0);
+  vec3 spec = D * G * F / max(4.0 * nv * nl, 0.001);
+  vec3 envF = f0 + (1.0 - f0) * pow(1.0 - nv, 5.0);
+  v = v * (1.0 - uPbr.y * 0.35) + min(spec * nl * uPbr.z, vec3(0.22));
+  v += vLi * envF * soft * uPbr.w;
+  if (uMat == M_ICE || uMat == M_DISCO) v += min(s, 0.6) * 0.035;
   vec3 col = enc(v * grout);
   // The press shade multiplies, darkest where the finger dents the dome.
   float sh = vMisc.x * mix(0.85, 0.35, sat(length(vLocal - vec2(0.0, 0.1 * uShR)) / (1.05 * uShR)));
@@ -1821,7 +1870,7 @@ const light = new THREE.Vector3(), lightT = { x: 0, y: 0 };
 const lightHome = () => { lightT.x = -0.25 * W; lightT.y = -0.35 * H; };
 const filmMat = tex => new THREE.ShaderMaterial({ uniforms: { map: { value: tex } }, vertexShader: FILM_VERT, fragmentShader: FILM_FRAG, ...BASE });
 const domeMat = () => new THREE.ShaderMaterial({
-  uniforms: { uMap: { value: null }, uMat: { value: 0 }, uLight: { value: light }, uR: { value: 40 }, uBox: { value: 1 }, uBlocks: { value: 12 }, uShR: { value: 40 }, uShade: { value: new THREE.Vector3(...oklchRgb(SHADE)) } },
+  uniforms: { uMap: { value: null }, uMat: { value: 0 }, uLight: { value: light }, uPbr: { value: new THREE.Vector4(...PBR.gloss) }, uR: { value: 40 }, uBox: { value: 1 }, uBlocks: { value: 12 }, uShR: { value: 40 }, uShade: { value: new THREE.Vector3(...oklchRgb(SHADE)) } },
   vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, ...BASE,
 });
 const domeS = domeMat(), domeJ = domeMat();
@@ -1830,7 +1879,7 @@ function domeUniforms() {
   const blocks = rec.mat === 'disco' ? 15 : 12, mi = MATS.indexOf(rec.mat);
   for (const [M, map, box, shr] of [[domeS, hexTex, SB, sR], [domeJ, flowerTex, SBJ, 2.5 * sR]]) {
     const U = M.uniforms;
-    U.uMap.value = map; U.uMat.value = mi; U.uR.value = sR; U.uBox.value = box; U.uShR.value = shr; U.uBlocks.value = (box / SB) * blocks;
+    U.uMap.value = map; U.uMat.value = mi; U.uPbr.value.fromArray(PBR[rec.mat]); U.uR.value = sR; U.uBox.value = box; U.uShR.value = shr; U.uBlocks.value = (box / SB) * blocks;
   }
 }
 const FILM_ATTR = [['aUv', 4], ['aXf', 4], ['aRa', 2]], DOME_ATTR = [['aXf', 4], ['aRa', 2], ['aLo', 3], ['aMi', 3], ['aHi', 3], ['aLi', 3], ['aMisc', 4]];
@@ -1879,7 +1928,7 @@ function putDome(L, c, sb, sk, sh) {
 }
 // Post effect: a faint bloom on the hottest highlights.
 // The sheet renders opaque on the stage colour, so the passes keep no alpha.
-const composer = new EffectComposer(gl), bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.14, 0.35, 0.96);
+const composer = new EffectComposer(gl), bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.04, 0.35, 0.96);
 composer.addPass(new RenderPass(scene, camera));
 composer.addPass(bloom);
 composer.addPass(new ShaderPass(CopyShader));

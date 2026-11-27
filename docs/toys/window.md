@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Vensterplaats /ˈvɛnstərˌplaːts/ |
-| Motto | None |
+| Motto | The best part of the flight is looking out. |
 | Shelf | Main, number 33 |
 | Stage | None |
 | Series | Vistas (`vistas`, Vergezichten) |

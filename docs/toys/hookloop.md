@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Klittenband /ˈklɪtənˌbɑnt/ (draft) |
-| Motto | None |
+| Motto | An excellent sound for undoing things. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

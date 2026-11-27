@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Up the stairs and straight back down. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None (proposal: `science`) |

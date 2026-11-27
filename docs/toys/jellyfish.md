@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Kwallentank /ˈkʋɑlənˌtɛŋk/ (draft) |
-| Motto | None |
+| Motto | No bones, no plans, no problem. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

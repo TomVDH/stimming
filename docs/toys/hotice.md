@@ -9,7 +9,7 @@ A section marked (gen) comes from toys.json, series.json or the page source.
 | | |
 |---|---|
 | Dutch | None yet (Tom sets it) |
-| Motto | None |
+| Motto | Ice with a very misleading name. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None (proposal: `science`) |

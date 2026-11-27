@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dutch | Spijkerbord /ˈspɛikərˌbɔrt/ (draft) |
-| Motto | None |
+| Motto | A few pegs and an unreasonable number of possibilities. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

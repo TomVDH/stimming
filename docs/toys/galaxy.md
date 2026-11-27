@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Heelal /ˈheːlɑl/ |
-| Motto | And off we fly at critical speed / En we vliegen weg met kritieke snelheid |
+| Motto | A lot of stars for a Tuesday afternoon. / En we vliegen weg met kritieke snelheid |
 | Shelf | Main, number 6 |
 | Stage | None |
 | Series | None |

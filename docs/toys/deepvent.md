@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Diepzeebron /ˈdipseːˌbrɔn/ (draft, for Tom) |
-| Motto | None |
+| Motto | The ocean floor has a smoking section. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |

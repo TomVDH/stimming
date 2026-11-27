@@ -4,7 +4,7 @@
 | | |
 |---|---|
 | Dutch | Regenstok /ˈreːɣənˌstɔk/ (draft, for Tom) |
-| Motto | None |
+| Motto | Turn it over. There's the weather again. |
 | Shelf | Lab, tag "Stimming Lab" |
 | Stage | None |
 | Series | None |
