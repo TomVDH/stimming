@@ -3,7 +3,6 @@
 // Each object shows its kind as a shaded mono icon (Tom, 2026-11-24), from glyphs.js.
 // Inside a group, the objects run smallest to largest.
 
-import { FACTS } from './facts.js';
 import { glyph } from './glyphs.js';
 
 // Star data: the class or stage, and the surface temperature (K).
@@ -120,7 +119,7 @@ export function makeChart(o) {
   el.hidden = true;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', 'Star');
-  // One line over the ribbon names the body in hand and its type; the card carries the facts.
+  // The heading shows only the body name; Info carries the facts.
   const hd = h('div', 'sl-hd');
   const info = h('div', 'sl-info');
   info.setAttribute('aria-live', 'polite');
@@ -183,10 +182,10 @@ export function makeChart(o) {
   });
   o.frame.append(glass, el);
 
-  // The heading line: the pointed, focused or current object, and its type.
+  // The heading names the pointed, focused or current object.
   function tell(s) {
     const cur = s || byId.get(o.get());
-    if (cur) info.innerHTML = `<b>${cur.name}</b><span>${FACTS[cur.value]?.type ?? CHART[cur.value]?.cls ?? ''}</span>`;
+    if (cur) info.textContent = cur.name;
   }
   function sync() {
     for (const { b, s } of btns) b.setAttribute('aria-pressed', String(s.value === o.get()));

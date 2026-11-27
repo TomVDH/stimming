@@ -3237,7 +3237,7 @@ export async function makeRender(gl, opts = {}) {
   const skies = new Map();
   function skyStart(on) {
     const k = skyKey(on);
-    if (!skies.has(k)) skies.set(k, { q: program(gl, TRI_VS, skySource(on)), ready: false });
+    if (!skies.has(k)) skies.set(k, { q: program(gl, TRI_VS, opts.portrait ? scenePortraitSky(on) : skySource(on)), ready: false });
     return skies.get(k);
   }
   // True once a version links; it never blocks while the driver still compiles.
@@ -3266,7 +3266,7 @@ export async function makeRender(gl, opts = {}) {
   const finals = new Map();
   const finalKindOf = B => B?.bow ? Math.round(B.bow.kind ?? 0) : -1;
   function finalStart(kind) {
-    if (!finals.has(kind)) finals.set(kind, { q: program(gl, TRI_VS, FINAL.replace('/*BOW_DEFINE*/', `#define BOW_KIND ${kind}`)), ready: false });
+    if (!finals.has(kind)) finals.set(kind, { q: program(gl, TRI_VS, opts.portrait ? scenePortraitFinal(kind) : FINAL.replace('/*BOW_DEFINE*/', `#define BOW_KIND ${kind}`)), ready: false });
     return finals.get(kind);
   }
   function finalReady(e) {
@@ -3282,6 +3282,7 @@ export async function makeRender(gl, opts = {}) {
     const kind = v.bow[0] > 0 ? Math.round(v.bow[3]) : -1;
     const e = finalStart(kind);
     if (finalReady(e)) return e.q;
+    if (opts.portrait) return null;
     return finalReady(baseFinal) ? baseFinal.q : null;
   }
   const P = await linked(gl, {
@@ -3538,7 +3539,10 @@ export async function makeRender(gl, opts = {}) {
     // A nebula's dust bakes once, the first time its star shows.
     if (v.band.discE[0] > 0 && !epsB) epsB = qbakeTex(32, 2);
     const nk = v.bow[0] > 0 ? Math.round(v.bow[3]) : 0;
-    if (NEB_KIND[nk] !== undefined && !nebT[nk]) nebStep(nk, NB_N);
+    if (NEB_KIND[nk] !== undefined && !nebT[nk]) {
+      const baked = nebStep(nk, opts.portrait ? 8 : NB_N);
+      if (opts.portrait && !baked) return false;
+    }
     gl.disable(gl.BLEND);
     if (fluid && v.fluid) fluid.step(v.fluid.step);
     // The star's disk version; a frame waits while it still compiles.
@@ -3779,7 +3783,7 @@ export async function makeRender(gl, opts = {}) {
     if (!v.post && post) freePost();
     const pp = v.post ? postTargets() : null;
     tri(gl, pp ? pp.src : null, empty);
-    if (!pp) return;
+    if (!pp) return true;
     const PP = postProgs(), q = PP.post, prev = pp.h[pp.i], next = pp.h[1 - pp.i];
     gl.useProgram(q.p);
     bind(gl, q, 'uSrc', 0, pp.src);
@@ -3800,4 +3804,80 @@ export async function makeRender(gl, opts = {}) {
   while (!gl.isContextLost() && (!skyReady(first) || !finalReady(firstFinal) || !finalReady(baseFinal))) await nextFrame();
   step();
   return { resize, frame, data, warm, ready: () => skyReady(first) && finalReady(firstFinal) };
+}
+
+// Replace one shader block without changing the live scene source.
+function portraitBlock(source, signature, body) {
+  const start = source.indexOf(signature);
+  if (start < 0) throw new Error(`Missing portrait shader block: ${signature}`);
+  const open = source.indexOf('{', start);
+  let end = open + 1, depth = 1;
+  for (; end < source.length && depth; end++) {
+    if (source[end] === '{') depth++;
+    if (source[end] === '}') depth--;
+  }
+  if (depth) throw new Error('Unclosed portrait shader block');
+  return source.slice(0, open + 1) + body + source.slice(end - 1);
+}
+
+export function scenePortraitSky(on) {
+  let source = skySource(on);
+  source = portraitBlock(source, '} else {\n    float h = r - R;', ' hot = 0.0; cool = 0.0; ');
+  source = source.replace('return vec4(hot, cool, st.x, st.y / max(st.x, 1e-6));', 'return vec4(hot, cool, 1.0 - tr, gone);');
+  source = source.replace('o = vec4(max(hot, 0.0), max(cool, 0.0), 0.0, 1.0)', `
+  float cover = clamp((R - r) / max(fwidth(r), 0.0001) + 0.5, 0.0, 1.0);
+  if (uPair.w > 0.0) {
+    float r2 = length(P - uPair.xy * R), Rt = R * uPair2.x;
+    float h = clamp(0.5 + 0.5 * (r2 - r) / (1.1 * R), 0.0, 1.0);
+    float d = mix(r2 - Rt, r - R, h) - 1.1 * R * h * (1.0 - h);
+    cover = max(cover, max(step(r2, Rt), uPair2.y * step(d, 0.0)));
+  }
+  float solid = cover;
+  cover = max(cover, 1.0 - exp(-max(hot + cool, 0.0)));
+  o = vec4(max(hot, 0.0), max(cool, 0.0), cover, solid)`);
+  source = source.replace('float L = uJet *', 'float L = (1.0 - smoothstep(16.0, 32.0, d)) * uJet *');
+  source = source.replace('float d = env * puff * strata', 'float d = (1.0 - smoothstep(CB1 * 0.7, CB1, r)) * env * puff * strata');
+  source = source.replace('sig *= 1.0 - 0.75', 'sig *= 1.0 - smoothstep(6.0, 9.0, x);\n    sig *= 1.0 - 0.75');
+  source = source.replace('float knots = 0.35 + 1.6', 'jet *= 1.0 - smoothstep(3.5, 7.5, d);\n    float knots = 0.35 + 1.6');
+  return source;
+}
+
+export function scenePortraitFinal(kind) {
+  let source = FINAL.replace('/*BOW_DEFINE*/', `#define BOW_KIND ${kind}`);
+  source = portraitBlock(source, 'vec3 starfield(vec2 fc)', ' return vec3(0.0); ');
+  source = portraitBlock(source, 'vec3 deepField(vec2 b, float k)', ' return vec3(0.0); ');
+  source = portraitBlock(source, 'vec3 ophStars(vec2 sky, float pw)', ' return vec3(0.0); ');
+  const cluster = source.indexOf('  // The cluster in front, gold:');
+  const halo = source.indexOf('    col += gold * 0.16 * exp(-tl', cluster);
+  const afterField = source.indexOf('  // A far galaxy has no point of light.', halo);
+  if (cluster < 0 || halo < 0 || afterField < 0) throw new Error('Lens portrait boundary is missing');
+  source = source.slice(0, cluster) + source.slice(afterField);
+  return portraitBlock(source, 'void main()', `
+    vec2 P = uView.xy + (vUv * 2.0 - 1.0) * uView.zw;
+    vec4 surface = texture(uHdr, vUv), volume = texture(uVol, vUv);
+    vec2 light = surface.rg * vec2(uMix.y, uMix.z) * volume.a;
+    light += vec2(volume.r + volume.b, volume.r * 0.15 + volume.g);
+#if BOW_KIND == 2
+    light = vec2(0.0);
+    surface = vec4(0.0);
+    volume = vec4(0.0, 0.0, 0.0, 1.0);
+#else
+    if (uHoleF.x < 0.5) light += texture(uBloom, vUv).rg * vec2(uMix.y, uMix.z) * 0.3;
+#endif
+    vec3 colour = grade(max(light, 0.0));
+    if (uHoleF.x < 0.5) {
+      float lum = dot(colour, vec3(0.3, 0.55, 0.15));
+      colour = mix(colour, vec3(1.0, 0.98, 0.94), smoothstep(0.75, 1.02, lum) * 0.35);
+    }
+    float cover = max(surface.b, 1.0 - volume.a);
+#if BOW_KIND >= 0
+    if (uBow.x > 0.0) colour += max(runaway(P), 0.0);
+#endif
+    colour = clamp(colour, 0.0, 1.0);
+    float emission = max(max(colour.r, colour.g), colour.b);
+    float feather = smoothstep(0.0, 0.12, emission);
+    cover = clamp(max(surface.a, uHoleF.x > 0.5 ? emission : max(cover, emission)), 0.0, 1.0);
+    float alpha = max(surface.a, cover * feather);
+    o = vec4(cover > 0.00001 ? colour / cover : vec3(0.0), alpha);
+  `);
 }
