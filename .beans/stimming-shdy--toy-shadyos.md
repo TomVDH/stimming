@@ -1,11 +1,11 @@
 ---
 # stimming-shdy
 title: 'Toy: ShadyOS'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-04T20:30:00Z
-updated_at: 2026-11-08T10:21:34Z
+updated_at: 2026-11-27T07:19:52Z
 ---
 
 Build ShadyOS from docs/plans/shadyos.md. An original glossy glass desktop OS, a bootleg "ultimate edition" a script kiddie skinned in 2008, aged and quietly possessed. The OS itself is the fidget. It starts in the Lab.

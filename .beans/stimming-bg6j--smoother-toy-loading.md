@@ -1,11 +1,11 @@
 ---
 # stimming-bg6j
 title: Smoother toy loading
-status: in-progress
+status: todo
 type: task
 priority: low
 created_at: 2026-11-04T12:00:00Z
-updated_at: 2026-11-10T20:41:39Z
+updated_at: 2026-11-27T07:19:52Z
 ---
 
 Make toys open faster from the menu. Shelved by Tom on 2026-11-04 in favour of the toy builds.

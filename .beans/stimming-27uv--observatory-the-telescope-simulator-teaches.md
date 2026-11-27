@@ -1,10 +1,10 @@
 ---
 # stimming-27uv
 title: 'Observatory: the telescope simulator teaches'
-status: in-progress
+status: todo
 type: task
 created_at: 2026-11-23T23:34:03Z
-updated_at: 2026-11-23T23:34:03Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-wqq9
 ---
 

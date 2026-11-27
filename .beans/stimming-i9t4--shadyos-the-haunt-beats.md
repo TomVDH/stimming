@@ -1,11 +1,11 @@
 ---
 # stimming-i9t4
 title: 'ShadyOS: the haunt beats'
-status: in-progress
+status: todo
 type: task
 priority: normal
 created_at: 2026-11-04T21:50:00Z
-updated_at: 2026-11-08T10:24:10Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-shdy
 ---
 

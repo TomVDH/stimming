@@ -1,11 +1,11 @@
 ---
 # stimming-7fju
 title: 'Observatory: a thinner, better shaded laser in the wide shot'
-status: in-progress
+status: todo
 type: task
 priority: normal
 created_at: 2026-11-23T10:05:20Z
-updated_at: 2026-11-23T23:34:23Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-wqq9
 ---
 

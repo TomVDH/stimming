@@ -1,11 +1,11 @@
 ---
 # stimming-dwwg
 title: 'Toy: Tornado alley'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-16T19:44:51Z
-updated_at: 2026-11-17T16:10:34Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-oh7b
 ---
 

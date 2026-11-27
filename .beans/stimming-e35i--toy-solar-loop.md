@@ -1,11 +1,11 @@
 ---
 # stimming-e35i
 title: 'Toy: Solar loop'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-23T12:26:17Z
-updated_at: 2026-11-23T12:35:20Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-oh7b
 ---
 

@@ -1,11 +1,11 @@
 ---
 # stimming-fskg
 title: 'Toy: Soup cauldron'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-15T09:41:30Z
-updated_at: 2026-11-16T16:26:15Z
+updated_at: 2026-11-27T07:19:52Z
 ---
 
 Idea 363 (lab batch, group E, satisfying physics loops; Tom asked for it by name): A big pot on the fire. Throw things in and stir; it bubbles, steams and changes colour.

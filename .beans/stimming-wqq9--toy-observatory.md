@@ -1,11 +1,11 @@
 ---
 # stimming-wqq9
 title: 'Toy: Observatory'
-status: in-progress
+status: todo
 type: feature
 priority: normal
 created_at: 2026-11-16T21:08:16Z
-updated_at: 2026-11-23T18:03:17Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-oh7b
 ---
 

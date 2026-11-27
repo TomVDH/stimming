@@ -1,11 +1,11 @@
 ---
 # stimming-3s8z
 title: 'Code health: modules, toy docs, TypeScript'
-status: in-progress
+status: todo
 type: epic
 priority: normal
 created_at: 2026-11-15T06:21:36Z
-updated_at: 2026-11-15T06:32:08Z
+updated_at: 2026-11-27T07:19:52Z
 parent: stimming-ft0e
 ---
 
