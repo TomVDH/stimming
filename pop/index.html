@@ -21,6 +21,7 @@
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="../shared/stim.css">
 <link rel="stylesheet" href="../shared/intro.css">
+<link rel="stylesheet" href="./tray.css">
 <!-- Staged loading: the importmap comes first, then every module downloads in parallel. -->
 <script type="importmap">
 {
@@ -91,6 +92,7 @@ import { createNoise2D } from 'simplex-noise';
 import { initPage, audioKit, reduced, onReducedChange, css, linFit, oklchRgb, onQuality, pixelRatio, stage, pageReady } from '../shared/stim.js';
 stage('libs');
 import { intro as playIntro } from '../shared/intro.js';
+import { makeMaterialTray } from './tray.js';
 // The intro holds until the page, its font and the first frame are in.
 playIntro({ ready: pageReady() });
 stage('build');
@@ -1596,6 +1598,14 @@ act.mat = m => {
     if (m !== rec.mat && !newSheet({ ...rec, ...materialField(m), kind: 'material', mat: m }, wipeFrom(step || die))) ui.choice.set(rec.mat);
   }, 140);
 };
+const trayRecipes = new Map();
+makeMaterialTray(field.closest('.stim-frame') || field.parentElement,
+  MAT_NAMES.map(id => ({ id, label: MAT_LABELS[id] || id[0].toUpperCase() + id.slice(1) })),
+  () => rec.mat,
+  (m, tile) => {
+    clearTimeout(matT);
+    if (m !== rec.mat && !newSheet({ ...rec, ...(trayRecipes.get(m) || materialField(m)), kind: 'material', mat: m }, tile)) ui.choice.set(rec.mat);
+  }, renderMaterialPreviews);
 
 /* ---------- drawing: three.js lights the domes; a 2D canvas draws the rest ---------- */
 // The WebGL canvas sits under the 2D one, which keeps the input.
@@ -1874,6 +1884,58 @@ const domeMat = () => new THREE.ShaderMaterial({
   vertexShader: DOME_VERT, fragmentShader: DOME_FRAG, ...BASE,
 });
 const domeS = domeMat(), domeJ = domeMat();
+// Render tray previews with the same shape map and dome shader.
+function renderMaterialPreviews(canvases) {
+  if (!hexTex || !sR) return;
+  const size = 96, target = new THREE.WebGLRenderTarget(size, size, { depthBuffer: false });
+  const previewScene = new THREE.Scene();
+  const previewCamera = new THREE.OrthographicCamera(0, 100, 0, 100, -1, 1);
+  const material = domeMat(), geometry = new THREE.InstancedBufferGeometry();
+  geometry.index = quad.index;
+  geometry.setAttribute('position', quad.getAttribute('position'));
+  geometry.setAttribute('uv', quad.getAttribute('uv'));
+  const attr = (name, values) => geometry.setAttribute(name, new THREE.InstancedBufferAttribute(new Float32Array(values), values.length));
+  attr('aXf', [50, 50, 92, 92]); attr('aRa', [0, 1]);
+  attr('aLo', [0, 0, 0]); attr('aMi', [0, 0, 0]);
+  attr('aHi', [0, 0, 0]); attr('aLi', [0, 0, 0]); attr('aMisc', [0, 0, 0.37, 0]);
+  geometry.instanceCount = 1;
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.frustumCulled = false;
+  previewScene.add(mesh);
+  const U = material.uniforms;
+  U.uMap.value = hexTex; U.uR.value = sR; U.uBox.value = SB; U.uShR.value = sR;
+  U.uLight.value = new THREE.Vector3(-25, -35, 100);
+  const previousTarget = gl.getRenderTarget(), oldColor = gl.getClearColor(new THREE.Color()), oldAlpha = gl.getClearAlpha();
+  const pixels = new Uint8Array(size * size * 4);
+  try {
+    gl.setClearColor(0, 0);
+    gl.setRenderTarget(target);
+    for (let i = 0; i < MATS.length; i++) {
+      const name = MATS[i], recipe = name === rec.mat ? rec : materialField(name);
+      trayRecipes.set(name, recipe);
+      const base = toLch(recipe.field(0.5, 0.5)), skin = skinOf(base);
+      for (const [key, value] of [['aLo', skin.low], ['aMi', skin.mid], ['aHi', skin.top], ['aLi', skin.light]]) {
+        const a = geometry.getAttribute(key);
+        a.array.set(linFit(value)); a.needsUpdate = true;
+      }
+      const misc = geometry.getAttribute('aMisc');
+      misc.array[3] = base[2]; misc.needsUpdate = true;
+      U.uMat.value = i; U.uPbr.value.fromArray(PBR[name]); U.uBlocks.value = name === 'disco' ? 15 : 12;
+      gl.clear(); gl.render(previewScene, previewCamera);
+      gl.readRenderTargetPixels(target, 0, 0, size, size, pixels);
+      const ctx = canvases[i].getContext('2d'), image = ctx.createImageData(size, size);
+      for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+        const src = ((size - 1 - y) * size + x) * 4, dst = (y * size + x) * 4, a = pixels[src + 3];
+        for (let c = 0; c < 3; c++) image.data[dst + c] = a ? Math.min(255, pixels[src + c] * 255 / a) : 0;
+        image.data[dst + 3] = a;
+      }
+      ctx.putImageData(image, 0, 0);
+    }
+  } finally {
+    gl.setRenderTarget(previousTarget); gl.setClearColor(oldColor, oldAlpha);
+    geometry.dispose(); material.dispose(); target.dispose();
+  }
+}
 // The material, block size and shape maps go to both dome shaders.
 function domeUniforms() {
   const blocks = rec.mat === 'disco' ? 15 : 12, mi = MATS.indexOf(rec.mat);

@@ -28,7 +28,7 @@ Bar: v3, the Signal bar, over Bar v2 (`pop/index.html:90`, `signal: true`).
 
 | Slot | Holds |
 |---|---|
-| Top left (choice) | `Material`, stepper, 18 options, default `gloss`; `holo` shows as `Hologram`, `topo` as `Contours` |
+| Top left (choice) | `Material`, 18 options, default `gloss`; Signal opens a hex preview tray; `holo` shows as `Hologram`, `topo` as `Contours` |
 | Bottom left (actions) | `Shuffle` (S) |
 | Bottom right (slider) | None |
 | Key strip (Bar v2) | click pop a bubble; drag pop a line of bubbles; hold burst a big bubble; arrows select a bubble |
@@ -38,6 +38,8 @@ Bar: v3, the Signal bar, over Bar v2 (`pop/index.html:90`, `signal: true`).
 
 The sheet keeps clear of both bars: `bands` (`:771`) reads `ui.cover()`, and `ui.onCover` fits the sheet again.
 A new sheet grows out from the Bar v3 Shuffle button, or from the Bar v2 die and stepper under `?bar=v2`. The rolling die is on the Bar v2 chip only.
+The Signal material tray scrolls horizontally. Arrow keys move between previews; Escape closes it.
+Previews use the dome shader and the palette that the selection will use.
 <!-- /gen:bar -->
 
 | Gesture | Does |
@@ -78,8 +80,9 @@ Drift: none. Pop field is the reference port for the library set (`AGENTS.md`): 
 <!-- gen:files -->
 | File | Lines | Role |
 |---|---|---|
-| `index.html` | 2142 | The page: CSS, markup, one module script |
+| `index.html` | 2204 | The page: CSS, markup, one module script |
 | `legacy.html` | 1944 | The CPU-lit build |
+| `tray.js`, `tray.css` | 81, 27 | Signal material tray and previews |
 <!-- /gen:files -->
 
 ## Render pipeline
