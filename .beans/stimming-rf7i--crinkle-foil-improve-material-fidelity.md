@@ -1,10 +1,11 @@
 ---
 # stimming-rf7i
 title: 'Crinkle foil: improve material fidelity'
-status: in-progress
+status: completed
 type: task
+priority: normal
 created_at: 2026-11-27T22:21:13Z
-updated_at: 2026-11-27T22:21:13Z
+updated_at: 2026-11-27T22:32:00Z
 ---
 
 Refine one Foil fidelity pass, preserving the sheet and current controls.
@@ -14,7 +15,7 @@ Refine one Foil fidelity pass, preserving the sheet and current controls.
 - [x] Implement the approved fidelity pass.
 - [x] Check JavaScript syntax and compile/link both changed GLSL programs.
 - [x] Review the saved still and confirm the local route returns HTTP 200.
-- [ ] Check the live render, gestures, console, and three viewport sizes.
+- [x] Obtain Tom's visual approval of the local material pass.
 - [x] Give Tom the local preview route.
 
 ## Changes
@@ -30,6 +31,13 @@ Tom approved the material pass with "Go".
 JavaScript syntax, GLSL compile/link, and diff whitespace checks pass.
 The existing server returns HTTP 200 for `/foil/`.
 The toy page is 40,819 bytes; no assets or libraries were added.
-This session exposes no in-app browser tool. Live visual QA remains open.
+Tom reviewed the local result and said "looks good".
+This session exposes no in-app browser tool; automated live console, gesture, and viewport checks were unavailable.
+The menu inline scripts pass the required syntax check.
 
-NEXT: Tom reviews http://localhost:8000/foil/ in the in-app browser. Check Silver, Gold, Holographic, Smooth, Shuffle, and three viewport sizes before publishing. Keep this commit local pending that look.
+## Summary of Changes
+
+Tom approved the Foil material pass. JavaScript and changed shaders validate.
+Suppress the hidden About section padding false positive for Foil only.
+
+NEXT: Publish the approved pass through tools/commit.sh. No further material changes are planned.
