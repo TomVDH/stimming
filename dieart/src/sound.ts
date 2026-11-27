@@ -1,4 +1,4 @@
-// Subtle laboratory microscope audio on audioKit (muted by default).
+// Mechanical laboratory microscope audio on audioKit (muted by default).
 
 import { sound } from '../../shared/stim.js';
 
@@ -11,15 +11,11 @@ interface Kit {
 
 export interface MicroscopeSound {
   turretClick(pitch?: number): void;
-  focusTick(layerIdx: number): void;
-  scanPing(): void;
-  found(count: number, total: number): void;
-  complete(): void;
-  miss(): void;
+  filterClick(): void;
+  focusTick(step: number): void;
+  stageSwap(): void;
   cancel(): void;
 }
-
-const PENTATONIC = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51, 1567.98, 1760.0];
 
 export function createMicroscopeSound(kit: Kit): MicroscopeSound {
   let lastTick = 0;
@@ -33,7 +29,7 @@ export function createMicroscopeSound(kit: Kit): MicroscopeSound {
     };
   }
 
-  // Crisp mechanical objective / illumination turret detent click.
+  // Heavy machined brass/steel objective nosepiece detent click.
   function turretClick(pitch = 1) {
     if (!sound.on || !kit.ac || !kit.out || !kit.noise) return;
     kit.live();
@@ -42,152 +38,104 @@ export function createMicroscopeSound(kit: Kit): MicroscopeSound {
 
     const src = ac.createBufferSource();
     src.buffer = kit.noise;
-    src.playbackRate.value = 1.3 * pitch;
+    src.playbackRate.value = 1.05 * pitch;
 
     const bp = ac.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.setValueAtTime(1950 * pitch, t0);
-    bp.Q.value = 5.5;
+    bp.frequency.setValueAtTime(1680 * pitch, t0);
+    bp.Q.value = 6.2;
 
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.24, t0 + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.042);
+    g.gain.exponentialRampToValueAtTime(0.22, t0 + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.038);
 
     src.connect(bp).connect(g).connect(kit.out);
     track(src, g);
     src.start(t0);
-    src.stop(t0 + 0.05);
+    src.stop(t0 + 0.045);
+
+    // Low mechanical body thump of the nosepiece seating.
+    const osc = ac.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(210 * pitch, t0);
+    osc.frequency.exponentialRampToValueAtTime(88, t0 + 0.032);
+
+    const og = ac.createGain();
+    og.gain.setValueAtTime(0.0001, t0);
+    og.gain.exponentialRampToValueAtTime(0.11, t0 + 0.004);
+    og.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.036);
+
+    osc.connect(og).connect(kit.out);
+    track(osc, og);
+    osc.start(t0);
+    osc.stop(t0 + 0.042);
   }
 
-  // Soft piezo focus detent when crossing a metal layer (M1..M4).
-  function focusTick(layerIdx: number) {
-    if (!sound.on || !kit.ac || !kit.out) return;
+  // Crisp optical filter cube / prism slider snap.
+  function filterClick() {
+    turretClick(1.26);
+  }
+
+  // Subtle fine-focus micrometer gear detent.
+  function focusTick(step: number) {
+    if (!sound.on || !kit.ac || !kit.out || !kit.noise) return;
     const now = performance.now();
-    if (now - lastTick < 55) return;
+    if (now - lastTick < 52) return;
     lastTick = now;
 
     kit.live();
     const ac = kit.ac;
     const t0 = ac.currentTime;
-    const osc = ac.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(420 + layerIdx * 115, t0);
-    osc.frequency.exponentialRampToValueAtTime(280 + layerIdx * 80, t0 + 0.025);
+
+    const src = ac.createBufferSource();
+    src.buffer = kit.noise;
+    src.playbackRate.value = 1.4 + (step % 3) * 0.08;
+
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.setValueAtTime(2800 + step * 140, t0);
+    bp.Q.value = 8.0;
 
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.065, t0 + 0.004);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.032);
+    g.gain.exponentialRampToValueAtTime(0.055, t0 + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.018);
 
-    osc.connect(g).connect(kit.out);
-    track(osc, g);
-    osc.start(t0);
-    osc.stop(t0 + 0.04);
+    src.connect(bp).connect(g).connect(kit.out);
+    track(src, g);
+    src.start(t0);
+    src.stop(t0 + 0.024);
   }
 
-  // Soft optical interferometry radar sweep.
-  function scanPing() {
-    if (!sound.on || !kit.ac || !kit.out) return;
+  // Ceramic carrier seating onto the microscope chuck.
+  function stageSwap() {
+    if (!sound.on || !kit.ac || !kit.out || !kit.noise) return;
     kit.live();
     const ac = kit.ac;
     const t0 = ac.currentTime;
 
-    const osc = ac.createOscillator();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(640, t0);
-    osc.frequency.exponentialRampToValueAtTime(1180, t0 + 0.34);
-
-    const g = ac.createGain();
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.11, t0 + 0.04);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.42);
-
-    osc.connect(g).connect(kit.out);
-    track(osc, g);
-    osc.start(t0);
-    osc.stop(t0 + 0.45);
-  }
-
-  // Shimmering ascending crystalline bell when logging a hidden doodle.
-  function found(count: number, _total: number) {
-    if (!sound.on || !kit.ac || !kit.out) return;
-    kit.live();
-    const ac = kit.ac;
-    const t0 = ac.currentTime;
-    const baseFreq = PENTATONIC[Math.max(0, Math.min(PENTATONIC.length - 1, count - 1))];
-
-    [1, 1.5].forEach((mult, i) => {
-      const osc = ac.createOscillator();
-      osc.type = i === 0 ? 'sine' : 'triangle';
-      osc.frequency.setValueAtTime(baseFreq * mult, t0 + i * 0.045);
-
-      const g = ac.createGain();
-      g.gain.setValueAtTime(0.0001, t0 + i * 0.045);
-      g.gain.exponentialRampToValueAtTime(i === 0 ? 0.16 : 0.075, t0 + i * 0.045 + 0.015);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + i * 0.045 + 0.55);
-
-      osc.connect(g).connect(kit.out!);
-      track(osc, g);
-      osc.start(t0 + i * 0.045);
-      osc.stop(t0 + i * 0.045 + 0.6);
-    });
-  }
-
-  // Celebratory warm harmonic arpeggio when 10/10 doodles are logged.
-  function complete() {
-    if (!sound.on || !kit.ac || !kit.out) return;
-    kit.live();
-    const ac = kit.ac;
-    const t0 = ac.currentTime;
-    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.51];
-    notes.forEach((freq, i) => {
-      const st = t0 + i * 0.075;
-      const osc = ac.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, st);
-
-      const g = ac.createGain();
-      g.gain.setValueAtTime(0.0001, st);
-      g.gain.exponentialRampToValueAtTime(0.12, st + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, st + 0.95);
-
-      osc.connect(g).connect(kit.out!);
-      track(osc, g);
-      osc.start(st);
-      osc.stop(st + 1.0);
-    });
-  }
-
-  // Quiet muted tap on empty silicon.
-  function miss() {
-    if (!sound.on || !kit.ac || !kit.out) return;
-    kit.live();
-    const ac = kit.ac;
-    const t0 = ac.currentTime;
     const osc = ac.createOscillator();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(170, t0);
-    osc.frequency.exponentialRampToValueAtTime(95, t0 + 0.045);
+    osc.frequency.setValueAtTime(145, t0);
+    osc.frequency.exponentialRampToValueAtTime(58, t0 + 0.065);
 
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(0.045, t0 + 0.006);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.055);
+    g.gain.exponentialRampToValueAtTime(0.15, t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.075);
 
     osc.connect(g).connect(kit.out);
     track(osc, g);
     osc.start(t0);
-    osc.stop(t0 + 0.065);
+    osc.stop(t0 + 0.085);
   }
 
   return {
     turretClick,
+    filterClick,
     focusTick,
-    scanPing,
-    found,
-    complete,
-    miss,
+    stageSwap,
     cancel() {
       for (const s of active) {
         try { s.stop(); } catch { /* already stopped */ }
