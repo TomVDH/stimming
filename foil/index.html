@@ -301,7 +301,9 @@ vec2 mapM(vec2 q) { return q + texture(uD, toUv(q)).xy; }
 float bar(vec2 hit, vec2 c, float a, float len, float wid, float off) {
   vec2 s = rot(-a) * (hit - c);
   s.y += off;
-  return (1.0 - smoothstep(len * 0.7, len, abs(s.x))) * (1.0 - smoothstep(wid * 0.35, wid, abs(s.y)));
+  vec2 aa = max(fwidth(s), vec2(0.001));
+  return (1.0 - smoothstep(len * 0.7 - aa.x, len + aa.x, abs(s.x)))
+    * (1.0 - smoothstep(wid * 0.35 - aa.y, wid + aa.y, abs(s.y)));
 }
 // The studio: a warm key strip, a cool rim strip, a soft box and a dim room.
 vec3 env(vec2 q, vec3 r) {
@@ -310,14 +312,17 @@ vec3 env(vec2 q, vec3 r) {
   float d = 0.014 * uHolo;
   vec3 key = vec3(bar(hit, uKeyC, uKeyA, 0.8, 0.045, -d), bar(hit, uKeyC, uKeyA, 0.8, 0.045, 0.0), bar(hit, uKeyC, uKeyA, 0.8, 0.045, d));
   vec3 rim = vec3(bar(hit, uRimC, uRimA, 1.3, 0.05, -d * 1.5), bar(hit, uRimC, uRimA, 1.3, 0.05, 0.0), bar(hit, uRimC, uRimA, 1.3, 0.05, d * 1.5));
-  vec2 b = hit - uSoftC;
-  float soft = exp(-dot(b, b) * 4.0);
-  // The room is dim and uneven, so each facet finds its own shade.
-  float m = vnoise(hit * 0.9 + 4.0);
-  float room = 0.004 + 0.06 * m * m * m;
+  vec2 b = rot(0.22) * (hit - uSoftC);
+  float soft = 1.0 - smoothstep(-0.12, 0.22, sdBox(b, vec2(0.85, 0.48)));
+  // Broad reflected panels reveal folds between the strip highlights.
+  float fill = exp(-dot((hit + uSoftC) * vec2(0.55, 1.3),
+                       (hit + uSoftC) * vec2(0.55, 1.3)));
+  float m = vnoise(hit * 0.65 + 4.0);
+  float room = 0.018 + 0.065 * m * m;
   float low = 1.0 - smoothstep(0.15, 0.8, rz);
-  return key * vec3(1.0, 0.94, 0.85) * 7.0 + rim * vec3(0.55, 0.7, 1.0) * 1.4
-    + vec3(0.6, 0.66, 0.8) * soft * 0.06 + vec3(room) + vec3(0.035, 0.028, 0.02) * low;
+  return key * vec3(1.0, 0.97, 0.91) * 3.8 + rim * vec3(0.76, 0.85, 1.0) * 1.2
+    + vec3(0.9, 0.94, 1.0) * soft * 0.65 + vec3(1.0, 0.95, 0.87) * fill * 0.16
+    + vec3(room) + vec3(0.035, 0.028, 0.02) * low;
 }
 void main() {
   float S = min(uRes.x, uRes.y);
@@ -367,9 +372,14 @@ void main() {
   vec2 tx = vec2(J[1].y, -J[0].y);
   vec3 T = vec3(tx / max(length(tx), 1e-4), 0.0);
   T = normalize(T - n * dot(n, T));
+  vec3 B = cross(n, T);
+  // Four paired samples soften rolling marks without smearing the folds.
+  float grain = vnoise(m * vec2(18.0, 280.0));
+  float brush = uAniso * mix(0.65, 1.1, grain);
   vec3 e = vec3(0.0);
   for (int i = 0; i < 4; i++) {
-    vec3 nk = normalize(n + T * (float(i) - 1.5) * uAniso);
+    float side = (i == 0 || i == 3) ? -1.0 : 1.0;
+    vec3 nk = normalize(n + T * (float(i) - 1.5) * brush + B * side * brush * 0.2);
     e += env(q, reflect(vec3(0.0, 0.0, -1.0), nk));
   }
   e *= 0.25;
@@ -385,6 +395,9 @@ void main() {
             + texture(uField, toUv(m + vec2(0.0, hm))).y - texture(uField, toUv(m - vec2(0.0, hm))).y;
   lap *= 0.5 * (0.15 + 0.85 * A);
   c *= (1.0 - clamp(lap * 1.6, 0.0, 0.7)) * (1.0 + clamp(-lap * 0.5, 0.0, 0.25));
+  // Fine folds also occlude light inside their narrow valleys.
+  float cavity = max(0.0, dFdx(g.x) + dFdy(g.y)) * S * 0.012;
+  c *= 1.0 - clamp(cavity, 0.0, 0.5) * A;
   // Dense crumple traps its own light.
   c *= 1.0 - 0.3 * A * A;
   // The edge: rough where scrunched, with a thin lit lip.
@@ -420,10 +433,12 @@ uniform sampler2D uSrc, uBloom, uWide; uniform vec2 uRes;
 in vec2 vUv; out vec4 o;
 ${NOISE}
 void main() {
-  vec3 c = texture(uSrc, vUv).rgb + texture(uBloom, vUv).rgb * 0.35 + texture(uWide, vUv).rgb * 0.18;
+  vec3 c = texture(uSrc, vUv).rgb + texture(uBloom, vUv).rgb * 0.08 + texture(uWide, vUv).rgb * 0.025;
   vec2 q = vUv - 0.5;
   c *= 1.0 - dot(q * vec2(1.0, 1.3), q) * 0.7;
-  c = 1.0 - exp(-c * 1.4);
+  // A gentle shoulder retains detail inside the brightest reflections.
+  c *= 1.4;
+  c /= 1.0 + c;
   c += (hash12(vUv * uRes) - 0.5) * 0.006;
   o = vec4(pow(max(c, 0.0), vec3(1.0 / 2.2)), 1.0);
 }`;
