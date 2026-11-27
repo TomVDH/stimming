@@ -298,7 +298,7 @@ async function mountRound(host, id, r, my, pick) {
 /** @param {HTMLElement} host */
 function liveTile(host) {
   if (!menuFrame) {
-    menuFrame = Object.assign(document.createElement('iframe'), { className: 'ic-live', title: 'Current menu tile', src: `${IC}../index.html?lab` });
+    menuFrame = Object.assign(document.createElement('iframe'), { className: 'ic-live', title: 'Current menu tile', src: `${IC}../index.html?raw` });
     menuFrame.setAttribute('scrolling', 'no');
     menuFrame.addEventListener('load', () => cutMenu());
   }

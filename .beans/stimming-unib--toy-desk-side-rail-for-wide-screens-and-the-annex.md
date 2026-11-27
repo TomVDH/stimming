@@ -5,7 +5,7 @@ status: completed
 type: task
 priority: normal
 created_at: 2026-11-27T18:59:19Z
-updated_at: 2026-11-27T19:48:31Z
+updated_at: 2026-11-27T19:57:28Z
 ---
 
 Tom (2026-11-27): the annex lab needs work and better integration in the toy bench; the desk UI and menu need a clean-up and better wide-screen response. Picks: side rail from 1440 px; annex integrate only, no new title blocks.
@@ -41,3 +41,7 @@ Sheet frames lay out at 1280 x 800 and scale to the card. At card width the lab 
 ## Scrap (Tom, 2026-11-27)
 
 Title layouts: Window only (Giant, Echo, Orbit scrapped). Transitions: Flash cut, Placard, Lead figure (Recede, Drum, Tide scrapped). Dead CSS and JS removed from annex.js; annexlab/sheet.html lists match.
+
+## Follow-up fix 3 (2026-11-27)
+
+Now icons: the menu's dial lifts every tile out of ?lab, so framed copies were empty. The desk panels, icons/sheet.html and inventorylab frame index.html?raw instead.

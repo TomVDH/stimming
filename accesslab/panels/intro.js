@@ -775,7 +775,7 @@ export default {
     item = it;
     try { S.always = localStorage.getItem('stimming.accesslab.calm') === '1'; } catch { S.always = false; }
     host.innerHTML = '<div class="is-wrap">'
-      + `<div class="is-stage"><img alt=""><div class="is-strip"></div><div class="is-load" aria-live="polite"></div><div class="is-og" hidden><iframe title="Menu tile" scrolling="no" src="${ROOT}index.html?lab"></iframe></div>`
+      + `<div class="is-stage"><img alt=""><div class="is-strip"></div><div class="is-load" aria-live="polite"></div><div class="is-og" hidden><iframe title="Menu tile" scrolling="no" src="${ROOT}index.html?raw"></iframe></div>`
       + `<div class="is-gate">${glyph('flash')}<div class="t">Fast flashing light</div><div class="bar"><button class="w" type="button" data-go="calm">Play calm</button><span class="sl">/</span><button class="w" type="button" data-go="made">Play as made</button></div>`
       + `<label><input type="checkbox" data-always${S.always ? ' checked' : ''}> Always calm</label></div></div>`
       + '<div class="is-ctl"></div>'
